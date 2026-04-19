@@ -124,7 +124,10 @@ function getStatusLabel(status: string): string {
           <NuxtLink to="/novel/create" class="btn bg-white text-primary-600 hover:bg-primary-50">
             创建新项目
           </NuxtLink>
-          <NuxtLink to="/novel" class="btn bg-primary-700 text-white hover:bg-primary-800">
+          <NuxtLink to="/import" class="btn bg-primary-700 text-white hover:bg-primary-800">
+            导入小说
+          </NuxtLink>
+          <NuxtLink to="/novel" class="btn bg-primary-800/50 text-white hover:bg-primary-800">
             查看项目
           </NuxtLink>
         </div>
