@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { Novel, NovelGenre, NovelStatus } from '~/types'
+import { useNovelApi } from '~/composables/useApi'
 
 interface NovelState {
   novels: Novel[]
