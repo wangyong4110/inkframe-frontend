@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Tenant } from '~/types/tenant'
+
 const tenantStore = useTenantStore()
 
 // Fetch tenants on mount
