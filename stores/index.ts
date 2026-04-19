@@ -1,17 +1,22 @@
-// Stores exports
-export { useNovelStore } from './novel'
-export { useChapterStore } from './chapter'
-export { useCharacterStore } from './character'
-export { useVideoStore } from './video'
-export { useTenantStore } from './tenant'
+// Nuxt 自动扫描 stores 目录下的所有文件
+// 此文件用于便捷访问，但 named exports 会导致重复导入警告
+// 推荐直接在各组件中使用 import { useNovelStore } from '~/stores/novel'
 
-// Re-export stores as default for convenience
 import { useNovelStore } from './novel'
 import { useChapterStore } from './chapter'
 import { useCharacterStore } from './character'
 import { useVideoStore } from './video'
 import { useTenantStore } from './tenant'
 
+export {
+  useNovelStore,
+  useChapterStore,
+  useCharacterStore,
+  useVideoStore,
+  useTenantStore,
+}
+
+// 便捷的 default export（可选使用）
 export default {
   novel: useNovelStore,
   chapter: useChapterStore,
