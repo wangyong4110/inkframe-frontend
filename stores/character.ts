@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Character, CharacterRole, CharacterVisualDesign } from '~/types'
+import type { Character, CharacterRole } from '~/types'
 
 interface CharacterState {
   characters: Character[]

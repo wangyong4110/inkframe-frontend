@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Novel, Video, ApiResponse } from '~/types'
+import { VIDEO_PRESETS } from '~/composables/useStylePresets'
 
 const router = useRouter()
 const api = useApi()
@@ -24,9 +25,18 @@ const videoConfig = ref({
   startChapter: 1,
   endChapter: 0,
   resolution: '1080p',
+  videoPreset: 'cinematic',
   frameRate: 24,
   aspectRatio: '16:9',
-  artStyle: 'realistic',
+  artStyle: 'anime',
+})
+
+watch(() => videoConfig.value.videoPreset, (id) => {
+  const preset = VIDEO_PRESETS.find(p => p.id === id)
+  if (preset) {
+    videoConfig.value.aspectRatio = preset.aspect_ratio
+    videoConfig.value.frameRate = preset.frame_rate
+  }
 })
 
 // 导入步骤
@@ -47,24 +57,6 @@ const resolutionOptions = [
   { value: '720p', label: '720p (1280x720)' },
   { value: '1080p', label: '1080p (1920x1080)' },
   { value: '4k', label: '4K (3840x2160)' },
-]
-
-const frameRateOptions = [
-  { value: 24, label: '24 fps (电影)' },
-  { value: 30, label: '30 fps (标准)' },
-  { value: 60, label: '60 fps (流畅)' },
-]
-
-const aspectRatioOptions = [
-  { value: '16:9', label: '16:9 (宽屏)' },
-  { value: '9:16', label: '9:16 (竖屏)' },
-  { value: '1:1', label: '1:1 (方形)' },
-]
-
-const artStyleOptions = [
-  { value: 'realistic', label: '写实风格' },
-  { value: 'anime', label: '动漫风格' },
-  { value: 'cartoon', label: '卡通风格' },
 ]
 
 // 文件上传
@@ -104,16 +96,20 @@ function handleDragOver(event: DragEvent) {
   event.preventDefault()
 }
 
+// 导入错误信息
+const importError = ref('')
+
 // 开始导入
 async function handleImport() {
   importing.value = true
-  importStep.value = 0
+  importingStep.value = 0
   importProgress.value = 0
   importResult.value = null
+  importError.value = ''
 
   try {
     // 步骤1：导入小说
-    importStep.value = 1
+    importingStep.value = 1
     
     let result: any
     
@@ -159,11 +155,11 @@ async function handleImport() {
     importProgress.value = 30
 
     // 步骤2：配置视频
-    importStep.value = 2
+    importingStep.value = 2
     importProgress.value = 40
 
     // 步骤3：生成视频
-    importStep.value = 3
+    importingStep.value = 3
     importProgress.value = 50
 
     const videoResponse = await fetch(`/api/v1/novels/${result.data.novel_id}/generate-video`, {
@@ -186,13 +182,13 @@ async function handleImport() {
     }
 
     importProgress.value = 100
-    importStep.value = 4
+    importingStep.value = 4
 
     importResult.value.video = videoResult.data
-    
+
   } catch (error: any) {
     console.error('Import failed:', error)
-    alert('导入失败: ' + error.message)
+    importError.value = error.message || '导入失败'
   } finally {
     importing.value = false
   }
@@ -225,13 +221,15 @@ function reset() {
     startChapter: 1,
     endChapter: 0,
     resolution: '1080p',
+    videoPreset: 'cinematic',
     frameRate: 24,
     aspectRatio: '16:9',
-    artStyle: 'realistic',
+    artStyle: 'anime',
   }
   importResult.value = null
-  importStep.value = 0
+  importingStep.value = 0
   importProgress.value = 0
+  importError.value = ''
 }
 </script>
 
@@ -260,19 +258,19 @@ function reset() {
             <div 
               class="w-10 h-10 rounded-full flex items-center justify-center font-medium"
               :class="[
-                index + 1 <= importStep 
+                index + 1 <= importingStep 
                   ? 'bg-primary-500 text-white' 
                   : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
               ]"
             >
-              <svg v-if="index + 1 < importStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg v-if="index + 1 < importingStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
               <span v-else>{{ index + 1 }}</span>
             </div>
             <span 
               class="mt-2 text-sm"
-              :class="index + 1 <= importStep ? 'text-primary-600' : 'text-gray-500'"
+              :class="index + 1 <= importingStep ? 'text-primary-600' : 'text-gray-500'"
             >
               {{ step.title }}
             </span>
@@ -280,7 +278,7 @@ function reset() {
           <div 
             v-if="index < steps.length - 1" 
             class="flex-1 h-0.5 mx-4"
-            :class="index + 1 < importStep ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700'"
+            :class="index + 1 < importingStep ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700'"
           ></div>
         </div>
       </div>
@@ -446,28 +444,28 @@ function reset() {
     </div>
 
     <!-- Video Config -->
-    <div class="card p-6">
-      <h3 class="font-semibold text-gray-900 dark:text-white mb-4">视频配置</h3>
-      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+    <div class="card p-6 space-y-6">
+      <h3 class="font-semibold text-gray-900 dark:text-white">视频配置</h3>
+      <div class="grid gap-6 md:grid-cols-2">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             开始章节
           </label>
-          <input 
-            v-model.number="videoConfig.startChapter" 
-            type="number" 
-            min="1" 
+          <input
+            v-model.number="videoConfig.startChapter"
+            type="number"
+            min="1"
             class="input"
           />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            结束章节（0表示全部）
+            结束章节（0 表示全部）
           </label>
-          <input 
-            v-model.number="videoConfig.endChapter" 
-            type="number" 
-            min="0" 
+          <input
+            v-model.number="videoConfig.endChapter"
+            type="number"
+            min="0"
             class="input"
           />
         </div>
@@ -481,36 +479,21 @@ function reset() {
             </option>
           </select>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            帧率
-          </label>
-          <select v-model="videoConfig.frameRate" class="input">
-            <option v-for="opt in frameRateOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            宽高比
-          </label>
-          <select v-model="videoConfig.aspectRatio" class="input">
-            <option v-for="opt in aspectRatioOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            艺术风格
-          </label>
-          <select v-model="videoConfig.artStyle" class="input">
-            <option v-for="opt in artStyleOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          视频格式
+        </label>
+        <StylePicker type="video" v-model="videoConfig.videoPreset" compact />
+        <p class="mt-1 text-xs text-gray-400">选择后自动设置宽高比和帧率</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          图片风格
+        </label>
+        <StylePicker type="image" v-model="videoConfig.artStyle" compact />
       </div>
     </div>
 
@@ -529,6 +512,11 @@ function reset() {
         </svg>
         {{ importing ? '处理中...' : '导入并生成视频' }}
       </button>
+    </div>
+
+    <!-- Error -->
+    <div v-if="importError" class="card p-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400">
+      导入失败：{{ importError }}
     </div>
 
     <!-- Result -->

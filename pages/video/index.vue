@@ -1,15 +1,77 @@
 <script setup lang="ts">
+import type { Chapter } from '~/types'
+import { VIDEO_PRESETS } from '~/composables/useStylePresets'
+
 const route = useRoute()
 const router = useRouter()
 const videoStore = useVideoStore()
 
 const activeTab = ref('list')
 const showCreateModal = ref(false)
+const QUALITY_TIERS = [
+  {
+    id: 'draft' as const,
+    name: '草稿',
+    desc: '静图+动效，快速预览',
+    costMult: 1,
+    color: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+    border: 'border-gray-300 dark:border-gray-600',
+  },
+  {
+    id: 'preview' as const,
+    name: '预览',
+    desc: '720p 短片段，验证效果',
+    costMult: 5,
+    color: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    border: 'border-blue-300 dark:border-blue-600',
+  },
+  {
+    id: 'final' as const,
+    name: '正式',
+    desc: '1080p+ 完整高质量',
+    costMult: 20,
+    color: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+    border: 'border-amber-300 dark:border-amber-600',
+  },
+]
+
+const createForm = ref({
+  title: '',
+  chapter_id: 0,
+  video_preset: 'cinematic',
+  art_style: 'anime',
+  aspect_ratio: '16:9',
+  frame_rate: 24,
+  quality_tier: 'draft' as 'draft' | 'preview' | 'final',
+})
+
+// Estimated shots: roughly 6 per chapter (conservative)
+const estShots = computed(() => {
+  const tier = QUALITY_TIERS.find(t => t.id === createForm.value.quality_tier)!
+  const baseShots = 6
+  return { shots: baseShots, cost: baseShots * tier.costMult, tier }
+})
+const chapters = ref<Chapter[]>([])
 
 const novelId = computed(() => route.query.novel_id ? parseInt(route.query.novel_id as string) : null)
 
-onMounted(() => {
+watch(() => createForm.value.video_preset, (id) => {
+  const preset = VIDEO_PRESETS.find(p => p.id === id)
+  if (preset) {
+    createForm.value.aspect_ratio = preset.aspect_ratio
+    createForm.value.frame_rate = preset.frame_rate
+  }
+})
+
+onMounted(async () => {
   videoStore.fetchVideos({ novel_id: novelId.value || undefined })
+  if (novelId.value) {
+    try {
+      const { getChapters } = useChapterApi()
+      const resp = await getChapters(novelId.value)
+      chapters.value = resp.data
+    } catch { /* no chapters available */ }
+  }
 })
 
 const videos = computed(() => videoStore.videos)
@@ -40,7 +102,16 @@ function goToVideo(id: number) {
 
 async function createVideo() {
   if (!novelId.value) return
-  const video = await videoStore.createVideo(novelId.value)
+  const video = await videoStore.createVideo(
+    novelId.value,
+    createForm.value.chapter_id || undefined,
+    createForm.value.title || undefined,
+    createForm.value.art_style,
+    createForm.value.aspect_ratio,
+    createForm.value.frame_rate,
+    createForm.value.quality_tier,
+  )
+  showCreateModal.value = false
   router.push(`/video/${video.id}`)
 }
 </script>
@@ -234,34 +305,88 @@ async function createVideo() {
     </div>
 
     <!-- Create Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/50" @click="showCreateModal = false"></div>
-      <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">新建视频</h3>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              视频标题
-            </label>
-            <input type="text" class="input" placeholder="输入视频标题" />
+    <Teleport to="body">
+      <div v-if="showCreateModal" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="fixed inset-0 bg-black/50" @click="showCreateModal = false"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">新建视频</h3>
+          <div class="space-y-5">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视频标题</label>
+                <input v-model="createForm.title" type="text" class="input" placeholder="输入视频标题" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">选择章节</label>
+                <select v-model.number="createForm.chapter_id" class="input">
+                  <option :value="0">不选择（从小说自动提取）</option>
+                  <option v-for="ch in chapters" :key="ch.id" :value="ch.id">
+                    第{{ ch.chapter_no }}章 {{ ch.title }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Video Style (format preset) -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">视频格式</label>
+              <StylePicker type="video" v-model="createForm.video_preset" compact />
+              <p class="mt-1 text-xs text-gray-400">选择后自动设置宽高比和帧率</p>
+            </div>
+
+            <!-- Image / Art Style -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">图片风格</label>
+              <StylePicker type="image" v-model="createForm.art_style" compact />
+            </div>
+
+            <!-- Quality Tier -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">生成质量</label>
+              <div class="grid grid-cols-3 gap-2">
+                <button
+                  v-for="tier in QUALITY_TIERS"
+                  :key="tier.id"
+                  type="button"
+                  class="rounded-xl border-2 p-3 text-left transition-all"
+                  :class="[
+                    createForm.quality_tier === tier.id
+                      ? `${tier.border} ${tier.color} shadow-sm`
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                  ]"
+                  @click="createForm.quality_tier = tier.id"
+                >
+                  <p class="text-sm font-semibold">{{ tier.name }}</p>
+                  <p class="text-xs mt-0.5 opacity-75">{{ tier.desc }}</p>
+                </button>
+              </div>
+            </div>
+
+            <!-- Cost Estimate -->
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-700/50 px-4 py-3 text-sm">
+              <div class="flex items-center justify-between">
+                <span class="text-gray-600 dark:text-gray-400">预估消耗</span>
+                <span class="font-medium text-gray-900 dark:text-white">
+                  ~{{ estShots.shots }} 镜头 × {{ estShots.tier.costMult }} = {{ estShots.cost }} 点
+                </span>
+              </div>
+              <p v-if="createForm.quality_tier === 'draft'" class="mt-1 text-xs text-gray-400">
+                草稿模式：静图+平移动效，成本最低，适合验证剧情
+              </p>
+              <p v-else-if="createForm.quality_tier === 'preview'" class="mt-1 text-xs text-gray-400">
+                预览模式：短片段，适合确认镜头感后再升级
+              </p>
+              <p v-else class="mt-1 text-xs text-gray-400">
+                正式模式：完整高质量输出，建议剧情确认后再选择
+              </p>
+            </div>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              选择章节
-            </label>
-            <select class="input">
-              <option value="">不选择（从小说自动提取）</option>
-              <option value="1">第1章</option>
-              <option value="2">第2章</option>
-              <option value="3">第3章</option>
-            </select>
+          <div class="mt-6 flex justify-end space-x-2">
+            <button class="btn-outline" @click="showCreateModal = false">取消</button>
+            <button class="btn-primary" @click="createVideo">创建</button>
           </div>
-        </div>
-        <div class="mt-6 flex justify-end space-x-2">
-          <button class="btn-outline" @click="showCreateModal = false">取消</button>
-          <button class="btn-primary" @click="createVideo">创建</button>
         </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Video, StoryboardShot, VideoStatus } from '~/types'
+import type { Video, StoryboardShot } from '~/types'
 
 interface VideoState {
   videos: Video[]
@@ -83,7 +83,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async createVideo(novelId: number, chapterId?: number, title?: string) {
+    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string) {
       this.loading = true
       this.error = null
 
@@ -93,6 +93,10 @@ export const useVideoStore = defineStore('video', {
           novel_id: novelId,
           chapter_id: chapterId,
           title,
+          art_style: artStyle,
+          aspect_ratio: aspectRatio,
+          frame_rate: frameRate,
+          quality_tier: qualityTier,
         })
         this.videos.unshift(response.data)
         return response.data
@@ -207,6 +211,38 @@ export const useVideoStore = defineStore('video', {
         throw e
       } finally {
         this.loading = false
+      }
+    },
+
+    async generateShot(videoId: number, shotId: number) {
+      try {
+        const api = useVideoApi()
+        const response = await api.generateShot(videoId, shotId)
+        const index = this.storyboard.findIndex(s => s.id === shotId)
+        if (index !== -1) this.storyboard[index] = response.data
+        return response.data
+      } catch (e: any) {
+        this.error = e.message || 'Failed to generate shot'
+        throw e
+      }
+    },
+
+    async batchGenerateShots(videoId: number, shotIds: number[], qualityTier?: string) {
+      this.generating = true
+      this.error = null
+      try {
+        const api = useVideoApi()
+        const response = await api.batchGenerateShots(videoId, shotIds, qualityTier)
+        for (const updated of response.data) {
+          const index = this.storyboard.findIndex(s => s.id === updated.id)
+          if (index !== -1) this.storyboard[index] = updated
+        }
+        return response.data
+      } catch (e: any) {
+        this.error = e.message || 'Failed to batch generate shots'
+        throw e
+      } finally {
+        this.generating = false
       }
     },
 

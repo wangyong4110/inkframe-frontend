@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Novel, Chapter, Character } from '~/types'
+
 const route = useRoute()
 const router = useRouter()
 
@@ -8,6 +10,11 @@ const generating = ref(false)
 const novelId = parseInt(route.params.novelId as string)
 const chapterNo = ref(parseInt(route.query.chapter as string) || 1)
 
+// Loaded context
+const novel = ref<Novel | null>(null)
+const chapters = ref<Chapter[]>([])
+const characters = ref<Character[]>([])
+
 // Style configurations
 const styleConfig = ref({
   narrativeVoice: 'third_limited',
@@ -16,14 +23,6 @@ const styleConfig = ref({
   sentenceComplexity: 'moderate',
   dialogueRatio: 0.3,
   descriptionDensity: 'moderate',
-})
-
-// Generation context
-const context = ref({
-  globalSummary: '',
-  recentChapters: [] as any[],
-  foreshadows: [] as any[],
-  characterStates: [] as any[],
 })
 
 // Generated prompt
@@ -62,31 +61,75 @@ const densityOptions = [
 
 // Load context
 onMounted(async () => {
-  // TODO: 调用 API 获取上下文
+  try {
+    const { getNovel } = useNovelApi()
+    const { getChapters } = useChapterApi()
+    const { getCharacters } = useCharacterApi()
+    const [novelResp, chaptersResp, charsResp] = await Promise.all([
+      getNovel(novelId),
+      getChapters(novelId),
+      getCharacters(novelId),
+    ])
+    novel.value = novelResp.data
+    chapters.value = chaptersResp.data
+    characters.value = charsResp.data
+  } catch {
+    // Context loading is best-effort
+  }
 })
+
+const voiceLabels: Record<string, string> = {
+  first_person: '第一人称',
+  third_limited: '第三人称有限视角',
+  third_omniscient: '全知视角',
+}
+
+const distanceLabels: Record<string, string> = {
+  close: '近距离（深入内心）',
+  medium: '中等距离',
+  distant: '远距离（偏叙述）',
+}
+
+const toneLabels: Record<string, string> = {
+  warm: '温暖',
+  neutral: '中性',
+  cold: '冷淡',
+}
 
 async function generatePrompt() {
   generating.value = true
   try {
-    // TODO: 调用 API 构建提示词
-    generatedPrompt.value = `
-【故事概要】
-这是一个修仙世界的故事，主角林风是一个普通少年...
+    const cfg = styleConfig.value
+    const prevChapters = chapters.value
+      .filter(c => c.chapter_no < chapterNo.value && c.summary)
+      .slice(-3)
+      .map(c => `第${c.chapter_no}章（${c.title}）：${c.summary}`)
+      .join('\n')
 
-【风格要求】
-使用第三人称有限视角，深入角色内心描写。
+    const mainChars = characters.value
+      .filter(c => c.role === 'protagonist' || c.role === 'antagonist')
+      .map(c => `${c.name}（${c.role === 'protagonist' ? '主角' : '反派'}）：${c.personality || ''}`)
+      .join('\n')
 
-【当前章节】
-第${chapterNo.value}章
+    const parts: string[] = []
 
-【前情提要】
-第${chapterNo.value - 1}章中，主角林风刚刚突破到筑基境界...
+    if (novel.value) {
+      parts.push(`【作品信息】\n书名：${novel.value.title}\n类型：${novel.value.genre}\n简介：${novel.value.description || ''}`)
+    }
 
-【角色状态】
-林风：当前处于成长期，心态积极向上
+    parts.push(`【叙事风格】\n视角：${voiceLabels[cfg.narrativeVoice] || cfg.narrativeVoice}\n距离：${distanceLabels[cfg.narrativeDistance] || cfg.narrativeDistance}\n情感：${toneLabels[cfg.emotionalTone] || cfg.emotionalTone}\n对话比例：${Math.round(cfg.dialogueRatio * 100)}%`)
 
-请根据以上信息，生成第${chapterNo.value}章的完整内容。
-    `.trim()
+    if (prevChapters) {
+      parts.push(`【前情提要】\n${prevChapters}`)
+    }
+
+    if (mainChars) {
+      parts.push(`【主要角色】\n${mainChars}`)
+    }
+
+    parts.push(`【生成要求】\n请根据以上信息，续写第${chapterNo.value}章内容。`)
+
+    generatedPrompt.value = parts.join('\n\n')
   } finally {
     generating.value = false
   }
@@ -346,69 +389,54 @@ function applyPrompt() {
     </div>
 
     <!-- Preview Tab -->
-    <div v-if="activeTab === 'preview'" class="grid gap-6 lg:grid-cols-3">
-      <!-- Global Summary -->
+    <div v-if="activeTab === 'preview'" class="grid gap-6 lg:grid-cols-2">
+      <!-- Novel Summary -->
       <div class="card p-6">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">故事概要</h3>
-        <div class="space-y-2">
+        <div v-if="novel" class="space-y-2">
           <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm">
-            这是一个修仙世界的故事...
+            <p class="font-medium">{{ novel.title }}</p>
+            <p class="text-gray-600 dark:text-gray-400 mt-1">{{ novel.description || '暂无描述' }}</p>
           </div>
-          <button class="btn-ghost text-sm w-full">编辑概要</button>
+          <div class="text-sm text-gray-500">共 {{ chapters.length }} 章 · {{ novel.total_words.toLocaleString() }} 字</div>
         </div>
+        <div v-else class="text-sm text-gray-500">加载中...</div>
       </div>
 
-      <!-- Foreshadows -->
-      <div class="card p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">未解之谜</h3>
-        <div class="space-y-3">
-          <div class="flex items-start space-x-2">
-            <div class="w-2 h-2 mt-2 rounded-full bg-warning-500"></div>
-            <div class="text-sm">
-              <p class="font-medium">神秘的玉佩</p>
-              <p class="text-gray-500">第3章埋下</p>
-            </div>
-          </div>
-          <div class="flex items-start space-x-2">
-            <div class="w-2 h-2 mt-2 rounded-full bg-warning-500"></div>
-            <div class="text-sm">
-              <p class="font-medium">黑袍人的身份</p>
-              <p class="text-gray-500">第5章出现</p>
-            </div>
-          </div>
-          <div class="flex items-start space-x-2">
-            <div class="w-2 h-2 mt-2 rounded-full bg-success-500"></div>
-            <div class="text-sm">
-              <p class="font-medium text-gray-500 line-through">主角的身世之谜</p>
-              <p class="text-gray-500">已在第8章揭示 ✓</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Character States -->
+      <!-- Characters -->
       <div class="card p-6">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">角色状态</h3>
-        <div class="space-y-4">
-          <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <div class="flex items-center justify-between mb-2">
-              <span class="font-medium">林风</span>
-              <span class="tag tag-success">成长期</span>
+        <div v-if="characters.length === 0" class="text-sm text-gray-500">暂无角色</div>
+        <div v-else class="space-y-3">
+          <div
+            v-for="char in characters.filter(c => c.role === 'protagonist' || c.role === 'antagonist')"
+            :key="char.id"
+            class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+          >
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-medium">{{ char.name }}</span>
+              <span class="text-xs text-gray-500">{{ char.role === 'protagonist' ? '主角' : '反派' }}</span>
             </div>
-            <p class="text-sm text-gray-500">心态：积极向上，努力修炼</p>
-            <div class="mt-2">
-              <div class="text-xs text-gray-500 mb-1">能力等级</div>
-              <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full bg-primary-500 rounded-full" style="width: 45%"></div>
-              </div>
-            </div>
+            <p class="text-sm text-gray-500 line-clamp-2">{{ char.personality || char.background || '暂无信息' }}</p>
           </div>
-          <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <div class="flex items-center justify-between mb-2">
-              <span class="font-medium">小柔</span>
-              <span class="tag tag-primary">觉醒期</span>
+        </div>
+      </div>
+
+      <!-- Recent Chapters -->
+      <div class="card p-6 lg:col-span-2">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">最近章节</h3>
+        <div v-if="chapters.length === 0" class="text-sm text-gray-500">暂无章节</div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="ch in chapters.filter(c => c.chapter_no < chapterNo).slice(-5)"
+            :key="ch.id"
+            class="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            <span class="text-sm font-medium text-gray-500 w-12 flex-shrink-0">第{{ ch.chapter_no }}章</span>
+            <div>
+              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ ch.title }}</p>
+              <p v-if="ch.summary" class="text-xs text-gray-500 line-clamp-1">{{ ch.summary }}</p>
             </div>
-            <p class="text-sm text-gray-500">心态：神秘莫测</p>
           </div>
         </div>
       </div>

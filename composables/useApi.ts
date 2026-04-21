@@ -3,10 +3,12 @@ import type {
   Chapter,
   Character,
   Worldview,
+  WorldviewEntity,
   Video,
   StoryboardShot,
   AIModel,
   ModelProvider,
+  McpTool,
   QualityReport,
   CreateNovelForm,
   CreateChapterForm,
@@ -33,10 +35,19 @@ export const useApi = () => {
       },
     }
 
-    const response = await fetch(url, {
-      ...defaultOptions,
-      ...options,
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 120_000)
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...defaultOptions,
+        ...options,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
@@ -139,7 +150,7 @@ export const useChapterApi = () => {
     prompt?: string
     max_tokens?: number
   }) =>
-    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters`, {
+    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/generate`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
@@ -233,6 +244,24 @@ export const useWorldviewApi = () => {
       body: JSON.stringify(data),
     })
 
+  const listEntities = (worldviewId: number) =>
+    request<ApiResponse<WorldviewEntity[]>>(`/worldviews/${worldviewId}/entities`)
+
+  const createEntity = (worldviewId: number, data: { type: string; name: string; description?: string; image_url?: string }) =>
+    request<ApiResponse<WorldviewEntity>>(`/worldviews/${worldviewId}/entities`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const updateEntity = (worldviewId: number, entityId: number, data: Partial<WorldviewEntity>) =>
+    request<ApiResponse<WorldviewEntity>>(`/worldviews/${worldviewId}/entities/${entityId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteEntity = (worldviewId: number, entityId: number) =>
+    request<void>(`/worldviews/${worldviewId}/entities/${entityId}`, { method: 'DELETE' })
+
   return {
     getWorldviews,
     getWorldview,
@@ -240,6 +269,10 @@ export const useWorldviewApi = () => {
     updateWorldview,
     deleteWorldview,
     generateWorldview,
+    listEntities,
+    createEntity,
+    updateEntity,
+    deleteEntity,
   }
 }
 
@@ -260,10 +293,21 @@ export const useVideoApi = () => {
   const getVideo = (id: number) =>
     request<ApiResponse<Video>>(`/videos/${id}`)
 
-  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string }) =>
-    request<ApiResponse<Video>>('/videos', {
+  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string }) =>
+    request<ApiResponse<Video>>(`/novels/${data.novel_id}/videos`, {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+
+  const generateShot = (videoId: number, shotId: number) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/generate`, {
+      method: 'POST',
+    })
+
+  const batchGenerateShots = (videoId: number, shotIds: number[], qualityTier?: string) =>
+    request<ApiResponse<StoryboardShot[]>>(`/videos/${videoId}/shots/batch-generate`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier }),
     })
 
   const updateVideo = (id: number, data: Partial<Video>) =>
@@ -276,7 +320,7 @@ export const useVideoApi = () => {
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
   const generateStoryboard = (id: number) =>
-    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard`, {
+    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
     })
 
@@ -298,6 +342,8 @@ export const useVideoApi = () => {
     generateStoryboard,
     getStoryboard,
     updateStoryboardShot,
+    generateShot,
+    batchGenerateShots,
   }
 }
 
@@ -320,9 +366,45 @@ export const useModelApi = () => {
     request<ApiResponse<AIModel[]>>(`/models/available/${taskType}`)
 
   const selectModel = (data: { task_type: string; strategy: string }) =>
-    request<ApiResponse<AIModel>>('/model/select', {
+    request<ApiResponse<AIModel>>('/models/select', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+
+  const createProvider = (data: {
+    name: string
+    display_name?: string
+    type: string
+    api_endpoint: string
+    api_key: string
+    api_version?: string
+    is_active: boolean
+  }) =>
+    request<ApiResponse<ModelProvider>>('/model-providers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const updateProvider = (id: number, data: Partial<{
+    name: string
+    display_name: string
+    type: string
+    api_endpoint: string
+    api_key: string
+    api_version: string
+    is_active: boolean
+  }>) =>
+    request<ApiResponse<ModelProvider>>(`/model-providers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteProvider = (id: number) =>
+    request<ApiResponse<null>>(`/model-providers/${id}`, { method: 'DELETE' })
+
+  const testProvider = (id: number) =>
+    request<ApiResponse<{ status: string; error?: string }>>(`/model-providers/${id}/test`, {
+      method: 'POST',
     })
 
   return {
@@ -330,6 +412,10 @@ export const useModelApi = () => {
     getModels,
     getAvailableModels,
     selectModel,
+    createProvider,
+    updateProvider,
+    deleteProvider,
+    testProvider,
   }
 }
 
@@ -338,15 +424,83 @@ export const useQualityApi = () => {
   const { request } = useApi()
 
   const checkQuality = (chapterId: number) =>
-    request<ApiResponse<QualityReport>>(`/quality/check/${chapterId}`, {
+    request<ApiResponse<QualityReport>>(`/chapters/${chapterId}/quality-check`, {
       method: 'POST',
     })
 
   const getQualityReport = (chapterId: number) =>
-    request<ApiResponse<QualityReport>>(`/quality/report/${chapterId}`)
+    request<ApiResponse<QualityReport>>(`/chapters/${chapterId}/quality-report`)
 
   return {
     checkQuality,
     getQualityReport,
+  }
+}
+
+// MCP Tools API
+export const useMcpApi = () => {
+  const { request } = useApi()
+
+  // ── MCP tool CRUD ─────────────────────────────────────────────────────────
+  const getMcpTools = () =>
+    request<ApiResponse<McpTool[]>>('/mcp-tools')
+
+  const createMcpTool = (data: {
+    name: string
+    display_name: string
+    description?: string
+    transport_type: string
+    endpoint: string
+    headers?: Record<string, string>
+    env?: Record<string, string>
+    timeout?: number
+    is_active: boolean
+  }) =>
+    request<ApiResponse<McpTool>>('/mcp-tools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const updateMcpTool = (id: number, data: Partial<McpTool>) =>
+    request<ApiResponse<McpTool>>(`/mcp-tools/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteMcpTool = (id: number) =>
+    request<void>(`/mcp-tools/${id}`, { method: 'DELETE' })
+
+  const testMcpTool = (id: number) =>
+    request<ApiResponse<{ status: string; latency_ms?: number; error?: string }>>(`/mcp-tools/${id}/test`, {
+      method: 'POST',
+    })
+
+  // ── Model ↔ MCP bindings ─────────────────────────────────────────────────
+  const getModelMcpTools = (modelId: number) =>
+    request<ApiResponse<McpTool[]>>(`/models/${modelId}/mcp-tools`)
+
+  const bindMcpTool = (modelId: number, toolId: number) =>
+    request<ApiResponse<null>>(`/models/${modelId}/mcp-tools`, {
+      method: 'POST',
+      body: JSON.stringify({ tool_id: toolId }),
+    })
+
+  const unbindMcpTool = (modelId: number, toolId: number) =>
+    request<void>(`/models/${modelId}/mcp-tools/${toolId}`, { method: 'DELETE' })
+
+  // Get all models bound to a specific MCP tool
+  const getMcpToolModels = (toolId: number) =>
+    request<ApiResponse<AIModel[]>>(`/mcp-tools/${toolId}/models`)
+
+  return {
+    getMcpTools,
+    createMcpTool,
+    updateMcpTool,
+    deleteMcpTool,
+    testMcpTool,
+    getModelMcpTools,
+    bindMcpTool,
+    unbindMcpTool,
+    getMcpToolModels,
   }
 }

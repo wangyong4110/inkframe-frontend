@@ -30,6 +30,10 @@ onMounted(() => {
   novelStore.fetchNovels()
 })
 
+watch(() => novelStore.pagination.page, () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+})
+
 function applyFilters() {
   novelStore.setFilters({
     status: filters.value.status as any || undefined,
@@ -91,6 +95,19 @@ function formatNumber(num: number): string {
     return (num / 10000).toFixed(1) + 'w'
   }
   return num.toLocaleString()
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days}天前`
+  if (days < 30) return `${Math.floor(days / 7)}周前`
+  return `${Math.floor(days / 30)}月前`
 }
 </script>
 
@@ -236,17 +253,3 @@ function formatNumber(num: number): string {
   </div>
 </template>
 
-<script lang="ts">
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  if (days < 30) return `${Math.floor(days / 7)}周前`
-  return `${Math.floor(days / 30)}月前`
-}
-</script>

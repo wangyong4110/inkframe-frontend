@@ -12,6 +12,10 @@ export interface Novel {
   cover_image?: string
   ai_model?: string
   temperature?: number
+  max_tokens?: number
+  style_prompt?: string
+  image_style?: string      // 视觉/图片风格
+  reference_style?: string  // 参考作品
   created_at: string
   updated_at: string
 }
@@ -54,6 +58,12 @@ export interface PlotPoint {
 export type PlotPointType = 'conflict' | 'climax' | 'resolution' | 'twist' | 'foreshadow'
 
 // Character types
+export interface CharacterAbility {
+  name: string
+  level?: string
+  description?: string
+}
+
 export interface Character {
   id: number
   novel_id: number
@@ -63,44 +73,21 @@ export interface Character {
   archetype?: string
   appearance?: string
   personality?: string
+  personality_tags?: string[]
   background?: string
-  abilities?: string[]
+  abilities?: CharacterAbility[]
   character_arc?: string
-  visual_design?: CharacterVisualDesign
+  // three-view reference images
+  three_view_front?: string
+  three_view_side?: string
+  three_view_back?: string
+  portrait?: string
+  cover_image?: string
   created_at: string
   updated_at: string
 }
 
 export type CharacterRole = 'protagonist' | 'antagonist' | 'supporting' | 'minor'
-
-export interface CharacterVisualDesign {
-  id: number
-  character_id: number
-  appearance_description?: string
-  reference_image_urls?: string[]
-  lora_model_id?: string
-  expressions?: CharacterExpression[]
-  poses?: CharacterPose[]
-  angles?: CharacterAngle[]
-}
-
-export interface CharacterExpression {
-  type: string
-  description: string
-  image_url: string
-}
-
-export interface CharacterPose {
-  type: string
-  description: string
-  image_url: string
-}
-
-export interface CharacterAngle {
-  type: string
-  description: string
-  image_url: string
-}
 
 // Worldview types
 export interface Worldview {
@@ -114,6 +101,7 @@ export interface Worldview {
   culture?: string
   technology?: string
   rules?: string
+  cover_image?: string
   entities?: WorldviewEntity[]
   created_at: string
   updated_at: string
@@ -125,12 +113,17 @@ export interface WorldviewEntity {
   type: EntityType
   name: string
   description?: string
+  image_url?: string
   attributes?: Record<string, any>
+  created_at?: string
+  updated_at?: string
 }
 
-export type EntityType = 'location' | 'organization' | 'artifact' | 'race' | 'other'
+export type EntityType = 'location' | 'organization' | 'artifact' | 'race' | 'creature' | 'other'
 
 // Video types
+export type VideoQualityTier = 'draft' | 'preview' | 'final'
+
 export interface Video {
   id: number
   novel_id: number
@@ -138,9 +131,11 @@ export interface Video {
   uuid: string
   title: string
   status: VideoStatus
+  quality_tier?: VideoQualityTier
   frame_rate: number
   resolution: string
   aspect_ratio: string
+  art_style?: string
   total_shots: number
   url?: string
   created_at: string
@@ -148,6 +143,8 @@ export interface Video {
 }
 
 export type VideoStatus = 'planning' | 'generating' | 'completed' | 'failed'
+
+export type ShotGenerationMode = 'static' | 'video'
 
 export interface StoryboardShot {
   id: number
@@ -163,7 +160,9 @@ export interface StoryboardShot {
   character_configs?: ShotCharacterConfig[]
   scene_config?: ShotSceneConfig
   status: ShotStatus
+  generation_mode?: ShotGenerationMode
   image_url?: string
+  video_url?: string
 }
 
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
@@ -188,12 +187,17 @@ export interface ShotSceneConfig {
 // Model types
 export interface ModelProvider {
   id: number
+  tenant_id: number
   name: string
-  endpoint?: string
+  display_name?: string
+  type?: string
+  api_endpoint?: string
   api_key?: string
-  health_status: 'healthy' | 'degraded' | 'down'
-  models: AIModel[]
-  created_at: string
+  api_version?: string
+  is_active: boolean
+  health_status?: 'healthy' | 'degraded' | 'down'
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AIModel {
@@ -220,6 +224,32 @@ export interface TaskModelConfig {
 }
 
 export type SelectionStrategy = 'quality_first' | 'cost_first' | 'balanced' | 'custom'
+
+// MCP (Model Context Protocol) types
+export type McpTransportType = 'http' | 'sse' | 'stdio'
+
+export interface McpTool {
+  id: number
+  name: string
+  display_name: string
+  description?: string
+  transport_type: McpTransportType
+  endpoint: string
+  headers?: Record<string, string>
+  env?: Record<string, string>
+  timeout?: number
+  is_active: boolean
+  is_system: boolean
+  schema?: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
+export interface McpToolBinding {
+  tool_id: number
+  model_id: number
+  enabled: boolean
+}
 
 export interface ModelComparisonExperiment {
   id: number
@@ -330,6 +360,42 @@ export interface CreateWorldviewForm {
   name: string
   genre: NovelGenre
   description?: string
+}
+
+// Style preset types
+export interface WritingStylePreset {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  genre_affinity: NovelGenre[]
+  config: {
+    narrative_voice: 'first_person' | 'third_limited' | 'third_omniscient'
+    narrative_distance: 'close' | 'medium' | 'distant'
+    emotional_tone: 'warm' | 'neutral' | 'cold'
+    sentence_complexity: 'simple' | 'moderate' | 'complex'
+    description_density: 'minimal' | 'moderate' | 'rich'
+    dialogue_ratio: number
+  }
+}
+
+export interface ImageStylePreset {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  art_style: string
+  preview_colors: string[]
+}
+
+export interface VideoStylePreset {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  art_style: string
+  aspect_ratio: string
+  frame_rate: number
 }
 
 // UI types

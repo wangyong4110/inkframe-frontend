@@ -17,6 +17,7 @@ const navItems = [
   { label: '角色', to: '/character', icon: 'users' },
   { label: '世界观', to: '/worldview', icon: 'globe' },
   { label: '视频', to: '/video', icon: 'video' },
+  { label: '风格库', to: '/style', icon: 'palette' },
   { label: '模型', to: '/model', icon: 'cpu' },
 ]
 
@@ -133,6 +134,9 @@ const breadcrumbs = computed(() => {
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <slot />
     </main>
+
+    <!-- Toast notifications -->
+    <AppToast />
 
     <!-- Footer -->
     <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">

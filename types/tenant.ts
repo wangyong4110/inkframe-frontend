@@ -110,7 +110,7 @@ export interface ProjectStats {
 }
 
 // Extended Novel with tenant info
-export interface Novel extends Novel {
+export interface TenantNovel {
   tenant_id?: number
   project_id?: number
   is_public?: boolean

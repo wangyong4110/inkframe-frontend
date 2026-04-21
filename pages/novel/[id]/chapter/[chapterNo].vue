@@ -7,6 +7,7 @@ const chapterNo = parseInt(route.params.chapterNo as string)
 const chapterStore = useChapterStore()
 const novelStore = useNovelStore()
 const characterStore = useCharacterStore()
+const toast = useToast()
 
 const saving = ref(false)
 const generating = ref(false)
@@ -19,7 +20,9 @@ const qualityReport = computed(() => chapterStore.qualityReport)
 const progress = computed(() => chapterStore.currentChapterProgress)
 
 const content = ref('')
+const chapterTitle = ref('')
 const prompt = ref('')
+const wordCountOverride = ref(0)  // 0 = use novel default
 
 onMounted(async () => {
   await Promise.all([
@@ -30,17 +33,59 @@ onMounted(async () => {
   if (chapterNo && chapterNo > 0) {
     await chapterStore.fetchChapter(novelId, chapterNo)
     content.value = chapter.value?.content || ''
+    chapterTitle.value = chapter.value?.title || ''
   }
 })
+
+// Dirty detection
+const isDirty = computed(() =>
+  content.value !== (chapter.value?.content || '') ||
+  chapterTitle.value !== (chapter.value?.title || '')
+)
+
+useUnsavedGuard(isDirty, '章节有未保存的修改，确认离开？')
+
+// Autosave
+const { lastSavedAt, autoSaving } = useAutosave(
+  () => doSave(),
+  [content, chapterTitle],
+)
+
+const autoSaveLabel = computed(() => {
+  if (autoSaving.value) return '保存中...'
+  if (lastSavedAt.value) {
+    const hh = String(lastSavedAt.value.getHours()).padStart(2, '0')
+    const mm = String(lastSavedAt.value.getMinutes()).padStart(2, '0')
+    return `已自动保存 ${hh}:${mm}`
+  }
+  return ''
+})
+
+// Ctrl+S / Cmd+S
+useEventListener('keydown', (e: KeyboardEvent) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    handleSave()
+  }
+})
+
+async function doSave() {
+  if (!chapter.value) return
+  await chapterStore.updateChapter(novelId, chapter.value.chapter_no, {
+    title: chapterTitle.value,
+    content: content.value,
+    word_count: countWords(content.value),
+  })
+}
 
 async function handleSave() {
   if (!chapter.value) return
   saving.value = true
   try {
-    await chapterStore.updateChapter(novelId, chapter.value.chapter_no, {
-      content: content.value,
-      word_count: countWords(content.value),
-    })
+    await doSave()
+    toast.success('章节已保存')
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
   }
@@ -50,8 +95,13 @@ async function handleGenerate() {
   if (!chapter.value) return
   generating.value = true
   try {
-    const result = await chapterStore.generateChapter(novelId, chapter.value.chapter_no, prompt.value)
+    const maxTokens = wordCountOverride.value > 0 ? wordCountOverride.value * 2 : undefined
+    const result = await chapterStore.generateChapter(novelId, chapter.value.chapter_no, prompt.value, maxTokens)
     content.value = result.content || ''
+    if (wordCountOverride.value > 0) chapterStore.wordCountGoal = wordCountOverride.value
+    toast.success('内容生成完成')
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
     generating.value = false
   }
@@ -86,9 +136,12 @@ function getActiveCharacters(): any[] {
           </svg>
         </button>
         <div>
-          <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-            {{ chapter?.title || `第${chapterNo}章` }}
-          </h1>
+          <input
+            v-model="chapterTitle"
+            type="text"
+            class="text-xl font-bold text-gray-900 dark:text-white bg-transparent border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:outline-none px-0 pb-0.5 w-full"
+            :placeholder="`第${chapterNo}章`"
+          />
           <p class="text-sm text-gray-500 dark:text-gray-400">
             {{ novel?.title }}
           </p>
@@ -124,9 +177,12 @@ function getActiveCharacters(): any[] {
         <span class="text-sm text-gray-500 dark:text-gray-400">
           字数: {{ countWords(content).toLocaleString() }} / {{ chapterStore.wordCountGoal }}
         </span>
-        <span class="text-sm font-medium text-primary-600">
-          {{ Math.round(progress) }}%
-        </span>
+        <div class="flex items-center gap-4">
+          <span v-if="autoSaveLabel" class="text-xs text-gray-400 dark:text-gray-500">{{ autoSaveLabel }}</span>
+          <span class="text-sm font-medium text-primary-600">
+            {{ Math.round(progress) }}%
+          </span>
+        </div>
       </div>
       <div class="progress-bar">
         <div
@@ -180,7 +236,7 @@ function getActiveCharacters(): any[] {
           <div v-if="showOutline" class="h-full p-6 overflow-auto">
             <div class="max-w-3xl mx-auto">
               <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                {{ chapter?.title || `第${chapterNo}章大纲` }}
+                {{ chapterTitle || `第${chapterNo}章大纲` }}
               </h2>
               <div class="prose dark:prose-invert">
                 <p class="text-gray-600 dark:text-gray-300">
@@ -230,6 +286,20 @@ function getActiveCharacters(): any[] {
                 class="input text-sm"
                 placeholder="添加额外的创作指导..."
               ></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                本章字数目标
+                <span class="font-normal text-gray-400">（0 = 使用默认 {{ chapterStore.wordCountGoal }} 字）</span>
+              </label>
+              <input
+                v-model.number="wordCountOverride"
+                type="number"
+                min="0"
+                step="500"
+                class="input text-sm"
+                placeholder="如 2000、5000..."
+              />
             </div>
             <button
               class="btn-primary w-full"

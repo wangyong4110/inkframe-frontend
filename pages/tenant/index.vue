@@ -11,6 +11,7 @@ onMounted(() => {
 const showCreateModal = ref(false)
 const showQuotaModal = ref(false)
 const selectedTenant = ref<Tenant | null>(null)
+const createError = ref('')
 
 const createForm = ref({
   name: '',
@@ -61,6 +62,7 @@ function viewQuota(tenant: Tenant) {
 }
 
 async function handleCreate() {
+  createError.value = ''
   try {
     await tenantStore.createTenant(createForm.value)
     showCreateModal.value = false
@@ -73,8 +75,14 @@ async function handleCreate() {
       max_storage_mb: 1000,
     }
   } catch (error: any) {
-    alert(error.message)
+    createError.value = error.message || '创建失败'
   }
+}
+
+const planStorageMb: Record<string, number> = {
+  free: 1024,
+  pro: 51200,
+  enterprise: 0,
 }
 
 function selectPlan(plan: string) {
@@ -83,7 +91,7 @@ function selectPlan(plan: string) {
   if (option) {
     createForm.value.max_projects = option.projects
     createForm.value.max_users = option.users
-    createForm.value.max_storage_mb = option.projects === 999 ? 0 : option.storage === '无限' ? 0 : parseInt(option.storage)
+    createForm.value.max_storage_mb = planStorageMb[plan] ?? 0
   }
 }
 
@@ -274,8 +282,9 @@ function formatStorage(mb: number): string {
             </div>
           </div>
         </div>
+        <p v-if="createError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ createError }}</p>
         <div class="mt-6 flex justify-end space-x-2">
-          <button class="btn-outline" @click="showCreateModal = false">取消</button>
+          <button class="btn-outline" @click="showCreateModal = false; createError = ''">取消</button>
           <button class="btn-primary" @click="handleCreate">创建</button>
         </div>
       </div>

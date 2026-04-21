@@ -120,7 +120,7 @@ export const useChapterStore = defineStore('chapter', {
       }
     },
 
-    async generateChapter(novelId: number, chapterNo: number, prompt?: string) {
+    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number) {
       this.generating = true
       this.error = null
 
@@ -129,6 +129,7 @@ export const useChapterStore = defineStore('chapter', {
         const response = await api.generateChapter(novelId, {
           chapter_no: chapterNo,
           prompt,
+          max_tokens: maxTokens,
         })
 
         const index = this.chapters.findIndex(c => c.chapter_no === chapterNo)
