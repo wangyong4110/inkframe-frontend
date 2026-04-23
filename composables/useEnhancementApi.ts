@@ -82,7 +82,7 @@ export const useCharacterArcApi = () => {
 // Style API - 风格控制
 // ============================================
 
-export const useStyleApi = () => {
+export const useStyleEndpointApi = () => {
   const getDefaultStyle = () => {
     return request<ApiResponse<StyleConfig>>('/styles/default')
   }

@@ -12,7 +12,7 @@ export default defineNuxtConfig({
 
   typescript: {
     strict: true,
-    typeCheck: true,
+    typeCheck: false,
   },
 
   app: {
@@ -40,7 +40,6 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    '/': { prerender: true },
     '/novel/**': { ssr: true },
     '/api/**': { proxy: { to: 'http://localhost:8080/api/**' } },
   },

@@ -85,6 +85,19 @@ function formatNumber(num: number): string {
   return num.toLocaleString()
 }
 
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days}天前`
+  if (days < 30) return `${Math.floor(days / 7)}周前`
+  return `${Math.floor(days / 30)}月前`
+}
+
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
     planning: 'bg-blue-100 text-blue-800',
@@ -272,18 +285,3 @@ function getStatusLabel(status: string): string {
     </section>
   </div>
 </template>
-
-<script lang="ts">
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  if (days < 30) return `${Math.floor(days / 7)}周前`
-  return `${Math.floor(days / 30)}月前`
-}
-</script>
