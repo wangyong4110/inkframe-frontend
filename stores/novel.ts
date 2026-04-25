@@ -73,8 +73,8 @@ export const useNovelStore = defineStore('novel', {
           ...this.filters,
         })
 
-        this.novels = response.data
-        this.pagination.total = response.total
+        this.novels = response.data.items
+        this.pagination.total = response.data.total
       } catch (e: any) {
         this.error = e.message || 'Failed to fetch novels'
       } finally {

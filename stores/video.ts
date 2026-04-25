@@ -44,9 +44,9 @@ export const useVideoStore = defineStore('video', {
     },
 
     generationProgressPercent: (state) => {
-      const { currentShot, totalShots } = state.generationProgress
-      if (totalShots === 0) return 0
-      return Math.round((currentShot / totalShots) * 100)
+      const p = state.generationProgress
+      if (p.totalShots === 0) return 0
+      return Math.round((p.currentShot / p.totalShots) * 100)
     },
   },
 
@@ -58,7 +58,7 @@ export const useVideoStore = defineStore('video', {
       try {
         const api = useVideoApi()
         const response = await api.getVideos(params)
-        this.videos = response.data
+        this.videos = response.data.items
       } catch (e: any) {
         this.error = e.message || 'Failed to fetch videos'
       } finally {

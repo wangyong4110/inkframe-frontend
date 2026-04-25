@@ -1,15 +1,86 @@
 <script setup lang="ts">
-import type { Novel, Video, ApiResponse } from '~/types'
-import { VIDEO_PRESETS } from '~/composables/useStylePresets'
+import type { CrawlProgress } from '~/composables/useApi'
 
 const router = useRouter()
-const api = useApi()
+const route = useRoute()
+const { getCrawlStatus } = useCrawlApi()
+const { getNovels, getNovel } = useNovelApi()
 
 // 导入状态
 const importing = ref(false)
-const importingStep = ref(0)
 const importProgress = ref(0)
 const importResult = ref<any>(null)
+const importError = ref('')
+
+// 项目内追加模式：从 URL query ?novel_id=X 读取，锁定追加到该项目
+const lockedNovelId = computed(() => {
+  const v = route.query.novel_id
+  return v ? Number(v) : null
+})
+const lockedNovelTitle = ref('')
+
+// 手动追加模式（无 novel_id 时的可选功能）
+const appendMode = ref(false)
+const appendNovelId = ref<number | null>(null)
+const novelList = ref<Array<{ id: number; title: string }>>([])
+
+// 实际生效的 novel_id（锁定优先）
+const effectiveNovelId = computed(() =>
+  lockedNovelId.value ?? (appendMode.value ? appendNovelId.value : null)
+)
+
+async function loadNovels() {
+  try {
+    const res = await getNovels({ page_size: 100 })
+    if (res.code === 0 && res.data) {
+      novelList.value = res.data.items.map((n: any) => ({ id: n.id, title: n.title }))
+    }
+  } catch (_) {}
+}
+
+watch(appendMode, (val) => {
+  if (val && novelList.value.length === 0) loadNovels()
+  if (!val) appendNovelId.value = null
+})
+
+// 初始化：若有 novel_id，加载小说标题
+onMounted(async () => {
+  if (lockedNovelId.value) {
+    try {
+      const res = await getNovel(lockedNovelId.value)
+      if (res.code === 0 && res.data) lockedNovelTitle.value = res.data.title
+    } catch (_) {}
+  }
+})
+
+// 爬取进度
+const crawlStatus = ref<CrawlProgress | null>(null)
+const crawlPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+
+function startCrawlPoll(novelId: number) {
+  crawlPollTimer.value = setInterval(async () => {
+    try {
+      const res = await getCrawlStatus(novelId)
+      if (res.code === 0 && res.data) {
+        crawlStatus.value = res.data
+        if (res.data.status === 'completed' || res.data.status === 'failed') {
+          stopCrawlPoll()
+        }
+      }
+    } catch (_) {
+      // ignore poll errors
+    }
+  }, 2000)
+}
+
+function stopCrawlPoll() {
+  if (crawlPollTimer.value) {
+    clearInterval(crawlPollTimer.value)
+    crawlPollTimer.value = null
+  }
+}
+
+onUnmounted(() => stopCrawlPoll())
 
 // 表单数据
 const importForm = ref({
@@ -20,43 +91,10 @@ const importForm = ref({
   siteName: '',
 })
 
-// 视频配置
-const videoConfig = ref({
-  startChapter: 1,
-  endChapter: 0,
-  resolution: '1080p',
-  videoPreset: 'cinematic',
-  frameRate: 24,
-  aspectRatio: '16:9',
-  artStyle: 'anime',
-})
-
-watch(() => videoConfig.value.videoPreset, (id) => {
-  const preset = VIDEO_PRESETS.find(p => p.id === id)
-  if (preset) {
-    videoConfig.value.aspectRatio = preset.aspect_ratio
-    videoConfig.value.frameRate = preset.frame_rate
-  }
-})
-
-// 导入步骤
-const steps = [
-  { title: '选择来源', icon: 'upload' },
-  { title: '上传文件', icon: 'file' },
-  { title: '配置视频', icon: 'video' },
-  { title: '开始生成', icon: 'play' },
-]
-
 const sources = [
   { value: 'file', label: '本地文件', icon: 'folder', formats: 'TXT, MD, JSON, HTML' },
   { value: 'url', label: '网络链接', icon: 'link', formats: '支持大多数小说网站' },
   { value: 'crawl', label: '爬取小说', icon: 'globe', formats: '起点、晋江、纵横等' },
-]
-
-const resolutionOptions = [
-  { value: '720p', label: '720p (1280x720)' },
-  { value: '1080p', label: '1080p (1920x1080)' },
-  { value: '4k', label: '4K (3840x2160)' },
 ]
 
 // 文件上传
@@ -96,207 +134,135 @@ function handleDragOver(event: DragEvent) {
   event.preventDefault()
 }
 
-// 导入错误信息
-const importError = ref('')
+// 获取 auth header
+function getAuthHeader(): Record<string, string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 // 开始导入
 async function handleImport() {
   importing.value = true
-  importingStep.value = 0
   importProgress.value = 0
   importResult.value = null
   importError.value = ''
 
   try {
-    // 步骤1：导入小说
-    importingStep.value = 1
-    
+    importProgress.value = 20
+
     let result: any
-    
+
+    const novelId = effectiveNovelId.value
+
     if (importForm.value.source === 'file') {
-      // 文件导入
       const formData = new FormData()
-      if (importForm.value.file) {
-        formData.append('file', importForm.value.file)
-      }
+      if (importForm.value.file) formData.append('file', importForm.value.file)
       formData.append('format', importForm.value.format)
-      
+      if (novelId) formData.append('novel_id', String(novelId))
+
       const response = await fetch('/api/v1/import/novel/file', {
         method: 'POST',
+        headers: getAuthHeader(),
         body: formData,
       })
       result = await response.json()
     } else if (importForm.value.source === 'url') {
-      // URL导入
+      const body: Record<string, unknown> = { url: importForm.value.url }
+      if (novelId) body.novel_id = novelId
       const response = await fetch('/api/v1/import/novel/url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: importForm.value.url }),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify(body),
       })
       result = await response.json()
     } else {
-      // 爬取导入
+      const body: Record<string, unknown> = { url: importForm.value.url, site_name: importForm.value.siteName }
+      if (novelId) body.novel_id = novelId
       const response = await fetch('/api/v1/import/novel/crawl', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          url: importForm.value.url,
-          site_name: importForm.value.siteName,
-        }),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify(body),
       })
       result = await response.json()
     }
 
-    if (result.code !== 0) {
-      throw new Error(result.error || '导入失败')
-    }
-
-    importResult.value = result.data
-    importProgress.value = 30
-
-    // 步骤2：配置视频
-    importingStep.value = 2
-    importProgress.value = 40
-
-    // 步骤3：生成视频
-    importingStep.value = 3
-    importProgress.value = 50
-
-    const videoResponse = await fetch(`/api/v1/novels/${result.data.novel_id}/generate-video`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start_chapter: videoConfig.value.startChapter,
-        end_chapter: videoConfig.value.endChapter || undefined,
-        resolution: videoConfig.value.resolution,
-        frame_rate: videoConfig.value.frameRate,
-        aspect_ratio: videoConfig.value.aspectRatio,
-        art_style: videoConfig.value.artStyle,
-      }),
-    })
-
-    const videoResult = await videoResponse.json()
-    
-    if (videoResult.code !== 0) {
-      throw new Error(videoResult.error || '视频生成失败')
-    }
+    if (result.code !== 0) throw new Error(result.error || '导入失败')
 
     importProgress.value = 100
-    importingStep.value = 4
+    importResult.value = result.data
 
-    importResult.value.video = videoResult.data
-
+    // 爬取模式：后台异步爬取，启动进度轮询
+    if (importForm.value.source === 'crawl' && result.data?.novel_id) {
+      crawlStatus.value = null
+      startCrawlPoll(result.data.novel_id)
+    }
   } catch (error: any) {
-    console.error('Import failed:', error)
     importError.value = error.message || '导入失败'
   } finally {
     importing.value = false
   }
 }
 
-// 查看小说
 function viewNovel() {
   if (importResult.value?.novel_id) {
     router.push(`/novel/${importResult.value.novel_id}`)
   }
 }
 
-// 查看视频
-function viewVideo() {
-  if (importResult.value?.video?.video_id) {
-    router.push(`/video/${importResult.value.video.video_id}`)
+function startAnalyze() {
+  if (importResult.value?.novel_id) {
+    router.push(`/novel/${importResult.value.novel_id}?analyze=1`)
   }
 }
 
-// 重置
 function reset() {
-  importForm.value = {
-    source: 'file',
-    url: '',
-    file: null,
-    format: 'auto',
-    siteName: '',
-  }
-  videoConfig.value = {
-    startChapter: 1,
-    endChapter: 0,
-    resolution: '1080p',
-    videoPreset: 'cinematic',
-    frameRate: 24,
-    aspectRatio: '16:9',
-    artStyle: 'anime',
-  }
+  stopCrawlPoll()
+  importForm.value = { source: 'file', url: '', file: null, format: 'auto', siteName: '' }
   importResult.value = null
-  importingStep.value = 0
   importProgress.value = 0
   importError.value = ''
+  crawlStatus.value = null
+  // 非锁定模式才清空手动追加状态
+  if (!lockedNovelId.value) {
+    appendMode.value = false
+    appendNovelId.value = null
+  }
 }
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">导入小说</h1>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          从文件、链接或网站导入小说并生成视频
-        </p>
-      </div>
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">导入小说</h1>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        从文件、链接或网站导入小说内容
+      </p>
     </div>
 
-    <!-- Progress Steps -->
-    <div class="card p-6">
-      <div class="flex items-center justify-between">
-        <div 
-          v-for="(step, index) in steps" 
-          :key="index"
-          class="flex items-center"
-          :class="index < steps.length - 1 ? 'flex-1' : ''"
-        >
-          <div class="flex flex-col items-center">
-            <div 
-              class="w-10 h-10 rounded-full flex items-center justify-center font-medium"
-              :class="[
-                index + 1 <= importingStep 
-                  ? 'bg-primary-500 text-white' 
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
-              ]"
-            >
-              <svg v-if="index + 1 < importingStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-              <span v-else>{{ index + 1 }}</span>
-            </div>
-            <span 
-              class="mt-2 text-sm"
-              :class="index + 1 <= importingStep ? 'text-primary-600' : 'text-gray-500'"
-            >
-              {{ step.title }}
-            </span>
-          </div>
-          <div 
-            v-if="index < steps.length - 1" 
-            class="flex-1 h-0.5 mx-4"
-            :class="index + 1 < importingStep ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700'"
-          ></div>
-        </div>
-      </div>
+    <!-- 锁定追加模式 Banner -->
+    <div v-if="lockedNovelId" class="card p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 flex items-center gap-3">
+      <svg class="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <p class="text-sm text-blue-700 dark:text-blue-300">
+        导入内容将自动追加到项目
+        <span class="font-semibold">「{{ lockedNovelTitle || `#${lockedNovelId}` }}」</span>
+        中，不会新建项目
+      </p>
+    </div>
 
-      <!-- Progress Bar -->
-      <div v-if="importing" class="mt-6">
-        <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div 
-            class="h-full bg-primary-500 transition-all duration-300"
-            :style="{ width: `${importProgress}%` }"
-          ></div>
-        </div>
-        <p class="mt-2 text-sm text-gray-500 text-center">
-          {{ importProgress < 30 ? '正在导入小说...' : 
-             importProgress < 50 ? '正在配置视频参数...' :
-             importProgress < 100 ? '正在生成视频...' : '完成！' }}
-        </p>
+    <!-- Progress Bar -->
+    <div v-if="importing" class="card p-4">
+      <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          class="h-full bg-primary-500 transition-all duration-300"
+          :style="{ width: `${importProgress}%` }"
+        />
       </div>
+      <p class="mt-2 text-sm text-gray-500 text-center">
+        {{ importProgress < 100 ? '正在导入小说...' : '完成！' }}
+      </p>
     </div>
 
     <!-- Source Selection -->
@@ -305,15 +271,13 @@ function reset() {
         v-for="source in sources"
         :key="source.value"
         class="card p-6 cursor-pointer transition-all"
-        :class="[
-          importForm.source === source.value 
-            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' 
-            : 'hover:border-gray-300 dark:hover:border-gray-600'
-        ]"
+        :class="importForm.source === source.value
+          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+          : 'hover:border-gray-300 dark:hover:border-gray-600'"
         @click="importForm.source = source.value"
       >
         <div class="flex items-center space-x-4">
-          <div 
+          <div
             class="w-12 h-12 rounded-lg flex items-center justify-center"
             :class="importForm.source === source.value ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-800'"
           >
@@ -332,10 +296,7 @@ function reset() {
             <p class="text-sm text-gray-500">{{ source.formats }}</p>
           </div>
         </div>
-        <div 
-          v-if="importForm.source === source.value" 
-          class="mt-4 flex items-center text-primary-600"
-        >
+        <div v-if="importForm.source === source.value" class="mt-4 flex items-center text-primary-600">
           <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
@@ -349,22 +310,14 @@ function reset() {
       <!-- File Upload -->
       <div v-if="importForm.source === 'file'" class="space-y-4">
         <h3 class="font-semibold text-gray-900 dark:text-white">上传文件</h3>
-        
-        <div 
-          class="border-2 border-dashed rounded-lg p-8 text-center"
+        <div
+          class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer"
           :class="importForm.file ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-primary-400'"
           @drop="handleDrop"
           @dragover="handleDragOver"
           @click="fileInput?.click()"
         >
-          <input 
-            ref="fileInput"
-            type="file" 
-            class="hidden" 
-            accept=".txt,.md,.json,.html,.htm"
-            @change="handleFileSelect"
-          />
-          
+          <input ref="fileInput" type="file" class="hidden" accept=".txt,.md,.json,.html,.htm" @change="handleFileSelect" />
           <div v-if="importForm.file" class="space-y-2">
             <svg class="w-12 h-12 mx-auto text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -372,7 +325,6 @@ function reset() {
             <p class="font-medium text-gray-900 dark:text-white">{{ importForm.file.name }}</p>
             <p class="text-sm text-gray-500">点击或拖拽重新选择</p>
           </div>
-          
           <div v-else class="space-y-2">
             <svg class="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -381,11 +333,8 @@ function reset() {
             <p class="text-sm text-gray-500">支持 TXT, MD, JSON, HTML 格式</p>
           </div>
         </div>
-
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            文件格式
-          </label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">文件格式</label>
           <select v-model="importForm.format" class="input w-48">
             <option value="auto">自动检测</option>
             <option value="txt">TXT</option>
@@ -394,123 +343,66 @@ function reset() {
             <option value="html">HTML</option>
           </select>
         </div>
+
+        <!-- 手动追加模式（项目内锁定时隐藏） -->
+        <div v-if="!lockedNovelId" class="border-t border-gray-200 dark:border-gray-700 pt-4">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input v-model="appendMode" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">追加章节到已有小说</span>
+          </label>
+          <div v-if="appendMode" class="mt-3">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">选择目标小说</label>
+            <select v-model="appendNovelId" class="input">
+              <option :value="null">-- 请选择 --</option>
+              <option v-for="n in novelList" :key="n.id" :value="n.id">{{ n.title }}</option>
+            </select>
+            <p v-if="novelList.length === 0" class="mt-1 text-sm text-gray-500">正在加载小说列表...</p>
+          </div>
+        </div>
       </div>
 
       <!-- URL Import -->
-      <div v-if="importForm.source === 'url'" class="space-y-4">
+      <div v-else-if="importForm.source === 'url'" class="space-y-4">
         <h3 class="font-semibold text-gray-900 dark:text-white">网络链接</h3>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            小说 URL
-          </label>
-          <input 
-            v-model="importForm.url" 
-            type="url" 
-            class="input" 
-            placeholder="https://example.com/novel/xxx"
-          />
-          <p class="mt-1 text-sm text-gray-500">
-            支持大多数小说网站的 URL
-          </p>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说 URL</label>
+          <input v-model="importForm.url" type="url" class="input" placeholder="https://example.com/novel/xxx" />
+          <p class="mt-1 text-sm text-gray-500">支持大多数小说网站的 URL</p>
         </div>
       </div>
 
       <!-- Crawl -->
-      <div v-if="importForm.source === 'crawl'" class="space-y-4">
+      <div v-else class="space-y-4">
         <h3 class="font-semibold text-gray-900 dark:text-white">爬取小说</h3>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            小说页面 URL
-          </label>
-          <input 
-            v-model="importForm.url" 
-            type="url" 
-            class="input" 
-            placeholder="https://www.qidian.com/xxx"
-          />
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说页面 URL</label>
+          <input v-model="importForm.url" type="url" class="input" placeholder="https://www.qidian.com/xxx" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            站点名称（可选）
-          </label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">站点名称（可选）</label>
           <select v-model="importForm.siteName" class="input">
             <option value="">自动检测</option>
             <option value="qidian">起点中文网</option>
             <option value="jjwxc">晋江文学城</option>
             <option value="zongheng">纵横中文网</option>
+            <option value="qimao">七猫小说</option>
           </select>
         </div>
-      </div>
-    </div>
-
-    <!-- Video Config -->
-    <div class="card p-6 space-y-6">
-      <h3 class="font-semibold text-gray-900 dark:text-white">视频配置</h3>
-      <div class="grid gap-6 md:grid-cols-2">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            开始章节
-          </label>
-          <input
-            v-model.number="videoConfig.startChapter"
-            type="number"
-            min="1"
-            class="input"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            结束章节（0 表示全部）
-          </label>
-          <input
-            v-model.number="videoConfig.endChapter"
-            type="number"
-            min="0"
-            class="input"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            分辨率
-          </label>
-          <select v-model="videoConfig.resolution" class="input">
-            <option v-for="opt in resolutionOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          视频格式
-        </label>
-        <StylePicker type="video" v-model="videoConfig.videoPreset" compact />
-        <p class="mt-1 text-xs text-gray-400">选择后自动设置宽高比和帧率</p>
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          图片风格
-        </label>
-        <StylePicker type="image" v-model="videoConfig.artStyle" compact />
       </div>
     </div>
 
     <!-- Actions -->
     <div class="flex justify-between">
-      <button class="btn-outline" @click="reset">
-        重置
-      </button>
-      <button 
+      <button class="btn-secondary" @click="reset">重置</button>
+      <button
         class="btn-primary"
-        :disabled="importing || !importForm.url && !importForm.file"
+        :disabled="importing || (!importForm.url && !importForm.file) || (appendMode && !appendNovelId)"
         @click="handleImport"
       >
         <svg v-if="importing" class="w-5 h-5 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
-        {{ importing ? '处理中...' : '导入并生成视频' }}
+        {{ importing ? '导入中...' : '开始导入' }}
       </button>
     </div>
 
@@ -534,13 +426,40 @@ function reset() {
           </p>
         </div>
       </div>
-      <div class="flex space-x-4">
-        <button class="btn-primary" @click="viewNovel">
-          查看小说
-        </button>
-        <button v-if="importResult.video" class="btn-outline" @click="viewVideo">
-          查看视频
-        </button>
+      <div class="flex gap-3">
+        <button class="btn-secondary" @click="viewNovel">查看项目</button>
+        <button class="btn-primary" @click="startAnalyze">开始 AI 分析 →</button>
+      </div>
+    </div>
+
+    <!-- Crawl Progress Panel -->
+    <div v-if="crawlStatus" class="card p-6">
+      <h3 class="font-semibold text-gray-900 dark:text-white mb-3">后台爬取进度</h3>
+      <div class="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
+        <span>{{ crawlStatus.current || '正在爬取...' }}</span>
+        <span>{{ crawlStatus.done }} / {{ crawlStatus.total }} 章</span>
+      </div>
+      <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          class="h-full transition-all duration-500"
+          :class="crawlStatus.status === 'failed' ? 'bg-red-500' : crawlStatus.status === 'completed' ? 'bg-green-500' : 'bg-primary-500'"
+          :style="{ width: `${crawlStatus.total > 0 ? Math.round((crawlStatus.done / crawlStatus.total) * 100) : 0}%` }"
+        />
+      </div>
+      <div class="mt-2 flex justify-between items-center">
+        <span
+          class="text-xs"
+          :class="{
+            'text-yellow-600': crawlStatus.status === 'running',
+            'text-green-600': crawlStatus.status === 'completed',
+            'text-red-600': crawlStatus.status === 'failed',
+            'text-gray-500': crawlStatus.status === 'paused',
+          }"
+        >
+          {{ { running: '爬取中', paused: '已暂停', completed: '爬取完成', failed: '部分失败' }[crawlStatus.status] }}
+          {{ crawlStatus.failed > 0 ? `（${crawlStatus.failed} 章失败）` : '' }}
+        </span>
+        <span class="text-xs text-gray-500">章节内容将在爬取完成后自动生成 AI 摘要</span>
       </div>
     </div>
   </div>

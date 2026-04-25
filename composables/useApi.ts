@@ -10,17 +10,23 @@ import type {
   ModelProvider,
   McpTool,
   QualityReport,
+  Item,
+  EffectiveItem,
   CreateNovelForm,
   CreateChapterForm,
   CreateCharacterForm,
   CreateWorldviewForm,
   ApiResponse,
-  PaginatedResponse,
 } from '~/types'
 
 export const useApi = () => {
   const config = useRuntimeConfig()
   const apiBase = config.public.apiBase
+
+  const getAuthHeader = (): Record<string, string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
 
   const request = async <T>(
     endpoint: string,
@@ -31,6 +37,7 @@ export const useApi = () => {
     const defaultOptions: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
+        ...getAuthHeader(),
       },
     }
 
@@ -42,6 +49,10 @@ export const useApi = () => {
       response = await fetch(url, {
         ...defaultOptions,
         ...options,
+        headers: {
+          ...((defaultOptions.headers as Record<string, string>) || {}),
+          ...((options.headers as Record<string, string>) || {}),
+        },
         signal: controller.signal,
       })
     } finally {
@@ -56,8 +67,35 @@ export const useApi = () => {
     return response.json()
   }
 
+  const requestBlob = async (endpoint: string, options: RequestInit = {}): Promise<Blob> => {
+    const url = `${apiBase}${endpoint}`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 120_000)
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          ...getAuthHeader(),
+          ...((options.headers as Record<string, string>) || {}),
+        },
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`)
+    }
+
+    return response.blob()
+  }
+
   return {
     request,
+    requestBlob,
   }
 }
 
@@ -78,7 +116,7 @@ export const useNovelApi = () => {
     if (params?.genre) searchParams.set('genre', params.genre)
 
     const query = searchParams.toString()
-    return request<PaginatedResponse<Novel>>(`/novels${query ? `?${query}` : ''}`)
+    return request<ApiResponse<{ items: Novel[], total: number, page: number, page_size: number, total_page: number }>>(`/novels${query ? `?${query}` : ''}`)
   }
 
   const getNovel = (id: number) =>
@@ -216,7 +254,7 @@ export const useWorldviewApi = () => {
     if (params?.genre) searchParams.set('genre', params.genre)
 
     const query = searchParams.toString()
-    return request<PaginatedResponse<Worldview>>(`/worldviews${query ? `?${query}` : ''}`)
+    return request<ApiResponse<{ items: Worldview[], total: number, page: number, page_size: number, total_page: number }>>(`/worldviews${query ? `?${query}` : ''}`)
   }
 
   const getWorldview = (id: number) =>
@@ -277,7 +315,7 @@ export const useWorldviewApi = () => {
 
 // Video API
 export const useVideoApi = () => {
-  const { request } = useApi()
+  const { request, requestBlob } = useApi()
 
   const getVideos = (params?: { novel_id?: number; page?: number; page_size?: number }) => {
     const searchParams = new URLSearchParams()
@@ -286,7 +324,7 @@ export const useVideoApi = () => {
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString())
 
     const query = searchParams.toString()
-    return request<PaginatedResponse<Video>>(`/videos${query ? `?${query}` : ''}`)
+    return request<ApiResponse<{ items: Video[], total: number, page: number, page_size: number, total_page: number }>>(`/videos${query ? `?${query}` : ''}`)
   }
 
   const getVideo = (id: number) =>
@@ -332,6 +370,9 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
+  const exportCapcut = (id: number) =>
+    requestBlob(`/videos/${id}/export/capcut`)
+
   return {
     getVideos,
     getVideo,
@@ -343,6 +384,7 @@ export const useVideoApi = () => {
     updateStoryboardShot,
     generateShot,
     batchGenerateShots,
+    exportCapcut,
   }
 }
 
@@ -463,6 +505,51 @@ export const useAuthApi = () => {
   }
 }
 
+// Analysis API
+export interface AnalysisStatus {
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number
+  step: string
+  error?: string
+}
+
+export const useAnalysisApi = () => {
+  const { request } = useApi()
+
+  const startAnalysis = (novelId: number, body?: { create_chapter_outlines?: boolean }) =>
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/analyze`, {
+      method: 'POST',
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+
+  const getAnalysisStatus = (novelId: number, taskId: string) =>
+    request<ApiResponse<AnalysisStatus>>(`/novels/${novelId}/analyze/status?task_id=${taskId}`)
+
+  return { startAnalysis, getAnalysisStatus }
+}
+
+// Crawl API
+export interface CrawlProgress {
+  novel_id: number
+  status: 'running' | 'paused' | 'completed' | 'failed'
+  total: number
+  done: number
+  failed: number
+  current: string
+}
+
+export const useCrawlApi = () => {
+  const { request } = useApi()
+
+  const getCrawlStatus = (novelId: number) =>
+    request<ApiResponse<CrawlProgress>>(`/novels/${novelId}/crawl/status`)
+
+  const resumeCrawl = (novelId: number) =>
+    request<ApiResponse<{ message: string }>>(`/novels/${novelId}/crawl/resume`, { method: 'POST' })
+
+  return { getCrawlStatus, resumeCrawl }
+}
+
 // Quality API
 export const useQualityApi = () => {
   const { request } = useApi()
@@ -546,5 +633,63 @@ export const useMcpApi = () => {
     bindMcpTool,
     unbindMcpTool,
     getMcpToolModels,
+  }
+}
+
+// Item API
+export const useItemApi = () => {
+  const { request } = useApi()
+
+  const listItems = (novelId: number) =>
+    request<ApiResponse<Item[]>>(`/novels/${novelId}/items`)
+
+  const createItem = (novelId: number, data: Partial<Item>) =>
+    request<ApiResponse<Item>>(`/novels/${novelId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const getItem = (id: number) =>
+    request<ApiResponse<Item>>(`/items/${id}`)
+
+  const updateItem = (id: number, data: Partial<Item>) =>
+    request<ApiResponse<Item>>(`/items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteItem = (id: number) =>
+    request<void>(`/items/${id}`, { method: 'DELETE' })
+
+  const generateItemImage = (id: number) =>
+    request<ApiResponse<Item>>(`/items/${id}/images`, { method: 'POST' })
+
+  const listEffectiveItems = (novelId: number, chapterNo: number) =>
+    request<ApiResponse<EffectiveItem[]>>(`/novels/${novelId}/chapters/${chapterNo}/items`)
+
+  const upsertChapterItem = (
+    novelId: number,
+    chapterNo: number,
+    itemId: number,
+    data: { location?: string; owner?: string; condition?: string; notes?: string },
+  ) =>
+    request<ApiResponse<EffectiveItem>>(`/novels/${novelId}/chapters/${chapterNo}/items/${itemId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const deleteChapterItem = (novelId: number, chapterNo: number, itemId: number) =>
+    request<void>(`/novels/${novelId}/chapters/${chapterNo}/items/${itemId}`, { method: 'DELETE' })
+
+  return {
+    listItems,
+    createItem,
+    getItem,
+    updateItem,
+    deleteItem,
+    generateItemImage,
+    listEffectiveItems,
+    upsertChapterItem,
+    deleteChapterItem,
   }
 }

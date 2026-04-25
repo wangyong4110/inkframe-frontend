@@ -318,6 +318,48 @@ export interface ReviewTask {
 export type ReviewStatus = 'pending' | 'in_progress' | 'completed' | 'rejected'
 
 // API Response types
+// Item types
+export type ItemCategory = 'weapon' | 'treasure' | 'tool' | 'document' | 'artifact' | 'other'
+export type ItemStatus = 'active' | 'lost' | 'destroyed' | 'unknown'
+
+export interface Item {
+  id: number
+  novel_id: number
+  uuid: string
+  name: string
+  category: ItemCategory
+  description?: string
+  appearance?: string
+  location?: string
+  owner?: string
+  significance?: string
+  abilities?: string // JSON
+  image_url?: string
+  visual_prompt?: string
+  status: ItemStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ChapterItem {
+  id: number
+  item_id: number
+  chapter_id: number
+  novel_id: number
+  location?: string
+  owner?: string
+  condition?: string // intact/damaged/broken/destroyed
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EffectiveItem extends Item {
+  chapter_override?: ChapterItem
+  effective_location: string
+  effective_owner: string
+}
+
 export interface ApiResponse<T> {
   data: T
   message?: string

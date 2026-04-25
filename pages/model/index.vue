@@ -32,6 +32,30 @@ const providerForm = ref({
   api_endpoint: '', api_key: '', api_version: '', is_active: true,
 })
 
+const PROVIDER_OPTIONS = [
+  { name: 'openai',      label: 'OpenAI',            endpoint: 'https://api.openai.com/v1',                                    type: 'llm' },
+  { name: 'anthropic',   label: 'Anthropic',          endpoint: 'https://api.anthropic.com',                                    type: 'llm' },
+  { name: 'google',      label: 'Google',             endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      type: 'llm' },
+  { name: 'doubao',      label: '豆包（字节跳动）',    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                    type: 'llm' },
+  { name: 'deepseek',    label: 'DeepSeek',           endpoint: 'https://api.deepseek.com/v1',                                  type: 'llm' },
+  { name: 'qwen',        label: '通义千问（阿里云）',  endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           type: 'llm' },
+  { name: 'moonshot',    label: 'Moonshot（Kimi）',   endpoint: 'https://api.moonshot.cn/v1',                                   type: 'llm' },
+  { name: 'zhipu',       label: '智谱 AI',            endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         type: 'llm' },
+  { name: 'siliconflow', label: '硅基流动',            endpoint: 'https://api.siliconflow.cn/v1',                               type: 'llm' },
+  { name: 'stepfun',     label: '阶跃星辰',            endpoint: 'https://api.stepfun.com/v1',                                  type: 'llm' },
+  { name: 'minimax',     label: 'MiniMax',            endpoint: 'https://api.minimax.chat/v1',                                  type: 'llm' },
+  { name: 'baidu',       label: '百度文心',            endpoint: 'https://qianfan.baidubce.com/v2',                             type: 'llm' },
+  { name: 'azure',       label: 'Azure OpenAI',       endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', type: 'llm' },
+  { name: 'custom',      label: '自定义',              endpoint: '',                                                            type: 'llm' },
+]
+
+function onProviderSelect() {
+  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  if (!opt || opt.name === 'custom') return
+  if (!providerForm.value.display_name) providerForm.value.display_name = opt.label
+  if (!providerForm.value.api_endpoint) providerForm.value.api_endpoint = opt.endpoint
+}
+
 const PROVIDER_COLORS: Record<string, string> = {
   openai:    'bg-emerald-100 text-emerald-700',
   anthropic: 'bg-purple-100  text-purple-700',
@@ -39,6 +63,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   doubao:    'bg-orange-100  text-orange-700',
   deepseek:  'bg-cyan-100    text-cyan-700',
   qianwen:   'bg-rose-100    text-rose-700',
+  azure:     'bg-sky-100     text-sky-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
@@ -570,7 +595,10 @@ watch(activeTab, (tab) => {
                   <span class="ml-1 text-xs text-gray-400 font-normal">（唯一，创建后不可修改）</span>
                 </label>
                 <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
-                <input v-else v-model="providerForm.name" type="text" class="input" placeholder="openai / anthropic / google / doubao" />
+                <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
+                  <option value="" disabled>请选择提供商</option>
+                  <option v-for="opt in PROVIDER_OPTIONS" :key="opt.name" :value="opt.name">{{ opt.label }}（{{ opt.name }}）</option>
+                </select>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
