@@ -48,5 +48,24 @@ export default defineNuxtConfig({
     preset: 'node-server',
   },
 
+  // macOS 11 / Safari 14 compatibility
+  vite: {
+    build: {
+      // Transpile to ES2020; Safari 14 lacks logical-assignment (&&=, ||=, ??=)
+      target: ['es2020', 'safari14'],
+    },
+  },
+
+  postcss: {
+    plugins: {
+      // autoprefixer reads browserslist from package.json and adds
+      // -webkit-backdrop-filter and other vendor prefixes for Safari 14
+      autoprefixer: {},
+      // Polyfill CSS @layer — Tailwind v3 outputs @layer rules which
+      // Safari 14 does not recognise (supported only from Safari 15.4)
+      '@csstools/postcss-cascade-layers': {},
+    },
+  },
+
   compatibilityDate: '2024-01-01',
 })
