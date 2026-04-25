@@ -18,9 +18,8 @@ import type {
   PaginatedResponse,
 } from '~/types'
 
-const config = useRuntimeConfig()
-
 export const useApi = () => {
+  const config = useRuntimeConfig()
   const apiBase = config.public.apiBase
 
   const request = async <T>(
