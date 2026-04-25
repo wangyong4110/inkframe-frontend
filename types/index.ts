@@ -343,6 +343,7 @@ export interface CreateNovelForm {
   description?: string
   genre: NovelGenre
   worldview_id?: number
+  cover_image?: string
 }
 
 export interface CreateChapterForm {

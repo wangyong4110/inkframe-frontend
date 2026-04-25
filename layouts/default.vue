@@ -1,6 +1,16 @@
 <script setup lang="ts">
 const route = useRoute()
+const authStore = useAuthStore()
 const isDark = ref(false)
+const showUserMenu = ref(false)
+
+// Close dropdown on click outside
+onMounted(() => {
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement
+    if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
+  })
+})
 
 const toggleDark = () => {
   isDark.value = !isDark.value
@@ -85,13 +95,59 @@ const breadcrumbs = computed(() => {
             </button>
 
             <!-- User Menu -->
-            <div class="relative">
-              <button class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
-                  <span class="text-white text-sm font-medium">Y</span>
+            <div v-if="authStore.isLoggedIn" class="relative user-menu-wrapper">
+              <button
+                @click="showUserMenu = !showUserMenu"
+                class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center overflow-hidden">
+                  <img
+                    v-if="authStore.user?.avatar"
+                    :src="authStore.user.avatar"
+                    class="w-full h-full object-cover"
+                    alt="avatar"
+                  />
+                  <span v-else class="text-white text-sm font-medium">
+                    {{ (authStore.user?.nickname || authStore.user?.username || 'U')[0].toUpperCase() }}
+                  </span>
                 </div>
-                <span class="hidden sm:block text-sm text-gray-700 dark:text-gray-300">用户</span>
+                <span class="hidden sm:block text-sm text-gray-700 dark:text-gray-300">
+                  {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
+                </span>
               </button>
+              <!-- Dropdown -->
+              <div
+                v-if="showUserMenu"
+                class="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50"
+              >
+                <NuxtLink
+                  to="/profile"
+                  class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  @click="showUserMenu = false"
+                >
+                  个人资料
+                </NuxtLink>
+                <button
+                  class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  @click="authStore.logout(); showUserMenu = false"
+                >
+                  退出登录
+                </button>
+              </div>
+            </div>
+            <div v-else class="flex items-center space-x-2">
+              <NuxtLink
+                to="/auth/login"
+                class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+              >
+                登录
+              </NuxtLink>
+              <NuxtLink
+                to="/auth/register"
+                class="px-3 py-1.5 text-sm bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              >
+                注册
+              </NuxtLink>
             </div>
           </div>
         </div>

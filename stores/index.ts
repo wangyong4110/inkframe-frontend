@@ -7,6 +7,7 @@ import { useChapterStore } from './chapter'
 import { useCharacterStore } from './character'
 import { useVideoStore } from './video'
 import { useTenantStore } from './tenant'
+import { useAuthStore } from './auth'
 
 export {
   useNovelStore,
@@ -14,6 +15,7 @@ export {
   useCharacterStore,
   useVideoStore,
   useTenantStore,
+  useAuthStore,
 }
 
 // 便捷的 default export（可选使用）
@@ -23,4 +25,5 @@ export default {
   character: useCharacterStore,
   video: useVideoStore,
   tenant: useTenantStore,
+  auth: useAuthStore,
 }

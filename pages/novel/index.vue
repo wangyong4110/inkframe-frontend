@@ -97,6 +97,26 @@ function formatNumber(num: number): string {
   return num.toLocaleString()
 }
 
+const iconGradients: Record<string, string> = {
+  purple: 'linear-gradient(135deg,#8B5CF6,#3B82F6)',
+  blue:   'linear-gradient(135deg,#3B82F6,#06B6D4)',
+  green:  'linear-gradient(135deg,#10B981,#84CC16)',
+  orange: 'linear-gradient(135deg,#F59E0B,#EF4444)',
+  red:    'linear-gradient(135deg,#EF4444,#EC4899)',
+  pink:   'linear-gradient(135deg,#EC4899,#8B5CF6)',
+  teal:   'linear-gradient(135deg,#14B8A6,#3B82F6)',
+  indigo: 'linear-gradient(135deg,#6366F1,#8B5CF6)',
+  amber:  'linear-gradient(135deg,#F59E0B,#84CC16)',
+  cyan:   'linear-gradient(135deg,#06B6D4,#10B981)',
+}
+
+function novelIconStyle(coverImage?: string): string {
+  if (coverImage && iconGradients[coverImage]) {
+    return `background:${iconGradients[coverImage]}`
+  }
+  return 'background:linear-gradient(135deg,#8B5CF6,#3B82F6)'
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   const now = new Date()
@@ -187,9 +207,12 @@ function formatDate(dateStr: string): string {
         class="card overflow-hidden hover:shadow-medium transition-shadow cursor-pointer"
         @click="goToNovel(novel.id)"
       >
-        <!-- Cover placeholder -->
-        <div class="h-32 bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
-          <span class="text-4xl font-bold text-white opacity-50">{{ novel.title.charAt(0) }}</span>
+        <!-- Cover / icon -->
+        <div
+          class="h-32 flex items-center justify-center"
+          :style="novelIconStyle(novel.cover_image)"
+        >
+          <span class="text-4xl font-bold text-white opacity-60">{{ novel.title.charAt(0) }}</span>
         </div>
         <div class="p-4">
           <div class="flex items-start justify-between mb-2">
