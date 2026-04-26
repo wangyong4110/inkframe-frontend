@@ -93,9 +93,24 @@ export const useApi = () => {
     return response.blob()
   }
 
+  // Upload a single file as multipart/form-data and return response.data.
+  const requestMultipart = async <T>(endpoint: string, file: File): Promise<T> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${apiBase}${endpoint}`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+      body: form,
+    })
+    const json = await res.json().catch(() => ({ message: 'Upload failed' }))
+    if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)
+    return json.data
+  }
+
   return {
     request,
     requestBlob,
+    requestMultipart,
   }
 }
 
@@ -215,7 +230,7 @@ export const useChapterApi = () => {
 
 // Character API
 export const useCharacterApi = () => {
-  const { request } = useApi()
+  const { request, requestMultipart } = useApi()
 
   const getCharacters = (novelId: number) =>
     request<ApiResponse<Character[]>>(`/novels/${novelId}/characters`)
@@ -259,24 +274,8 @@ export const useCharacterApi = () => {
       error?: string
     }>>(`/characters/${id}/three-view/${taskId}`)
 
-  const uploadPortrait = async (id: number, file: File): Promise<{ url: string; character: Character }> => {
-    const config = useRuntimeConfig()
-    const apiBase = config.public.apiBase
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${apiBase}/characters/${id}/portrait/upload`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: 'Upload failed' }))
-      throw new Error(err.message || `HTTP ${res.status}`)
-    }
-    const json = await res.json()
-    return json.data
-  }
+  const uploadPortrait = (id: number, file: File) =>
+    requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
   return {
     getCharacters,
@@ -709,7 +708,7 @@ export const useMcpApi = () => {
 
 // Item API
 export const useItemApi = () => {
-  const { request } = useApi()
+  const { request, requestMultipart } = useApi()
 
   const listItems = (novelId: number) =>
     request<ApiResponse<Item[]>>(`/novels/${novelId}/items`)
@@ -731,6 +730,12 @@ export const useItemApi = () => {
 
   const deleteItem = (id: number) =>
     request<void>(`/items/${id}`, { method: 'DELETE' })
+
+  const uploadItemImage = (id: number, file: File) =>
+    requestMultipart<{ url: string; item: Item }>(`/items/${id}/image/upload`, file)
+
+  const uploadItemReference = (id: number, file: File) =>
+    requestMultipart<{ url: string; item: Item }>(`/items/${id}/reference/upload`, file)
 
   const generateItemImage = (id: number, referenceImageUrl?: string, provider?: string) =>
     request<ApiResponse<{ task_id: string }>>(`/items/${id}/images`, {
@@ -769,6 +774,8 @@ export const useItemApi = () => {
     getItem,
     updateItem,
     deleteItem,
+    uploadItemImage,
+    uploadItemReference,
     generateItemImage,
     getItemImageTaskStatus,
     listEffectiveItems,

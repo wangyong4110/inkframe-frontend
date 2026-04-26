@@ -360,7 +360,7 @@ function getRoleLabel(role: string): string {
         </div>
 
         <!-- Image provider selector -->
-        <div v-if="imageProviders.length > 0">
+        <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图像生成模型</label>
           <select v-model="selectedImageProvider" class="input w-48">
             <option v-for="p in imageProviders" :key="p.name" :value="p.name">

@@ -37,6 +37,7 @@ export interface Chapter {
   hook_type?: string      // 章末钩子类型（cliffhanger 等）
   word_count: number
   outline?: string
+  scene_outline?: string   // JSON: [{scene_no, pov, goals, beats, tension}]
   plot_points?: PlotPoint[]
   status: ChapterStatus
   quality_score?: number
@@ -48,6 +49,8 @@ export type ChapterStatus = 'draft' | 'generating' | 'completed' | 'published'
 
 export interface PlotPoint {
   id: number
+  tenant_id: number
+  novel_id: number
   chapter_id: number
   type: PlotPointType
   description: string
@@ -55,6 +58,8 @@ export interface PlotPoint {
   locations?: string[]
   is_resolved: boolean
   resolved_in?: number
+  created_at: string
+  updated_at: string
 }
 
 export type PlotPointType = 'conflict' | 'climax' | 'resolution' | 'twist' | 'foreshadow'
@@ -339,6 +344,7 @@ export interface Item {
   abilities?: string // JSON
   image_url?: string
   visual_prompt?: string
+  reference_image_url?: string
   status: ItemStatus
   created_at: string
   updated_at: string

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import type { Item } from '~/types'
 import { useItemApi, useModelApi } from '~/composables/useApi'
-import { useImageUpload } from '~/composables/useImageUpload'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const itemApi = useItemApi()
-const { uploading: uploadingRef, uploadImage } = useImageUpload()
 
 const itemId = parseInt(route.params.id as string)
 const novelId = parseInt(route.query.novelId as string)
@@ -68,24 +66,82 @@ async function pollImageTask() {
   }
 }
 
-onUnmounted(clearImageTaskTimer)
+function revokeIfBlob(url: string) {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+onUnmounted(() => {
+  clearImageTaskTimer()
+  revokeIfBlob(referenceImagePreview.value)
+  revokeIfBlob(imageUrl.value)
+})
+
+// 本地上传物品图片
+const uploadingImage = ref(false)
+const imageFileInputRef = ref<HTMLInputElement | null>(null)
+
+async function handleImageUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  // Show local preview immediately — no need to wait for server response.
+  const localPreview = URL.createObjectURL(file)
+  const prevUrl = imageUrl.value
+  imageUrl.value = localPreview
+  uploadingImage.value = true
+  try {
+    const data = await itemApi.uploadItemImage(itemId, file)
+    // Replace ObjectURL with the persisted server URL.
+    URL.revokeObjectURL(localPreview)
+    imageUrl.value = data.url
+    toast.success('图片上传成功')
+  } catch (err: any) {
+    URL.revokeObjectURL(localPreview)
+    imageUrl.value = prevUrl   // restore on failure
+    toast.error('上传失败：' + (err.message || '未知错误'))
+  } finally {
+    uploadingImage.value = false
+    if (imageFileInputRef.value) imageFileInputRef.value.value = ''
+  }
+}
 
 // 参考图片
-const referenceImageUrl = ref('')
+const referenceImageUrl = ref('')      // 服务端绝对 URL（OSS），用于 AI 调用
+const referenceImagePreview = ref('')  // 预览用 URL（ObjectURL 或 OSS URL）
+const uploadingRef = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function clearReferenceImage() {
+  revokeIfBlob(referenceImagePreview.value)
+  referenceImageUrl.value = ''
+  referenceImagePreview.value = ''
+}
 
 async function handleReferenceUpload(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
+  // 立即显示本地预览，不依赖服务端 URL
+  const localPreview = URL.createObjectURL(file)
+  referenceImagePreview.value = localPreview
+  uploadingRef.value = true
   try {
-    referenceImageUrl.value = await uploadImage(file)
+    // 使用物品专属上传接口，将参考图 URL 存入 item.reference_image_url
+    const data = await itemApi.uploadItemReference(itemId, file)
+    referenceImageUrl.value = data.url
+    // 若服务端返回了绝对 URL，用于更清晰的预览；否则保留 ObjectURL
+    if (data.url.startsWith('http')) {
+      URL.revokeObjectURL(localPreview)
+      referenceImagePreview.value = data.url
+    }
     toast.success('参考图片上传成功')
   } catch (err: any) {
+    clearReferenceImage()
     toast.error('上传失败：' + (err.message || '未知错误'))
   } finally {
+    uploadingRef.value = false
     if (fileInputRef.value) fileInputRef.value.value = ''
   }
 }
+
 
 // ── Abilities JSON structure ──────────────────────────────────────────────────
 interface PowerStat { key: string; value: string }
@@ -264,6 +320,11 @@ onMounted(async () => {
     }
     abilities.value = parseAbilities(item.abilities ?? '')
     imageUrl.value = item.image_url ?? ''
+    // 恢复已存的参考图（仅绝对 URL 可用于预览和 AI 调用）
+    if (item.reference_image_url?.startsWith('http')) {
+      referenceImageUrl.value = item.reference_image_url
+      referenceImagePreview.value = item.reference_image_url
+    }
   } catch (e: any) {
     toast.error('加载物品失败：' + (e.message || '未知错误'))
   }
@@ -570,7 +631,7 @@ function goBack() {
               </div>
             </div>
             <!-- 图像模型选择 -->
-            <div v-if="imageProviders.length > 0">
+            <div>
               <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">图像生成模型</label>
               <select v-model="selectedImageProvider" class="input text-sm py-1.5 w-48">
                 <option v-for="p in imageProviders" :key="p.name" :value="p.name">
@@ -581,15 +642,15 @@ function goBack() {
             <!-- 参考图片上传 -->
             <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
               <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">参考图片（可选）</p>
-              <div v-if="referenceImageUrl" class="flex items-center gap-3 mb-2">
-                <img :src="referenceImageUrl" class="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700 flex-shrink-0" alt="参考图" />
+              <div v-if="referenceImagePreview" class="flex items-center gap-3 mb-2">
+                <img :src="referenceImagePreview" class="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700 flex-shrink-0" alt="参考图" />
                 <div class="flex-1 min-w-0">
                   <p class="text-xs text-gray-500 truncate">已上传参考图</p>
                   <p class="text-xs text-gray-400">AI 生成时将以此为视觉参考</p>
                 </div>
                 <button
                   class="text-xs text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                  @click="referenceImageUrl = ''"
+                  @click="clearReferenceImage"
                 >清除</button>
               </div>
               <div v-else class="flex items-center gap-2">
@@ -618,7 +679,30 @@ function goBack() {
               </div>
             </div>
 
-            <div class="flex gap-2 pt-2">
+            <div class="flex flex-wrap gap-2 pt-2">
+              <!-- 本地上传 -->
+              <input
+                ref="imageFileInputRef"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                class="hidden"
+                @change="handleImageUpload"
+              />
+              <button
+                class="btn-secondary flex items-center gap-2"
+                :disabled="uploadingImage"
+                @click="imageFileInputRef?.click()"
+              >
+                <svg v-if="uploadingImage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                {{ uploadingImage ? '上传中…' : '本地上传' }}
+              </button>
+              <!-- AI 生成 -->
               <button
                 class="btn-primary flex items-center gap-2"
                 :disabled="generatingImage || saving"

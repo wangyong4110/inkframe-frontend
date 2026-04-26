@@ -41,7 +41,8 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    '/api/**': { proxy: { to: 'http://localhost:8080/api/**' } },
+    '/api/**':     { proxy: { to: 'http://localhost:8080/api/**' } },
+    '/uploads/**': { proxy: { to: 'http://localhost:8080/uploads/**' } },
   },
 
   nitro: {
