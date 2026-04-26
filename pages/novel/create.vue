@@ -36,13 +36,24 @@ const channelOptions = [
   { label: '出版图书', value: 'publish' },
 ]
 const genreOptions = [
-  { label: '玄幻', value: 'fantasy' },
-  { label: '仙侠', value: 'xianxia' },
-  { label: '都市', value: 'urban' },
-  { label: '科幻', value: 'scifi' },
-  { label: '言情', value: 'romance' },
-  { label: '悬疑', value: 'mystery' },
-  { label: '历史', value: 'historical' },
+  { label: '玄幻奇幻', value: 'fantasy' },
+  { label: '仙侠修仙', value: 'xianxia' },
+  { label: '都市现代', value: 'urban' },
+  { label: '言情爱情', value: 'romance' },
+  { label: '历史古代', value: 'historical' },
+  { label: '科幻未来', value: 'scifi' },
+  { label: '悬疑推理', value: 'mystery' },
+  { label: '武侠江湖', value: 'wuxia' },
+  { label: '灵异恐怖', value: 'horror' },
+  { label: '游戏竞技', value: 'game' },
+  { label: '军事战争', value: 'military' },
+  { label: '体育竞技', value: 'sports' },
+  { label: '青春校园', value: 'campus' },
+  { label: '末世废土', value: 'apocalypse' },
+  { label: '重生穿越', value: 'rebirth' },
+  { label: '宫斗宅斗', value: 'palace' },
+  { label: '系统流', value: 'system' },
+  { label: '其他', value: 'other' },
 ]
 const wordCountOptions = [
   { label: '5万字', value: 50000 },
@@ -73,6 +84,7 @@ const aiError = ref('')
 
 async function submitAI() {
   if (!aiForm.title.trim()) { aiError.value = '请输入小说名称'; return }
+  if (!aiForm.description.trim()) { aiError.value = '请填写作品概要'; return }
   aiError.value = ''
   aiLoading.value = true
   try {
@@ -371,21 +383,20 @@ onUnmounted(() => stopCrawlPoll())
 
         <!-- 作品概要 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">作品概要</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">作品概要 <span class="text-red-500">*</span></label>
           <textarea
             v-model="aiForm.description"
             rows="3"
-            maxlength="500"
-            placeholder="简要描述故事背景、主角、核心冲突（可选，AI 会根据此生成大纲）"
+            placeholder="简要描述故事背景、主角、核心冲突，AI 会根据此生成大纲"
             class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm resize-none bg-white dark:bg-gray-700 dark:text-white"
           />
-          <p class="mt-1 text-xs text-gray-400 text-right">{{ aiForm.description.length }}/500</p>
+          <p class="mt-1 text-xs text-gray-400 text-right">{{ aiForm.description.length }} 字</p>
         </div>
 
         <!-- 目标字数 -->
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">目标字数</label>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2 mb-2">
             <button
               v-for="opt in wordCountOptions"
               :key="opt.value"
@@ -397,12 +408,23 @@ onUnmounted(() => stopCrawlPoll())
               @click="aiForm.target_word_count = opt.value"
             >{{ opt.label }}</button>
           </div>
+          <div class="flex items-center gap-2">
+            <input
+              v-model.number="aiForm.target_word_count"
+              type="number"
+              min="1000"
+              step="10000"
+              class="w-36 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
+              placeholder="自定义字数"
+            />
+            <span class="text-xs text-gray-400 dark:text-gray-500">字</span>
+          </div>
         </div>
 
         <!-- 期望章节数 -->
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">期望章节数</label>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2 mb-2">
             <button
               v-for="opt in chapterCountOptions"
               :key="opt.value"
@@ -413,6 +435,17 @@ onUnmounted(() => stopCrawlPoll())
                 : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-400'"
               @click="aiForm.target_chapters = opt.value"
             >{{ opt.label }}</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              v-model.number="aiForm.target_chapters"
+              type="number"
+              min="1"
+              step="10"
+              class="w-36 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
+              placeholder="自定义章节数"
+            />
+            <span class="text-xs text-gray-400 dark:text-gray-500">章</span>
           </div>
         </div>
 
@@ -426,7 +459,7 @@ onUnmounted(() => stopCrawlPoll())
           >← 返回</button>
           <button
             type="button"
-            :disabled="aiLoading || !aiForm.title.trim()"
+            :disabled="aiLoading || !aiForm.title.trim() || !aiForm.description.trim()"
             class="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-medium rounded-lg transition-colors"
             @click="submitAI"
           >{{ aiLoading ? '创建中...' : '创建并开始分析' }}</button>

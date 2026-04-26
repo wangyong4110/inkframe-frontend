@@ -3,6 +3,9 @@ const route = useRoute()
 const router = useRouter()
 const novelId = parseInt(route.params.id as string)
 const chapterNo = parseInt(route.params.chapterNo as string)
+if (isNaN(novelId)) {
+  router.replace('/novel')
+}
 
 const chapterStore = useChapterStore()
 const novelStore = useNovelStore()
@@ -115,7 +118,11 @@ onMounted(async () => {
   ])
 
   if (chapterNo && chapterNo > 0) {
-    await chapterStore.fetchChapter(novelId, chapterNo)
+    try {
+      await chapterStore.fetchChapter(novelId, chapterNo)
+    } catch {
+      toast.error('章节加载失败，请刷新重试')
+    }
     content.value = chapter.value?.content || ''
     chapterTitle.value = chapter.value?.title || ''
   }
@@ -203,6 +210,75 @@ function countWords(text: string): number {
 function getActiveCharacters(): any[] {
   if (!chapter.value) return []
   return characters.value.filter(c => c.role !== 'minor')
+}
+
+// ── 侧边栏标签页 ──────────────────────────────────────────────────────────────
+type SidebarTab = 'generate' | 'character' | 'item' | 'script' | 'scene' | 'video'
+const sidebarTab = ref<SidebarTab>('generate')
+
+const SIDEBAR_TABS = [
+  { id: 'generate' as const, label: '生成' },
+  { id: 'character' as const, label: '角色' },
+  { id: 'item' as const, label: '物品' },
+  { id: 'script' as const, label: '脚本' },
+  { id: 'scene' as const, label: '场景' },
+  { id: 'video' as const, label: '视频' },
+]
+
+// 物品管理
+const chapterItems = ref<any[]>([])
+const loadingItems = ref(false)
+async function fetchChapterItems() {
+  loadingItems.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/items?chapter_no=${chapterNo}`)
+    chapterItems.value = Array.isArray(data) ? data : (data?.items ?? [])
+  } catch {
+    chapterItems.value = []
+  } finally {
+    loadingItems.value = false
+  }
+}
+
+// 场景管理
+const chapterScenes = ref<any[]>([])
+const loadingScenes = ref(false)
+async function fetchChapterScenes() {
+  loadingScenes.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scenes`)
+    chapterScenes.value = Array.isArray(data) ? data : (data?.scenes ?? [])
+  } catch {
+    chapterScenes.value = []
+  } finally {
+    loadingScenes.value = false
+  }
+}
+
+// 视频管理
+const chapterVideos = ref<any[]>([])
+const loadingVideos = ref(false)
+async function fetchChapterVideos() {
+  if (!chapter.value) return
+  loadingVideos.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/videos?chapter_id=${chapter.value.id}`)
+    chapterVideos.value = Array.isArray(data) ? data : (data?.videos ?? [])
+  } catch {
+    chapterVideos.value = []
+  } finally {
+    loadingVideos.value = false
+  }
+}
+
+function switchSidebarTab(tab: SidebarTab) {
+  sidebarTab.value = tab
+  if (tab === 'item' && chapterItems.value.length === 0) fetchChapterItems()
+  if (tab === 'scene' && chapterScenes.value.length === 0) fetchChapterScenes()
+  if (tab === 'video' && chapterVideos.value.length === 0) fetchChapterVideos()
 }
 </script>
 
@@ -365,199 +441,366 @@ function getActiveCharacters(): any[] {
       </div>
 
       <!-- Sidebar -->
-      <div class="w-80 flex-shrink-0 space-y-4 overflow-auto">
-        <!-- Generate Options -->
-        <div class="card p-4">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">生成选项</h3>
-          <div class="space-y-3">
-            <div>
-              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                创作提示（可选）
-              </label>
-              <textarea
-                v-model="prompt"
-                rows="3"
-                class="input text-sm"
-                placeholder="添加额外的创作指导..."
-              ></textarea>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                本章字数目标
-                <span class="font-normal text-gray-400">（0 = 使用默认 {{ chapterStore.wordCountGoal }} 字）</span>
-              </label>
-              <input
-                v-model.number="wordCountOverride"
-                type="number"
-                min="0"
-                step="500"
-                class="input text-sm"
-                placeholder="如 2000、5000..."
-              />
-            </div>
-            <button
-              class="btn-primary w-full"
-              :disabled="generating"
-              @click="handleGenerate"
-            >
-              <svg v-if="generating" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {{ generating ? '生成中...' : '继续生成' }}
-            </button>
-          </div>
+      <div class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <!-- Tab Bar -->
+        <div class="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto flex-shrink-0">
+          <button
+            v-for="tab in SIDEBAR_TABS"
+            :key="tab.id"
+            class="flex-shrink-0 px-3 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px"
+            :class="sidebarTab === tab.id
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400 bg-white dark:bg-gray-800'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+            @click="switchSidebarTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
         </div>
 
-        <!-- Active Characters -->
-        <div class="card p-4">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">活跃角色</h3>
-          <div v-if="getActiveCharacters().length === 0" class="text-sm text-gray-500 dark:text-gray-400">
-            暂无角色
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="char in getActiveCharacters()"
-              :key="char.id"
-              class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-              @click="router.push(`/character/${char.id}`)"
-            >
-              <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                <span class="text-xs font-medium text-primary-600">{{ char.name.charAt(0) }}</span>
+        <!-- Tab Content -->
+        <div class="flex-1 overflow-auto p-3 space-y-3">
+
+          <!-- ── 生成 ── -->
+          <template v-if="sidebarTab === 'generate'">
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  创作提示（可选）
+                </label>
+                <textarea
+                  v-model="prompt"
+                  rows="3"
+                  class="input text-sm"
+                  placeholder="添加额外的创作指导..."
+                ></textarea>
               </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ char.name }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ char.role }}</p>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  本章字数目标
+                  <span class="font-normal text-gray-400">（0 = 默认 {{ chapterStore.wordCountGoal }} 字）</span>
+                </label>
+                <input
+                  v-model.number="wordCountOverride"
+                  type="number"
+                  min="0"
+                  step="500"
+                  class="input text-sm"
+                  placeholder="如 2000、5000..."
+                />
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 角色状态更新 -->
-        <div v-if="chapter" class="card p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">角色状态</h3>
-            <button
-              type="button"
-              class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-              :class="updateCharSnapshots ? 'bg-purple-600' : 'bg-gray-200 dark:bg-gray-600'"
-              @click="updateCharSnapshots = !updateCharSnapshots"
-            >
-              <span
-                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-                :class="updateCharSnapshots ? 'translate-x-4' : 'translate-x-0'"
-              />
-            </button>
-          </div>
-
-          <template v-if="updateCharSnapshots">
-            <!-- 模式选择 -->
-            <div class="flex gap-2 mb-3">
               <button
-                type="button"
-                class="flex-1 py-1.5 text-xs rounded-lg border transition-colors"
-                :class="snapshotMode === 'generate'
-                  ? 'bg-purple-600 border-purple-600 text-white'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-purple-400'"
-                @click="snapshotMode = 'generate'"
-              >重新生成</button>
-              <button
-                type="button"
-                class="flex-1 py-1.5 text-xs rounded-lg border transition-colors"
-                :class="snapshotMode === 'reuse'
-                  ? 'bg-purple-600 border-purple-600 text-white'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-purple-400'"
-                @click="snapshotMode = 'reuse'"
-              >复用上章</button>
-            </div>
-            <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">
-              {{ snapshotMode === 'generate'
-                ? '结合本章内容和上章状态，AI 重新生成角色状态'
-                : '直接将上一章的角色状态复制到本章' }}
-            </p>
-
-            <!-- 角色全选 -->
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs text-gray-500 dark:text-gray-400">选择角色</span>
-              <button
-                type="button"
-                class="text-xs text-purple-600 dark:text-purple-400 hover:underline"
-                @click="toggleAllCharacters(selectedCharacterIds.length < characters.length)"
+                class="btn-primary w-full"
+                :disabled="generating"
+                @click="handleGenerate"
               >
-                {{ selectedCharacterIds.length < characters.length ? '全选' : '取消' }}
+                <svg v-if="generating" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ generating ? '生成中...' : '继续生成' }}
               </button>
             </div>
 
-            <!-- 角色列表 -->
-            <div class="space-y-1 mb-3 max-h-40 overflow-y-auto">
-              <label
-                v-for="char in characters"
-                :key="char.id"
-                class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  :value="char.id"
-                  v-model="selectedCharacterIds"
-                  class="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                />
-                <div class="w-6 h-6 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center shrink-0">
-                  <span class="text-xs font-medium text-purple-600 dark:text-purple-400">{{ char.name.charAt(0) }}</span>
+            <!-- Quality Report -->
+            <div v-if="qualityReport" class="pt-3 border-t border-gray-100 dark:border-gray-700 space-y-3">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">质量报告</h3>
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-gray-500 dark:text-gray-400">整体评分</span>
+                  <span class="text-sm font-medium text-primary-600">{{ (qualityReport.overall_score * 100).toFixed(0) }}%</span>
                 </div>
-                <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ char.name }}</span>
-              </label>
-              <p v-if="characters.length === 0" class="text-xs text-gray-400 text-center py-2">暂无角色</p>
+                <div class="progress-bar">
+                  <div
+                    class="progress-bar-fill bg-primary-500"
+                    :style="{ width: `${qualityReport.overall_score * 100}%` }"
+                  ></div>
+                </div>
+              </div>
+              <div v-if="qualityReport.issues.length > 0" class="space-y-2">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">发现 {{ qualityReport.issues.length }} 个问题</p>
+                <div
+                  v-for="issue in qualityReport.issues.slice(0, 3)"
+                  :key="issue.id"
+                  class="p-2 rounded-lg text-xs"
+                  :class="{
+                    'bg-error-50 text-error-800 dark:bg-error-900/50 dark:text-error-300': issue.severity === 'high',
+                    'bg-warning-50 text-warning-800 dark:bg-warning-900/50 dark:text-warning-300': issue.severity === 'medium',
+                    'bg-gray-50 text-gray-800 dark:bg-gray-800 dark:text-gray-300': issue.severity === 'low',
+                  }"
+                >
+                  {{ issue.description }}
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── 角色管理 ── -->
+          <template v-else-if="sidebarTab === 'character'">
+            <div>
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">活跃角色</h3>
+              <div v-if="getActiveCharacters().length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-4">暂无角色</div>
+              <div v-else class="space-y-1.5">
+                <div
+                  v-for="char in getActiveCharacters()"
+                  :key="char.id"
+                  class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                  @click="router.push(`/character/${char.id}`)"
+                >
+                  <div class="w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs font-medium text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ char.name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ char.role }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <p v-if="snapshotMsg" class="text-xs text-green-600 dark:text-green-400 mb-2">{{ snapshotMsg }}</p>
+            <!-- Character State Sync -->
+            <div v-if="chapter" class="pt-3 border-t border-gray-100 dark:border-gray-700">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">角色状态</h3>
+                <button
+                  type="button"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
+                  :class="updateCharSnapshots ? 'bg-purple-600' : 'bg-gray-200 dark:bg-gray-600'"
+                  @click="updateCharSnapshots = !updateCharSnapshots"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                    :class="updateCharSnapshots ? 'translate-x-4' : 'translate-x-0'"
+                  />
+                </button>
+              </div>
 
-            <button
-              type="button"
-              :disabled="syncingSnapshots || selectedCharacterIds.length === 0"
-              class="w-full py-1.5 text-xs bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-              @click="handleSyncSnapshots"
-            >
-              <svg v-if="syncingSnapshots" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <template v-if="updateCharSnapshots">
+                <div class="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    class="flex-1 py-1.5 text-xs rounded-lg border transition-colors"
+                    :class="snapshotMode === 'generate'
+                      ? 'bg-purple-600 border-purple-600 text-white'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-purple-400'"
+                    @click="snapshotMode = 'generate'"
+                  >重新生成</button>
+                  <button
+                    type="button"
+                    class="flex-1 py-1.5 text-xs rounded-lg border transition-colors"
+                    :class="snapshotMode === 'reuse'
+                      ? 'bg-purple-600 border-purple-600 text-white'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-purple-400'"
+                    @click="snapshotMode = 'reuse'"
+                  >复用上章</button>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">
+                  {{ snapshotMode === 'generate'
+                    ? '结合本章内容和上章状态，AI 重新生成角色状态'
+                    : '直接将上一章的角色状态复制到本章' }}
+                </p>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs text-gray-500 dark:text-gray-400">选择角色</span>
+                  <button
+                    type="button"
+                    class="text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    @click="toggleAllCharacters(selectedCharacterIds.length < characters.length)"
+                  >
+                    {{ selectedCharacterIds.length < characters.length ? '全选' : '取消' }}
+                  </button>
+                </div>
+                <div class="space-y-1 mb-3 max-h-40 overflow-y-auto">
+                  <label
+                    v-for="char in characters"
+                    :key="char.id"
+                    class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="char.id"
+                      v-model="selectedCharacterIds"
+                      class="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div class="w-6 h-6 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center shrink-0">
+                      <span class="text-xs font-medium text-purple-600 dark:text-purple-400">{{ char.name.charAt(0) }}</span>
+                    </div>
+                    <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ char.name }}</span>
+                  </label>
+                  <p v-if="characters.length === 0" class="text-xs text-gray-400 text-center py-2">暂无角色</p>
+                </div>
+                <p v-if="snapshotMsg" class="text-xs text-green-600 dark:text-green-400 mb-2">{{ snapshotMsg }}</p>
+                <button
+                  type="button"
+                  :disabled="syncingSnapshots || selectedCharacterIds.length === 0"
+                  class="w-full py-1.5 text-xs bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                  @click="handleSyncSnapshots"
+                >
+                  <svg v-if="syncingSnapshots" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                  {{ syncingSnapshots ? '更新中...' : `更新 ${selectedCharacterIds.length} 个角色状态` }}
+                </button>
+              </template>
+            </div>
+          </template>
+
+          <!-- ── 物品管理 ── -->
+          <template v-else-if="sidebarTab === 'item'">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章物品</h3>
+              <button class="text-gray-400 hover:text-primary-500 transition-colors" @click="fetchChapterItems">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="loadingItems" class="flex justify-center py-8">
+              <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
               </svg>
-              {{ syncingSnapshots ? '更新中...' : `更新 ${selectedCharacterIds.length} 个角色状态` }}
-            </button>
-          </template>
-        </div>
-
-        <!-- Quality Report -->
-        <div v-if="qualityReport" class="card p-4">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">质量报告</h3>
-          <div class="space-y-3">
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <span class="text-xs text-gray-500 dark:text-gray-400">整体评分</span>
-                <span class="text-sm font-medium text-primary-600">{{ (qualityReport.overall_score * 100).toFixed(0) }}%</span>
-              </div>
-              <div class="progress-bar">
-                <div
-                  class="progress-bar-fill bg-primary-500"
-                  :style="{ width: `${qualityReport.overall_score * 100}%` }"
-                ></div>
-              </div>
             </div>
-            <div v-if="qualityReport.issues.length > 0" class="space-y-2">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                发现 {{ qualityReport.issues.length }} 个问题
-              </p>
+            <div v-else-if="chapterItems.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500">
+              <svg class="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+              </svg>
+              <p class="text-xs">暂无物品记录</p>
+            </div>
+            <div v-else class="space-y-2">
               <div
-                v-for="issue in qualityReport.issues.slice(0, 3)"
-                :key="issue.id"
-                class="p-2 rounded-lg text-xs"
-                :class="{
-                  'bg-error-50 text-error-800 dark:bg-error-900/50 dark:text-error-300': issue.severity === 'high',
-                  'bg-warning-50 text-warning-800 dark:bg-warning-900/50 dark:text-warning-300': issue.severity === 'medium',
-                  'bg-gray-50 text-gray-800 dark:bg-gray-800 dark:text-gray-300': issue.severity === 'low',
-                }"
+                v-for="item in chapterItems"
+                :key="item.id"
+                class="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50"
               >
-                <p class="font-medium">{{ issue.description }}</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ item.name }}</p>
+                <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ item.description }}</p>
               </div>
             </div>
-          </div>
+          </template>
+
+          <!-- ── 脚本管理 ── -->
+          <template v-else-if="sidebarTab === 'script'">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">章节脚本</h3>
+              <button
+                class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                @click="showStoryboardModal = true"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                生成分镜
+              </button>
+            </div>
+
+            <div v-if="chapter?.outline" class="p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+              <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">大纲</p>
+              <p class="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{{ chapter.outline }}</p>
+            </div>
+
+            <div v-if="chapter?.plot_points?.length">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">剧情点</p>
+              <div class="space-y-1.5">
+                <div
+                  v-for="(pp, idx) in chapter.plot_points"
+                  :key="idx"
+                  class="flex items-start gap-2 text-xs"
+                >
+                  <span class="mt-0.5 w-4 h-4 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center flex-shrink-0 font-medium text-[10px]">{{ idx + 1 }}</span>
+                  <span class="text-gray-700 dark:text-gray-300 leading-relaxed">{{ pp.description }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!chapter?.outline && !chapter?.plot_points?.length" class="text-center py-8 text-gray-400 dark:text-gray-500">
+              <svg class="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <p class="text-xs">暂无脚本内容</p>
+            </div>
+          </template>
+
+          <!-- ── 场景管理 ── -->
+          <template v-else-if="sidebarTab === 'scene'">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章场景</h3>
+              <button class="text-gray-400 hover:text-primary-500 transition-colors" @click="fetchChapterScenes">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="loadingScenes" class="flex justify-center py-8">
+              <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+            </div>
+            <div v-else-if="chapterScenes.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500">
+              <svg class="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
+              </svg>
+              <p class="text-xs">暂无场景记录</p>
+            </div>
+            <div v-else class="space-y-2">
+              <div
+                v-for="scene in chapterScenes"
+                :key="scene.id"
+                class="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50"
+              >
+                <p class="text-xs font-mono text-gray-500 dark:text-gray-400 mb-1">{{ scene.scene_id || `场景 ${scene.id}` }}</p>
+                <p v-if="scene.visual_description || scene.description" class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                  {{ scene.visual_description || scene.description }}
+                </p>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── 视频管理 ── -->
+          <template v-else-if="sidebarTab === 'video'">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章视频</h3>
+              <button
+                class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                @click="showStoryboardModal = true"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                新建
+              </button>
+            </div>
+            <div v-if="loadingVideos" class="flex justify-center py-8">
+              <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+            </div>
+            <div v-else-if="chapterVideos.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500">
+              <svg class="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              <p class="text-xs">暂无视频项目</p>
+              <button class="mt-3 text-xs text-primary-600 hover:text-primary-700" @click="showStoryboardModal = true">生成分镜脚本</button>
+            </div>
+            <div v-else class="space-y-2">
+              <div
+                v-for="video in chapterVideos"
+                :key="video.id"
+                class="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                @click="router.push(`/video/${video.id}`)"
+              >
+                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ video.title || `视频 #${video.id}` }}</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span
+                    class="text-xs px-1.5 py-0.5 rounded"
+                    :class="{
+                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': video.status === 'done',
+                      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': video.status === 'processing',
+                      'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400': video.status !== 'done' && video.status !== 'processing',
+                    }"
+                  >{{ video.status === 'done' ? '完成' : video.status === 'processing' ? '生成中' : '待处理' }}</span>
+                  <span v-if="video.art_style" class="text-xs text-gray-500 dark:text-gray-400">{{ video.art_style }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
         </div>
       </div>
     </div>

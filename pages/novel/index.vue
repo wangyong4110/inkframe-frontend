@@ -17,13 +17,24 @@ const statusOptions = [
 
 const genreOptions = [
   { label: '全部类型', value: '' },
-  { label: '玄幻', value: 'fantasy' },
-  { label: '仙侠', value: 'xianxia' },
-  { label: '都市', value: 'urban' },
-  { label: '科幻', value: 'scifi' },
-  { label: '言情', value: 'romance' },
-  { label: '悬疑', value: 'mystery' },
-  { label: '历史', value: 'historical' },
+  { label: '玄幻奇幻', value: 'fantasy' },
+  { label: '仙侠修仙', value: 'xianxia' },
+  { label: '都市现代', value: 'urban' },
+  { label: '言情爱情', value: 'romance' },
+  { label: '历史古代', value: 'historical' },
+  { label: '科幻未来', value: 'scifi' },
+  { label: '悬疑推理', value: 'mystery' },
+  { label: '武侠江湖', value: 'wuxia' },
+  { label: '灵异恐怖', value: 'horror' },
+  { label: '游戏竞技', value: 'game' },
+  { label: '军事战争', value: 'military' },
+  { label: '体育竞技', value: 'sports' },
+  { label: '青春校园', value: 'campus' },
+  { label: '末世废土', value: 'apocalypse' },
+  { label: '重生穿越', value: 'rebirth' },
+  { label: '宫斗宅斗', value: 'palace' },
+  { label: '系统流', value: 'system' },
+  { label: '其他', value: 'other' },
 ]
 
 onMounted(() => {
@@ -79,13 +90,12 @@ function getStatusLabel(status: string): string {
 
 function getGenreLabel(genre: string): string {
   const labels: Record<string, string> = {
-    fantasy: '玄幻',
-    xianxia: '仙侠',
-    urban: '都市',
-    scifi: '科幻',
-    romance: '言情',
-    mystery: '悬疑',
-    historical: '历史',
+    fantasy: '玄幻奇幻', xianxia: '仙侠修仙', urban: '都市现代',
+    romance: '言情爱情', historical: '历史古代', scifi: '科幻未来',
+    mystery: '悬疑推理', wuxia: '武侠江湖', horror: '灵异恐怖',
+    game: '游戏竞技', military: '军事战争', sports: '体育竞技',
+    campus: '青春校园', apocalypse: '末世废土', rebirth: '重生穿越',
+    palace: '宫斗宅斗', system: '系统流', other: '其他',
   }
   return labels[genre] || genre
 }
