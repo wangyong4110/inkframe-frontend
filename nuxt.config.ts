@@ -1,5 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  ssr: false,
   devtools: { enabled: true },
 
   modules: [
@@ -40,7 +41,6 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    '/novel/**': { ssr: true },
     '/api/**': { proxy: { to: 'http://localhost:8080/api/**' } },
   },
 

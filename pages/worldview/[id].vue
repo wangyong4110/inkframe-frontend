@@ -257,9 +257,13 @@ async function generateWorldview() {
               <textarea v-model="worldview.description" rows="3" class="input"></textarea>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">封面图片 URL</label>
-              <input v-model="worldview.cover_image" type="text" class="input" placeholder="https://..." />
-              <img v-if="worldview.cover_image" :src="worldview.cover_image" class="mt-2 h-32 w-full rounded-lg object-cover" />
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">封面图片</label>
+              <ImageUploadBox
+                v-model="worldview.cover_image"
+                aspect-ratio="16/9"
+                placeholder="上传封面图片"
+                @error="(msg) => toast.error(msg)"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">文化背景</label>
@@ -396,8 +400,13 @@ async function generateWorldview() {
             <textarea v-model="entityForm.description" rows="3" class="input" placeholder="描述该实体的特点和背景..."></textarea>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图片 URL（可选）</label>
-            <input v-model="entityForm.image_url" type="text" class="input" placeholder="https://..." />
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">图片（可选）</label>
+            <ImageUploadBox
+              v-model="entityForm.image_url"
+              aspect-ratio="4/3"
+              placeholder="上传实体图片"
+              @error="(msg) => toast.error(msg)"
+            />
           </div>
         </div>
         <div class="mt-6 flex justify-end space-x-2">

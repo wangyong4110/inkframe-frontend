@@ -28,8 +28,8 @@ export const useChapterStore = defineStore('chapter', {
     },
 
     currentChapterProgress: (state) => {
-      if (!state.currentChapter) return 0
-      return Math.min(100, (state.currentChapter.word_count / state.wordCountGoal) * 100)
+      if (!state.currentChapter || !state.wordCountGoal) return 0
+      return Math.min(100, ((state.currentChapter.word_count ?? 0) / state.wordCountGoal) * 100)
     },
 
     chaptersByStatus: (state) => (status: ChapterStatus) => {
@@ -120,7 +120,7 @@ export const useChapterStore = defineStore('chapter', {
       }
     },
 
-    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number) {
+    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number, model?: string) {
       this.generating = true
       this.error = null
 
@@ -130,23 +130,51 @@ export const useChapterStore = defineStore('chapter', {
           chapter_no: chapterNo,
           prompt,
           max_tokens: maxTokens,
+          model,
         })
-
-        const index = this.chapters.findIndex(c => c.chapter_no === chapterNo)
-        if (index !== -1) {
-          this.chapters[index] = response.data
-        } else {
-          this.chapters.push(response.data)
-        }
-
-        this.currentChapter = response.data
-        return response.data
+        // Backend returns 202 { data: { task_id } } — do NOT overwrite currentChapter
+        const taskId: string = (response as any).data?.task_id
+        return { task_id: taskId }
       } catch (e: any) {
         this.error = e.message || 'Failed to generate chapter'
-        throw e
-      } finally {
         this.generating = false
+        throw e
       }
+      // generating stays true until pollChapterGenTask resolves
+    },
+
+    async pollChapterGenTask(novelId: number, taskId: string): Promise<Chapter> {
+      const { request } = useApi()
+      return new Promise((resolve, reject) => {
+        const poll = async () => {
+          try {
+            const res: any = await request(`/novels/${novelId}/chapters/generate/${taskId}`)
+            const task = res?.data ?? res
+            const chapter: Chapter = task.data?.chapter ?? task.chapter
+            if (task.status === 'completed' && chapter) {
+              this.generating = false
+              const index = this.chapters.findIndex(c => c.chapter_no === chapter.chapter_no)
+              if (index !== -1) {
+                this.chapters[index] = chapter
+              }
+              if (this.currentChapter?.chapter_no === chapter.chapter_no) {
+                this.currentChapter = chapter
+              }
+              resolve(chapter)
+            } else if (task.status === 'failed') {
+              this.generating = false
+              this.error = task.error || 'Chapter generation failed'
+              reject(new Error(this.error || 'Chapter generation failed'))
+            } else {
+              setTimeout(poll, 3000)
+            }
+          } catch (e: any) {
+            this.generating = false
+            reject(e)
+          }
+        }
+        setTimeout(poll, 2000)
+      })
     },
 
     async deleteChapter(novelId: number, chapterNo: number) {

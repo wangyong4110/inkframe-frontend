@@ -29,41 +29,58 @@ const revealedKeys = ref<Set<number>>(new Set())
 
 const providerForm = ref({
   name: '', display_name: '', type: 'llm',
-  api_endpoint: '', api_key: '', api_version: '', is_active: true,
+  api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
 })
 
+// needsSecretKey: true 表示需要 AccessKey + SecretKey 双密钥（如火山引擎 AK/SK）
 const PROVIDER_OPTIONS = [
-  { name: 'openai',      label: 'OpenAI',            endpoint: 'https://api.openai.com/v1',                                    type: 'llm' },
-  { name: 'anthropic',   label: 'Anthropic',          endpoint: 'https://api.anthropic.com',                                    type: 'llm' },
-  { name: 'google',      label: 'Google',             endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      type: 'llm' },
-  { name: 'doubao',      label: '豆包（字节跳动）',    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                    type: 'llm' },
-  { name: 'deepseek',    label: 'DeepSeek',           endpoint: 'https://api.deepseek.com/v1',                                  type: 'llm' },
-  { name: 'qwen',        label: '通义千问（阿里云）',  endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           type: 'llm' },
-  { name: 'moonshot',    label: 'Moonshot（Kimi）',   endpoint: 'https://api.moonshot.cn/v1',                                   type: 'llm' },
-  { name: 'zhipu',       label: '智谱 AI',            endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         type: 'llm' },
-  { name: 'siliconflow', label: '硅基流动',            endpoint: 'https://api.siliconflow.cn/v1',                               type: 'llm' },
-  { name: 'stepfun',     label: '阶跃星辰',            endpoint: 'https://api.stepfun.com/v1',                                  type: 'llm' },
-  { name: 'minimax',     label: 'MiniMax',            endpoint: 'https://api.minimax.chat/v1',                                  type: 'llm' },
-  { name: 'baidu',       label: '百度文心',            endpoint: 'https://qianfan.baidubce.com/v2',                             type: 'llm' },
-  { name: 'azure',       label: 'Azure OpenAI',       endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', type: 'llm' },
-  { name: 'custom',      label: '自定义',              endpoint: '',                                                            type: 'llm' },
+  // LLM 提供商
+  { name: 'openai',             label: 'OpenAI',                  endpoint: 'https://api.openai.com/v1',                                    type: 'llm',   needsSecretKey: false },
+  { name: 'anthropic',          label: 'Anthropic',               endpoint: 'https://api.anthropic.com',                                    type: 'llm',   needsSecretKey: false },
+  { name: 'google',             label: 'Google',                  endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      type: 'llm',   needsSecretKey: false },
+  { name: 'doubao',             label: '豆包 LLM（火山方舟）',    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                    type: 'llm',   needsSecretKey: false },
+  { name: 'deepseek',           label: 'DeepSeek',                endpoint: 'https://api.deepseek.com/v1',                                  type: 'llm',   needsSecretKey: false },
+  { name: 'qwen',               label: '通义千问（阿里云）',      endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           type: 'llm',   needsSecretKey: false },
+  { name: 'moonshot',           label: 'Moonshot（Kimi）',        endpoint: 'https://api.moonshot.cn/v1',                                   type: 'llm',   needsSecretKey: false },
+  { name: 'zhipu',              label: '智谱 AI',                 endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         type: 'llm',   needsSecretKey: false },
+  { name: 'siliconflow',        label: '硅基流动',                endpoint: 'https://api.siliconflow.cn/v1',                               type: 'llm',   needsSecretKey: false },
+  { name: 'stepfun',            label: '阶跃星辰',                endpoint: 'https://api.stepfun.com/v1',                                  type: 'llm',   needsSecretKey: false },
+  { name: 'minimax',            label: 'MiniMax',                 endpoint: 'https://api.minimax.chat/v1',                                  type: 'llm',   needsSecretKey: false },
+  { name: 'baidu',              label: '百度文心',                endpoint: 'https://qianfan.baidubce.com/v2',                             type: 'llm',   needsSecretKey: false },
+  { name: 'azure',              label: 'Azure OpenAI',            endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', type: 'llm', needsSecretKey: false },
+  // 图像生成提供商
+  { name: 'volcengine-visual',  label: '即梦AI Visual（火山引擎）', endpoint: '',                                                          type: 'image', needsSecretKey: true  },
+  { name: 'volcengine-ark-img', label: 'Seedream 图像（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'image', needsSecretKey: false },
+  // 视频生成提供商
+  { name: 'seedance',           label: 'Seedance 视频（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'video', needsSecretKey: false },
+  // 自定义
+  { name: 'custom',             label: '自定义',                  endpoint: '',                                                            type: 'llm',   needsSecretKey: false },
 ]
+
+// 当前选中提供商是否需要 AK/SK 双密钥
+const selectedProviderNeedsSecretKey = computed(() => {
+  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  return opt?.needsSecretKey ?? false
+})
 
 function onProviderSelect() {
   const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
   if (!opt || opt.name === 'custom') return
   if (!providerForm.value.display_name) providerForm.value.display_name = opt.label
   if (!providerForm.value.api_endpoint) providerForm.value.api_endpoint = opt.endpoint
+  providerForm.value.type = opt.type
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
-  openai:    'bg-emerald-100 text-emerald-700',
-  anthropic: 'bg-purple-100  text-purple-700',
-  google:    'bg-blue-100    text-blue-700',
-  doubao:    'bg-orange-100  text-orange-700',
-  deepseek:  'bg-cyan-100    text-cyan-700',
-  qianwen:   'bg-rose-100    text-rose-700',
-  azure:     'bg-sky-100     text-sky-700',
+  openai:             'bg-emerald-100 text-emerald-700',
+  anthropic:          'bg-purple-100  text-purple-700',
+  google:             'bg-blue-100    text-blue-700',
+  doubao:             'bg-orange-100  text-orange-700',
+  deepseek:           'bg-cyan-100    text-cyan-700',
+  qianwen:            'bg-rose-100    text-rose-700',
+  azure:              'bg-sky-100     text-sky-700',
+  'volcengine-visual':'bg-amber-100   text-amber-700',
+  seedance:           'bg-violet-100  text-violet-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
@@ -83,13 +100,13 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_version: '', is_active: true }
+  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true }
   showProviderModal.value = true
 }
 function openEditProvider(p: ModelProvider) {
   editingProvider.value = p
   providerForm.value = { name: p.name, display_name: p.display_name || '', type: p.type || 'llm',
-    api_endpoint: p.api_endpoint || '', api_key: '', api_version: p.api_version || '', is_active: p.is_active }
+    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active }
   showProviderModal.value = true
 }
 async function submitProviderForm() {
@@ -99,10 +116,14 @@ async function submitProviderForm() {
     if (editingProvider.value) {
       const payload: Record<string, unknown> = { ...providerForm.value }
       if (!payload.api_key) delete payload.api_key
+      if (!payload.api_secret_key) delete payload.api_secret_key
       await updateProvider(editingProvider.value.id, payload as any)
       toast.success('提供商更新成功')
     } else {
       if (!providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
+      if (selectedProviderNeedsSecretKey.value && !providerForm.value.api_secret_key.trim()) {
+        toast.error('该提供商需要 Secret Key（SK）'); providerLoading.value = false; return
+      }
       await createProvider(providerForm.value)
       toast.success('提供商创建成功')
     }
@@ -609,6 +630,7 @@ watch(activeTab, (tab) => {
                 <select v-model="providerForm.type" class="input">
                   <option value="llm">LLM（语言模型）</option>
                   <option value="image">图像生成</option>
+                  <option value="video">视频生成</option>
                   <option value="embedding">向量嵌入</option>
                 </select>
               </div>
@@ -619,10 +641,23 @@ watch(activeTab, (tab) => {
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  API Key <span v-if="!editingProvider" class="text-red-500">*</span>
+                  {{ selectedProviderNeedsSecretKey ? 'Access Key（AK）' : 'API Key' }}
+                  <span v-if="!editingProvider" class="text-red-500">*</span>
                 </label>
-                <input v-model="providerForm.api_key" type="password" class="input font-mono text-sm" :placeholder="editingProvider ? '留空则保持当前密钥不变' : 'sk-…'" autocomplete="new-password" />
+                <input v-model="providerForm.api_key" type="password" class="input font-mono text-sm"
+                  :placeholder="editingProvider ? '留空则保持当前密钥不变' : (selectedProviderNeedsSecretKey ? '火山引擎 AccessKey' : 'sk-…')"
+                  autocomplete="new-password" />
                 <p v-if="editingProvider" class="mt-1 text-xs text-gray-400">当前密钥：<span class="font-mono">{{ maskKey(editingProvider.api_key) }}</span></p>
+              </div>
+              <!-- AK/SK 双密钥提供商（如即梦AI Visual）额外展示 Secret Key 输入框 -->
+              <div v-if="selectedProviderNeedsSecretKey || (editingProvider && editingProvider.name === 'volcengine-visual')">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Secret Key（SK）<span v-if="!editingProvider" class="text-red-500">*</span>
+                </label>
+                <input v-model="providerForm.api_secret_key" type="password" class="input font-mono text-sm"
+                  :placeholder="editingProvider ? '留空则保持当前 SK 不变' : '火山引擎 SecretKey'"
+                  autocomplete="new-password" />
+                <p class="mt-1 text-xs text-gray-400">即梦AI Visual API 使用 AccessKey + SecretKey 进行 HMAC-SHA256 签名鉴权</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">默认模型</label>

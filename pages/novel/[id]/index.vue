@@ -121,6 +121,10 @@ const applyingWritingPreset = ref(false)
 // AI model list (loaded async; silently ignored if API unavailable)
 const availableModels = ref<AIModel[]>([])
 
+const novel = computed(() => novelStore.currentNovel)
+const chapters = computed(() => chapterStore.chapters)
+const characters = computed(() => characterStore.characters)
+
 // Worldview list for linking
 const worldviewList = ref<{ id: number; name: string }[]>([])
 const linkingWorldview = ref(false)
@@ -182,10 +186,6 @@ function handleImageStyleSelect(styleId: string) {
     toast.error('保存图片风格失败：' + (e.message || ''))
   })
 }
-
-const novel = computed(() => novelStore.currentNovel)
-const chapters = computed(() => chapterStore.chapters)
-const characters = computed(() => characterStore.characters)
 
 const tabs = [
   { key: 'chapters', label: '章节', icon: 'book-open' },
@@ -449,22 +449,54 @@ async function deleteItem(id: number, event: Event) {
 
 function getItemCategoryLabel(cat: string): string {
   const labels: Record<string, string> = {
-    weapon: '武器', treasure: '宝物', tool: '工具',
-    document: '文书', artifact: '法器', other: '其他',
+    weapon: '武器', armor: '防具', treasure: '宝物', artifact: '法器',
+    tool: '工具', document: '文书', consumable: '消耗品', other: '其他',
   }
   return labels[cat] || cat
 }
 
+function getItemCategoryIcon(cat: string): string {
+  const icons: Record<string, string> = {
+    weapon: '⚔️', armor: '🛡️', treasure: '💎', artifact: '🔮',
+    tool: '🔧', document: '📜', consumable: '🧪', other: '📦',
+  }
+  return icons[cat] || '📦'
+}
+
 function getItemCategoryColor(cat: string): string {
   const colors: Record<string, string> = {
-    weapon: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    treasure: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    tool: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    document: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    artifact: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-    other: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+    weapon:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    armor:     'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    treasure:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    artifact:  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+    tool:      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    document:  'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    consumable:'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    other:     'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
   }
   return colors[cat] || 'bg-gray-100 text-gray-600'
+}
+
+function getItemRarity(item: Item): { label: string; color: string } | null {
+  try {
+    const data = JSON.parse(item.abilities || '{}')
+    const map: Record<string, { label: string; color: string }> = {
+      common:    { label: '普通', color: 'bg-gray-100 text-gray-600' },
+      uncommon:  { label: '优良', color: 'bg-green-100 text-green-700' },
+      rare:      { label: '稀有', color: 'bg-blue-100 text-blue-700' },
+      epic:      { label: '史诗', color: 'bg-purple-100 text-purple-700' },
+      legendary: { label: '传说', color: 'bg-yellow-100 text-yellow-700' },
+    }
+    return data.rarity ? (map[data.rarity] ?? null) : null
+  } catch { return null }
+}
+
+function getItemStatusDot(status: string): string {
+  const dots: Record<string, string> = {
+    active: 'bg-green-400', lost: 'bg-yellow-400',
+    destroyed: 'bg-red-400', unknown: 'bg-gray-400',
+  }
+  return dots[status] || 'bg-gray-400'
 }
 
 // ── Skills Tab ────────────────────────────────────────────────────────────────
@@ -563,6 +595,28 @@ function getSkillCategoryColor(cat: string): string {
   return colors[cat] || 'bg-gray-100 text-gray-600'
 }
 
+function getSkillCategoryGradient(cat: string): string {
+  const g: Record<string, string> = {
+    武技: 'from-red-500 to-orange-500',
+    法术: 'from-blue-500 to-indigo-500',
+    身法: 'from-green-500 to-teal-500',
+    心法: 'from-purple-500 to-violet-500',
+    阵法: 'from-yellow-500 to-amber-500',
+    神通: 'from-indigo-500 to-blue-600',
+    秘法: 'from-pink-500 to-rose-500',
+    特性: 'from-gray-500 to-slate-600',
+  }
+  return g[cat] || 'from-gray-400 to-gray-500'
+}
+
+function getSkillCategoryIcon(cat: string): string {
+  const icons: Record<string, string> = {
+    武技: '⚔️', 法术: '✨', 身法: '💨', 心法: '🧘',
+    阵法: '⬡', 神通: '🌟', 秘法: '🔮', 特性: '🔑',
+  }
+  return icons[cat] || '⚡'
+}
+
 function getSkillTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     active: '主动', passive: '被动', toggle: '切换', ultimate: '绝技',
@@ -578,6 +632,19 @@ function getSkillTypeColor(type: string): string {
     ultimate: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
   }
   return colors[type] || 'bg-gray-100 text-gray-600'
+}
+
+function getSkillStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    sealed: 'bg-purple-100 text-purple-700', lost: 'bg-yellow-100 text-yellow-700',
+    disabled: 'bg-gray-100 text-gray-500',
+  }
+  return colors[status] || ''
+}
+
+function getSkillStatusLabel(status: string): string {
+  const labels: Record<string, string> = { sealed: '封印', lost: '失传', disabled: '禁用' }
+  return labels[status] || status
 }
 </script>
 
@@ -888,37 +955,57 @@ function getSkillTypeColor(type: string): string {
         <div
           v-for="item in items"
           :key="item.id"
-          class="card p-4 group relative"
+          class="card overflow-hidden group cursor-pointer hover:shadow-medium transition-shadow"
+          @click="$router.push(`/item/${item.id}?novelId=${novelId}`)"
         >
-          <!-- Image -->
-          <div class="w-full h-32 rounded-lg mb-3 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+          <!-- Image area -->
+          <div class="relative w-full h-36 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
             <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
-            <svg v-else class="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
-          </div>
-          <!-- Info -->
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex-1 min-w-0">
-              <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ item.name }}</h3>
-              <span class="inline-block mt-1 text-xs px-2 py-0.5 rounded" :class="getItemCategoryColor(item.category)">
-                {{ getItemCategoryLabel(item.category) }}
-              </span>
-              <p v-if="item.location" class="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate">📍 {{ item.location }}</p>
-              <p v-if="item.owner" class="text-xs text-gray-500 dark:text-gray-400 truncate">👤 {{ item.owner }}</p>
-              <p v-if="item.description" class="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ item.description }}</p>
+            <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
+              <span class="text-3xl">{{ getItemCategoryIcon(item.category) }}</span>
             </div>
-            <!-- Delete -->
+            <!-- Rarity badge top-left -->
+            <span
+              v-if="getItemRarity(item)"
+              class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
+              :class="getItemRarity(item)!.color"
+            >{{ getItemRarity(item)!.label }}</span>
+            <!-- Status dot top-right -->
+            <span class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
+              <span class="w-1.5 h-1.5 rounded-full" :class="getItemStatusDot(item.status)" />
+            </span>
+            <!-- Delete on hover -->
             <button
-              class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
               :disabled="deletingItemId === item.id"
               title="删除物品"
-              @click="deleteItem(item.id, $event)"
+              @click.stop="deleteItem(item.id, $event)"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
+          </div>
+
+          <!-- Info -->
+          <div class="p-3">
+            <div class="flex items-start justify-between gap-2 mb-1.5">
+              <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1">{{ item.name }}</h3>
+              <span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0" :class="getItemCategoryColor(item.category)">
+                {{ getItemCategoryLabel(item.category) }}
+              </span>
+            </div>
+            <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ item.description }}</p>
+            <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
+              <span v-if="item.location" class="truncate flex items-center gap-0.5">
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                {{ item.location }}
+              </span>
+              <span v-if="item.owner" class="truncate flex items-center gap-0.5">
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                {{ item.owner }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -968,38 +1055,66 @@ function getSkillTypeColor(type: string): string {
         <div
           v-for="skill in skills"
           :key="skill.id"
-          class="card p-4 group relative"
+          class="card overflow-hidden group cursor-pointer hover:shadow-medium transition-shadow"
+          @click="$router.push(`/skill/${skill.id}?novelId=${novelId}`)"
         >
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex-1 min-w-0">
-              <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ skill.name }}</h3>
-              <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                <span class="inline-block text-xs px-2 py-0.5 rounded" :class="getSkillCategoryColor(skill.category)">
-                  {{ skill.category }}
+          <!-- Gradient header -->
+          <div
+            class="h-12 flex items-center justify-between px-4 bg-gradient-to-r"
+            :class="getSkillCategoryGradient(skill.category)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-base">{{ getSkillCategoryIcon(skill.category) }}</span>
+              <span class="text-xs font-bold text-white/90">{{ skill.category }}</span>
+              <span class="text-xs text-white/70">·</span>
+              <span class="text-xs text-white/80">{{ getSkillTypeLabel(skill.skill_type) }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-white/80 font-mono">Lv.{{ skill.level }}<span class="opacity-50">/{{ skill.max_level }}</span></span>
+              <button
+                class="p-1 text-white/50 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                :disabled="deletingSkillId === skill.id"
+                title="删除技能"
+                @click.stop="deleteSkill(skill.id, $event)"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Level bar -->
+          <div class="h-0.5 bg-gray-100 dark:bg-gray-700">
+            <div
+              class="h-full bg-gradient-to-r opacity-60"
+              :class="getSkillCategoryGradient(skill.category)"
+              :style="{ width: `${Math.min((skill.level / Math.max(skill.max_level || 1, 1)) * 100, 100)}%` }"
+            />
+          </div>
+
+          <!-- Body -->
+          <div class="p-3 space-y-2">
+            <div class="flex items-start justify-between gap-2">
+              <h3 class="font-semibold text-gray-900 dark:text-white truncate flex-1">{{ skill.name }}</h3>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <span v-if="skill.status !== 'active'" class="text-xs px-1.5 py-0.5 rounded" :class="getSkillStatusColor(skill.status)">
+                  {{ getSkillStatusLabel(skill.status) }}
                 </span>
-                <span class="inline-block text-xs px-2 py-0.5 rounded" :class="getSkillTypeColor(skill.skill_type)">
-                  {{ getSkillTypeLabel(skill.skill_type) }}
-                </span>
-                <span v-if="skill.realm" class="text-xs text-gray-400 dark:text-gray-500">{{ skill.realm }}</span>
-              </div>
-              <p v-if="skill.description" class="mt-2 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ skill.description }}</p>
-              <p v-if="skill.effect" class="mt-1 text-xs text-gray-400 dark:text-gray-500 line-clamp-1">效果：{{ skill.effect }}</p>
-              <div v-if="skill.cost || skill.cooldown" class="mt-1.5 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                <span v-if="skill.cost">⚡ {{ skill.cost }}</span>
-                <span v-if="skill.cooldown">⏱ {{ skill.cooldown }}</span>
               </div>
             </div>
-            <!-- Delete -->
-            <button
-              class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-              :disabled="deletingSkillId === skill.id"
-              title="删除技能"
-              @click="deleteSkill(skill.id, $event)"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-              </svg>
-            </button>
+            <p v-if="skill.realm" class="text-xs text-gray-400">要求：{{ skill.realm }}</p>
+            <p v-if="skill.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">{{ skill.description }}</p>
+            <div v-if="skill.cost || skill.cooldown" class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 pt-1 border-t border-gray-100 dark:border-gray-700">
+              <span v-if="skill.cost" class="flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                {{ skill.cost }}
+              </span>
+              <span v-if="skill.cooldown" class="flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                {{ skill.cooldown }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1172,15 +1287,14 @@ function getSkillTypeColor(type: string): string {
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">封面图片 URL</label>
-          <input
-            type="text"
-            :value="novel?.cover_image"
-            class="input"
-            placeholder="https://..."
-            @change="(e) => novelStore.updateNovel(novelId, { cover_image: (e.target as HTMLInputElement).value })"
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">封面图片</label>
+          <ImageUploadBox
+            :model-value="novel?.cover_image ?? ''"
+            aspect-ratio="3/4"
+            placeholder="上传封面图片"
+            @update:model-value="(url) => novelStore.updateNovel(novelId, { cover_image: url })"
+            @error="(msg) => toast.error(msg)"
           />
-          <img v-if="novel?.cover_image" :src="novel.cover_image" class="mt-2 h-32 rounded-lg object-cover" />
         </div>
         <!-- Writing Style -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">

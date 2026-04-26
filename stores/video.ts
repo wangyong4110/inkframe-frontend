@@ -9,6 +9,8 @@ interface VideoState {
   loading: boolean
   generating: boolean
   error: string | null
+  storyboardTaskId: string | null
+  storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | null
   generationProgress: {
     currentShot: number
     totalShots: number
@@ -26,6 +28,8 @@ export const useVideoStore = defineStore('video', {
     loading: false,
     generating: false,
     error: null,
+    storyboardTaskId: null,
+    storyboardTaskStatus: null,
     generationProgress: {
       currentShot: 0,
       totalShots: 0,
@@ -171,21 +175,53 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number) {
+    async generateStoryboard(videoId: number, provider?: string) {
       this.generating = true
       this.error = null
+      this.storyboardTaskId = null
+      this.storyboardTaskStatus = 'pending'
 
       try {
         const api = useVideoApi()
-        const response = await api.generateStoryboard(videoId)
-        this.storyboard = response.data
-        return response.data
+        const response = await api.generateStoryboard(videoId, provider ? { provider } : undefined)
+        const taskId = response.data?.task_id
+        if (!taskId) throw new Error('未获取到任务ID')
+        this.storyboardTaskId = taskId
+        this.storyboardTaskStatus = 'pending'
+        this.pollStoryboardTask(videoId, taskId)
       } catch (e: any) {
         this.error = e.message || 'Failed to generate storyboard'
-        throw e
-      } finally {
         this.generating = false
+        this.storyboardTaskStatus = 'failed'
+        throw e
       }
+    },
+
+    async pollStoryboardTask(videoId: number, taskId: string) {
+      const api = useVideoApi()
+      const poll = async () => {
+        try {
+          const res = await api.getStoryboardGenStatus(videoId, taskId)
+          this.storyboardTaskStatus = res.status
+          if (res.status === 'completed') {
+            this.generating = false
+            const shots = res.data?.shots
+            if (shots) this.storyboard = shots
+            return
+          }
+          if (res.status === 'failed') {
+            this.generating = false
+            this.error = res.error || '分镜生成失败'
+            return
+          }
+          // still running/pending — poll again
+          setTimeout(poll, 3000)
+        } catch {
+          this.generating = false
+          this.storyboardTaskStatus = 'failed'
+        }
+      }
+      setTimeout(poll, 2000)
     },
 
     async updateShot(videoId: number, shotId: number, data: Partial<StoryboardShot>) {
@@ -214,10 +250,10 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateShot(videoId: number, shotId: number) {
+    async generateShot(videoId: number, shotId: number, provider?: string) {
       try {
         const api = useVideoApi()
-        const response = await api.generateShot(videoId, shotId)
+        const response = await api.generateShot(videoId, shotId, provider)
         const index = this.storyboard.findIndex(s => s.id === shotId)
         if (index !== -1) this.storyboard[index] = response.data
         return response.data
@@ -227,12 +263,12 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async batchGenerateShots(videoId: number, shotIds: number[], qualityTier?: string) {
+    async batchGenerateShots(videoId: number, shotIds: number[], qualityTier?: string, provider?: string) {
       this.generating = true
       this.error = null
       try {
         const api = useVideoApi()
-        const response = await api.batchGenerateShots(videoId, shotIds, qualityTier)
+        const response = await api.batchGenerateShots(videoId, shotIds, qualityTier, provider)
         for (const updated of response.data) {
           const index = this.storyboard.findIndex(s => s.id === updated.id)
           if (index !== -1) this.storyboard[index] = updated

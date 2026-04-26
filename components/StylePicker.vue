@@ -29,6 +29,7 @@ function gradientStyle(colors: string[]): string {
   if (colors.length === 1) return `background: ${colors[0]}`
   return `background: linear-gradient(135deg, ${colors.join(', ')})`
 }
+
 </script>
 
 <template>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 const novelStore = useNovelStore()
-const router = useRouter()
 
 const filters = ref({
   status: '' as string,
@@ -62,9 +61,6 @@ function handleGenreChange(value: string) {
   applyFilters()
 }
 
-function goToNovel(id: number) {
-  router.push(`/novel/${id}`)
-}
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
@@ -140,25 +136,6 @@ function formatDate(dateStr: string): string {
   return `${Math.floor(days / 30)}月前`
 }
 
-// Delete
-const showDeleteConfirm = ref(false)
-const deleteTargetId = ref<number | null>(null)
-const deleteTargetTitle = ref('')
-
-function requestDeleteNovel(id: number, title: string, e: Event) {
-  e.stopPropagation()
-  deleteTargetId.value = id
-  deleteTargetTitle.value = title
-  showDeleteConfirm.value = true
-}
-
-async function confirmDeleteNovel() {
-  if (!deleteTargetId.value) return
-  await novelStore.deleteNovel(deleteTargetId.value)
-  showDeleteConfirm.value = false
-  deleteTargetId.value = null
-  deleteTargetTitle.value = ''
-}
 </script>
 
 <template>
@@ -239,11 +216,11 @@ async function confirmDeleteNovel() {
     </div>
 
     <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div
+      <NuxtLink
         v-for="novel in novelStore.novels"
         :key="novel.id"
-        class="card overflow-hidden hover:shadow-medium transition-shadow cursor-pointer"
-        @click="goToNovel(novel.id)"
+        :to="`/novel/${novel.id}`"
+        class="card overflow-hidden hover:shadow-medium transition-shadow block"
       >
         <!-- Cover / icon -->
         <div
@@ -257,23 +234,12 @@ async function confirmDeleteNovel() {
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white line-clamp-1 flex-1 min-w-0 mr-2">
               {{ novel.title }}
             </h3>
-            <div class="flex items-center gap-1.5 flex-shrink-0">
-              <span
-                class="px-2 py-0.5 text-xs font-medium rounded-full"
-                :class="getStatusColor(novel.status)"
-              >
-                {{ getStatusLabel(novel.status) }}
-              </span>
-              <button
-                class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                title="删除项目"
-                @click="requestDeleteNovel(novel.id, novel.title, $event)"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
+            <span
+              class="px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0"
+              :class="getStatusColor(novel.status)"
+            >
+              {{ getStatusLabel(novel.status) }}
+            </span>
           </div>
           <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-4">
             {{ novel.description || '暂无描述' }}
@@ -297,35 +263,8 @@ async function confirmDeleteNovel() {
             </div>
           </div>
         </div>
-      </div>
+      </NuxtLink>
     </div>
-
-    <!-- Delete Confirm Dialog -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="absolute inset-0 bg-black/50" @click="showDeleteConfirm = false" />
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-              <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">删除项目</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">此操作不可恢复</p>
-            </div>
-          </div>
-          <p class="text-sm text-gray-600 dark:text-gray-300 mb-6">
-            确定要删除《<span class="font-medium text-gray-900 dark:text-white">{{ deleteTargetTitle }}</span>》吗？项目下的所有章节、角色、世界观数据将被永久删除。
-          </p>
-          <div class="flex gap-3 justify-end">
-            <button class="btn-secondary" @click="showDeleteConfirm = false">取消</button>
-            <button class="btn-error" @click="confirmDeleteNovel">确认删除</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- Pagination -->
     <div v-if="novelStore.pagination.total > novelStore.pagination.pageSize" class="flex justify-center">

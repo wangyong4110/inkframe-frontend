@@ -104,14 +104,33 @@ const chapter = computed(() => chapterStore.currentChapter)
 const novel = computed(() => novelStore.currentNovel)
 const characters = computed(() => characterStore.characters)
 const qualityReport = computed(() => chapterStore.qualityReport)
-const progress = computed(() => chapterStore.currentChapterProgress)
+const progress = computed(() => {
+  const goal = chapterStore.wordCountGoal
+  if (!goal) return 0
+  return Math.min(100, (countWords(content.value) / goal) * 100)
+})
 
 const content = ref('')
 const chapterTitle = ref('')
 const prompt = ref('')
 const wordCountOverride = ref(0)  // 0 = use novel default
 
+// LLM 模型选择
+const llmProviders = ref<{ name: string; display_name: string }[]>([])
+const selectedLLMProvider = ref('')
+
+async function fetchLLMProviders() {
+  try {
+    const modelApi = useModelApi()
+    const res = await modelApi.getLLMCapableProviders()
+    llmProviders.value = res.data ?? []
+  } catch {
+    llmProviders.value = []
+  }
+}
+
 onMounted(async () => {
+  fetchLLMProviders()
   await Promise.all([
     novelStore.fetchNovel(novelId),
     characterStore.fetchCharacters(novelId),
@@ -184,10 +203,13 @@ async function handleSave() {
 
 async function handleGenerate() {
   if (!chapter.value) return
+  const currentChapterNo = chapter.value.chapter_no
   generating.value = true
   try {
     const maxTokens = wordCountOverride.value > 0 ? wordCountOverride.value * 2 : undefined
-    const result = await chapterStore.generateChapter(novelId, chapter.value.chapter_no, prompt.value, maxTokens)
+    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, selectedLLMProvider.value || undefined)
+    toast.info('AI 正在生成，请稍候...')
+    const result = await chapterStore.pollChapterGenTask(novelId, task_id)
     content.value = result.content || ''
     if (wordCountOverride.value > 0) chapterStore.wordCountGoal = wordCountOverride.value
     toast.success('内容生成完成')
@@ -274,11 +296,37 @@ async function fetchChapterVideos() {
   }
 }
 
+// 分镜脚本
+const chapterShots = ref<any[]>([])
+const loadingShots = ref(false)
+const shotsVideoId = ref<number | null>(null)
+
+async function fetchShotsForChapter() {
+  if (chapterVideos.value.length === 0) {
+    await fetchChapterVideos()
+  }
+  const firstVideo = chapterVideos.value[0]
+  if (!firstVideo) return
+  if (shotsVideoId.value === firstVideo.id) return
+  loadingShots.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/videos/${firstVideo.id}/storyboard`)
+    chapterShots.value = Array.isArray(data) ? data : (data?.shots ?? data?.data ?? [])
+    shotsVideoId.value = firstVideo.id
+  } catch {
+    chapterShots.value = []
+  } finally {
+    loadingShots.value = false
+  }
+}
+
 function switchSidebarTab(tab: SidebarTab) {
   sidebarTab.value = tab
   if (tab === 'item' && chapterItems.value.length === 0) fetchChapterItems()
   if (tab === 'scene' && chapterScenes.value.length === 0) fetchChapterScenes()
   if (tab === 'video' && chapterVideos.value.length === 0) fetchChapterVideos()
+  if (tab === 'script') fetchShotsForChapter()
 }
 </script>
 
@@ -487,6 +535,15 @@ function switchSidebarTab(tab: SidebarTab) {
                   class="input text-sm"
                   placeholder="如 2000、5000..."
                 />
+              </div>
+              <div v-if="llmProviders.length > 0">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">AI 模型</label>
+                <select v-model="selectedLLMProvider" class="input text-sm">
+                  <option value="">默认模型</option>
+                  <option v-for="p in llmProviders" :key="p.name" :value="p.name">
+                    {{ p.display_name || p.name }}
+                  </option>
+                </select>
               </div>
               <button
                 class="btn-primary w-full"
@@ -709,11 +766,60 @@ function switchSidebarTab(tab: SidebarTab) {
               </div>
             </div>
 
-            <div v-if="!chapter?.outline && !chapter?.plot_points?.length" class="text-center py-8 text-gray-400 dark:text-gray-500">
+            <div v-if="!chapter?.outline && !chapter?.plot_points?.length && !loadingShots && chapterShots.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500">
               <svg class="w-10 h-10 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
               </svg>
               <p class="text-xs">暂无脚本内容</p>
+            </div>
+
+            <!-- 分镜脚本 -->
+            <div class="mt-3">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">分镜脚本</p>
+                <NuxtLink
+                  v-if="shotsVideoId"
+                  :to="`/video/${shotsVideoId}`"
+                  class="text-xs text-primary-600 hover:text-primary-700"
+                >
+                  查看完整分镜 →
+                </NuxtLink>
+              </div>
+              <div v-if="loadingShots" class="flex justify-center py-4">
+                <svg class="w-5 h-5 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </div>
+              <div v-else-if="chapterShots.length === 0" class="text-center py-4 text-gray-400 dark:text-gray-500">
+                <p class="text-xs">暂无分镜，点击「生成分镜」开始</p>
+              </div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="shot in chapterShots"
+                  :key="shot.id"
+                  class="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50 flex gap-2.5"
+                >
+                  <div class="flex-shrink-0 w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center text-[10px] font-medium mt-0.5">
+                    {{ shot.shot_no }}
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{{ shot.description }}</p>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span v-if="shot.shot_size" class="text-[10px] text-gray-400 dark:text-gray-500">{{ shot.shot_size }}</span>
+                      <span v-if="shot.duration" class="text-[10px] text-gray-400 dark:text-gray-500">{{ shot.duration }}s</span>
+                      <span
+                        v-if="shot.status"
+                        class="text-[10px] px-1 py-0.5 rounded"
+                        :class="{
+                          'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': shot.status === 'completed',
+                          'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': shot.status === 'generating',
+                          'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400': shot.status === 'pending',
+                        }"
+                      >{{ shot.status === 'completed' ? '已生成' : shot.status === 'generating' ? '生成中' : '待生成' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </template>
 

@@ -9,9 +9,17 @@ const toast = useToast()
 const videoId = parseInt(route.params.id as string)
 
 const activeTab = ref('storyboard')
-const generatingStoryboard = ref(false)
+const generatingStoryboard = computed(() => videoStore.generating)
 const batchGenerating = ref(false)
 const selectedShotIds = ref<Set<number>>(new Set())
+
+// LLM provider for storyboard generation
+const llmProviders = ref<{ name: string; display_name: string }[]>([])
+const selectedLLMProvider = ref('')
+
+// Video provider for shot generation
+const videoProviders = ref<{ name: string; display_name: string }[]>([])
+const selectedVideoProvider = ref('')
 
 // 配音字幕状态
 const generatingVoice = ref<Record<number, boolean>>({})
@@ -83,6 +91,15 @@ const TABS = [
 ]
 
 onMounted(async () => {
+  const { getLLMCapableProviders } = useModelApi()
+  const { getVideoProviders } = useVideoApi()
+  const [llmRes, videoRes] = await Promise.allSettled([
+    getLLMCapableProviders(),
+    getVideoProviders(),
+  ])
+  if (llmRes.status === 'fulfilled') llmProviders.value = (llmRes.value as any)?.data ?? []
+  if (videoRes.status === 'fulfilled') videoProviders.value = (videoRes.value as any)?.data ?? []
+
   try {
     await videoStore.fetchVideo(videoId)
     await videoStore.fetchStoryboard(videoId)
@@ -92,16 +109,22 @@ onMounted(async () => {
 })
 
 async function handleGenerateStoryboard() {
-  generatingStoryboard.value = true
   try {
-    await videoStore.generateStoryboard(videoId)
-    toast.success('分镜脚本生成完成')
+    await videoStore.generateStoryboard(videoId, selectedLLMProvider.value || undefined)
+    toast.success('分镜生成任务已提交，请稍候...')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
-  } finally {
-    generatingStoryboard.value = false
   }
 }
+
+watch(() => videoStore.storyboardTaskStatus, (status) => {
+  if (status === 'completed') {
+    toast.success('分镜脚本生成完成')
+    videoStore.fetchStoryboard(videoId)
+  } else if (status === 'failed') {
+    toast.error('分镜生成失败：' + (videoStore.error || ''))
+  }
+})
 
 async function toggleShotMode(shot: StoryboardShot) {
   const newMode: ShotGenerationMode = shot.generation_mode === 'video' ? 'static' : 'video'
@@ -114,7 +137,7 @@ async function toggleShotMode(shot: StoryboardShot) {
 
 async function handleGenerateShot(shot: StoryboardShot) {
   try {
-    await videoStore.generateShot(videoId, shot.id)
+    await videoStore.generateShot(videoId, shot.id, selectedVideoProvider.value || undefined)
     toast.success(`镜头 ${shot.shot_no} 已加入生成队列`)
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
@@ -142,7 +165,7 @@ async function handleBatchGenerate() {
   batchGenerating.value = true
   try {
     const ids = [...selectedShotIds.value]
-    await videoStore.batchGenerateShots(videoId, ids, video.value?.quality_tier)
+    await videoStore.batchGenerateShots(videoId, ids, video.value?.quality_tier, selectedVideoProvider.value || undefined)
     selectedShotIds.value.clear()
     toast.success(`${ids.length} 个镜头已加入生成队列`)
   } catch (e: any) {
@@ -322,10 +345,68 @@ const cameraTypeLabel: Record<string, string> = {
       </nav>
     </div>
 
+    <!-- Task status banner -->
+    <div
+      v-if="videoStore.storyboardTaskStatus && videoStore.storyboardTaskStatus !== 'completed'"
+      class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm"
+      :class="{
+        'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200': videoStore.storyboardTaskStatus === 'pending' || videoStore.storyboardTaskStatus === 'running',
+        'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-200': videoStore.storyboardTaskStatus === 'failed',
+      }"
+    >
+      <svg v-if="videoStore.storyboardTaskStatus !== 'failed'" class="w-4 h-4 animate-spin flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      <svg v-else class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span>
+        <span v-if="videoStore.storyboardTaskStatus === 'pending'">分镜生成任务排队中...</span>
+        <span v-else-if="videoStore.storyboardTaskStatus === 'running'">AI 正在生成分镜脚本，请稍候...</span>
+        <span v-else-if="videoStore.storyboardTaskStatus === 'failed'">分镜生成失败：{{ videoStore.error }}</span>
+      </span>
+      <span v-if="videoStore.storyboardTaskId" class="ml-auto text-xs opacity-60 font-mono">
+        任务 {{ videoStore.storyboardTaskId.slice(0, 8) }}
+      </span>
+    </div>
+
     <!-- ============ 分镜脚本 Tab ============ -->
     <div v-if="activeTab === 'storyboard'">
       <!-- Actions -->
-      <div class="flex items-center gap-2 mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <!-- LLM model selector for storyboard -->
+        <div v-if="llmProviders.length > 0" class="flex items-center gap-1.5">
+          <label class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">分镜模型</label>
+          <select v-model="selectedLLMProvider" class="input text-sm py-1 h-8">
+            <option value="">默认</option>
+            <option v-for="p in llmProviders" :key="p.name" :value="p.name">
+              {{ p.display_name || p.name }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Video provider selector for shot generation -->
+        <div v-if="videoProviders.length > 0" class="flex items-center gap-1.5">
+          <label class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">视频提供商</label>
+          <select v-model="selectedVideoProvider" class="input text-sm py-1 h-8">
+            <option value="">默认</option>
+            <option v-for="p in videoProviders" :key="p.name" :value="p.name">
+              {{ p.display_name || p.name }}
+            </option>
+          </select>
+        </div>
+
+        <button
+          class="btn-outline"
+          :disabled="generatingStoryboard"
+          @click="handleGenerateStoryboard"
+        >
+          <svg v-if="generatingStoryboard" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {{ shots.length > 0 ? '重新生成分镜' : '生成分镜脚本' }}
+        </button>
+
         <button
           v-if="shots.length > 0 && selectedShotIds.size > 0"
           class="btn-primary"
@@ -337,16 +418,7 @@ const cameraTypeLabel: Record<string, string> = {
           </svg>
           生成选中 ({{ selectedShotIds.size }})
         </button>
-        <button
-          class="btn-outline"
-          :disabled="generatingStoryboard"
-          @click="handleGenerateStoryboard"
-        >
-          <svg v-if="generatingStoryboard" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          {{ shots.length > 0 ? '重新生成分镜' : '生成分镜脚本' }}
-        </button>
+
         <div v-if="shots.length > 0" class="ml-auto flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
           完成后可切换到「配音字幕」和「背景音乐」Tab 继续制作
         </div>

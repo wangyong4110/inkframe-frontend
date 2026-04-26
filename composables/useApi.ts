@@ -186,11 +186,21 @@ export const useChapterApi = () => {
     chapter_no: number
     prompt?: string
     max_tokens?: number
+    model?: string
   }) =>
-    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/generate`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
+
+  const getChapterGenStatus = (novelId: number, taskId: string) =>
+    request<ApiResponse<{
+      task_id: string
+      status: 'pending' | 'running' | 'completed' | 'failed'
+      chapter?: Chapter
+      model_used?: string
+      error?: string
+    }>>(`/novels/${novelId}/chapters/generate/${taskId}`)
 
   return {
     getChapters,
@@ -199,6 +209,7 @@ export const useChapterApi = () => {
     updateChapter,
     deleteChapter,
     generateChapter,
+    getChapterGenStatus,
   }
 }
 
@@ -233,6 +244,40 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ description }),
     })
 
+  const generateThreeView = (id: number, viewType: 'front' | 'side' | 'back' | 'all', style?: string, provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/characters/${id}/three-view`, {
+      method: 'POST',
+      body: JSON.stringify({ view_type: viewType, style: style ?? '', provider: provider ?? '' }),
+    })
+
+  const getThreeViewTaskStatus = (id: number, taskId: string) =>
+    request<ApiResponse<{
+      task_id: string
+      status: 'pending' | 'running' | 'completed' | 'failed'
+      character?: Character
+      generated?: Record<string, string>
+      error?: string
+    }>>(`/characters/${id}/three-view/${taskId}`)
+
+  const uploadPortrait = async (id: number, file: File): Promise<{ url: string; character: Character }> => {
+    const config = useRuntimeConfig()
+    const apiBase = config.public.apiBase
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${apiBase}/characters/${id}/portrait/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Upload failed' }))
+      throw new Error(err.message || `HTTP ${res.status}`)
+    }
+    const json = await res.json()
+    return json.data
+  }
+
   return {
     getCharacters,
     getCharacter,
@@ -240,6 +285,9 @@ export const useCharacterApi = () => {
     updateCharacter,
     deleteCharacter,
     generateCharacterProfile,
+    generateThreeView,
+    getThreeViewTaskStatus,
+    uploadPortrait,
   }
 }
 
@@ -336,15 +384,16 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
-  const generateShot = (videoId: number, shotId: number) =>
+  const generateShot = (videoId: number, shotId: number, provider?: string) =>
     request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/generate`, {
       method: 'POST',
+      body: JSON.stringify(provider ? { provider } : {}),
     })
 
-  const batchGenerateShots = (videoId: number, shotIds: number[], qualityTier?: string) =>
+  const batchGenerateShots = (videoId: number, shotIds: number[], qualityTier?: string, provider?: string) =>
     request<ApiResponse<StoryboardShot[]>>(`/videos/${videoId}/shots/batch-generate`, {
       method: 'POST',
-      body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier }),
+      body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier, provider }),
     })
 
   const updateVideo = (id: number, data: Partial<Video>) =>
@@ -356,10 +405,22 @@ export const useVideoApi = () => {
   const deleteVideo = (id: number) =>
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
-  const generateStoryboard = (id: number) =>
-    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard/generate`, {
+  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string }) =>
+    request<{ task_id: string; message: string; data: { task_id: string } }>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
     })
+
+  const getVideoProviders = () =>
+    request<ApiResponse<{ name: string; display_name: string }[]>>('/videos/providers')
+
+  const getStoryboardGenStatus = (id: number, taskId: string) =>
+    request<{
+      task_id: string
+      status: 'pending' | 'running' | 'completed' | 'failed'
+      data?: { shots?: StoryboardShot[]; total?: number; [key: string]: unknown }
+      error?: string
+    }>(`/videos/${id}/storyboard/generate/${taskId}`)
 
   const getStoryboard = (id: number) =>
     request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard`)
@@ -380,11 +441,13 @@ export const useVideoApi = () => {
     updateVideo,
     deleteVideo,
     generateStoryboard,
+    getStoryboardGenStatus,
     getStoryboard,
     updateStoryboardShot,
     generateShot,
     batchGenerateShots,
     exportCapcut,
+    getVideoProviders,
   }
 }
 
@@ -394,6 +457,12 @@ export const useModelApi = () => {
 
   const getProviders = () =>
     request<ApiResponse<ModelProvider[]>>('/model-providers')
+
+  const getImageCapableProviders = () =>
+    request<ApiResponse<{ name: string; display_name: string }[]>>('/model-providers/image-capable')
+
+  const getLLMCapableProviders = () =>
+    request<ApiResponse<{ name: string; display_name: string }[]>>('/model-providers/llm-capable')
 
   const getModels = (params?: { provider_id?: number }) => {
     const searchParams = new URLSearchParams()
@@ -450,6 +519,8 @@ export const useModelApi = () => {
 
   return {
     getProviders,
+    getImageCapableProviders,
+    getLLMCapableProviders,
     getModels,
     getAvailableModels,
     selectModel,
@@ -661,8 +732,19 @@ export const useItemApi = () => {
   const deleteItem = (id: number) =>
     request<void>(`/items/${id}`, { method: 'DELETE' })
 
-  const generateItemImage = (id: number) =>
-    request<ApiResponse<Item>>(`/items/${id}/images`, { method: 'POST' })
+  const generateItemImage = (id: number, referenceImageUrl?: string, provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/items/${id}/images`, {
+      method: 'POST',
+      body: JSON.stringify({ reference_image_url: referenceImageUrl ?? '', provider: provider ?? '' }),
+    })
+
+  const getItemImageTaskStatus = (id: number, taskId: string) =>
+    request<ApiResponse<{
+      task_id: string
+      status: 'pending' | 'running' | 'completed' | 'failed'
+      item?: Item
+      error?: string
+    }>>(`/items/${id}/images/${taskId}`)
 
   const listEffectiveItems = (novelId: number, chapterNo: number) =>
     request<ApiResponse<EffectiveItem[]>>(`/novels/${novelId}/chapters/${chapterNo}/items`)
@@ -688,6 +770,7 @@ export const useItemApi = () => {
     updateItem,
     deleteItem,
     generateItemImage,
+    getItemImageTaskStatus,
     listEffectiveItems,
     upsertChapterItem,
     deleteChapterItem,

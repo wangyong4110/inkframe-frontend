@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import type { CharacterAbility } from '~/types'
+import { useCharacterArcApi } from '~/composables/useEnhancementApi'
+import type { CharacterArcStage } from '~/composables/useEnhancementApi'
 
 const characterStore = useCharacterStore()
+const novelStore = useNovelStore()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { getCharacterArc } = useCharacterArcApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -12,6 +16,35 @@ const characterId = parseInt(route.params.id as string)
 const activeTab = ref('profile')
 const saving = ref(false)
 const isDirty = ref(false)
+const generatingThreeView = ref<Record<string, boolean>>({ front: false, side: false, back: false, all: false })
+
+// 三视图任务状态
+const threeViewTaskId = ref('')
+const threeViewTaskStatus = ref<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
+let threeViewTaskTimer: ReturnType<typeof setInterval> | null = null
+
+function clearThreeViewTimer() {
+  if (threeViewTaskTimer) { clearInterval(threeViewTaskTimer); threeViewTaskTimer = null }
+}
+onUnmounted(clearThreeViewTimer)
+const novelImageStyle = computed(() => novelStore.currentNovel?.image_style || 'anime')
+
+// 图像生成提供者
+const imageProviders = ref<{ name: string; display_name: string }[]>([])
+const selectedImageProvider = ref('')
+
+async function fetchImageProviders() {
+  try {
+    const modelApi = useModelApi()
+    const res = await modelApi.getImageCapableProviders()
+    imageProviders.value = res.data ?? []
+    if (imageProviders.value.length > 0 && !selectedImageProvider.value) {
+      selectedImageProvider.value = imageProviders.value[0].name
+    }
+  } catch {
+    imageProviders.value = []
+  }
+}
 
 // Mutable local copy of the character (so v-model works without mutating the store directly)
 const character = ref({
@@ -48,11 +81,29 @@ const tabs = [
 
 useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
 
+// Arc chart data
+const arcStages = ref<CharacterArcStage[]>([])
+const arcLoading = ref(false)
+
+const arcBars = computed(() => {
+  if (!arcStages.value.length) return []
+  const max = Math.max(...arcStages.value.map(s => s.power_level ?? 0), 1)
+  return arcStages.value.map(s => ({
+    chapter: s.chapter_no,
+    height: Math.round(((s.power_level ?? 0) / max) * 90) + 5, // 5%–95%
+    mood: s.mood,
+  }))
+})
+
 watch(character, () => { isDirty.value = true }, { deep: true })
 watch(personalityTags, () => { isDirty.value = true }, { deep: true })
 watch(abilities, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
+  fetchImageProviders()
+  if (novelId && novelStore.currentNovel?.id !== novelId) {
+    novelStore.fetchNovel(novelId).catch(() => {})
+  }
   if (characterId) {
     await characterStore.fetchCharacter(characterId)
     const c = characterStore.currentCharacter
@@ -77,6 +128,20 @@ onMounted(async () => {
     // Reset dirty after loading
     await nextTick()
     isDirty.value = false
+
+    // Load character arc data
+    const nid = c?.novel_id ?? novelId
+    if (nid && characterId) {
+      arcLoading.value = true
+      try {
+        const res = await getCharacterArc(nid, characterId)
+        arcStages.value = res.data?.stages ?? []
+      } catch {
+        arcStages.value = []
+      } finally {
+        arcLoading.value = false
+      }
+    }
   }
 })
 
@@ -122,6 +187,52 @@ function addAbility() {
 }
 function removeAbility(idx: number) {
   abilities.value.splice(idx, 1)
+}
+
+async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'all') {
+  if (!character.value.appearance) {
+    toast.error('请先填写外貌描述，再生成三视图')
+    return
+  }
+  generatingThreeView.value[viewType] = true
+  threeViewTaskStatus.value = 'pending'
+  clearThreeViewTimer()
+  try {
+    const api = useCharacterApi()
+    const res = await api.generateThreeView(characterId, viewType, novelImageStyle.value, selectedImageProvider.value || undefined)
+    const taskId = (res as any).data?.task_id ?? ''
+    if (!taskId) throw new Error('未获取到任务 ID')
+    threeViewTaskId.value = taskId
+    toast.info('三视图生成任务已提交，AI 正在生成中…')
+    threeViewTaskTimer = setInterval(async () => {
+      try {
+        const pollRes = await api.getThreeViewTaskStatus(characterId, threeViewTaskId.value)
+        const task = pollRes.data
+        threeViewTaskStatus.value = task.status as any
+        if (task.status === 'completed') {
+          clearThreeViewTimer()
+          generatingThreeView.value[viewType] = false
+          const updatedChar = (task.data?.character ?? task.character) as any
+          if (updatedChar) {
+            character.value.three_view_front = updatedChar.three_view_front ?? character.value.three_view_front
+            character.value.three_view_side = updatedChar.three_view_side ?? character.value.three_view_side
+            character.value.three_view_back = updatedChar.three_view_back ?? character.value.three_view_back
+          }
+          isDirty.value = false
+          toast.success(viewType === 'all' ? '三视图生成完成' : '视图生成完成')
+        } else if (task.status === 'failed') {
+          clearThreeViewTimer()
+          generatingThreeView.value[viewType] = false
+          toast.error('生成失败：' + (task.error || '未知错误'))
+        }
+      } catch { /* ignore */ }
+    }, 3000)
+  } catch (e: any) {
+    clearThreeViewTimer()
+    generatingThreeView.value[viewType] = false
+    threeViewTaskStatus.value = 'failed'
+    toast.error('生成失败：' + (e.message || ''))
+  }
 }
 
 function getRoleColor(role: string): string {
@@ -235,47 +346,92 @@ function getRoleLabel(role: string): string {
           <p class="mt-1 text-sm text-gray-500">建议包含：身高、体型、发色、眼睛、服装等特征</p>
         </div>
 
-        <!-- Portrait -->
+        <!-- Portrait upload -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">头像 / 肖像图片 URL</label>
-          <input v-model="character.portrait" type="text" class="input" placeholder="https://..." />
-          <div v-if="character.portrait" class="mt-2">
-            <img :src="character.portrait" alt="portrait" class="h-32 w-32 object-cover rounded-lg border" />
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">头像 / 肖像参考图片</label>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">上传后将作为 AI 生成三视图时的参考，保持人物面部一致性</p>
+          <div class="w-32">
+            <ImageUploadBox
+              v-model="character.portrait"
+              placeholder="点击上传"
+              @error="(msg) => toast.error('上传失败：' + msg)"
+            />
           </div>
+        </div>
+
+        <!-- Image provider selector -->
+        <div v-if="imageProviders.length > 0">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图像生成模型</label>
+          <select v-model="selectedImageProvider" class="input w-48">
+            <option v-for="p in imageProviders" :key="p.name" :value="p.name">
+              {{ p.display_name || p.name }}
+            </option>
+          </select>
         </div>
 
         <!-- Three-view images -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-          <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">三视图（正视图 / 侧视图 / 背视图）</h4>
-          <div class="grid gap-4 md:grid-cols-3">
-            <div v-for="view in [
-              { key: 'three_view_front' as const, label: '正视图' },
-              { key: 'three_view_side'  as const, label: '侧视图' },
-              { key: 'three_view_back'  as const, label: '背视图' },
-            ]" :key="view.key" class="space-y-2">
-              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">{{ view.label }}</label>
-              <div
-                class="relative w-full h-48 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 flex items-center justify-center"
+          <div class="flex items-center justify-between mb-4">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图（正视图 / 侧视图 / 背视图）</h4>
+            <div class="flex items-center gap-2">
+              <button
+                class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+                :disabled="generatingThreeView.all || !character.appearance"
+                @click="handleGenerateThreeView('all')"
               >
-                <img
-                  v-if="character[view.key]"
-                  :src="character[view.key]"
-                  :alt="view.label"
-                  class="w-full h-full object-contain"
-                />
-                <svg v-else class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <svg v-if="generatingThreeView.all" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-              </div>
-              <input
-                v-model="character[view.key]"
-                type="text"
-                class="input text-xs"
-                placeholder="粘贴图片 URL..."
-              />
+                {{ generatingThreeView.all ? '生成中...' : 'AI 一键生成' }}
+              </button>
             </div>
           </div>
-          <p class="mt-2 text-xs text-gray-500">填入图片 URL 后点击顶部「保存」即可保留三视图。</p>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div v-for="view in [
+              { key: 'three_view_front' as const, label: '正视图', vt: 'front' as const },
+              { key: 'three_view_side'  as const, label: '侧视图', vt: 'side'  as const },
+              { key: 'three_view_back'  as const, label: '背视图', vt: 'back'  as const },
+            ]" :key="view.key" class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ view.label }}</label>
+                <button
+                  class="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 disabled:opacity-40"
+                  :disabled="generatingThreeView[view.vt] || generatingThreeView.all || !character.appearance"
+                  @click="handleGenerateThreeView(view.vt)"
+                >
+                  <svg v-if="generatingThreeView[view.vt]" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l14 9-14 9V3z" />
+                  </svg>
+                  {{ generatingThreeView[view.vt] ? '生成中' : 'AI 生成' }}
+                </button>
+              </div>
+              <!-- Generating overlay when AI is running -->
+              <div class="relative">
+                <ImageUploadBox
+                  v-model="character[view.key]"
+                  aspect-ratio="3/4"
+                  :placeholder="view.label"
+                  @error="toast.error"
+                />
+                <div v-if="generatingThreeView[view.vt] || generatingThreeView.all" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+                  <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-gray-500">需先填写「外貌描述」，AI 才能生成准确的三视图。填入或生成后点击「保存」即可保留。</p>
+          <!-- 任务状态 -->
+          <div v-if="threeViewTaskStatus !== 'idle'" class="mt-2 text-xs">
+            <span v-if="threeViewTaskStatus === 'pending' || threeViewTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
+              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              AI 正在生成三视图，请稍候（通常需要 30-90 秒）…
+            </span>
+            <span v-else-if="threeViewTaskStatus === 'completed'" class="text-green-500">三视图生成完成</span>
+            <span v-else-if="threeViewTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
+          </div>
         </div>
       </div>
     </div>
@@ -375,17 +531,35 @@ function getRoleLabel(role: string): string {
       <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">角色弧光</h3>
       <p class="text-sm text-gray-500 mb-4">在「角色档案」标签页可编辑弧光文字描述。以下图示根据已完成章节自动生成。</p>
 
-      <!-- Emotion Curve -->
-      <div class="mt-4">
+      <!-- Loading -->
+      <div v-if="arcLoading" class="h-32 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center justify-center">
+        <p class="text-sm text-gray-400">加载中…</p>
+      </div>
+
+      <!-- No data -->
+      <div v-else-if="!arcBars.length" class="h-32 bg-gray-50 dark:bg-gray-800 rounded-lg flex flex-col items-center justify-center gap-2">
+        <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <p class="text-sm text-gray-400">暂无章节数据，完成章节后自动生成</p>
+      </div>
+
+      <!-- Real chart -->
+      <div v-else class="mt-4">
         <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-4">情感曲线（基于章节内容）</h4>
-        <div class="h-32 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-end justify-between px-4 pb-2">
-          <div v-for="(h, i) in [45, 60, 35, 75, 55, 80, 40, 70, 65, 90]" :key="i" class="w-8 bg-primary-500 rounded-t" :style="{ height: `${h}%` }"></div>
+        <div class="h-32 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-end gap-1 px-4 pb-2 overflow-x-auto">
+          <div
+            v-for="bar in arcBars"
+            :key="bar.chapter"
+            class="flex-shrink-0 w-6 bg-primary-500 rounded-t transition-all"
+            :style="{ height: `${bar.height}%` }"
+            :title="`第${bar.chapter}章 · ${bar.mood ?? ''}`"
+          />
         </div>
         <div class="flex justify-between mt-2 text-xs text-gray-500">
-          <span>第1章</span>
-          <span>第10章</span>
-          <span>第20章</span>
-          <span>第30章</span>
+          <span>第{{ arcBars[0].chapter }}章</span>
+          <span>第{{ arcBars[Math.floor(arcBars.length / 2)].chapter }}章</span>
+          <span>第{{ arcBars[arcBars.length - 1].chapter }}章</span>
         </div>
       </div>
     </div>

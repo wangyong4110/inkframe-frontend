@@ -7,7 +7,7 @@ const router = useRouter()
 const activeTab = ref('builder')
 const generating = ref(false)
 
-const novelId = parseInt(route.params.novelId as string)
+const novelId = parseInt(route.params.id as string)
 const chapterNo = ref(parseInt(route.query.chapter as string) || 1)
 
 // Loaded context

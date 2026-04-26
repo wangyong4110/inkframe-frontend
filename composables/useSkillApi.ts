@@ -19,6 +19,8 @@ export interface Skill {
   acquired_desc: string
   status: string     // active/sealed/lost/disabled
   notes: string
+  effect_image_url: string
+  effect_visual_prompt: string
   created_at: string
   updated_at: string
 }
@@ -45,6 +47,7 @@ export interface CreateSkillPayload {
 
 export interface UpdateSkillPayload extends Partial<CreateSkillPayload> {
   status?: string
+  effect_visual_prompt?: string
 }
 
 export interface GenerateSkillsPayload {
@@ -118,5 +121,9 @@ export function useSkillApi() {
     })
   }
 
-  return { listSkills, createSkill, getSkill, updateSkill, deleteSkill, generateSkills }
+  async function generateSkillEffect(skillId: number): Promise<Skill> {
+    return request(`/skills/${skillId}/effect-image`, { method: 'POST' })
+  }
+
+  return { listSkills, createSkill, getSkill, updateSkill, deleteSkill, generateSkills, generateSkillEffect }
 }

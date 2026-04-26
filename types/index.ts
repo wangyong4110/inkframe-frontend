@@ -33,6 +33,8 @@ export interface Chapter {
   title: string
   content?: string
   summary?: string
+  chapter_hook?: string   // 章末钩子正文（供下一章生成使用）
+  hook_type?: string      // 章末钩子类型（cliffhanger 等）
   word_count: number
   outline?: string
   plot_points?: PlotPoint[]
@@ -193,6 +195,7 @@ export interface ModelProvider {
   type?: string
   api_endpoint?: string
   api_key?: string
+  api_secret_key?: string
   api_version?: string
   is_active: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
