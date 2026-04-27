@@ -17,7 +17,7 @@ const saving = ref(false)
 const generating = ref(false)
 
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
-type PageMode = 'outline' | 'write' | 'character' | 'script' | 'video'
+type PageMode = 'outline' | 'write' | 'character' | 'script'
 const pageMode = ref<PageMode>('outline')
 
 function pageModeClass(mode: PageMode) {
@@ -96,9 +96,11 @@ async function handleCreateStoryboard() {
       24,
       storyboardForm.value.quality_tier,
     )
+    chapterVideos.value.unshift(video)
     showStoryboardModal.value = false
-    toast.success('视频项目已创建，正在跳转...')
-    router.push(`/video/${video.id}`)
+    pageMode.value = 'script'
+    currentVideoId.value = video.id
+    toast.success('视频项目已创建')
   } catch (e: any) {
     toast.error('创建失败：' + (e.message || '未知错误'))
   } finally {
@@ -125,6 +127,7 @@ const wordCountOverride = ref(0)
 // LLM 模型
 const llmProviders = ref<{ name: string; display_name: string }[]>([])
 const selectedLLMProvider = ref('')
+const selectedScriptProvider = ref('')
 
 async function fetchLLMProviders() {
   try {
@@ -151,19 +154,33 @@ onMounted(async () => {
     content.value = chapter.value?.content || ''
     chapterTitle.value = chapter.value?.title || ''
   }
+  // Restore tab from URL query
+  const tabParam = route.query.tab as string | undefined
+  if (tabParam === 'script') {
+    await switchToScript()
+  } else if (tabParam === 'character') {
+    switchToCharacter()
+  } else if (tabParam === 'write' || tabParam === 'outline') {
+    pageMode.value = tabParam as PageMode
+  }
 })
+
+// ── 大纲编辑（需在保存块之前声明，供 isDirty / doSave 引用）─────────────────
+const outlineEditMode = ref(false)
+const outlineEditText = ref('')
 
 // ── 保存 & 自动保存 ───────────────────────────────────────────────────────────
 const isDirty = computed(() =>
   content.value !== (chapter.value?.content || '') ||
-  chapterTitle.value !== (chapter.value?.title || '')
+  chapterTitle.value !== (chapter.value?.title || '') ||
+  (outlineEditMode.value && outlineEditText.value !== (chapter.value?.outline || ''))
 )
 
 useUnsavedGuard(isDirty, '章节有未保存的修改，确认离开？')
 
 const { lastSavedAt, autoSaving } = useAutosave(
   () => doSave(),
-  [content, chapterTitle],
+  [content, chapterTitle, outlineEditText],
 )
 
 const autoSaveLabel = computed(() => {
@@ -185,11 +202,15 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 async function doSave() {
   if (!chapter.value) return
-  await chapterStore.updateChapter(novelId, chapter.value.chapter_no, {
+  const updates: Record<string, any> = {
     title: chapterTitle.value,
     content: content.value,
     word_count: countWords(content.value),
-  })
+  }
+  if (outlineEditMode.value) {
+    updates.outline = outlineEditText.value
+  }
+  await chapterStore.updateChapter(novelId, chapter.value.chapter_no, updates)
 }
 
 async function handleSave() {
@@ -228,6 +249,50 @@ async function handleGenerate() {
 async function handleCheckQuality() {
   if (!chapter.value) return
   await chapterStore.checkQuality(chapter.value.id)
+  // Reset selections when re-running check
+  selectedSuggestions.value = new Set()
+  refinedContent.value = ''
+}
+
+// ── 质量改进 ──────────────────────────────────────────────────────────────────
+const selectedSuggestions = ref<Set<string>>(new Set())
+const refining = ref(false)
+const refinedContent = ref('')
+
+function toggleSuggestion(sg: string) {
+  if (selectedSuggestions.value.has(sg)) {
+    selectedSuggestions.value.delete(sg)
+  } else {
+    selectedSuggestions.value.add(sg)
+  }
+  selectedSuggestions.value = new Set(selectedSuggestions.value)
+}
+
+function selectAllSuggestions() {
+  const all = qualityReport.value?.suggestions ?? []
+  selectedSuggestions.value = new Set(all)
+}
+
+async function handleApplyImprovements() {
+  if (!chapter.value || selectedSuggestions.value.size === 0) return
+  refining.value = true
+  refinedContent.value = ''
+  try {
+    const api = useQualityApi()
+    const resp = await api.refineChapter(chapter.value.id, Array.from(selectedSuggestions.value))
+    refinedContent.value = resp.data?.content ?? ''
+  } catch (e: any) {
+    alert('AI精修失败：' + (e.message ?? '未知错误'))
+  } finally {
+    refining.value = false
+  }
+}
+
+async function acceptRefinement() {
+  if (!chapter.value || !refinedContent.value) return
+  await chapterStore.updateChapter(novelId, chapter.value.chapter_no, { content: refinedContent.value })
+  refinedContent.value = ''
+  selectedSuggestions.value = new Set()
 }
 
 function countWords(text: string): number {
@@ -240,8 +305,6 @@ function getActiveCharacters(): any[] {
 }
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
-const outlineEditMode = ref(false)
-const outlineEditText = ref('')
 const generatingOutline = ref(false)
 const savingOutline = ref(false)
 
@@ -259,7 +322,7 @@ async function handleSaveOutline() {
   if (!chapter.value) return
   savingOutline.value = true
   try {
-    await chapterStore.updateChapter(novelId, chapter.value.chapter_no, { outline: outlineEditText.value })
+    await doSave()
     outlineEditMode.value = false
     toast.success('大纲已保存')
   } catch (e: any) {
@@ -317,15 +380,39 @@ function switchToCharacter() {
   if (chapterItems.value.length === 0) fetchChapterItems()
 }
 
-function switchToVideo() {
-  pageMode.value = 'video'
-  if (chapterVideos.value.length === 0) fetchChapterVideos()
+// currentVideoId: null = empty state, number = show VideoEditor
+const currentVideoId = ref<number | null>(null)
+const videoEditorRef = ref<any>(null)
+const generatingScript = ref(false)
+
+async function switchToScript() {
+  pageMode.value = 'script'
+  if (chapterVideos.value.length === 0) await fetchChapterVideos()
+  if (currentVideoId.value === null && chapterVideos.value.length > 0) {
+    currentVideoId.value = chapterVideos.value[0].id
+  }
 }
 
-function switchToScript() {
-  pageMode.value = 'script'
-  fetchShotsForChapter()
-  if (chapterScenes.value.length === 0) fetchChapterScenes()
+async function handleGenerateScript() {
+  if (!chapter.value) return
+  if (!currentVideoId.value) {
+    // Auto-create project with defaults, then generate
+    generatingScript.value = true
+    try {
+      const title = `${novel.value?.title || '小说'} 第${chapterNo}章`
+      const video = await videoStore.createVideo(novelId, chapter.value.id, title, 'anime', '16:9', 24, 'draft')
+      chapterVideos.value.unshift(video)
+      currentVideoId.value = video.id
+      await nextTick()
+      videoEditorRef.value?.generateStoryboard()
+    } catch (e: any) {
+      toast.error('创建失败：' + (e.message || '未知错误'))
+    } finally {
+      generatingScript.value = false
+    }
+  } else {
+    videoEditorRef.value?.generateStoryboard()
+  }
 }
 
 function genStatusClass(status: string | undefined) {
@@ -373,7 +460,7 @@ async function fetchChapterVideos() {
   try {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/videos?chapter_id=${chapter.value.id}`)
-    chapterVideos.value = Array.isArray(data) ? data : (data?.videos ?? [])
+    chapterVideos.value = Array.isArray(data?.data?.items) ? data.data.items : (Array.isArray(data?.data) ? data.data : [])
   } catch {
     chapterVideos.value = []
   } finally {
@@ -452,6 +539,8 @@ watch(pageMode, (mode) => {
   if (mode === 'outline' && chapter.value && !loadingPlotPoints.value) {
     loadPlotPoints()
   }
+  // Sync tab to URL so refresh restores the same view
+  router.replace({ query: { ...route.query, tab: mode === 'outline' ? undefined : mode } })
 })
 
 const chapterShots = ref<any[]>([])
@@ -514,7 +603,6 @@ async function fetchShotsForChapter() {
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">脚本</button>
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('video')" @click="switchToVideo">视频</button>
         </div>
       </div>
 
@@ -734,10 +822,6 @@ async function fetchShotsForChapter() {
         <!-- ─ 角色模式 ─ -->
         <div v-else-if="pageMode === 'character'" class="h-full overflow-auto">
           <div class="max-w-2xl mx-auto px-8 py-10 space-y-8">
-            <div>
-              <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">角色管理</p>
-              <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
-            </div>
             <!-- Active characters -->
             <div>
               <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">活跃角色</h4>
@@ -806,214 +890,19 @@ async function fetchShotsForChapter() {
           </div>
         </div>
 
-        <!-- ─ 视频模式 ─ -->
-        <div v-else-if="pageMode === 'video'" class="h-full overflow-auto">
-          <div class="max-w-2xl mx-auto px-8 py-10 space-y-6">
-            <div>
-              <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">视频项目</p>
-              <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
-            </div>
-            <div v-if="loadingVideos" class="flex justify-center py-16 text-gray-400">
-              <svg class="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-              </svg>
-            </div>
-            <div v-else-if="chapterVideos.length === 0" class="text-center py-20 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
-              <svg class="w-14 h-14 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-              </svg>
-              <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">暂无视频项目</p>
-              <p class="text-xs text-gray-400 dark:text-gray-500 mb-6">先生成分镜脚本，再创建视频</p>
-              <button class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors" @click="showStoryboardModal = true">创建视频项目</button>
-            </div>
-            <div v-else class="space-y-3">
-              <div
-                v-for="video in chapterVideos"
-                :key="video.id"
-                class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
-                @click="router.push(`/video/${video.id}`)"
-              >
-                <p class="text-sm font-semibold text-gray-900 dark:text-white truncate mb-2">{{ video.title || `视频 #${video.id}` }}</p>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs px-2 py-0.5 rounded" :class="genStatusClass(video.status)">
-                    {{ video.status === 'completed' ? '完成' : video.status === 'generating' ? '生成中' : '待处理' }}
-                  </span>
-                  <span v-if="video.art_style" class="text-xs text-gray-500 dark:text-gray-400">{{ video.art_style }}</span>
-                </div>
-              </div>
-              <button class="w-full py-3 text-sm font-medium border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-300 rounded-xl transition-colors" @click="showStoryboardModal = true">+ 创建新视频项目</button>
-            </div>
-          </div>
-        </div>
-
         <!-- ─ 脚本模式 ─ -->
         <div v-else-if="pageMode === 'script'" class="h-full overflow-auto">
-          <div class="max-w-3xl mx-auto px-8 py-8 space-y-8">
-            <!-- Script header -->
-            <div>
-              <h2 class="text-lg font-bold text-gray-900 dark:text-white">脚本管理</h2>
-              <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">第 {{ chapterNo }} 章 · {{ chapterTitle || '未命名' }}</p>
-            </div>
+          <!-- Video editor -->
+          <div v-if="currentVideoId" class="px-8 py-6">
+            <VideoEditor ref="videoEditorRef" :video-id="currentVideoId" :llm-provider="selectedScriptProvider" />
+          </div>
 
-            <!-- 场景大纲 -->
-            <section v-if="parsedSceneOutline.length">
-              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span class="w-1 h-3.5 bg-primary-500 rounded-full"></span>
-                场景大纲
-                <span class="font-normal text-gray-400 normal-case tracking-normal ml-1">{{ parsedSceneOutline.length }} 个场景</span>
-              </h3>
-              <div class="grid gap-3">
-                <div
-                  v-for="scene in parsedSceneOutline"
-                  :key="scene.scene_no"
-                  class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5"
-                >
-                  <div class="flex items-start justify-between mb-3">
-                    <div class="flex items-center gap-3">
-                      <span class="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                        {{ scene.scene_no }}
-                      </span>
-                      <div>
-                        <span v-if="scene.pov" class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ scene.pov }}</span>
-                        <span v-if="scene.location" class="text-xs text-gray-500 dark:text-gray-400 ml-2">{{ scene.location }}</span>
-                      </div>
-                    </div>
-                    <span
-                      v-if="scene.tension"
-                      class="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
-                      :class="{
-                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': ['高','high'].includes(scene.tension),
-                        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': ['中','medium'].includes(scene.tension),
-                        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': ['低','low'].includes(scene.tension),
-                        'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400': !['高','中','低','high','medium','low'].includes(scene.tension ?? ''),
-                      }"
-                    >张力 {{ scene.tension }}</span>
-                  </div>
-                  <p v-if="scene.goals" class="text-sm text-gray-600 dark:text-gray-400 mb-3 leading-relaxed">{{ scene.goals }}</p>
-                  <div v-if="scene.beats?.length" class="flex flex-wrap gap-1.5">
-                    <span
-                      v-for="(beat, bi) in scene.beats"
-                      :key="bi"
-                      class="text-xs px-2.5 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full"
-                    >{{ beat }}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 剧情节点 -->
-            <section v-if="chapter?.plot_points?.length">
-              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span class="w-1 h-3.5 bg-amber-500 rounded-full"></span>
-                剧情节点
-              </h3>
-              <div class="relative pl-5">
-                <div class="absolute left-1.5 top-2 bottom-2 w-px bg-gray-200 dark:bg-gray-700"></div>
-                <div class="space-y-3">
-                  <div v-for="(pp, idx) in chapter.plot_points" :key="idx" class="relative flex items-start gap-3">
-                    <span class="absolute -left-3.5 mt-1.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-gray-50 dark:border-gray-900 flex-shrink-0"></span>
-                    <div class="flex-1 min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
-                      <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ pp.description }}</p>
-                      <p v-if="pp.type" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ pp.type }}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 分镜脚本 -->
-            <section>
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                  <span class="w-1 h-3.5 bg-purple-500 rounded-full"></span>
-                  分镜脚本
-                  <span v-if="chapterShots.length" class="font-normal text-gray-400 normal-case tracking-normal ml-1">{{ chapterShots.length }} 个镜头</span>
-                </h3>
-                <NuxtLink
-                  v-if="shotsVideoId"
-                  :to="`/video/${shotsVideoId}`"
-                  class="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:underline"
-                >查看完整分镜 →</NuxtLink>
-              </div>
-
-              <div v-if="loadingShots" class="flex items-center justify-center py-16 text-gray-400">
-                <svg class="w-5 h-5 animate-spin mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                加载中…
-              </div>
-              <div v-else-if="chapterShots.length === 0" class="text-center py-16 text-gray-400 dark:text-gray-500">
-                <svg class="w-12 h-12 mx-auto mb-4 opacity-25" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
-                </svg>
-                <p class="text-sm font-medium mb-1">暂无分镜脚本</p>
-                <p class="text-xs text-gray-400 mb-4">先生成章节内容，再创建分镜脚本</p>
-                <button class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors" @click="showStoryboardModal = true">立即生成</button>
-              </div>
-              <div v-else class="grid gap-3">
-                <div
-                  v-for="shot in chapterShots"
-                  :key="shot.id"
-                  class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden"
-                >
-                  <div class="flex items-center gap-3 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-700">
-                    <span class="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                      {{ shot.shot_no }}
-                    </span>
-                    <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-                      <span v-if="shot.shot_size" class="text-xs px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded">{{ shot.shot_size }}</span>
-                      <span v-if="shot.camera_angle" class="text-xs px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded">{{ shot.camera_angle }}</span>
-                      <span v-if="shot.camera_type" class="text-xs px-2 py-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded">{{ shot.camera_type }}</span>
-                      <span v-if="shot.duration" class="text-xs text-gray-400 dark:text-gray-500 ml-auto">{{ shot.duration }}s</span>
-                    </div>
-                    <span class="text-xs px-2 py-0.5 rounded flex-shrink-0" :class="genStatusClass(shot.status)">
-                      {{ shot.status === 'completed' ? '已完成' : shot.status === 'generating' ? '生成中' : '待生成' }}
-                    </span>
-                  </div>
-                  <div class="px-4 py-3 space-y-2">
-                    <p v-if="shot.description" class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ shot.description }}</p>
-                    <div v-if="shot.dialogue" class="pl-3 border-l-2 border-amber-300 dark:border-amber-600">
-                      <p class="text-xs text-gray-400 dark:text-gray-500 mb-0.5">对白</p>
-                      <p class="text-sm text-gray-600 dark:text-gray-400 italic leading-relaxed">{{ shot.dialogue }}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- 场景列表 -->
-            <section v-if="chapterScenes.length || loadingScenes">
-              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span class="w-1 h-3.5 bg-teal-500 rounded-full"></span>
-                本章场景
-              </h3>
-              <div v-if="loadingScenes" class="flex justify-center py-8 text-gray-400">
-                <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-              </div>
-              <div v-else class="grid gap-3">
-                <div v-for="scene in chapterScenes" :key="scene.id" class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-                  <p class="text-xs font-mono text-gray-400 dark:text-gray-500 mb-1.5">{{ scene.scene_id || `场景 ${scene.id}` }}</p>
-                  <p v-if="scene.visual_description || scene.description" class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                    {{ scene.visual_description || scene.description }}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <!-- Empty state for no script data -->
-            <div
-              v-if="pageMode === 'script' && !parsedSceneOutline.length && !chapter?.plot_points?.length && !loadingShots && chapterShots.length === 0"
-              class="text-center py-20 text-gray-400 dark:text-gray-500"
-            >
-              <svg class="w-16 h-16 mx-auto mb-5 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
-              <p class="text-base font-medium mb-2">暂无脚本内容</p>
-              <p class="text-sm text-gray-400 mb-6">先在「写作」模式完成内容，再生成分镜脚本</p>
-              <button class="px-4 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" @click="pageMode = 'write'">去写作</button>
-            </div>
+          <!-- Empty state -->
+          <div v-else class="flex flex-col items-center justify-center h-full text-center text-gray-400 dark:text-gray-500 select-none">
+            <svg class="w-12 h-12 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <p class="text-sm">点击右侧「生成分镜脚本」开始</p>
           </div>
         </div>
       </main>
@@ -1025,7 +914,7 @@ async function fetchShotsForChapter() {
         <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <p class="text-xs font-semibold text-gray-900 dark:text-white">AI 助手</p>
           <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-            {{ pageMode === 'outline' ? '大纲' : pageMode === 'write' ? '写作' : pageMode === 'character' ? '角色' : pageMode === 'script' ? '脚本' : '视频' }}
+            {{ pageMode === 'outline' ? '大纲' : pageMode === 'write' ? '写作' : pageMode === 'character' ? '角色' : '脚本' }}
           </p>
         </div>
 
@@ -1086,24 +975,30 @@ async function fetchShotsForChapter() {
               </div>
 
               <!-- Quality report -->
-              <div v-if="qualityReport" class="pt-4 border-t border-gray-100 dark:border-gray-700">
-                <div class="flex items-center justify-between mb-3">
+              <div v-if="qualityReport" class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                <!-- Score header -->
+                <div class="flex items-center justify-between">
                   <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">质量报告</h4>
-                  <span class="text-sm font-bold" :class="qualityReport.overall_score >= 0.8 ? 'text-green-600' : qualityReport.overall_score >= 0.6 ? 'text-amber-500' : 'text-red-500'">
-                    {{ (qualityReport.overall_score * 100).toFixed(0) }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold" :class="qualityReport.overall_score >= 0.8 ? 'text-green-600' : qualityReport.overall_score >= 0.6 ? 'text-amber-500' : 'text-red-500'">
+                      {{ (qualityReport.overall_score * 100).toFixed(0) }}分
+                    </span>
+                    <button class="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="handleCheckQuality">重新检查</button>
+                  </div>
                 </div>
-                <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mb-3">
+                <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                   <div
                     class="h-full rounded-full transition-all"
                     :style="{ width: `${qualityReport.overall_score * 100}%` }"
                     :class="qualityReport.overall_score >= 0.8 ? 'bg-green-500' : qualityReport.overall_score >= 0.6 ? 'bg-amber-500' : 'bg-red-500'"
                   />
                 </div>
+
+                <!-- Issues -->
                 <div v-if="qualityReport.issues.length > 0" class="space-y-1.5">
                   <div
                     v-for="issue in qualityReport.issues.slice(0, 4)"
-                    :key="issue.id"
+                    :key="issue.description"
                     class="px-3 py-2 rounded-lg text-xs leading-relaxed"
                     :class="{
                       'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300': issue.severity === 'high',
@@ -1111,6 +1006,51 @@ async function fetchShotsForChapter() {
                       'bg-gray-50 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300': issue.severity === 'low',
                     }"
                   >{{ issue.description }}</div>
+                </div>
+
+                <!-- Suggestions with checkboxes -->
+                <div v-if="qualityReport.suggestions && qualityReport.suggestions.length > 0" class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">改进建议</span>
+                    <button class="text-[10px] text-blue-500 hover:text-blue-700" @click="selectAllSuggestions">全选</button>
+                  </div>
+                  <label
+                    v-for="sg in qualityReport.suggestions"
+                    :key="sg"
+                    class="flex items-start gap-2 cursor-pointer group"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="selectedSuggestions.has(sg)"
+                      class="mt-0.5 rounded border-gray-300 text-blue-600 shrink-0"
+                      @change="toggleSuggestion(sg)"
+                    />
+                    <span class="text-xs text-gray-600 dark:text-gray-300 leading-relaxed group-hover:text-gray-900 dark:group-hover:text-gray-100">{{ sg }}</span>
+                  </label>
+
+                  <!-- Apply button -->
+                  <button
+                    :disabled="selectedSuggestions.size === 0 || refining"
+                    class="w-full py-1.5 text-xs rounded-lg transition-colors disabled:opacity-40"
+                    :class="selectedSuggestions.size > 0 && !refining ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 dark:bg-gray-700'"
+                    @click="handleApplyImprovements"
+                  >
+                    <span v-if="refining">AI精修中...</span>
+                    <span v-else>应用所选建议 ({{ selectedSuggestions.size }})</span>
+                  </button>
+                </div>
+
+                <!-- Refined content preview -->
+                <div v-if="refinedContent" class="space-y-2 border border-blue-200 dark:border-blue-700 rounded-lg p-3 bg-blue-50 dark:bg-blue-900/20">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">AI精修预览</span>
+                    <button class="text-[10px] text-gray-400 hover:text-gray-600" @click="refinedContent = ''">取消</button>
+                  </div>
+                  <div class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap">{{ refinedContent.slice(0, 400) }}{{ refinedContent.length > 400 ? '...' : '' }}</div>
+                  <button
+                    class="w-full py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    @click="acceptRefinement"
+                  >接受并替换原文</button>
                 </div>
               </div>
 
@@ -1194,31 +1134,30 @@ async function fetchShotsForChapter() {
           <!-- ── 脚本 AI ── -->
           <template v-else-if="pageMode === 'script'">
             <div class="p-4 space-y-4">
-              <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">基于本章内容创建视频项目，完成后跳转到分镜编辑器。</p>
-              <button
-                class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
-                @click="showStoryboardModal = true"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
-                </svg>
-                生成分镜脚本
-              </button>
-            </div>
-          </template>
+              <!-- LLM model selector -->
+              <div v-if="llmProviders.length > 0">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">分镜模型</label>
+                <select v-model="selectedScriptProvider" class="input text-sm">
+                  <option value="">默认</option>
+                  <option v-for="p in llmProviders" :key="p.name" :value="p.name">
+                    {{ p.display_name || p.name }}
+                  </option>
+                </select>
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">用于生成文字分镜脚本</p>
+              </div>
 
-          <!-- ── 视频 AI ── -->
-          <template v-else-if="pageMode === 'video'">
-            <div class="p-4 space-y-4">
-              <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">创建新的视频项目，选择画面风格和质量后生成分镜。</p>
               <button
-                class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
-                @click="showStoryboardModal = true"
+                class="w-full px-4 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                :disabled="generatingScript || videoStore.generating || videoStore.storyboardTaskStatus === 'pending' || videoStore.storyboardTaskStatus === 'running'"
+                @click="handleGenerateScript"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                <svg v-if="generatingScript || videoStore.generating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                创建视频项目
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                {{ generatingScript ? '创建中…' : videoStore.generating ? '生成中…' : '生成分镜脚本' }}
               </button>
             </div>
           </template>

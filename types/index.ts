@@ -90,6 +90,11 @@ export interface Character {
   three_view_back?: string
   portrait?: string
   cover_image?: string
+  // 配音设置
+  voice_id?: string
+  voice_speed?: number
+  voice_style?: string
+  voice_sample?: string
   created_at: string
   updated_at: string
 }
@@ -108,6 +113,11 @@ export interface Worldview {
   culture?: string
   technology?: string
   rules?: string
+  factions?: string
+  core_conflicts?: string
+  character_archetypes?: string
+  religion?: string
+  glossary?: string
   cover_image?: string
   entities?: WorldviewEntity[]
   created_at: string
@@ -131,6 +141,9 @@ export type EntityType = 'location' | 'organization' | 'artifact' | 'race' | 'cr
 // Video types
 export type VideoQualityTier = 'draft' | 'preview' | 'final'
 
+export type VideoMode = 'video' | 'slideshow'
+export type VideoScriptStatus = 'draft' | 'confirmed'
+
 export interface Video {
   id: number
   novel_id: number
@@ -138,6 +151,8 @@ export interface Video {
   uuid: string
   title: string
   status: VideoStatus
+  script_status?: VideoScriptStatus
+  mode?: VideoMode
   quality_tier?: VideoQualityTier
   frame_rate: number
   resolution: string
@@ -164,12 +179,15 @@ export interface StoryboardShot {
   camera_angle: CameraAngle
   shot_size: ShotSize
   duration: number
+  emotional_tone?: string
   character_configs?: ShotCharacterConfig[]
   scene_config?: ShotSceneConfig
   status: ShotStatus
   generation_mode?: ShotGenerationMode
   image_url?: string
   video_url?: string
+  audio_path?: string
+  audio_url?: string  // 后端转换后的可播放 URL（file:// 已转为 API 端点）
 }
 
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
@@ -189,6 +207,26 @@ export interface ShotSceneConfig {
   time_of_day?: string
   weather?: string
   lighting?: string
+}
+
+// Async Task types
+export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type AsyncTaskType = 'storyboard_gen' | 'chapter_gen' | 'voice_gen' | 'image_gen' | 'three_view'
+
+export interface AsyncTask {
+  id: number
+  task_id: string
+  tenant_id: number
+  type: AsyncTaskType | string
+  status: AsyncTaskStatus
+  title: string
+  entity_type: string
+  entity_id: number
+  data?: Record<string, unknown>
+  error?: string
+  progress: number
+  created_at: string
+  updated_at: string
 }
 
 // Model types

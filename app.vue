@@ -2,6 +2,7 @@
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
+  <TaskPanel />
 </template>
 
 <script setup lang="ts">

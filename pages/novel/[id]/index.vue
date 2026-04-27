@@ -128,6 +128,7 @@ const characters = computed(() => characterStore.characters)
 // Worldview list for linking
 const worldviewList = ref<{ id: number; name: string }[]>([])
 const linkingWorldview = ref(false)
+const generatingWorldview = ref(false)
 const linkedWorldview = ref<Worldview | null>(null)
 const linkedWorldviewLoading = ref(false)
 
@@ -193,6 +194,7 @@ const tabs = [
   { key: 'items', label: '物品', icon: 'archive' },
   { key: 'skills', label: '技能', icon: 'zap' },
   { key: 'worldview', label: '世界观', icon: 'globe' },
+  { key: 'plot_points', label: '剧情点', icon: 'flag' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -277,6 +279,25 @@ async function confirmDeleteChapter() {
     chapterToDelete.value = null
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || '未知错误'))
+  }
+}
+
+async function handleGenerateWorldview() {
+  if (!novel.value || generatingWorldview.value) return
+  generatingWorldview.value = true
+  try {
+    const worldviewApi = useWorldviewApi()
+    const resp = await worldviewApi.generateWorldview({ novel_id: novelId, genre: novel.value.genre || 'fantasy' })
+    const newWv = (resp as any).data as Worldview
+    await novelStore.updateNovel(novelId, { worldview_id: newWv.id })
+    // 更新下拉列表
+    const wvResp = await worldviewApi.getWorldviews({ page_size: 100 })
+    worldviewList.value = ((wvResp as any).data?.items ?? []).map((w: Worldview) => ({ id: w.id, name: w.name }))
+    toast.success(novel.value.worldview_id ? '世界观已 AI 更新' : 'AI 世界观生成成功')
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || ''))
+  } finally {
+    generatingWorldview.value = false
   }
 }
 
@@ -504,6 +525,7 @@ const skillApi = useSkillApi()
 const skills = ref<Skill[]>([])
 const skillsLoading = ref(false)
 const showSkillModal = ref(false)
+const showAdvancedAI = ref(false)
 const deletingSkillId = ref<number | null>(null)
 const generatingSkills = ref(false)
 const savingSkill = ref(false)
@@ -528,6 +550,49 @@ async function fetchSkills() {
 watch(activeTab, (tab) => {
   if (tab === 'skills' && skills.value.length === 0 && !skillsLoading.value) {
     fetchSkills()
+  }
+})
+
+// ── 剧情点 ─────────────────────────────────────────────────────────────────────
+import type { PlotPoint } from '~/types'
+const plotPoints = ref<PlotPoint[]>([])
+const plotPointsLoading = ref(false)
+const plotPointApi = usePlotPointApi()
+
+const plotPointTypeLabel: Record<string, string> = {
+  conflict: '冲突', climax: '高潮', resolution: '解决', twist: '转折', foreshadow: '伏笔',
+}
+const plotPointTypeBadgeClass: Record<string, string> = {
+  conflict: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  climax: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  resolution: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  twist: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  foreshadow: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+}
+
+async function fetchPlotPoints() {
+  plotPointsLoading.value = true
+  try {
+    const data = await plotPointApi.listByNovel(novelId)
+    plotPoints.value = data.plot_points ?? []
+  } catch { /* ignore */ } finally {
+    plotPointsLoading.value = false
+  }
+}
+
+async function handleDeletePlotPoint(id: number) {
+  if (!confirm('确认删除该剧情点？')) return
+  try {
+    await plotPointApi.remove(id)
+    plotPoints.value = plotPoints.value.filter(p => p.id !== id)
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'plot_points' && plotPoints.value.length === 0 && !plotPointsLoading.value) {
+    fetchPlotPoints()
   }
 })
 
@@ -1146,6 +1211,16 @@ function getSkillStatusLabel(status: string): string {
             </div>
           </div>
           <div class="flex items-center space-x-2">
+            <button
+              class="btn-primary text-sm flex items-center gap-1.5"
+              :disabled="generatingWorldview"
+              @click="handleGenerateWorldview"
+            >
+              <svg v-if="generatingWorldview" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{{ generatingWorldview ? 'AI 生成中...' : 'AI 更新' }}</span>
+            </button>
             <NuxtLink :to="`/worldview/${novel.worldview_id}`" class="btn-outline text-sm">编辑</NuxtLink>
             <button class="btn-ghost text-sm text-red-500 hover:text-red-600" :disabled="linkingWorldview" @click="linkWorldview(null)">解除</button>
           </div>
@@ -1215,14 +1290,89 @@ function getSkillStatusLabel(status: string): string {
           </select>
         </div>
 
-        <div class="flex items-center space-x-3 pt-2 border-t border-gray-200 dark:border-gray-700">
-          <NuxtLink :to="`/worldview/create?novel_id=${novelId}`" class="btn-outline text-sm">
+        <div class="flex items-center gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+          <button
+            class="btn-primary text-sm flex items-center gap-1.5"
+            :disabled="generatingWorldview"
+            @click="handleGenerateWorldview"
+          >
+            <svg v-if="generatingWorldview" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {{ generatingWorldview ? 'AI 生成中...' : 'AI 生成世界观' }}
+          </button>
+          <NuxtLink :to="`/worldview/create?novel_id=${novelId}`" class="btn-outline text-sm flex items-center">
             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-            新建世界观
+            手动新建
           </NuxtLink>
-          <span class="text-xs text-gray-400">创建新世界观并自动关联到此小说</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plot Points Tab -->
+    <div v-if="activeTab === 'plot_points'" class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white">全部剧情点</h3>
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          :disabled="plotPointsLoading"
+          @click="fetchPlotPoints"
+        >
+          <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': plotPointsLoading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          刷新
+        </button>
+      </div>
+
+      <div v-if="plotPointsLoading" class="flex justify-center py-12">
+        <svg class="w-6 h-6 animate-spin text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </div>
+
+      <div v-else-if="plotPoints.length === 0" class="card p-12 text-center">
+        <svg class="w-12 h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+        </svg>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">暂无剧情点</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500">在章节编辑页的「大纲」模式中提取或手动添加剧情点</p>
+      </div>
+
+      <div v-else class="space-y-2">
+        <div
+          v-for="pp in plotPoints"
+          :key="pp.id"
+          class="card px-4 py-3 flex items-start gap-3 transition-colors"
+          :class="pp.is_resolved ? 'opacity-50' : ''"
+        >
+          <span
+            class="flex-shrink-0 mt-0.5 text-xs font-medium px-1.5 py-0.5 rounded"
+            :class="plotPointTypeBadgeClass[pp.type] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'"
+          >{{ plotPointTypeLabel[pp.type] ?? pp.type }}</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-gray-800 dark:text-gray-200 leading-relaxed" :class="{ 'line-through text-gray-400': pp.is_resolved }">
+              {{ pp.description }}
+            </p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              第 {{ pp.chapter_id }} 章
+              <span v-if="pp.is_resolved" class="ml-2 text-green-600 dark:text-green-400">✓ 已解决</span>
+            </p>
+          </div>
+          <button
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            title="删除"
+            @click="handleDeletePlotPoint(pp.id)"
+          >
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -1248,59 +1398,6 @@ function getSkillStatusLabel(status: string): string {
             class="input"
             @change="(e) => novelStore.updateNovel(novelId, { description: (e.target as HTMLTextAreaElement).value })"
           ></textarea>
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">题材类型</label>
-            <select
-              :value="novel?.genre"
-              class="input"
-              @change="(e) => novelStore.updateNovel(novelId, { genre: (e.target as HTMLSelectElement).value })"
-            >
-              <option value="fantasy">玄幻奇幻</option>
-              <option value="xianxia">仙侠修仙</option>
-              <option value="urban">都市现代</option>
-              <option value="romance">言情爱情</option>
-              <option value="historical">历史古代</option>
-              <option value="scifi">科幻未来</option>
-              <option value="mystery">悬疑推理</option>
-              <option value="wuxia">武侠江湖</option>
-              <option value="horror">灵异恐怖</option>
-              <option value="game">游戏竞技</option>
-              <option value="military">军事战争</option>
-              <option value="sports">体育竞技</option>
-              <option value="campus">青春校园</option>
-              <option value="apocalypse">末世废土</option>
-              <option value="rebirth">重生穿越</option>
-              <option value="palace">宫斗宅斗</option>
-              <option value="system">系统流</option>
-              <option value="other">其他</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">项目状态</label>
-            <select
-              :value="novel?.status"
-              class="input"
-              @change="(e) => novelStore.updateNovel(novelId, { status: (e.target as HTMLSelectElement).value })"
-            >
-              <option value="planning">规划中</option>
-              <option value="writing">创作中</option>
-              <option value="paused">暂停</option>
-              <option value="completed">已完成</option>
-              <option value="archived">已归档</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">封面图片</label>
-          <ImageUploadBox
-            :model-value="novel?.cover_image ?? ''"
-            aspect-ratio="3/4"
-            placeholder="上传封面图片"
-            @update:model-value="(url) => novelStore.updateNovel(novelId, { cover_image: url })"
-            @error="(msg) => toast.error(msg)"
-          />
         </div>
         <!-- Writing Style -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
@@ -1366,15 +1463,26 @@ function getSkillStatusLabel(status: string): string {
           </p>
         </div>
 
-        <!-- AI Config -->
+        <!-- AI Config (collapsible) -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">AI 配置</h4>
-          <div class="space-y-4">
+          <button
+            type="button"
+            class="flex items-center justify-between w-full text-left"
+            @click="showAdvancedAI = !showAdvancedAI"
+          >
+            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">高级设置</h4>
+            <svg
+              class="w-4 h-4 text-gray-400 transition-transform"
+              :class="{ 'rotate-180': showAdvancedAI }"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div v-if="showAdvancedAI" class="mt-4 space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI 模型</label>
-              <!-- Dynamic select when models available -->
               <select
-                v-if="availableModels.length > 0"
                 :value="novel?.ai_model ?? ''"
                 class="input"
                 @change="(e) => novelStore.updateNovel(novelId, { ai_model: (e.target as HTMLSelectElement).value || undefined })"
@@ -1382,22 +1490,12 @@ function getSkillStatusLabel(status: string): string {
                 <option value="">使用默认模型</option>
                 <option v-for="m in availableModels" :key="m.id" :value="m.name">
                   {{ m.display_name || m.name }}
-                  <template v-if="m.description"> — {{ m.description }}</template>
                 </option>
               </select>
-              <!-- Fallback text input when no models configured -->
-              <input
-                v-else
-                type="text"
-                :value="novel?.ai_model"
-                class="input"
-                placeholder="留空使用默认模型"
-                @change="(e) => novelStore.updateNovel(novelId, { ai_model: (e.target as HTMLInputElement).value || undefined })"
-              />
               <p v-if="availableModels.length === 0" class="mt-1 text-xs text-gray-400">
-                可在
+                暂无可用模型，可在
                 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
-                中添加 AI 供应商
+                中添加
               </p>
             </div>
             <div>
@@ -1420,9 +1518,7 @@ function getSkillStatusLabel(status: string): string {
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                每章最大 Tokens
-              </label>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">每章最大 Tokens</label>
               <input
                 type="number"
                 :value="novel?.max_tokens ?? 4096"

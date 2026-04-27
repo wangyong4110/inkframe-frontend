@@ -159,6 +159,12 @@ export const useCharacterStore = defineStore('character', {
       this.currentCharacter = character
     },
 
+    patchCurrentCharacter(data: Partial<Character>) {
+      if (this.currentCharacter) {
+        Object.assign(this.currentCharacter, data)
+      }
+    },
+
     clearCharacters() {
       this.characters = []
       this.currentCharacter = null

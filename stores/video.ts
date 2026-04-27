@@ -87,7 +87,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string) {
+    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string, mode?: string) {
       this.loading = true
       this.error = null
 
@@ -101,6 +101,7 @@ export const useVideoStore = defineStore('video', {
           aspect_ratio: aspectRatio,
           frame_rate: frameRate,
           quality_tier: qualityTier,
+          mode,
         })
         this.videos.unshift(response.data)
         return response.data
@@ -188,6 +189,7 @@ export const useVideoStore = defineStore('video', {
         if (!taskId) throw new Error('未获取到任务ID')
         this.storyboardTaskId = taskId
         this.storyboardTaskStatus = 'pending'
+        localStorage.setItem(`storyboard_task_${videoId}`, taskId)
         this.pollStoryboardTask(videoId, taskId)
       } catch (e: any) {
         this.error = e.message || 'Failed to generate storyboard'
@@ -202,26 +204,40 @@ export const useVideoStore = defineStore('video', {
       const poll = async () => {
         try {
           const res = await api.getStoryboardGenStatus(videoId, taskId)
-          this.storyboardTaskStatus = res.status
-          if (res.status === 'completed') {
+          const task = res.data
+          this.storyboardTaskStatus = task.status
+          if (task.status === 'completed') {
             this.generating = false
-            const shots = res.data?.shots
+            localStorage.removeItem(`storyboard_task_${videoId}`)
+            const shots = task.data?.shots
             if (shots) this.storyboard = shots
             return
           }
-          if (res.status === 'failed') {
+          if (task.status === 'failed') {
             this.generating = false
-            this.error = res.error || '分镜生成失败'
+            localStorage.removeItem(`storyboard_task_${videoId}`)
+            this.error = task.error || '分镜生成失败'
             return
           }
           // still running/pending — poll again
-          setTimeout(poll, 3000)
+          setTimeout(poll, 1000)
         } catch {
           this.generating = false
           this.storyboardTaskStatus = 'failed'
+          localStorage.removeItem(`storyboard_task_${videoId}`)
         }
       }
-      setTimeout(poll, 2000)
+      setTimeout(poll, 1000)
+    },
+
+    // Resume polling for a task that survived a page refresh
+    resumeStoryboardTask(videoId: number) {
+      const taskId = localStorage.getItem(`storyboard_task_${videoId}`)
+      if (!taskId) return
+      this.storyboardTaskId = taskId
+      this.storyboardTaskStatus = 'running'
+      this.generating = true
+      this.pollStoryboardTask(videoId, taskId)
     },
 
     async updateShot(videoId: number, shotId: number, data: Partial<StoryboardShot>) {

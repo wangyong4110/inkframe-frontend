@@ -17,6 +17,7 @@ import type {
   CreateCharacterForm,
   CreateWorldviewForm,
   ApiResponse,
+  AsyncTask,
 } from '~/types'
 
 export const useApi = () => {
@@ -277,6 +278,12 @@ export const useCharacterApi = () => {
   const uploadPortrait = (id: number, file: File) =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
+  const previewVoice = (id: number, text?: string) =>
+    request<ApiResponse<{ audio_url: string; voice_id: string; voice_speed: number }>>(`/characters/${id}/voice/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ text: text ?? '' }),
+    })
+
   return {
     getCharacters,
     getCharacter,
@@ -287,6 +294,7 @@ export const useCharacterApi = () => {
     generateThreeView,
     getThreeViewTaskStatus,
     uploadPortrait,
+    previewVoice,
   }
 }
 
@@ -322,7 +330,7 @@ export const useWorldviewApi = () => {
   const deleteWorldview = (id: number) =>
     request<void>(`/worldviews/${id}`, { method: 'DELETE' })
 
-  const generateWorldview = (data: { genre: string; hints?: string[] }) =>
+  const generateWorldview = (data: { genre?: string; hints?: string[]; novel_id?: number }) =>
     request<ApiResponse<Worldview>>('/worldviews/generate', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -377,7 +385,7 @@ export const useVideoApi = () => {
   const getVideo = (id: number) =>
     request<ApiResponse<Video>>(`/videos/${id}`)
 
-  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string }) =>
+  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string; mode?: string }) =>
     request<ApiResponse<Video>>(`/novels/${data.novel_id}/videos`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -414,12 +422,12 @@ export const useVideoApi = () => {
     request<ApiResponse<{ name: string; display_name: string }[]>>('/videos/providers')
 
   const getStoryboardGenStatus = (id: number, taskId: string) =>
-    request<{
+    request<ApiResponse<{
       task_id: string
       status: 'pending' | 'running' | 'completed' | 'failed'
       data?: { shots?: StoryboardShot[]; total?: number; [key: string]: unknown }
       error?: string
-    }>(`/videos/${id}/storyboard/generate/${taskId}`)
+    }>>(`/videos/${id}/storyboard/generate/${taskId}`)
 
   const getStoryboard = (id: number) =>
     request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard`)
@@ -432,6 +440,12 @@ export const useVideoApi = () => {
 
   const exportCapcut = (id: number) =>
     requestBlob(`/videos/${id}/export/capcut`)
+
+  const generateVoice = (videoId: number, shotId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/storyboard/${shotId}/voice`, {
+      method: 'POST',
+      body: '{}',
+    })
 
   return {
     getVideos,
@@ -447,6 +461,7 @@ export const useVideoApi = () => {
     batchGenerateShots,
     exportCapcut,
     getVideoProviders,
+    generateVoice,
   }
 }
 
@@ -457,11 +472,11 @@ export const useModelApi = () => {
   const getProviders = () =>
     request<ApiResponse<ModelProvider[]>>('/model-providers')
 
-  const getImageCapableProviders = () =>
-    request<ApiResponse<{ name: string; display_name: string }[]>>('/model-providers/image-capable')
+  const getCapableProviders = (type: string) =>
+    request<ApiResponse<{ name: string; display_name: string }[]>>(`/model-providers/capable?type=${type}`)
 
-  const getLLMCapableProviders = () =>
-    request<ApiResponse<{ name: string; display_name: string }[]>>('/model-providers/llm-capable')
+  const getImageCapableProviders = () => getCapableProviders('IMAGE')
+  const getLLMCapableProviders = () => getCapableProviders('LLM')
 
   const getModels = (params?: { provider_id?: number }) => {
     const searchParams = new URLSearchParams()
@@ -518,6 +533,7 @@ export const useModelApi = () => {
 
   return {
     getProviders,
+    getCapableProviders,
     getImageCapableProviders,
     getLLMCapableProviders,
     getModels,
@@ -632,9 +648,16 @@ export const useQualityApi = () => {
   const getQualityReport = (chapterId: number) =>
     request<ApiResponse<QualityReport>>(`/chapters/${chapterId}/quality-report`)
 
+  const refineChapter = (chapterId: number, suggestions: string[]) =>
+    request<ApiResponse<{ content: string }>>(`/chapters/${chapterId}/improve`, {
+      method: 'POST',
+      body: JSON.stringify({ suggestions }),
+    })
+
   return {
     checkQuality,
     getQualityReport,
+    refineChapter,
   }
 }
 
@@ -781,5 +804,26 @@ export const useItemApi = () => {
     listEffectiveItems,
     upsertChapterItem,
     deleteChapterItem,
+  }
+}
+
+// Unified Async Task API
+export const useTaskApi = () => {
+  const { request } = useApi()
+  return {
+    getTask: (taskId: string) =>
+      request<ApiResponse<AsyncTask>>(`/tasks/${taskId}`),
+
+    listTasks: (params?: { type?: string; status?: string; page?: number; page_size?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.type) q.set('type', params.type)
+      if (params?.status) q.set('status', params.status)
+      if (params?.page) q.set('page', String(params.page))
+      if (params?.page_size) q.set('page_size', String(params.page_size))
+      const qs = q.toString()
+      return request<ApiResponse<{ items: AsyncTask[]; total: number; page: number; page_size: number }>>(
+        `/tasks${qs ? '?' + qs : ''}`,
+      )
+    },
   }
 }

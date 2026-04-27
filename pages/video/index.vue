@@ -35,6 +35,21 @@ const QUALITY_TIERS = [
   },
 ]
 
+const VIDEO_MODES = [
+  {
+    id: 'slideshow' as const,
+    name: '图片解说',
+    desc: '每镜一图+动效，低成本',
+    icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+  },
+  {
+    id: 'video' as const,
+    name: 'AI 视频',
+    desc: '逐帧 AI 视频，效果最佳',
+    icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  },
+]
+
 const createForm = ref({
   title: '',
   chapter_id: 0,
@@ -43,6 +58,7 @@ const createForm = ref({
   aspect_ratio: '16:9',
   frame_rate: 24,
   quality_tier: 'draft' as 'draft' | 'preview' | 'final',
+  mode: 'slideshow' as 'slideshow' | 'video',
 })
 
 // Estimated shots: roughly 6 per chapter (conservative)
@@ -110,6 +126,7 @@ async function createVideo() {
     createForm.value.aspect_ratio,
     createForm.value.frame_rate,
     createForm.value.quality_tier,
+    createForm.value.mode,
   )
   showCreateModal.value = false
   router.push(`/video/${video.id}`)
@@ -229,7 +246,10 @@ async function createVideo() {
             </div>
             <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
               <span>{{ video.total_shots }} 个镜头</span>
-              <span>{{ video.resolution }} {{ video.frame_rate }}fps</span>
+              <span class="flex items-center gap-1.5">
+                <span v-if="video.mode === 'slideshow'" class="px-1.5 py-0.5 text-xs rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">图片解说</span>
+                {{ video.resolution }} {{ video.frame_rate }}fps
+              </span>
             </div>
           </div>
         </div>
@@ -338,6 +358,31 @@ async function createVideo() {
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">图片风格</label>
               <StylePicker type="image" v-model="createForm.art_style" compact />
+            </div>
+
+            <!-- Generation Mode -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">生成模式</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="m in VIDEO_MODES"
+                  :key="m.id"
+                  type="button"
+                  class="rounded-xl border-2 p-3 text-left transition-all"
+                  :class="createForm.mode === m.id
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
+                  @click="createForm.mode = m.id"
+                >
+                  <div class="flex items-center gap-2 mb-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="m.icon" />
+                    </svg>
+                    <p class="text-sm font-semibold">{{ m.name }}</p>
+                  </div>
+                  <p class="text-xs opacity-75">{{ m.desc }}</p>
+                </button>
+              </div>
             </div>
 
             <!-- Quality Tier -->

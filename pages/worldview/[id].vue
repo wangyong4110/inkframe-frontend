@@ -423,23 +423,9 @@ async function generateWorldview() {
       <div class="fixed inset-0 bg-black/50" @click="showGenerateModal = false"></div>
       <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI 生成世界观</h3>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
-            <select v-model="worldview.genre" class="input">
-              <option value="fantasy">玄幻</option>
-              <option value="xianxia">仙侠</option>
-              <option value="urban">都市</option>
-              <option value="scifi">科幻</option>
-              <option value="romance">言情</option>
-              <option value="mystery">悬疑</option>
-              <option value="historical">历史</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">补充说明（每行一条，可选）</label>
-            <textarea v-model="generateHints" rows="3" class="input" placeholder="描述你想要的世界观特点..."></textarea>
-          </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">补充说明（可选）</label>
+          <textarea v-model="generateHints" rows="3" class="input" placeholder="描述你想要的世界观特点..."></textarea>
         </div>
         <div class="mt-6 flex justify-end space-x-2">
           <button class="btn-outline" @click="showGenerateModal = false">取消</button>

@@ -77,6 +77,7 @@ const tabs = [
   { key: 'personality', label: '性格特点' },
   { key: 'arc', label: '角色弧光' },
   { key: 'visual', label: '视觉设计' },
+  { key: 'voice', label: '配音设置' },
 ]
 
 useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
@@ -613,6 +614,17 @@ function getRoleLabel(role: string): string {
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- Voice Tab -->
+    <div v-if="activeTab === 'voice'" class="card p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">配音设置</h3>
+      <p class="text-sm text-gray-500 mb-4">为角色选择专属声音，生成分镜配音时将自动使用此配置。</p>
+      <CharacterVoicePanel
+        v-if="characterStore.currentCharacter"
+        :character="characterStore.currentCharacter"
+        @update="(data) => characterStore.patchCurrentCharacter(data)"
+      />
     </div>
   </div>
 </template>
