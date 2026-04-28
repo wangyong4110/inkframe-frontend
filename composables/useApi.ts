@@ -284,6 +284,9 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ text: text ?? '' }),
     })
 
+  const aiBatchGenerate = (novelId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/characters/ai-batch`, { method: 'POST' })
+
   return {
     getCharacters,
     getCharacter,
@@ -295,6 +298,7 @@ export const useCharacterApi = () => {
     getThreeViewTaskStatus,
     uploadPortrait,
     previewVoice,
+    aiBatchGenerate,
   }
 }
 
@@ -791,6 +795,9 @@ export const useItemApi = () => {
   const deleteChapterItem = (novelId: number, chapterNo: number, itemId: number) =>
     request<void>(`/novels/${novelId}/chapters/${chapterNo}/items/${itemId}`, { method: 'DELETE' })
 
+  const aiExtract = (novelId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/items/ai-extract`, { method: 'POST' })
+
   return {
     listItems,
     createItem,
@@ -804,6 +811,7 @@ export const useItemApi = () => {
     listEffectiveItems,
     upsertChapterItem,
     deleteChapterItem,
+    aiExtract,
   }
 }
 

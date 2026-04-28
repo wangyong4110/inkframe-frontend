@@ -10,7 +10,10 @@ export interface Novel {
   chapter_count: number
   worldview_id?: number
   cover_image?: string
-  ai_model?: string
+  ai_model?: string       // LLM 模型（章节生成等文本任务）
+  image_model?: string    // 图片生成模型
+  video_model?: string    // 视频生成模型
+  tts_model?: string      // 语音合成模型
   temperature?: number
   max_tokens?: number
   style_prompt?: string

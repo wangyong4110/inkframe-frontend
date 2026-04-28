@@ -16,8 +16,6 @@ const productionEnabled = computed(() => isScriptConfirmed.value && shots.value.
 
 // Script phase
 const generatingStoryboard = computed(() => videoStore.generating)
-const llmProviders = ref<{ name: string; display_name: string }[]>([])
-const selectedLLMProvider = ref('')
 const editingId = ref<number | null>(null)
 const editForm = ref<Partial<StoryboardShot & { emotional_tone: string }>>({})
 const savingEdit = ref(false)
@@ -107,11 +105,9 @@ const TABS = computed(() => [
 
 // ──────── Lifecycle ────────
 async function load() {
-  const { getLLMCapableProviders } = useModelApi()
   const { getVideoProviders } = useVideoApi()
-  const [llmRes, videoRes] = await Promise.allSettled([getLLMCapableProviders(), getVideoProviders()])
-  if (llmRes.status === 'fulfilled') llmProviders.value = (llmRes.value as any)?.data ?? []
-  if (videoRes.status === 'fulfilled') videoProviders.value = (videoRes.value as any)?.data ?? []
+  const videoRes = await Promise.allSettled([getVideoProviders()])
+  if (videoRes[0].status === 'fulfilled') videoProviders.value = (videoRes[0].value as any)?.data ?? []
   try {
     await videoStore.fetchVideo(props.videoId)
     await videoStore.fetchStoryboard(props.videoId)
@@ -153,7 +149,7 @@ async function handleGenerateStoryboard() {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
   try {
-    await videoStore.generateStoryboard(props.videoId, props.llmProvider || selectedLLMProvider.value || undefined)
+    await videoStore.generateStoryboard(props.videoId, props.llmProvider || undefined)
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))

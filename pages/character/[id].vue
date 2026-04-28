@@ -29,22 +29,8 @@ function clearThreeViewTimer() {
 onUnmounted(clearThreeViewTimer)
 const novelImageStyle = computed(() => novelStore.currentNovel?.image_style || 'anime')
 
-// 图像生成提供者
-const imageProviders = ref<{ name: string; display_name: string }[]>([])
-const selectedImageProvider = ref('')
-
-async function fetchImageProviders() {
-  try {
-    const modelApi = useModelApi()
-    const res = await modelApi.getImageCapableProviders()
-    imageProviders.value = res.data ?? []
-    if (imageProviders.value.length > 0 && !selectedImageProvider.value) {
-      selectedImageProvider.value = imageProviders.value[0].name
-    }
-  } catch {
-    imageProviders.value = []
-  }
-}
+// 使用小说配置的图像生成模型
+const selectedImageProvider = computed(() => novelStore.currentNovel?.image_model || '')
 
 // Mutable local copy of the character (so v-model works without mutating the store directly)
 const character = ref({
@@ -101,7 +87,6 @@ watch(personalityTags, () => { isDirty.value = true }, { deep: true })
 watch(abilities, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
-  fetchImageProviders()
   if (novelId && novelStore.currentNovel?.id !== novelId) {
     novelStore.fetchNovel(novelId).catch(() => {})
   }
@@ -358,16 +343,6 @@ function getRoleLabel(role: string): string {
               @error="(msg) => toast.error('上传失败：' + msg)"
             />
           </div>
-        </div>
-
-        <!-- Image provider selector -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图像生成模型</label>
-          <select v-model="selectedImageProvider" class="input w-48">
-            <option v-for="p in imageProviders" :key="p.name" :value="p.name">
-              {{ p.display_name || p.name }}
-            </option>
-          </select>
         </div>
 
         <!-- Three-view images -->

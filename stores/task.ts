@@ -2,11 +2,15 @@ import { defineStore } from 'pinia'
 import type { AsyncTask } from '~/types'
 
 const POLL_INTERVAL_MS = 2000
+const AUTO_DISMISS_MS = 5000 // auto-remove completed/failed tasks after 5s
 
 export const useTaskStore = defineStore('task', {
   state: () => ({
     tasks: [] as AsyncTask[],
     _timers: {} as Record<string, ReturnType<typeof setTimeout>>,
+    _dismissTimers: {} as Record<string, ReturnType<typeof setTimeout>>,
+    // Track manually dismissed task IDs so in-flight refreshTask calls don't re-add them
+    _dismissed: {} as Record<string, true>,
   }),
 
   getters: {
@@ -57,7 +61,47 @@ export const useTaskStore = defineStore('task', {
       }
     },
 
+    // Remove a single task from the panel (manual dismiss or auto-dismiss).
+    dismiss(taskId: string) {
+      this._dismissed[taskId] = true
+      if (this._dismissTimers[taskId]) {
+        clearTimeout(this._dismissTimers[taskId])
+        delete this._dismissTimers[taskId]
+      }
+      // Also stop any active poll timer
+      if (this._timers[taskId]) {
+        clearTimeout(this._timers[taskId])
+        delete this._timers[taskId]
+      }
+      const idx = this.tasks.findIndex(t => t.task_id === taskId)
+      if (idx >= 0) this.tasks.splice(idx, 1)
+    },
+
+    // Remove all completed/failed tasks from the panel.
+    dismissAll() {
+      const doneIds = this.tasks
+        .filter(t => t.status === 'completed' || t.status === 'failed')
+        .map(t => t.task_id)
+      for (const id of doneIds) {
+        this._dismissed[id] = true
+        if (this._dismissTimers[id]) {
+          clearTimeout(this._dismissTimers[id])
+          delete this._dismissTimers[id]
+        }
+        if (this._timers[id]) {
+          clearTimeout(this._timers[id])
+          delete this._timers[id]
+        }
+      }
+      const doneSet = new Set(doneIds)
+      for (let i = this.tasks.length - 1; i >= 0; i--) {
+        if (doneSet.has(this.tasks[i].task_id)) this.tasks.splice(i, 1)
+      }
+    },
+
     _upsert(task: AsyncTask) {
+      // Skip tasks that have been explicitly dismissed (guards against in-flight race conditions)
+      if (this._dismissed[task.task_id]) return
       const idx = this.tasks.findIndex(t => t.task_id === task.task_id)
       if (idx >= 0) {
         this.tasks[idx] = task
@@ -70,6 +114,9 @@ export const useTaskStore = defineStore('task', {
       if (this._timers[taskId]) return // already polling
 
       const poll = async () => {
+        // Stop if dismissed while poll was in flight
+        if (this._dismissed[taskId]) return
+
         const task = await this.refreshTask(taskId)
         if (!task) return
 
@@ -77,6 +124,12 @@ export const useTaskStore = defineStore('task', {
           clearTimeout(this._timers[taskId])
           delete this._timers[taskId]
           onDone?.(task)
+          // Schedule auto-dismiss (only if not already dismissed)
+          if (!this._dismissed[taskId]) {
+            this._dismissTimers[taskId] = setTimeout(() => {
+              this.dismiss(taskId)
+            }, AUTO_DISMISS_MS)
+          }
           return
         }
 

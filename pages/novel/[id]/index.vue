@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Novel, Chapter, Character, AIModel, Worldview, Item } from '~/types'
-import { useItemApi } from '~/composables/useApi'
+import { useItemApi, useCharacterApi } from '~/composables/useApi'
 import { useSkillApi, SKILL_CATEGORIES, SKILL_TYPES, type Skill } from '~/composables/useSkillApi'
 import { WRITING_PRESETS, IMAGE_PRESETS, useStyleApi } from '~/composables/useStylePresets'
 import type { AnalysisStatus } from '~/composables/useApi'
@@ -30,6 +30,9 @@ function switchTab(key: string) {
 const showChapterModal = ref(false)
 const showCharacterModal = ref(false)
 const generatingOutline = ref(false)
+const generatingCharacters = ref(false)
+const extractingItems = ref(false)
+const extractingPlotPoints = ref(false)
 const showDeleteNovelConfirm = ref(false)
 const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
@@ -118,8 +121,11 @@ const novelInfoComplete = computed(() => {
 const selectedWritingPreset = ref(WRITING_PRESETS[0]?.id ?? '')
 const applyingWritingPreset = ref(false)
 
-// AI model list (loaded async; silently ignored if API unavailable)
+// AI model lists per task type (loaded async; silently ignored if API unavailable)
 const availableModels = ref<AIModel[]>([])
+const imageModels = ref<AIModel[]>([])
+const videoModels = ref<AIModel[]>([])
+const ttsModels = ref<AIModel[]>([])
 
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
@@ -216,7 +222,7 @@ onMounted(async () => {
   // Load AI models and worldview list (non-critical, silent fail)
   try {
     const modelApi = useModelApi()
-    const taskTypes = ['chapter', 'outline', 'storyboard', 'image_gen'] as const
+    const taskTypes = ['chapter', 'image_gen', 'video_gen', 'voice_gen'] as const
     const [wvResp, ...modelResps] = await Promise.allSettled([
       useWorldviewApi().getWorldviews({ page_size: 100 }),
       ...taskTypes.map(t => modelApi.getAvailableModels(t)),
@@ -229,6 +235,9 @@ onMounted(async () => {
       if (r.status === 'fulfilled') {
         const models = ((r.value as any).data as AIModel[]).filter((m: AIModel) => m.is_active && m.is_available)
         if (t === 'chapter') availableModels.value = models
+        else if (t === 'image_gen') imageModels.value = models
+        else if (t === 'video_gen') videoModels.value = models
+        else if (t === 'voice_gen') ttsModels.value = models
       }
     })
   } catch { /* non-critical */ }
@@ -252,6 +261,58 @@ async function handleGenerateOutline() {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
   } finally {
     generatingOutline.value = false
+  }
+}
+
+const characterApi = useCharacterApi()
+const itemApiForAI = useItemApi()
+const taskStore = useTaskStore()
+
+async function handleAICharacters() {
+  generatingCharacters.value = true
+  try {
+    const res = await characterApi.aiBatchGenerate(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async () => {
+      await characterStore.fetchCharacters(novelId)
+      generatingCharacters.value = false
+      toast.success('角色已生成/更新')
+    })
+  } catch (e: any) {
+    generatingCharacters.value = false
+    toast.error('生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleAIItems() {
+  extractingItems.value = true
+  try {
+    const res = await itemApiForAI.aiExtract(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async () => {
+      await fetchItems()
+      extractingItems.value = false
+      toast.success('物品已提取/更新')
+    })
+  } catch (e: any) {
+    extractingItems.value = false
+    toast.error('提取失败：' + (e.message || ''))
+  }
+}
+
+async function handleAIPlotPoints() {
+  extractingPlotPoints.value = true
+  try {
+    const res = await plotPointApi.aiExtractFromNovel(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async () => {
+      await fetchPlotPoints()
+      extractingPlotPoints.value = false
+      toast.success('剧情点已提取/更新')
+    })
+  } catch (e: any) {
+    extractingPlotPoints.value = false
+    toast.error('提取失败：' + (e.message || ''))
   }
 }
 
@@ -857,15 +918,27 @@ function getSkillStatusLabel(status: string): string {
     <div v-if="activeTab === 'chapters'" class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
-        <NuxtLink
-          :to="`/novel/${novelId}/chapter/new`"
-          class="btn-primary"
-        >
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          新建章节
-        </NuxtLink>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
+            <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
+          </button>
+          <NuxtLink
+            :to="`/novel/${novelId}/chapter/new`"
+            class="btn-primary"
+          >
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            新建章节
+          </NuxtLink>
+        </div>
       </div>
 
       <div v-if="chapterStore.loading" class="space-y-3">
@@ -933,12 +1006,24 @@ function getSkillStatusLabel(status: string): string {
     <div v-if="activeTab === 'characters'" class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">角色列表</h2>
-        <NuxtLink to="/character/create" class="btn-primary">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          新建角色
-        </NuxtLink>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="generatingCharacters" @click="handleAICharacters">
+            <svg v-if="generatingCharacters" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {{ generatingCharacters ? 'AI 生成中...' : (characters.length > 0 ? 'AI 更新角色' : 'AI 生成角色') }}
+          </button>
+          <NuxtLink to="/character/create" class="btn-primary">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            新建角色
+          </NuxtLink>
+        </div>
       </div>
 
       <div v-if="characterStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -998,12 +1083,24 @@ function getSkillStatusLabel(status: string): string {
     <div v-if="activeTab === 'items'" class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">物品管理</h2>
-        <button class="btn-primary" @click="showItemModal = true">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          添加物品
-        </button>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="extractingItems" @click="handleAIItems">
+            <svg v-if="extractingItems" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {{ extractingItems ? 'AI 提取中...' : (items.length > 0 ? 'AI 更新物品' : 'AI 提取物品') }}
+          </button>
+          <button class="btn-primary" @click="showItemModal = true">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            添加物品
+          </button>
+        </div>
       </div>
 
       <div v-if="itemsLoading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1095,7 +1192,7 @@ function getSkillStatusLabel(status: string): string {
             <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
-            {{ generatingSkills ? 'AI 生成中...' : 'AI 生成' }}
+            {{ generatingSkills ? 'AI 生成中...' : (skills.length > 0 ? 'AI 更新' : 'AI 生成') }}
           </button>
           <button class="btn-primary" @click="showSkillModal = true">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1318,16 +1415,28 @@ function getSkillStatusLabel(status: string): string {
     <div v-if="activeTab === 'plot_points'" class="space-y-4">
       <div class="flex items-center justify-between">
         <h3 class="text-base font-semibold text-gray-900 dark:text-white">全部剧情点</h3>
-        <button
-          class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          :disabled="plotPointsLoading"
-          @click="fetchPlotPoints"
-        >
-          <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': plotPointsLoading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-          </svg>
-          刷新
-        </button>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="extractingPlotPoints" @click="handleAIPlotPoints">
+            <svg v-if="extractingPlotPoints" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {{ extractingPlotPoints ? 'AI 提取中...' : (plotPoints.length > 0 ? 'AI 更新剧情点' : 'AI 提取剧情点') }}
+          </button>
+          <button
+            class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            :disabled="plotPointsLoading"
+            @click="fetchPlotPoints"
+          >
+            <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': plotPointsLoading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            刷新
+          </button>
+        </div>
       </div>
 
       <div v-if="plotPointsLoading" class="flex justify-center py-12">
@@ -1480,8 +1589,9 @@ function getSkillStatusLabel(status: string): string {
             </svg>
           </button>
           <div v-if="showAdvancedAI" class="mt-4 space-y-4">
+            <!-- LLM model -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI 模型</label>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">LLM 模型</label>
               <select
                 :value="novel?.ai_model ?? ''"
                 class="input"
@@ -1494,6 +1604,63 @@ function getSkillStatusLabel(status: string): string {
               </select>
               <p v-if="availableModels.length === 0" class="mt-1 text-xs text-gray-400">
                 暂无可用模型，可在
+                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
+                中添加
+              </p>
+            </div>
+            <!-- Image model -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图片模型</label>
+              <select
+                :value="novel?.image_model ?? ''"
+                class="input"
+                @change="(e) => novelStore.updateNovel(novelId, { image_model: (e.target as HTMLSelectElement).value || undefined })"
+              >
+                <option value="">使用默认模型</option>
+                <option v-for="m in imageModels" :key="m.id" :value="m.name">
+                  {{ m.display_name || m.name }}
+                </option>
+              </select>
+              <p v-if="imageModels.length === 0" class="mt-1 text-xs text-gray-400">
+                暂无可用图片模型，可在
+                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
+                中添加
+              </p>
+            </div>
+            <!-- Video model -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视频模型</label>
+              <select
+                :value="novel?.video_model ?? ''"
+                class="input"
+                @change="(e) => novelStore.updateNovel(novelId, { video_model: (e.target as HTMLSelectElement).value || undefined })"
+              >
+                <option value="">使用默认模型</option>
+                <option v-for="m in videoModels" :key="m.id" :value="m.name">
+                  {{ m.display_name || m.name }}
+                </option>
+              </select>
+              <p v-if="videoModels.length === 0" class="mt-1 text-xs text-gray-400">
+                暂无可用视频模型，可在
+                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
+                中添加
+              </p>
+            </div>
+            <!-- TTS / voice model -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">语音模型</label>
+              <select
+                :value="novel?.tts_model ?? ''"
+                class="input"
+                @change="(e) => novelStore.updateNovel(novelId, { tts_model: (e.target as HTMLSelectElement).value || undefined })"
+              >
+                <option value="">使用默认模型</option>
+                <option v-for="m in ttsModels" :key="m.id" :value="m.name">
+                  {{ m.display_name || m.name }}
+                </option>
+              </select>
+              <p v-if="ttsModels.length === 0" class="mt-1 text-xs text-gray-400">
+                暂无可用语音模型，可在
                 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
                 中添加
               </p>

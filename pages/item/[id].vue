@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { Item } from '~/types'
-import { useItemApi, useModelApi } from '~/composables/useApi'
+import { useItemApi } from '~/composables/useApi'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const itemApi = useItemApi()
+const novelStore = useNovelStore()
 
 const itemId = parseInt(route.params.id as string)
 const novelId = parseInt(route.query.novelId as string)
@@ -15,22 +16,8 @@ const saving = ref(false)
 const isDirty = ref(false)
 const generatingImage = ref(false)
 
-// 图像生成提供者
-const imageProviders = ref<{ name: string; display_name: string }[]>([])
-const selectedImageProvider = ref('')
-
-async function fetchImageProviders() {
-  try {
-    const modelApi = useModelApi()
-    const res = await modelApi.getImageCapableProviders()
-    imageProviders.value = res.data ?? []
-    if (imageProviders.value.length > 0 && !selectedImageProvider.value) {
-      selectedImageProvider.value = imageProviders.value[0].name
-    }
-  } catch {
-    imageProviders.value = []
-  }
-}
+// 使用小说配置的图像生成模型
+const selectedImageProvider = computed(() => novelStore.currentNovel?.image_model || '')
 
 // 图像生成异步任务
 const imageTaskId = ref('')
@@ -302,7 +289,9 @@ useUnsavedGuard(isDirty, '物品信息有未保存的修改，确认离开？')
 watch([form, abilities], () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
-  fetchImageProviders()
+  if (novelId && novelStore.currentNovel?.id !== novelId) {
+    novelStore.fetchNovel(novelId).catch(() => {})
+  }
   if (!itemId) return
   try {
     const res = await itemApi.getItem(itemId)
@@ -629,15 +618,6 @@ function goBack() {
                   <span class="text-gray-400">属性：</span>{{ magicElementOptions.find(o => o.value === abilities.magic_element)?.label }}
                 </p>
               </div>
-            </div>
-            <!-- 图像模型选择 -->
-            <div>
-              <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">图像生成模型</label>
-              <select v-model="selectedImageProvider" class="input text-sm py-1.5 w-48">
-                <option v-for="p in imageProviders" :key="p.name" :value="p.name">
-                  {{ p.display_name || p.name }}
-                </option>
-              </select>
             </div>
             <!-- 参考图片上传 -->
             <div class="pt-3 border-t border-gray-100 dark:border-gray-700">

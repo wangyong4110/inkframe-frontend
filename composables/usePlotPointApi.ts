@@ -66,5 +66,9 @@ export function usePlotPointApi() {
     return request(`/plot-points/${id}`, { method: 'DELETE' })
   }
 
-  return { listByChapter, listByNovel, create, extract, update, resolve, remove }
+  async function aiExtractFromNovel(novelId: number): Promise<{ task_id: string }> {
+    return request(`/novels/${novelId}/plot-points/ai-extract`, { method: 'POST' })
+  }
+
+  return { listByChapter, listByNovel, create, extract, update, resolve, remove, aiExtractFromNovel }
 }

@@ -1,5 +1,5 @@
 <template>
-  <!-- Floating task panel — only visible when there are active or recently-finished tasks -->
+  <!-- Floating task panel — only visible when there are tasks -->
   <Transition name="slide-up">
     <div
       v-if="visible"
@@ -14,15 +14,30 @@
             class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-500 text-white text-xs font-bold"
           >{{ activeCount }}</span>
         </div>
-        <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none" @click="collapsed = !collapsed">
-          {{ collapsed ? '▲' : '▼' }}
-        </button>
+        <div class="flex items-center gap-2">
+          <!-- Clear finished tasks -->
+          <button
+            v-if="doneCount > 0"
+            class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            title="清除已完成"
+            @click="taskStore.dismissAll()"
+          >
+            清除
+          </button>
+          <!-- Collapse / expand -->
+          <button
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none"
+            @click="collapsed = !collapsed"
+          >
+            {{ collapsed ? '▲' : '▼' }}
+          </button>
+        </div>
       </div>
 
       <!-- Task list -->
       <div v-if="!collapsed" class="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
         <div
-          v-for="task in displayTasks"
+          v-for="task in taskStore.tasks"
           :key="task.task_id"
           class="px-4 py-3 flex items-start gap-3"
         >
@@ -55,13 +70,24 @@
             </div>
           </div>
 
-          <!-- Type badge -->
-          <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-            {{ taskTypeLabel(task.type) }}
-          </span>
+          <!-- Type badge + dismiss button -->
+          <div class="flex-shrink-0 flex items-center gap-1">
+            <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+              {{ taskTypeLabel(task.type) }}
+            </span>
+            <!-- Manual dismiss — only for finished tasks -->
+            <button
+              v-if="task.status === 'completed' || task.status === 'failed'"
+              class="text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 text-sm leading-none p-0.5"
+              title="关闭"
+              @click="taskStore.dismiss(task.task_id)"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
-        <div v-if="displayTasks.length === 0" class="px-4 py-6 text-center text-sm text-gray-400">
+        <div v-if="taskStore.tasks.length === 0" class="px-4 py-6 text-center text-sm text-gray-400">
           暂无任务
         </div>
       </div>
@@ -76,18 +102,11 @@ const taskStore = useTaskStore()
 
 const collapsed = ref(false)
 
-// Show panel when there are active tasks or recent completed/failed ones (last 30s)
-const displayTasks = computed(() => {
-  const cutoff = Date.now() - 30_000
-  return taskStore.tasks.filter(t => {
-    if (t.status === 'pending' || t.status === 'running') return true
-    // Keep completed/failed for 30 seconds
-    return new Date(t.updated_at).getTime() > cutoff
-  })
-})
-
 const activeCount = computed(() => taskStore.activeTasks.length)
-const visible = computed(() => displayTasks.value.length > 0)
+const doneCount = computed(() =>
+  taskStore.tasks.filter(t => t.status === 'completed' || t.status === 'failed').length
+)
+const visible = computed(() => taskStore.tasks.length > 0)
 
 const TYPE_LABELS: Record<string, string> = {
   storyboard_gen: '分镜',
