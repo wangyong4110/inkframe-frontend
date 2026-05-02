@@ -6,6 +6,37 @@ const route = useRoute()
 const router = useRouter()
 const videoStore = useVideoStore()
 
+// ── 系统配置（FFmpeg 路径）────────────────────────────────────────────────────
+const { request } = useApi()
+const toast = useToast()
+const ffmpegPath = ref('')
+const ffmpegSaving = ref(false)
+
+async function loadSystemSettings() {
+  try {
+    const res = await request<{ key: string; value: string }[]>('/system/settings')
+    const ffmpeg = res.find(s => s.key === 'ffmpeg_path')
+    if (ffmpeg) ffmpegPath.value = ffmpeg.value
+  } catch {}
+}
+
+async function saveFFmpegPath() {
+  ffmpegSaving.value = true
+  try {
+    await request('/system/settings/ffmpeg_path', {
+      method: 'PUT',
+      body: JSON.stringify({ value: ffmpegPath.value, description: 'FFmpeg 可执行文件路径' }),
+    })
+    toast.success('已保存')
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    ffmpegSaving.value = false
+  }
+}
+
+onMounted(() => loadSystemSettings())
+
 const activeTab = ref('list')
 const showCreateModal = ref(false)
 const QUALITY_TIERS = [
@@ -322,6 +353,32 @@ async function createVideo() {
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
         <button class="btn-primary">保存设置</button>
       </div>
+
+      <!-- FFmpeg 配置 -->
+      <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">FFmpeg 配置</h4>
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              FFmpeg 可执行文件路径
+            </label>
+            <div class="flex gap-2">
+              <input
+                v-model="ffmpegPath"
+                type="text"
+                class="input flex-1"
+                placeholder="留空则使用 PATH 中的 ffmpeg，例如 /opt/homebrew/bin/ffmpeg"
+              />
+              <button class="btn-primary whitespace-nowrap" :disabled="ffmpegSaving" @click="saveFFmpegPath">
+                {{ ffmpegSaving ? '保存中…' : '保存' }}
+              </button>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              用于图片解说视频的 Ken Burns 动效生成及视频拼接。留空时自动从系统 PATH 中查找 ffmpeg。
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Create Modal -->
@@ -356,7 +413,7 @@ async function createVideo() {
 
             <!-- Image / Art Style -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">图片风格</label>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">画面风格</label>
               <StylePicker type="image" v-model="createForm.art_style" compact />
             </div>
 

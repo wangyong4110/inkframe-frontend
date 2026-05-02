@@ -851,5 +851,8 @@ export const useTaskApi = () => {
         `/tasks${qs ? '?' + qs : ''}`,
       )
     },
+
+    cancelTask: (taskId: string) =>
+      request(`/tasks/${taskId}/cancel`, { method: 'POST' }),
   }
 }

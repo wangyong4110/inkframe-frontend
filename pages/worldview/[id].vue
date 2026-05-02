@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Worldview, WorldviewEntity } from '~/types'
 
+const { openLightbox } = useImageLightbox()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -363,7 +364,7 @@ async function generateWorldview() {
                 </button>
               </div>
             </div>
-            <img v-if="entity.image_url" :src="entity.image_url" :alt="entity.name" class="w-full h-24 object-cover rounded mb-2" />
+            <img v-if="entity.image_url" :src="entity.image_url" :alt="entity.name" class="w-full h-24 object-cover rounded mb-2 cursor-zoom-in" @click="openLightbox(entity.image_url)" />
             <p class="text-sm text-gray-600 dark:text-gray-400">{{ entity.description }}</p>
           </div>
         </div>

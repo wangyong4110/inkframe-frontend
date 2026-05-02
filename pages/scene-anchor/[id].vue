@@ -2,6 +2,7 @@
 import type { SceneAnchor, UpdateSceneAnchorPayload, ConsistencyLog } from '~/composables/useSceneAnchorApi'
 import { useSceneAnchorApi } from '~/composables/useSceneAnchorApi'
 
+const { openLightbox } = useImageLightbox()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -342,8 +343,9 @@ function goBack() {
             <img
               v-if="anchor?.ref_image_url"
               :src="anchor.ref_image_url"
-              class="w-full h-full object-cover"
+              class="w-full h-full object-cover cursor-zoom-in"
               alt="场景参考图"
+              @click="openLightbox(anchor.ref_image_url)"
             />
             <div v-else class="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

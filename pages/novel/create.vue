@@ -5,7 +5,6 @@ const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
 const { request } = useApi()
-const { getCrawlStatus } = useCrawlApi()
 
 // ── 步骤状态机 ────────────────────────────────────────────────────────────────
 type Step = 'choose' | 'ai-form' | 'import-choose' | 'import-file' | 'import-crawl'
@@ -30,11 +29,6 @@ function iconGradient(value: string) {
 }
 
 // ── Screen 2a: AI 生成表单 ─────────────────────────────────────────────────────
-const channelOptions = [
-  { label: '女生原创', value: 'female' },
-  { label: '男生原创', value: 'male' },
-  { label: '出版图书', value: 'publish' },
-]
 const genreOptions = [
   { label: '玄幻奇幻', value: 'fantasy' },
   { label: '仙侠修仙', value: 'xianxia' },
@@ -72,7 +66,6 @@ const chapterCountOptions = [
 
 const aiForm = reactive({
   title: '',
-  channel: 'male',
   genre: 'fantasy',
   description: '',
   target_word_count: 100000,
@@ -95,7 +88,6 @@ async function submitAI() {
         description: aiForm.description.trim(),
         genre: aiForm.genre,
         cover_image: aiForm.cover_image,
-        channel: aiForm.channel,
         target_word_count: aiForm.target_word_count,
         target_chapters: aiForm.target_chapters,
       }),
@@ -135,37 +127,134 @@ function handleFileDrop(e: DragEvent) {
   if (e.dataTransfer?.files?.[0]) selectedFile.value = e.dataTransfer.files[0]
 }
 
+const CHUNK_THRESHOLD = 5 * 1024 * 1024  // 5 MB — 超过此大小走分片上传
+const CHUNK_SIZE      = 2 * 1024 * 1024  // 2 MB / 片
+
 async function uploadFile() {
   if (!selectedFile.value) { fileError.value = '请选择文件'; return }
   fileError.value = ''
   fileUploading.value = true
-  fileProgress.value = 10
+  fileProgress.value = 5
 
   try {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
+    let taskId: string
 
-    fileProgress.value = 30
-    const response = await fetch(`${apiBase}/import/novel/file`, {
-      method: 'POST',
-      headers: getAuthHeader(),
-      body: formData,
-    })
-    fileProgress.value = 80
-    const result = await response.json()
-    if (result.code !== 0) throw new Error(result.error || result.message || '导入失败')
-    fileProgress.value = 100
-    const novelId = result.data?.novel_id
-    if (novelId) {
-      router.push(`/novel/${novelId}?analyze=1`)
+    if (selectedFile.value.size >= CHUNK_THRESHOLD) {
+      // ── 分片上传 ──────────────────────────────────────────────────
+      taskId = await chunkedUpload(selectedFile.value)
     } else {
-      fileError.value = '导入完成但未返回小说ID'
+      // ── 普通上传 ──────────────────────────────────────────────────
+      const formData = new FormData()
+      formData.append('file', selectedFile.value)
+      fileProgress.value = 20
+      const response = await fetch(`${apiBase}/import/novel/file`, {
+        method: 'POST',
+        headers: getAuthHeader(),
+        body: formData,
+      })
+      const result = await response.json()
+      if (result.code !== 0) throw new Error(result.error || result.message || '导入失败')
+      taskId = result.data?.task_id
+      if (!taskId) throw new Error('未获取到导入任务ID')
     }
+
+    fileProgress.value = 50
+    await pollImportTask(taskId)
   } catch (e: any) {
     fileError.value = e.message || '上传失败'
-  } finally {
     fileUploading.value = false
   }
+}
+
+/** 分片上传：init → N×chunk → complete，返回 task_id */
+async function chunkedUpload(file: File): Promise<string> {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+  // 1. 初始化会话
+  const initRes = await fetch(`${apiBase}/import/novel/file/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ filename: file.name, total_chunks: totalChunks }),
+  })
+  const initData = await initRes.json()
+  if (initData.code !== 0) throw new Error(initData.error || initData.message || '初始化分片上传失败')
+  const uploadId: string = initData.data?.upload_id
+  if (!uploadId) throw new Error('未获取到 upload_id')
+
+  // 2. 逐片上传
+  for (let i = 1; i <= totalChunks; i++) {
+    const start = (i - 1) * CHUNK_SIZE
+    const chunk = file.slice(start, start + CHUNK_SIZE)
+    const fd = new FormData()
+    fd.append('upload_id', uploadId)
+    fd.append('chunk_no', String(i))
+    fd.append('chunk', chunk, file.name)
+    const r = await fetch(`${apiBase}/import/novel/file/chunk`, {
+      method: 'PUT',
+      headers: getAuthHeader(),
+      body: fd,
+    })
+    const rd = await r.json()
+    if (rd.code !== 0) throw new Error(rd.error || rd.message || `片段 ${i} 上传失败`)
+    // 进度：5 → 45（分片上传阶段占 40%）
+    fileProgress.value = 5 + Math.round((i / totalChunks) * 40)
+  }
+
+  // 3. 完成组装
+  const completeRes = await fetch(`${apiBase}/import/novel/file/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ upload_id: uploadId }),
+  })
+  const completeData = await completeRes.json()
+  if (completeData.code !== 0) throw new Error(completeData.error || completeData.message || '组装分片失败')
+  const taskId: string = completeData.data?.task_id
+  if (!taskId) throw new Error('未获取到 task_id')
+  return taskId
+}
+
+async function pollImportTask(taskId: string) {
+  const maxWait = 5 * 60 * 1000 // 5 分钟超时
+  const interval = 1500
+  const start = Date.now()
+
+  const tick = async () => {
+    if (Date.now() - start > maxWait) {
+      fileError.value = '导入超时，请检查文件是否过大'
+      fileUploading.value = false
+      return
+    }
+    try {
+      const res = await fetch(`${apiBase}/import/status/${taskId}`, { headers: getAuthHeader() })
+      const data = await res.json()
+      const task = data.data
+      if (!task) { setTimeout(tick, interval); return }
+
+      if (task.status === 'completed') {
+        fileProgress.value = 100
+        fileUploading.value = false
+        if (task.novel_id) {
+          // 若后端已启动分析，直接跟踪已有任务；否则让详情页触发分析
+          const q = task.analysis_task_id
+            ? `analysis_task_id=${task.analysis_task_id}`
+            : 'analyze=1'
+          router.push(`/novel/${task.novel_id}?${q}`)
+        } else {
+          fileError.value = '导入完成但未返回小说ID'
+        }
+      } else if (task.status === 'failed') {
+        fileError.value = task.message || '导入失败'
+        fileUploading.value = false
+      } else {
+        // running/pending — keep polling, animate progress 50→90
+        fileProgress.value = Math.min(90, fileProgress.value + 2)
+        setTimeout(tick, interval)
+      }
+    } catch {
+      setTimeout(tick, interval)
+    }
+  }
+  setTimeout(tick, interval)
 }
 
 // ── Screen 3b: 爬取小说 ────────────────────────────────────────────────────────
@@ -177,7 +266,6 @@ const crawlLoading = ref(false)
 const crawlError = ref('')
 const crawlNovelId = ref<number | null>(null)
 const crawlStatus = ref<CrawlProgress | null>(null)
-const crawlPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
 const siteOptions = [
   { label: '自动检测', value: '' },
@@ -186,30 +274,6 @@ const siteOptions = [
   { label: '纵横中文网', value: 'zongheng' },
 ]
 
-function stopCrawlPoll() {
-  if (crawlPollTimer.value) {
-    clearInterval(crawlPollTimer.value)
-    crawlPollTimer.value = null
-  }
-}
-
-function startCrawlPoll(novelId: number) {
-  crawlPollTimer.value = setInterval(async () => {
-    try {
-      const res = await getCrawlStatus(novelId)
-      if (res.code === 0 && res.data) {
-        crawlStatus.value = res.data
-        if (res.data.status === 'completed') {
-          stopCrawlPoll()
-          router.push(`/novel/${novelId}?analyze=1`)
-        } else if (res.data.status === 'failed') {
-          stopCrawlPoll()
-          crawlError.value = '爬取失败'
-        }
-      }
-    } catch { /* ignore */ }
-  }, 2000)
-}
 
 async function startCrawl() {
   if (!crawlForm.url.trim()) { crawlError.value = '请输入小说URL'; return }
@@ -227,19 +291,69 @@ async function startCrawl() {
     })
     const result = await response.json()
     if (result.code !== 0) throw new Error(result.error || result.message || '爬取启动失败')
-    const novelId = result.data?.novel_id
-    if (novelId) {
-      crawlNovelId.value = novelId
-      crawlStatus.value = { novel_id: novelId, status: 'running', total: 0, done: 0, failed: 0, current: '' }
-      startCrawlPoll(novelId)
-    } else {
-      crawlError.value = '未返回小说ID'
-    }
+
+    // 后端已改为异步（202 + task_id），通过统一任务状态接口轮询
+    const taskId = result.data?.task_id
+    if (!taskId) throw new Error('未返回任务ID')
+    crawlStatus.value = { novel_id: 0, status: 'running', total: 0, done: 0, failed: 0, current: '' }
+    pollCrawlTask(taskId)
   } catch (e: any) {
     crawlError.value = e.message || '爬取失败'
-  } finally {
     crawlLoading.value = false
   }
+}
+
+/** 轮询爬取任务状态，更新 crawlStatus */
+function pollCrawlTask(taskId: string) {
+  const maxWait = 30 * 60 * 1000 // 30 分钟
+  const start = Date.now()
+
+  const tick = async () => {
+    if (Date.now() - start > maxWait) {
+      crawlError.value = '爬取超时'
+      crawlLoading.value = false
+      return
+    }
+    try {
+      const res = await fetch(`${apiBase}/import/status/${taskId}`, { headers: getAuthHeader() })
+      const data = await res.json()
+      const task = data.data
+      if (!task) { setTimeout(tick, 2000); return }
+
+      // 同步爬取进度到 crawlStatus
+      if (task.novel_id) crawlNovelId.value = task.novel_id
+      if (task.crawl_total > 0 || task.crawl_done > 0) {
+        crawlStatus.value = {
+          novel_id: task.novel_id || crawlNovelId.value || 0,
+          status: task.status === 'completed' ? 'completed' : 'running',
+          total: task.crawl_total || 0,
+          done: task.crawl_done || 0,
+          failed: 0,
+          current: task.crawl_current || '',
+        }
+      }
+
+      if (task.status === 'completed') {
+        crawlLoading.value = false
+        if (task.novel_id) {
+          const q = task.analysis_task_id
+            ? `analysis_task_id=${task.analysis_task_id}`
+            : 'analyze=1'
+          router.push(`/novel/${task.novel_id}?${q}`)
+        } else {
+          crawlError.value = '爬取完成但未返回小说ID'
+        }
+      } else if (task.status === 'failed') {
+        crawlError.value = task.message || '爬取失败'
+        crawlLoading.value = false
+      } else {
+        setTimeout(tick, 2000)
+      }
+    } catch {
+      setTimeout(tick, 2000)
+    }
+  }
+  setTimeout(tick, 2000)
 }
 
 const crawlPercent = computed(() => {
@@ -248,7 +362,6 @@ const crawlPercent = computed(() => {
   return Math.round((s.done / s.total) * 100)
 })
 
-onUnmounted(() => stopCrawlPoll())
 </script>
 
 <template>
@@ -336,23 +449,6 @@ onUnmounted(() => stopCrawlPoll())
                 @click="aiForm.cover_image = opt.value"
               />
             </div>
-          </div>
-        </div>
-
-        <!-- 频道 -->
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">频道</p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="opt in channelOptions"
-              :key="opt.value"
-              type="button"
-              class="px-3 py-1.5 text-sm rounded-lg border transition-colors"
-              :class="aiForm.channel === opt.value
-                ? 'bg-purple-600 border-purple-600 text-white'
-                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-400'"
-              @click="aiForm.channel = opt.value"
-            >{{ opt.label }}</button>
           </div>
         </div>
 
@@ -544,7 +640,7 @@ onUnmounted(() => stopCrawlPoll())
         <!-- 上传进度 -->
         <div v-if="fileUploading" class="space-y-2">
           <div class="flex justify-between text-sm text-gray-600 dark:text-gray-300">
-            <span>上传中...</span>
+            <span>{{ fileProgress < 50 ? '上传中...' : '解析导入中...' }}</span>
             <span>{{ fileProgress }}%</span>
           </div>
           <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">

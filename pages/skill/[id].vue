@@ -2,6 +2,7 @@
 import { useSkillApi, SKILL_CATEGORIES, SKILL_TYPES, SKILL_STATUSES } from '~/composables/useSkillApi'
 import type { Skill } from '~/composables/useSkillApi'
 
+const { openLightbox } = useImageLightbox()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -473,7 +474,8 @@ function goBack() {
             v-if="effectImageUrl"
             :src="effectImageUrl"
             :alt="form.name + ' 特效'"
-            class="max-h-72 w-full object-contain"
+            class="max-h-72 w-full object-contain cursor-zoom-in"
+            @click="openLightbox(effectImageUrl)"
           />
           <div v-else class="flex flex-col items-center gap-3 py-16 text-white/60">
             <span class="text-5xl">{{ catConfig(form.category).icon }}</span>

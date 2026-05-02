@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { StoryboardShot, VideoQualityTier } from '~/types'
 
+const { openLightbox } = useImageLightbox()
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 const videoStore = useVideoStore()
 const toast = useToast()
@@ -723,7 +724,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <div class="flex gap-3">
               <!-- Thumbnail -->
               <div class="w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center" style="min-height: 72px;">
-                <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+                <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url)" />
                 <div v-else-if="shot.status === 'generating'" class="p-2 flex items-center justify-center w-full h-full">
                   <div class="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
                 </div>
@@ -871,7 +872,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       <div class="space-y-2">
         <div v-for="shot in shots" :key="shot.id" class="card p-4 flex items-start gap-3">
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url)" />
             <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
           </div>
           <div class="flex-1 min-w-0">
@@ -965,7 +966,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           >
             <!-- 参考图缩略图 -->
             <div class="w-16 h-12 rounded-md overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
-              <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
+              <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover cursor-zoom-in" alt="" @click.stop="openLightbox(anchor.ref_image_url)" />
               <div v-else class="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md p-1">
                 <span class="text-xs text-center text-gray-400 leading-tight">首次生成后<br>自动锁定</span>
               </div>

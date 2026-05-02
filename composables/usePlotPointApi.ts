@@ -1,4 +1,4 @@
-import type { PlotPoint, PlotPointType } from '~/types'
+import type { ApiResponse, PlotPoint, PlotPointType } from '~/types'
 
 export interface CreatePlotPointPayload {
   novel_id: number
@@ -26,11 +26,13 @@ export function usePlotPointApi() {
 
   async function listByNovel(
     novelId: number,
-    opts: { type?: PlotPointType; unresolved?: boolean } = {},
-  ): Promise<{ plot_points: PlotPoint[]; total: number }> {
+    opts: { type?: PlotPointType; unresolved?: boolean; page?: number; page_size?: number } = {},
+  ): Promise<ApiResponse<{ plot_points: PlotPoint[]; total: number; page: number; page_size: number }>> {
     const params = new URLSearchParams()
     if (opts.type) params.set('type', opts.type)
     if (opts.unresolved) params.set('unresolved', 'true')
+    if (opts.page) params.set('page', String(opts.page))
+    if (opts.page_size) params.set('page_size', String(opts.page_size))
     const qs = params.toString()
     return request(`/novels/${novelId}/plot-points${qs ? '?' + qs : ''}`)
   }

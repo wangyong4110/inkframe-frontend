@@ -583,6 +583,74 @@ const chapterShots = ref<any[]>([])
 const loadingShots = ref(false)
 const shotsVideoId = ref<number | null>(null)
 
+// ── 章节级 AI 提取 ─────────────────────────────────────────────────────────────
+const extractingMinorChars = ref(false)
+const extractingChapterItems = ref(false)
+const extractingChapterSkills = ref(false)
+const extractingChapterAnchors = ref(false)
+
+async function handleExtractMinorChars() {
+  if (!chapter.value || extractingMinorChars.value) return
+  extractingMinorChars.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, { method: 'POST' })
+    const count = data?.total ?? data?.count ?? (Array.isArray(data?.characters) ? data.characters.length : 0)
+    toast.success(`提取次要角色 ${count} 个`)
+    await characterStore.fetchCharacters(novelId)
+  } catch (e: any) {
+    toast.error('提取失败：' + (e.message || ''))
+  } finally {
+    extractingMinorChars.value = false
+  }
+}
+
+async function handleExtractChapterItems() {
+  if (!chapter.value || extractingChapterItems.value) return
+  extractingChapterItems.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, { method: 'POST' })
+    const count = data?.count ?? (Array.isArray(data?.items) ? data.items.length : 0)
+    toast.success(`提取物品 ${count} 个`)
+    fetchChapterItems()
+  } catch (e: any) {
+    toast.error('提取失败：' + (e.message || ''))
+  } finally {
+    extractingChapterItems.value = false
+  }
+}
+
+async function handleExtractChapterSkills() {
+  if (!chapter.value || extractingChapterSkills.value) return
+  extractingChapterSkills.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/skills/ai-extract`, { method: 'POST' })
+    const count = data?.count ?? (Array.isArray(data?.skills) ? data.skills.length : 0)
+    toast.success(`提取技能 ${count} 个`)
+  } catch (e: any) {
+    toast.error('提取失败：' + (e.message || ''))
+  } finally {
+    extractingChapterSkills.value = false
+  }
+}
+
+async function handleExtractChapterAnchors() {
+  if (!chapter.value || extractingChapterAnchors.value) return
+  extractingChapterAnchors.value = true
+  try {
+    const { request } = useApi()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, { method: 'POST' })
+    const count = data?.total ?? (Array.isArray(data?.scene_anchors) ? data.scene_anchors.length : 0)
+    toast.success(`提取场景锚点 ${count} 个`)
+  } catch (e: any) {
+    toast.error('提取失败：' + (e.message || ''))
+  } finally {
+    extractingChapterAnchors.value = false
+  }
+}
+
 async function fetchShotsForChapter() {
   if (loadingShots.value) return
   if (chapterVideos.value.length === 0) {
@@ -885,6 +953,27 @@ async function fetchShotsForChapter() {
                 </div>
               </div>
             </div>
+            <!-- Minor Characters -->
+            <div v-if="characters.filter((c: any) => c.role === 'minor').length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-8">
+              <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">次要角色</h4>
+              <div class="grid gap-2">
+                <div
+                  v-for="char in characters.filter((c: any) => c.role === 'minor')"
+                  :key="char.id"
+                  class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                  @click="router.push(`/character/${char.id}`)"
+                >
+                  <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs font-bold text-gray-500 dark:text-gray-400">{{ char.name.charAt(0) }}</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ char.name }}</p>
+                    <p v-if="char.description" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ char.description }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Items -->
             <div class="border-t border-gray-200 dark:border-gray-700 pt-8">
               <div class="flex items-center justify-between mb-4">
@@ -1210,6 +1299,47 @@ async function fetchShotsForChapter() {
                     {{ syncingSnapshots ? '更新中...' : `更新 ${selectedCharacterIds.length} 个角色状态` }}
                   </button>
                 </template>
+              </div>
+
+              <!-- AI 本章提取 -->
+              <div class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
+                <button
+                  :disabled="extractingMinorChars || !chapter?.content"
+                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50"
+                  @click="handleExtractMinorChars"
+                >
+                  <svg v-if="extractingMinorChars" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  {{ extractingMinorChars ? '提取中...' : '提取次要角色' }}
+                </button>
+                <button
+                  :disabled="extractingChapterItems || !chapter?.content"
+                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors disabled:opacity-50"
+                  @click="handleExtractChapterItems"
+                >
+                  <svg v-if="extractingChapterItems" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  {{ extractingChapterItems ? '提取中...' : '提取物品' }}
+                </button>
+                <button
+                  :disabled="extractingChapterSkills || !chapter?.content"
+                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50"
+                  @click="handleExtractChapterSkills"
+                >
+                  <svg v-if="extractingChapterSkills" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  {{ extractingChapterSkills ? '提取中...' : '提取技能' }}
+                </button>
+                <button
+                  :disabled="extractingChapterAnchors || !chapter?.content"
+                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors disabled:opacity-50"
+                  @click="handleExtractChapterAnchors"
+                >
+                  <svg v-if="extractingChapterAnchors" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  {{ extractingChapterAnchors ? '提取中...' : '提取场景锚点' }}
+                </button>
               </div>
 
             </div>

@@ -139,7 +139,7 @@ const GENRE_LIST = [
 const tabs = [
   { key: 'genre'   as const, label: '题材类型', count: GENRE_LIST.length },
   { key: 'writing' as const, label: '写作风格', count: WRITING_PRESETS.length },
-  { key: 'image'   as const, label: '图片风格', count: IMAGE_PRESETS.length },
+  { key: 'image'   as const, label: '画面风格', count: IMAGE_PRESETS.length },
   { key: 'video'   as const, label: '视频风格', count: VIDEO_PRESETS.length },
 ]
 
@@ -199,7 +199,7 @@ const genreLabel: Record<string, string> = {
     <div>
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">风格库</h1>
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        浏览并选择适合你作品的写作风格、图片风格和视频风格
+        浏览并选择适合你作品的写作风格、画面风格和视频风格
       </p>
     </div>
 

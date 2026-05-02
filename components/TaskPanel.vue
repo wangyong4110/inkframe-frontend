@@ -45,6 +45,7 @@
           <div class="mt-0.5 flex-shrink-0">
             <span v-if="task.status === 'completed'" class="text-success-500 text-base">✓</span>
             <span v-else-if="task.status === 'failed'" class="text-error-500 text-base">✕</span>
+            <span v-else-if="task.status === 'cancelled'" class="text-gray-400 text-base">⊘</span>
             <span v-else class="inline-block w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
           </div>
 
@@ -57,6 +58,7 @@
                 {{ task.progress > 0 ? task.progress + '%' : '处理中…' }}
               </span>
               <span v-else-if="task.status === 'completed'" class="text-success-600 dark:text-success-400">已完成</span>
+              <span v-else-if="task.status === 'cancelled'" class="text-gray-400">已取消</span>
               <span v-else class="text-error-600 dark:text-error-400 truncate">{{ task.error || '失败' }}</span>
             </p>
             <!-- Progress bar for running tasks -->
@@ -70,14 +72,25 @@
             </div>
           </div>
 
-          <!-- Type badge + dismiss button -->
+          <!-- Type badge + action buttons -->
           <div class="flex-shrink-0 flex items-center gap-1">
             <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
               {{ taskTypeLabel(task.type) }}
             </span>
-            <!-- Manual dismiss — only for finished tasks -->
+            <!-- Stop button — for active tasks -->
             <button
-              v-if="task.status === 'completed' || task.status === 'failed'"
+              v-if="task.status === 'pending' || task.status === 'running'"
+              class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              title="停止任务"
+              @click="taskStore.cancelTask(task.task_id)"
+            >
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="5" y="5" width="14" height="14" rx="1"/>
+              </svg>
+            </button>
+            <!-- Dismiss button — for finished tasks -->
+            <button
+              v-else-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
               class="text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 text-sm leading-none p-0.5"
               title="关闭"
               @click="taskStore.dismiss(task.task_id)"
@@ -104,7 +117,7 @@ const collapsed = ref(false)
 
 const activeCount = computed(() => taskStore.activeTasks.length)
 const doneCount = computed(() =>
-  taskStore.tasks.filter(t => t.status === 'completed' || t.status === 'failed').length
+  taskStore.tasks.filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled').length
 )
 const visible = computed(() => taskStore.tasks.length > 0)
 

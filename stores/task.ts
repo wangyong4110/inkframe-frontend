@@ -77,10 +77,10 @@ export const useTaskStore = defineStore('task', {
       if (idx >= 0) this.tasks.splice(idx, 1)
     },
 
-    // Remove all completed/failed tasks from the panel.
+    // Remove all completed/failed/cancelled tasks from the panel.
     dismissAll() {
       const doneIds = this.tasks
-        .filter(t => t.status === 'completed' || t.status === 'failed')
+        .filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
         .map(t => t.task_id)
       for (const id of doneIds) {
         this._dismissed[id] = true
@@ -144,6 +144,27 @@ export const useTaskStore = defineStore('task', {
       if (this._timers[taskId]) {
         clearTimeout(this._timers[taskId])
         delete this._timers[taskId]
+      }
+    },
+
+    async cancelTask(taskId: string) {
+      // Stop polling immediately
+      this.stopPolling(taskId)
+      // Optimistically update local status
+      const idx = this.tasks.findIndex(t => t.task_id === taskId)
+      if (idx >= 0) this.tasks[idx] = { ...this.tasks[idx], status: 'cancelled' }
+      // Call backend
+      try {
+        const api = useTaskApi()
+        await api.cancelTask(taskId)
+      } catch {
+        // ignore — local state already updated
+      }
+      // Auto-dismiss after 3s
+      if (!this._dismissed[taskId]) {
+        this._dismissTimers[taskId] = setTimeout(() => {
+          this.dismiss(taskId)
+        }, 3000)
       }
     },
   },

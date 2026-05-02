@@ -46,11 +46,9 @@ export default defineNuxtConfig({
     preset: 'node-server',
   },
 
-  // macOS 11 / Safari 14 compatibility
   vite: {
     build: {
-      // Transpile to ES2020; Safari 14 lacks logical-assignment (&&=, ||=, ??=)
-      target: ['es2020', 'safari14'],
+      target: 'es2022',
     },
   },
 

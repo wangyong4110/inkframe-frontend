@@ -33,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 const { uploading, uploadImage } = useImageUpload()
+const { openLightbox } = useImageLightbox()
 const fileInput = ref<HTMLInputElement | null>(null)
 
 async function handleFileChange(event: Event) {
@@ -69,6 +70,18 @@ function remove() {
         alt="preview"
         class="w-full h-full object-cover"
       />
+      <!-- Zoom button -->
+      <button
+        v-if="props.modelValue && !uploading"
+        type="button"
+        class="absolute bottom-1 right-1 bg-black/50 hover:bg-black/75 text-white rounded p-0.5 transition-colors z-10"
+        title="放大查看"
+        @click.stop="openLightbox(props.modelValue!)"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+        </svg>
+      </button>
       <!-- Empty state -->
       <div v-else class="text-center p-3 select-none">
         <svg class="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -3,6 +3,7 @@
     <NuxtPage />
   </NuxtLayout>
   <TaskPanel />
+  <ImageLightbox />
 </template>
 
 <script setup lang="ts">

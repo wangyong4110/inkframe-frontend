@@ -125,6 +125,14 @@ export function useSceneAnchorApi() {
     return res.data?.logs ?? []
   }
 
+  async function aiExtractFromNovel(novelId: number): Promise<{ task_id: string }> {
+    const res: { code: number; data: { task_id: string } } = await request(
+      `/novels/${novelId}/scene-anchors/ai-extract`,
+      { method: 'POST' },
+    )
+    return res.data
+  }
+
   return {
     getSceneAnchor,
     listSceneAnchors,
@@ -133,6 +141,7 @@ export function useSceneAnchorApi() {
     deleteSceneAnchor,
     setShotAnchor,
     extractSceneAnchors,
+    aiExtractFromNovel,
     generateRefImage,
     lockRefImage,
     getConsistencyLogs,

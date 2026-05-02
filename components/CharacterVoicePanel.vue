@@ -84,7 +84,16 @@ const { lang: initLang, dialect: initDialect } = parseLang((props.character as a
 
 const selectedLang    = ref(initLang)
 const selectedDialect = ref(initDialect)
-const voiceId         = ref(props.character.voice_id    ?? 'nova')
+// Default voice: prefer saved voice_id; if absent, pick by character gender
+function defaultVoiceId(char: typeof props.character): string {
+  if (char.voice_id) return char.voice_id
+  const g = char.gender
+  if (g === 'male')    return 'echo'
+  if (g === 'female')  return 'nova'
+  if (g === 'neutral') return 'alloy'
+  return 'nova'
+}
+const voiceId         = ref(defaultVoiceId(props.character))
 const voiceSpeed      = ref(props.character.voice_speed ?? 1.0)
 const voiceStyle      = ref(props.character.voice_style ?? '')
 const previewText     = ref('')
@@ -113,7 +122,7 @@ watch(() => props.character, (c) => {
   const { lang, dialect } = parseLang((c as any).voice_language)
   selectedLang.value    = lang
   selectedDialect.value = dialect
-  voiceId.value         = c.voice_id    ?? 'nova'
+  voiceId.value         = defaultVoiceId(c)
   voiceSpeed.value      = c.voice_speed ?? 1.0
   voiceStyle.value      = c.voice_style ?? ''
   audioUrl.value        = c.voice_sample ?? ''

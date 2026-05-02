@@ -125,6 +125,12 @@ export const useNovelStore = defineStore('novel', {
       this.loading = true
       this.error = null
 
+      // Optimistic update: apply changes immediately so the UI reflects the new
+      // value before the API round-trip completes (avoids visible empty flash).
+      if (this.currentNovel?.id === id) {
+        this.currentNovel = { ...this.currentNovel, ...data }
+      }
+
       try {
         const api = useNovelApi()
         const response = await api.updateNovel(id, data)

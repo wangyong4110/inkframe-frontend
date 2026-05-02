@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Novel, Chapter, Character, AIModel, Worldview, Item } from '~/types'
+const { openLightbox } = useImageLightbox()
 import { useItemApi, useCharacterApi } from '~/composables/useApi'
 import { useSkillApi, SKILL_CATEGORIES, SKILL_TYPES, type Skill } from '~/composables/useSkillApi'
 import { WRITING_PRESETS, IMAGE_PRESETS, useStyleApi } from '~/composables/useStylePresets'
@@ -24,6 +25,7 @@ const tabSectionRef = ref<HTMLElement | null>(null)
 
 function switchTab(key: string) {
   activeTab.value = key
+  if (key === 'chapters') chapterPage.value = 1
   nextTick(() => {
     tabSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
@@ -31,11 +33,14 @@ function switchTab(key: string) {
 const showChapterModal = ref(false)
 const showCharacterModal = ref(false)
 const generatingOutline = ref(false)
+const chapterPage = ref(1)
+const CHAPTER_PAGE_SIZE = 20
 const generatingCharacters = ref(false)
 const extractingItems = ref(false)
 const extractingPlotPoints = ref(false)
 const showDeleteNovelConfirm = ref(false)
 const showDeleteChapterConfirm = ref(false)
+const showDirPicker = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const showDeleteCharacterConfirm = ref(false)
 const characterToDelete = ref<Character | null>(null)
@@ -45,19 +50,12 @@ const showNovelInfoModal = ref(false)
 const descExpanded = ref(false)
 const novelInfoForm = ref({
   title: '',
-  channel: '',
   genre: '',
   description: '',
   target_word_count: 0,
   target_chapters: 0,
 })
 const savingNovelInfo = ref(false)
-
-const channelOptions = [
-  { value: 'female',  label: '女生原创' },
-  { value: 'male',    label: '男生原创' },
-  { value: 'publish', label: '出版图书' },
-]
 
 const genreOptions = [
   '现代言情','古代言情','幻想言情','历史','军事','科幻','游戏','游戏竞技',
@@ -111,7 +109,6 @@ function openNovelInfoModal() {
   if (!n) return
   novelInfoForm.value = {
     title:            n.title ?? '',
-    channel:          (n as any).channel ?? '',
     genre:            n.genre ?? '',
     description:      n.description ?? '',
     target_word_count:(n as any).target_word_count ?? 0,
@@ -129,7 +126,6 @@ async function saveNovelInfo() {
   try {
     await novelStore.updateNovel(novelId, {
       title:             novelInfoForm.value.title.trim(),
-      channel:           novelInfoForm.value.channel,
       genre:             novelInfoForm.value.genre,
       description:       novelInfoForm.value.description.trim(),
       target_word_count: novelInfoForm.value.target_word_count,
@@ -144,11 +140,11 @@ async function saveNovelInfo() {
   }
 }
 
-// 创建小说节点是否完成：需有描述 + 频道
+// 创建小说节点是否完成：需有描述
 const novelInfoComplete = computed(() => {
   const n = novel.value
   if (!n) return false
-  return !!(n.description?.trim() && (n as any).channel)
+  return !!(n.description?.trim())
 })
 
 // Style selection state
@@ -179,6 +175,11 @@ const videoTypes = [
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
 const novelChapterCount = computed(() => chapters.value.length)
+const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
+const pagedChapters = computed(() => {
+  const start = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
+  return chapters.value.slice(start, start + CHAPTER_PAGE_SIZE)
+})
 const novelTotalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count ?? 0), 0))
 const completedChapterCount = computed(() => chapters.value.filter(c => c.status === 'completed' || c.status === 'published').length)
 const chapterProgress = computed(() => {
@@ -251,9 +252,9 @@ async function handleWritingPresetSelect(presetId: string) {
 function handleImageStyleSelect(styleId: string) {
   novelStore.updateNovel(novelId, { image_style: styleId }).then(() => {
     const preset = IMAGE_PRESETS.find(p => p.id === styleId)
-    if (preset) toast.success(`已应用图片风格「${preset.name}」`)
+    if (preset) toast.success(`已应用画面风格「${preset.name}」`)
   }).catch((e: any) => {
-    toast.error('保存图片风格失败：' + (e.message || ''))
+    toast.error('保存画面风格失败：' + (e.message || ''))
   })
 }
 
@@ -334,30 +335,21 @@ async function extractAnchors() {
   }
 }
 
-// 遍历全部章节依次提取，后端已自动去重，跳过名称重复的锚点
+// AI 批量提取全部章节的场景锚点（后端异步任务，自动去重）
 async function extractAllAnchors() {
-  const chapters = chapterStore.chapters.filter(c => c.content)
-  if (chapters.length === 0) { toast.error('没有有内容的章节'); return }
   extractingAllAnchors.value = true
-  extractAllProgress.value = { current: 0, total: chapters.length }
-  const novel = novelStore.currentNovel
-  let totalAdded = 0
-  let failed = 0
-  for (const ch of chapters) {
-    extractAllProgress.value.current++
-    try {
-      const added = await sceneAnchorStore.extractAnchors(novelId, ch.content!, novel?.title)
-      totalAdded += added.length
-    } catch {
-      failed++
-    }
-  }
-  extractingAllAnchors.value = false
-  extractAllProgress.value = { current: 0, total: 0 }
-  if (failed > 0) {
-    toast.error(`完成，${failed} 章提取失败，共新增 ${totalAdded} 个锚点`)
-  } else {
-    toast.success(`全部章节提取完成，共新增 ${totalAdded} 个新场景锚点`)
+  try {
+    const api = useSceneAnchorApi()
+    const res = await api.aiExtractFromNovel(novelId)
+    const taskId = (res as any)?.task_id ?? (res as any)?.data?.task_id
+    taskStore.trackTask(taskId, async () => {
+      await sceneAnchorStore.fetchAnchors(novelId)
+      extractingAllAnchors.value = false
+      toast.success('场景锚点提取完成')
+    })
+  } catch (e: any) {
+    extractingAllAnchors.value = false
+    toast.error('提取失败：' + (e.message || ''))
   }
 }
 
@@ -418,11 +410,39 @@ onMounted(async () => {
   ])
   // Auto-trigger analysis when coming from the import/create page.
   // Remove the query params immediately to prevent re-triggering on refresh.
-  if (route.query.analyze === '1') {
+  if (route.query.analysis_task_id) {
+    // Backend already started analysis — just resume polling, don't start a new one
+    const existingTaskId = route.query.analysis_task_id as string
+    const { analysis_task_id: _tid, ...restQuery } = route.query
+    router.replace({ query: restQuery })
+    analysisTaskId.value = existingTaskId
+    localStorage.setItem(`analysis_task_${novelId}`, existingTaskId)
+    analysisStatus.value = { status: 'running', progress: 0, step: '分析中...' }
+    startAnalysisPoll()
+  } else if (route.query.analyze === '1') {
     const sourceVal = route.query.source as string | undefined
     const { analyze: _a, source: _s, ...restQuery } = route.query
     router.replace({ query: restQuery })
     await triggerAnalysis(sourceVal)
+  } else {
+    // 页面刷新后从 localStorage 恢复进行中的分析任务
+    const storedTaskId = localStorage.getItem(`analysis_task_${novelId}`)
+    if (storedTaskId) {
+      try {
+        const resp = await analysisApi.getAnalysisStatus(novelId, storedTaskId)
+        const status = (resp as any).data as AnalysisStatus
+        if (status.status === 'running' || status.status === 'pending') {
+          analysisTaskId.value = storedTaskId
+          analysisStatus.value = status
+          startAnalysisPoll()
+        } else {
+          // 已结束，清除记录（completed 时自动 reload 会清掉，这里兜底）
+          localStorage.removeItem(`analysis_task_${novelId}`)
+        }
+      } catch {
+        localStorage.removeItem(`analysis_task_${novelId}`)
+      }
+    }
   }
   // Load AI models and worldview list (non-critical, silent fail)
   try {
@@ -511,7 +531,7 @@ async function handleAIPlotPoints() {
     const res = await plotPointApi.aiExtractFromNovel(novelId)
     const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
     taskStore.trackTask(taskId, async () => {
-      await fetchPlotPoints()
+      await fetchPlotPoints(1)
       extractingPlotPoints.value = false
       toast.success('剧情点已提取/更新')
     })
@@ -653,6 +673,9 @@ async function triggerAnalysis(source?: string) {
     const createOutlines = (source ?? route.query.source) === 'ai'
     const resp = await analysisApi.startAnalysis(novelId, createOutlines ? { create_chapter_outlines: true } : undefined)
     analysisTaskId.value = (resp as any).data?.task_id ?? ''
+    if (analysisTaskId.value) {
+      localStorage.setItem(`analysis_task_${novelId}`, analysisTaskId.value)
+    }
     analysisStatus.value = { status: 'running', progress: 0, step: '准备中...' }
     startAnalysisPoll()
   } catch (e: any) {
@@ -669,6 +692,7 @@ function startAnalysisPoll() {
       analysisStatus.value = (resp as any).data as AnalysisStatus
       if (analysisStatus.value.status === 'completed' || analysisStatus.value.status === 'failed') {
         stopAnalysisPoll()
+        localStorage.removeItem(`analysis_task_${novelId}`)
         if (analysisStatus.value.status === 'completed') {
           // 刷新所有数据后重新加载页面
           await Promise.all([
@@ -842,6 +866,10 @@ import type { PlotPoint } from '~/types'
 const plotPoints = ref<PlotPoint[]>([])
 const plotPointsLoading = ref(false)
 const plotPointApi = usePlotPointApi()
+const plotPointsPage = ref(1)
+const plotPointsPageSize = 20
+const plotPointsTotal = ref(0)
+const plotPointsTotalPages = computed(() => Math.ceil(plotPointsTotal.value / plotPointsPageSize))
 
 const plotPointTypeLabel: Record<string, string> = {
   conflict: '冲突', climax: '高潮', resolution: '解决', twist: '转折', foreshadow: '伏笔',
@@ -854,11 +882,13 @@ const plotPointTypeBadgeClass: Record<string, string> = {
   foreshadow: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
 }
 
-async function fetchPlotPoints() {
+async function fetchPlotPoints(page = plotPointsPage.value) {
   plotPointsLoading.value = true
+  plotPointsPage.value = page
   try {
-    const data = await plotPointApi.listByNovel(novelId)
-    plotPoints.value = data.plot_points ?? []
+    const data = await plotPointApi.listByNovel(novelId, { page, page_size: plotPointsPageSize })
+    plotPoints.value = data.data?.plot_points ?? []
+    plotPointsTotal.value = data.data?.total ?? 0
   } catch { /* ignore */ } finally {
     plotPointsLoading.value = false
   }
@@ -1100,7 +1130,7 @@ function getSkillStatusLabel(status: string): string {
         </button>
       </div>
       <p class="text-sm text-blue-700 dark:text-blue-300 mb-4">
-        从导入的章节中自动提取世界观、角色与大纲，将小说转化为可编辑的创作项目
+        从导入的章节中自动提取角色、物品、技能、世界观、剧情点、场景锚点，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
       </p>
 
       <!-- 空闲状态：显示启动按钮 -->
@@ -1123,17 +1153,35 @@ function getSkillStatusLabel(status: string): string {
           </div>
         </div>
         <div class="flex flex-wrap gap-2 text-xs">
-          <span :class="analysisStatus.progress > 0 ? 'text-green-600' : 'text-gray-400'">
-            {{ analysisStatus.progress > 0 ? '✓' : '○' }} 章节摘要
+          <span :class="analysisStatus.progress >= 20 ? 'text-green-600' : (analysisStatus.progress > 0 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 20 ? '✓' : (analysisStatus.progress > 0 ? '⟳' : '○') }} 章节摘要
           </span>
-          <span :class="analysisStatus.progress >= 30 ? 'text-green-600' : (analysisStatus.progress > 0 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 30 ? '✓' : (analysisStatus.progress > 0 ? '⟳' : '○') }} 提取角色
+          <span :class="analysisStatus.progress >= 30 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 30 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 角色
           </span>
-          <span :class="analysisStatus.progress >= 55 ? 'text-green-600' : (analysisStatus.progress >= 30 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 55 ? '✓' : (analysisStatus.progress >= 30 ? '⟳' : '○') }} 世界观
+          <span :class="analysisStatus.progress >= 78 ? 'text-green-600' : (analysisStatus.progress >= 70 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 78 ? '✓' : (analysisStatus.progress >= 70 ? '⟳' : '○') }} 技能
           </span>
-          <span :class="analysisStatus.progress >= 75 ? 'text-green-600' : (analysisStatus.progress >= 55 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 75 ? '✓' : (analysisStatus.progress >= 55 ? '⟳' : '○') }} 生成大纲
+          <span :class="analysisStatus.progress >= 40 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 40 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 物品
+          </span>
+          <span :class="analysisStatus.progress >= 50 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 50 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 世界观
+          </span>
+          <span :class="analysisStatus.progress >= 60 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 60 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 剧情点
+          </span>
+          <span :class="analysisStatus.progress >= 70 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 70 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 场景锚点
+          </span>
+          <span :class="analysisStatus.progress >= 90 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 90 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 故事大纲
+          </span>
+          <span :class="analysisStatus.progress >= 90 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 90 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 项目设置
+          </span>
+          <span :class="analysisStatus.progress >= 95 ? 'text-green-600' : (analysisStatus.progress >= 90 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 95 ? '✓' : (analysisStatus.progress >= 90 ? '⟳' : '○') }} 章节大纲
           </span>
         </div>
       </div>
@@ -1144,7 +1192,7 @@ function getSkillStatusLabel(status: string): string {
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          分析完成！世界观、角色与大纲已更新。
+          分析完成！角色、物品、技能、世界观、剧情点、场景锚点、故事大纲、项目设置和章节大纲已全部更新。
         </div>
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}
@@ -1219,7 +1267,7 @@ function getSkillStatusLabel(status: string): string {
 
       <div v-else class="space-y-3">
         <div
-          v-for="chapter in chapters"
+          v-for="chapter in pagedChapters"
           :key="chapter.id"
           class="card p-4 hover:shadow-soft transition-shadow cursor-pointer group"
           @click="goToChapter(chapter)"
@@ -1259,6 +1307,45 @@ function getSkillStatusLabel(status: string): string {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
               </svg>
             </div>
+          </div>
+        </div>
+
+        <!-- 分页控件 -->
+        <div v-if="chapterTotalPages > 1" class="flex items-center justify-between pt-2">
+          <span class="text-sm text-gray-500 dark:text-gray-400">
+            第 {{ chapterPage }} / {{ chapterTotalPages }} 页，共 {{ chapters.length }} 章
+          </span>
+          <div class="flex items-center gap-1">
+            <button
+              class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+              :disabled="chapterPage === 1"
+              @click="chapterPage = 1"
+            >«</button>
+            <button
+              class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+              :disabled="chapterPage === 1"
+              @click="chapterPage--"
+            >‹</button>
+            <template v-for="p in chapterTotalPages" :key="p">
+              <button
+                v-if="Math.abs(p - chapterPage) <= 2"
+                class="px-2.5 py-1 rounded text-sm border"
+                :class="p === chapterPage
+                  ? 'bg-primary-600 text-white border-primary-600'
+                  : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                @click="chapterPage = p"
+              >{{ p }}</button>
+            </template>
+            <button
+              class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+              :disabled="chapterPage === chapterTotalPages"
+              @click="chapterPage++"
+            >›</button>
+            <button
+              class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+              :disabled="chapterPage === chapterTotalPages"
+              @click="chapterPage = chapterTotalPages"
+            >»</button>
           </div>
         </div>
       </div>
@@ -1325,8 +1412,9 @@ function getSkillStatusLabel(status: string): string {
               <img
                 v-if="character.three_view_front || character.portrait"
                 :src="character.three_view_front || character.portrait"
-                class="w-full h-full object-cover"
+                class="w-full h-full object-cover cursor-zoom-in"
                 :alt="character.name"
+                @click.stop="openLightbox(character.three_view_front || character.portrait)"
               />
               <span v-else class="text-2xl font-bold text-primary-600">{{ character.name.charAt(0) }}</span>
             </div>
@@ -1400,7 +1488,7 @@ function getSkillStatusLabel(status: string): string {
         >
           <!-- Image area -->
           <div class="relative w-full h-36 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-            <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
+            <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover cursor-zoom-in" :alt="item.name" @click.stop="openLightbox(item.image_url)" />
             <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
               <span class="text-3xl">{{ getItemCategoryIcon(item.category) }}</span>
             </div>
@@ -1755,6 +1843,39 @@ function getSkillStatusLabel(status: string): string {
             </svg>
           </button>
         </div>
+
+        <!-- 分页 -->
+        <div v-if="plotPointsTotalPages > 1" class="flex items-center justify-center gap-1 pt-2">
+          <button
+            class="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            :disabled="plotPointsPage <= 1"
+            @click="fetchPlotPoints(plotPointsPage - 1)"
+          >‹</button>
+          <template v-for="p in plotPointsTotalPages" :key="p">
+            <button
+              v-if="p === 1 || p === plotPointsTotalPages || Math.abs(p - plotPointsPage) <= 1"
+              class="px-2.5 py-1 text-xs rounded border transition-colors"
+              :class="p === plotPointsPage
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium'
+                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'"
+              @click="fetchPlotPoints(p)"
+            >{{ p }}</button>
+            <span
+              v-else-if="p === 2 && plotPointsPage > 3"
+              class="px-1 text-xs text-gray-400"
+            >…</span>
+            <span
+              v-else-if="p === plotPointsTotalPages - 1 && plotPointsPage < plotPointsTotalPages - 2"
+              class="px-1 text-xs text-gray-400"
+            >…</span>
+          </template>
+          <button
+            class="px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            :disabled="plotPointsPage >= plotPointsTotalPages"
+            @click="fetchPlotPoints(plotPointsPage + 1)"
+          >›</button>
+          <span class="ml-2 text-xs text-gray-400">共 {{ plotPointsTotal }} 条</span>
+        </div>
       </div>
     </div>
 
@@ -1769,8 +1890,7 @@ function getSkillStatusLabel(status: string): string {
           </option>
         </select>
         <button class="btn btn-primary text-sm" :disabled="extractingAnchors || extractingAllAnchors" @click="extractAnchors">
-          <span v-if="extractingAllAnchors">提取中 {{ extractAllProgress.current }}/{{ extractAllProgress.total }}…</span>
-          <span v-else-if="extractingAnchors">提取中…</span>
+          <span v-if="extractingAllAnchors || extractingAnchors">提取中…</span>
           <span v-else>AI 提取</span>
         </button>
         <button class="btn btn-secondary text-sm ml-auto" @click="startAnchorCreate">+ 手动新建</button>
@@ -1803,7 +1923,7 @@ function getSkillStatusLabel(status: string): string {
         >
           <!-- 参考图区域 -->
           <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-            <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" :alt="anchor.name" />
+            <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover cursor-zoom-in" :alt="anchor.name" @click.stop="openLightbox(anchor.ref_image_url)" />
             <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1818,7 +1938,7 @@ function getSkillStatusLabel(status: string): string {
                 'bg-green-100 text-green-700': anchor.type === 'exterior',
                 'bg-purple-100 text-purple-700': anchor.type === 'imaginary',
               }"
-            >{{ anchor.type }}</span>
+            >{{ anchor.type === 'interior' ? '室内' : anchor.type === 'exterior' ? '室外' : anchor.type === 'imaginary' ? '虚幻' : anchor.type }}</span>
             <!-- 锁定状态 -->
             <span v-if="anchor.ref_image_locked_at" class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
               <svg class="w-3 h-3 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1943,19 +2063,6 @@ function getSkillStatusLabel(status: string): string {
                 @change="(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (v) novelStore.updateNovel(novelId, { title: v }) }"
               />
             </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">频道</label>
-              <div class="flex gap-2">
-                <button
-                  v-for="opt in channelOptions" :key="opt.value" type="button"
-                  class="px-3 py-1 text-xs rounded-full border transition-colors"
-                  :class="novel?.channel === opt.value
-                    ? 'bg-amber-400 border-amber-400 text-white font-medium'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-amber-300'"
-                  @click="novelStore.updateNovel(novelId, { channel: opt.value })"
-                >{{ opt.label }}</button>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -2064,7 +2171,7 @@ function getSkillStatusLabel(status: string): string {
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">图片风格</label>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">画面风格</label>
             <select
               :value="novel?.image_style || IMAGE_PRESETS[0]?.id || ''"
               class="input"
@@ -2189,6 +2296,35 @@ function getSkillStatusLabel(status: string): string {
             </button>
           </div>
         </div>
+
+        <!-- 素材导出路径 -->
+        <div>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">素材导出路径</label>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              class="input flex-1"
+              placeholder="如 /output/assets 或留空使用默认路径"
+              :value="novel?.asset_export_path ?? ''"
+              @change="(e) => novelStore.updateNovel(novelId, { asset_export_path: (e.target as HTMLInputElement).value })"
+            />
+            <button
+              type="button"
+              class="shrink-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1.5 text-sm"
+              @click="showDirPicker = true"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>
+              浏览
+            </button>
+          </div>
+          <p class="text-xs text-gray-400 mt-1">生成的图片、音频等素材文件的保存位置</p>
+        </div>
+
+        <DirPicker
+          v-model="showDirPicker"
+          :initial-path="novel?.asset_export_path || '/'"
+          @select="(path) => novelStore.updateNovel(novelId, { asset_export_path: path })"
+        />
 
         <div class="grid grid-cols-2 gap-4">
           <div>
@@ -2392,22 +2528,6 @@ function getSkillStatusLabel(status: string): string {
               <input v-model="novelInfoForm.title" type="text" maxlength="100" class="input" placeholder="小说名称" />
             </div>
 
-            <!-- 频道 -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">频道 <span class="text-red-500">*</span></label>
-              <div class="flex gap-2 flex-wrap">
-                <button
-                  v-for="opt in channelOptions" :key="opt.value"
-                  type="button"
-                  class="px-4 py-1.5 text-sm rounded-full border transition-colors"
-                  :class="novelInfoForm.channel === opt.value
-                    ? 'bg-amber-400 border-amber-400 text-white font-medium'
-                    : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-amber-300'"
-                  @click="novelInfoForm.channel = opt.value"
-                >{{ opt.label }}</button>
-              </div>
-            </div>
-
             <!-- 作品分类 -->
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">作品分类</label>
@@ -2471,7 +2591,7 @@ function getSkillStatusLabel(status: string): string {
             <button class="btn-secondary" @click="showNovelInfoModal = false">取消</button>
             <button
               class="btn-primary"
-              :disabled="savingNovelInfo || !novelInfoForm.title.trim() || !novelInfoForm.channel || !novelInfoForm.description.trim()"
+              :disabled="savingNovelInfo || !novelInfoForm.title.trim() || !novelInfoForm.description.trim()"
               @click="saveNovelInfo"
             >
               <svg v-if="savingNovelInfo" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>

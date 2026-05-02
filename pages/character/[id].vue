@@ -3,6 +3,7 @@ import type { CharacterAbility } from '~/types'
 import { useCharacterArcApi } from '~/composables/useEnhancementApi'
 import type { CharacterArcStage } from '~/composables/useEnhancementApi'
 
+const { openLightbox } = useImageLightbox()
 const characterStore = useCharacterStore()
 const novelStore = useNovelStore()
 const route = useRoute()
@@ -35,6 +36,7 @@ const selectedImageProvider = computed(() => novelStore.currentNovel?.image_mode
 // Mutable local copy of the character (so v-model works without mutating the store directly)
 const character = ref({
   name: '',
+  gender: '' as string,
   role: 'protagonist' as string,
   archetype: '',
   background: '',
@@ -87,15 +89,18 @@ watch(personalityTags, () => { isDirty.value = true }, { deep: true })
 watch(abilities, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
-  if (novelId && novelStore.currentNovel?.id !== novelId) {
-    novelStore.fetchNovel(novelId).catch(() => {})
-  }
   if (characterId) {
     await characterStore.fetchCharacter(characterId)
     const c = characterStore.currentCharacter
+    // 用角色自身的 novel_id 加载小说（URL 里没有 novelId 参数）
+    const novelIdToFetch = c?.novel_id ?? novelId
+    if (novelIdToFetch && novelStore.currentNovel?.id !== novelIdToFetch) {
+      novelStore.fetchNovel(novelIdToFetch).catch(() => {})
+    }
     if (c) {
       character.value = {
         name: c.name ?? '',
+        gender: c.gender ?? '',
         role: c.role ?? 'protagonist',
         archetype: c.archetype ?? '',
         background: c.background ?? '',
@@ -180,6 +185,20 @@ async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'al
   if (!character.value.appearance) {
     toast.error('请先填写外貌描述，再生成三视图')
     return
+  }
+  // 若有未保存的修改（包括外貌描述），先保存再生成，确保后端读取到最新外貌
+  if (isDirty.value) {
+    try {
+      await characterStore.updateCharacter(characterId, {
+        ...character.value,
+        personality_tags: personalityTags.value,
+        abilities: abilities.value,
+      } as any)
+      isDirty.value = false
+    } catch (e: any) {
+      toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
+      return
+    }
   }
   generatingThreeView.value[viewType] = true
   threeViewTaskStatus.value = 'pending'
@@ -304,6 +323,15 @@ function getRoleLabel(role: string): string {
             <option value="antagonist">反派</option>
             <option value="supporting">配角</option>
             <option value="minor">路人</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">性别</label>
+          <select v-model="character.gender" class="input">
+            <option value="">未设定</option>
+            <option value="male">男</option>
+            <option value="female">女</option>
+            <option value="neutral">中性</option>
           </select>
         </div>
         <div>
@@ -561,7 +589,7 @@ function getRoleLabel(role: string): string {
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">封面图片 URL</label>
           <input v-model="character.cover_image" type="text" class="input" placeholder="https://..." />
           <div v-if="character.cover_image" class="mt-2">
-            <img :src="character.cover_image" alt="cover" class="h-32 object-cover rounded-lg border" />
+            <img :src="character.cover_image" alt="cover" class="h-32 object-cover rounded-lg border cursor-zoom-in" @click="openLightbox(character.cover_image)" />
           </div>
         </div>
 

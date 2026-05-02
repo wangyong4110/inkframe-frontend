@@ -27,6 +27,7 @@ export interface Novel {
   video_fps?: number                // 帧率：24/30/60
   video_aspect_ratio?: string       // 宽高比：16:9/9:16/1:1/4:3
   char_consistency_weight?: number  // 角色一致性权重 0-1
+  asset_export_path?: string        // 素材导出路径
   created_at: string
   updated_at: string
 }
@@ -87,6 +88,7 @@ export interface Character {
   novel_id: number
   uuid: string
   name: string
+  gender?: string          // "male" | "female" | "neutral"
   role: CharacterRole
   archetype?: string
   appearance?: string
