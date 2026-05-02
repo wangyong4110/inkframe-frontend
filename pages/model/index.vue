@@ -59,6 +59,10 @@ const PROVIDER_OPTIONS = [
   { name: 'volcengine-ark-img', label: 'Seedream 图像（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'image', needsSecretKey: false },
   // 视频生成提供商
   { name: 'seedance',           label: 'Seedance 视频（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'video', needsSecretKey: false },
+  // 语音合成提供商
+  { name: 'doubao-tts',         label: '豆包语音（火山方舟）',      endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'voice', needsSecretKey: false },
+  { name: 'openai-tts',         label: 'OpenAI TTS',               endpoint: 'https://api.openai.com/v1',                                  type: 'voice', needsSecretKey: false },
+  { name: 'minimax-tts',        label: 'MiniMax 语音',             endpoint: 'https://api.minimax.chat/v1',                                type: 'voice', needsSecretKey: false },
   // 自定义
   { name: 'custom',             label: '自定义',                  endpoint: '',                                                            type: 'llm',   needsSecretKey: false },
 ]
@@ -202,6 +206,7 @@ async function refreshProviderModels(providerId: number) {
 function openAddModelForm(providerId: number, providerType: string) {
   const defaultTask = providerType === 'image' ? 'image_gen'
     : providerType === 'video' ? 'video_gen'
+    : providerType === 'voice' ? 'voice_gen'
     : providerType === 'embedding' ? 'embedding'
     : 'chapter'
   addModelForms.value = { ...addModelForms.value, [providerId]: { name: '', tasks: defaultTask, saving: false } }
@@ -771,6 +776,7 @@ watch(activeTab, (tab) => {
                   <option value="llm">LLM（语言模型）</option>
                   <option value="image">图像生成</option>
                   <option value="video">视频生成</option>
+                  <option value="voice">语音合成</option>
                   <option value="embedding">向量嵌入</option>
                 </select>
               </div>
