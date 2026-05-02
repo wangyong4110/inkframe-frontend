@@ -4,8 +4,13 @@ const authStore = useAuthStore()
 const isDark = ref(false)
 const showUserMenu = ref(false)
 
-// Close dropdown on click outside
+// Close dropdown on click outside + restore dark mode preference
 onMounted(() => {
+  const saved = localStorage.getItem('color-scheme')
+  if (saved === 'dark') {
+    isDark.value = true
+    document.documentElement.classList.add('dark')
+  }
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement
     if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
@@ -16,8 +21,10 @@ const toggleDark = () => {
   isDark.value = !isDark.value
   if (isDark.value) {
     document.documentElement.classList.add('dark')
+    localStorage.setItem('color-scheme', 'dark')
   } else {
     document.documentElement.classList.remove('dark')
+    localStorage.setItem('color-scheme', 'light')
   }
 }
 

@@ -149,7 +149,8 @@ async function handleSave() {
 }
 
 function goBack() {
-  router.push(`/novel/${novelId}?tab=characters`)
+  const nid = characterStore.currentCharacter?.novel_id
+  nid ? router.push(`/novel/${nid}?tab=characters`) : router.back()
 }
 
 // Personality tags
@@ -290,7 +291,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Profile Tab -->
     <div v-if="activeTab === 'profile'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">基本信息</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">基本信息</h3>
       <div class="grid gap-6 md:grid-cols-2">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">角色名称</label>
@@ -324,7 +325,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Appearance Tab -->
     <div v-if="activeTab === 'appearance'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">外貌设定</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">外貌设定</h3>
       <div class="space-y-6">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">外貌描述</label>
@@ -414,7 +415,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Personality Tab -->
     <div v-if="activeTab === 'personality'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">性格特点</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">性格特点</h3>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">性格描述</label>
@@ -504,7 +505,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Character Arc Tab -->
     <div v-if="activeTab === 'arc'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">角色弧光</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">角色弧光</h3>
       <p class="text-sm text-gray-500 mb-4">在「角色档案」标签页可编辑弧光文字描述。以下图示根据已完成章节自动生成。</p>
 
       <!-- Loading -->
@@ -542,7 +543,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Visual Design Tab -->
     <div v-if="activeTab === 'visual'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">视觉设计</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">视觉设计</h3>
       <p class="text-sm text-gray-500 mb-6">三视图参考图请在「外貌设定」标签页填写 URL。此处管理艺术风格和导出选项。</p>
 
       <div class="space-y-6">
@@ -593,7 +594,7 @@ function getRoleLabel(role: string): string {
 
     <!-- Voice Tab -->
     <div v-if="activeTab === 'voice'" class="card p-6">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">配音设置</h3>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">配音设置</h3>
       <p class="text-sm text-gray-500 mb-4">为角色选择专属声音，生成分镜配音时将自动使用此配置。</p>
       <CharacterVoicePanel
         v-if="characterStore.currentCharacter"

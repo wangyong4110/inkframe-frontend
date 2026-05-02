@@ -67,7 +67,13 @@ const storyboardForm = ref({
   art_style: 'anime',
   aspect_ratio: '16:9',
   quality_tier: 'draft' as 'draft' | 'preview' | 'final',
+  mode: 'slideshow' as 'slideshow' | 'video',
 })
+
+const VIDEO_MODES = [
+  { id: 'slideshow' as const, name: '图片解说', desc: '每镜一图+动效，低成本' },
+  { id: 'video' as const, name: 'AI 视频', desc: '逐帧视频，需视频API' },
+]
 
 const QUALITY_TIERS = [
   { id: 'draft' as const, name: '草稿', desc: '快速预览，成本最低' },
@@ -95,6 +101,7 @@ async function handleCreateStoryboard() {
       storyboardForm.value.aspect_ratio,
       24,
       storyboardForm.value.quality_tier,
+      storyboardForm.value.mode,
     )
     chapterVideos.value.unshift(video)
     showStoryboardModal.value = false
@@ -124,6 +131,16 @@ const chapterTitle = ref('')
 const prompt = ref('')
 const wordCountOverride = ref(0)
 
+// 根据小说设置推算单章字数目标（万字 → 字，除以章节数）
+function computeDefaultWordCount(n: typeof novel.value): number {
+  if (!n) return 0
+  const totalWords = n.target_word_count ?? 0
+  const chapters = n.target_chapters ?? 0
+  if (totalWords > 0 && chapters > 0) return Math.round(totalWords / chapters)
+  if (totalWords > 0) return Math.round(totalWords / 100) // 无章节数时按100章估算
+  return 0
+}
+
 onMounted(async () => {
   await Promise.all([
     novelStore.fetchNovel(novelId),
@@ -137,6 +154,10 @@ onMounted(async () => {
     }
     content.value = chapter.value?.content || ''
     chapterTitle.value = chapter.value?.title || ''
+  }
+  // 仅在用户未手动设置时，用小说配置推算字数目标
+  if (wordCountOverride.value === 0) {
+    wordCountOverride.value = computeDefaultWordCount(novel.value)
   }
   // Restore tab from URL query
   const tabParam = route.query.tab as string | undefined
@@ -238,6 +259,21 @@ async function handleCheckQuality() {
   refinedContent.value = ''
 }
 
+// ── 导入内容 ──────────────────────────────────────────────────────────────────
+const showImportPanel = ref(false)
+const importText = ref('')
+
+function handleImportContent() {
+  const text = importText.value.trim()
+  if (!text) return
+  if (content.value && !confirm('导入将替换当前编辑中的内容，确认继续？')) return
+  const wordCount = countWords(text)
+  content.value = text
+  importText.value = ''
+  showImportPanel.value = false
+  toast.success(`已导入 ${wordCount.toLocaleString()} 字`)
+}
+
 // ── 质量改进 ──────────────────────────────────────────────────────────────────
 const selectedSuggestions = ref<Set<string>>(new Set())
 const refining = ref(false)
@@ -293,7 +329,7 @@ const generatingOutline = ref(false)
 const savingOutline = ref(false)
 
 function startEditOutline() {
-  outlineEditText.value = chapter.value?.outline || ''
+  outlineEditText.value = chapter.value?.outline || chapter.value?.summary || ''
   outlineEditMode.value = true
 }
 
@@ -329,13 +365,28 @@ async function handleGenerateOutline() {
       chapterStore.$patch({ currentChapter: res.data })
     }
     if (outlineEditMode.value) {
-      outlineEditText.value = chapter.value?.outline || ''
+      outlineEditText.value = chapter.value?.outline || chapter.value?.summary || ''
     }
     toast.success('大纲生成完成')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
   } finally {
     generatingOutline.value = false
+  }
+}
+
+// ── 全小说大纲生成 ─────────────────────────────────────────────────────────────
+const generatingNovelOutline = ref(false)
+
+async function handleGenerateNovelOutline() {
+  generatingNovelOutline.value = true
+  try {
+    await novelStore.generateOutline(novelId, 10, prompt.value || undefined)
+    toast.success('全小说大纲生成完成')
+  } catch (e: any) {
+    toast.error('大纲生成失败：' + (e.message || '未知错误'))
+  } finally {
+    generatingNovelOutline.value = false
   }
 }
 
@@ -368,6 +419,7 @@ function switchToCharacter() {
 const currentVideoId = ref<number | null>(null)
 const videoEditorRef = ref<any>(null)
 const generatingScript = ref(false)
+const scriptUserPrompt = ref('')
 
 async function switchToScript() {
   pageMode.value = 'script'
@@ -384,18 +436,18 @@ async function handleGenerateScript() {
     generatingScript.value = true
     try {
       const title = `${novel.value?.title || '小说'} 第${chapterNo}章`
-      const video = await videoStore.createVideo(novelId, chapter.value.id, title, 'anime', '16:9', 24, 'draft')
+      const video = await videoStore.createVideo(novelId, chapter.value.id, title, 'anime', '16:9', 24, 'draft', 'slideshow')
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
-      videoEditorRef.value?.generateStoryboard()
+      videoEditorRef.value?.generateStoryboard(scriptUserPrompt.value || undefined)
     } catch (e: any) {
       toast.error('创建失败：' + (e.message || '未知错误'))
     } finally {
       generatingScript.value = false
     }
   } else {
-    videoEditorRef.value?.generateStoryboard()
+    videoEditorRef.value?.generateStoryboard(scriptUserPrompt.value || undefined)
   }
 }
 
@@ -629,7 +681,7 @@ async function fetchShotsForChapter() {
               <!-- Actions: view mode -->
               <div v-if="!outlineEditMode" class="flex items-center gap-2 flex-shrink-0 mt-1">
                 <button
-                  v-if="chapter?.outline"
+                  v-if="chapter?.outline || chapter?.summary"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors"
                   @click="startEditOutline"
                 >
@@ -681,8 +733,8 @@ async function fetchShotsForChapter() {
                 class="w-full resize-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 text-base text-gray-800 dark:text-gray-200 leading-8 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="输入本章大纲，描述核心情节、人物行动与转折点..."
               />
-              <!-- View: has outline -->
-              <p v-else-if="chapter?.outline" class="text-base text-gray-700 dark:text-gray-300 leading-8 whitespace-pre-wrap">{{ chapter.outline }}</p>
+              <!-- View: has outline or summary -->
+              <p v-else-if="chapter?.outline || chapter?.summary" class="text-base text-gray-700 dark:text-gray-300 leading-8 whitespace-pre-wrap">{{ chapter.outline || chapter.summary }}</p>
               <!-- View: empty state -->
               <div v-else class="py-12 text-center border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
                 <svg class="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -905,8 +957,39 @@ async function fetchShotsForChapter() {
         <!-- Panel content -->
         <div class="flex-1 overflow-auto">
 
-          <!-- ── 大纲 / 写作 AI ── -->
-          <template v-if="pageMode === 'outline' || pageMode === 'write'">
+          <!-- ── 大纲 AI ── -->
+          <template v-if="pageMode === 'outline'">
+            <div class="p-4 space-y-4">
+              <div class="space-y-3">
+                <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">生成整部小说的章节大纲，包含所有章节标题和剧情提要。</p>
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">补充提示 <span class="font-normal text-gray-400">（可选）</span></label>
+                  <textarea
+                    v-model="prompt"
+                    rows="3"
+                    class="input text-sm resize-none"
+                    placeholder="对大纲方向的额外要求..."
+                  />
+                </div>
+                <button
+                  class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
+                  :disabled="generatingNovelOutline"
+                  @click="handleGenerateNovelOutline"
+                >
+                  <svg v-if="generatingNovelOutline" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  {{ generatingNovelOutline ? '生成中...' : '生成全小说大纲' }}
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── 写作 AI ── -->
+          <template v-else-if="pageMode === 'write'">
             <div class="p-4 space-y-4">
               <!-- Generation form -->
               <div class="space-y-3">
@@ -1035,6 +1118,32 @@ async function fetchShotsForChapter() {
                 class="w-full py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-dashed border-gray-200 dark:border-gray-600 rounded-lg transition-colors hover:border-gray-300"
                 @click="handleCheckQuality"
               >运行质量检查</button>
+
+              <!-- Import panel -->
+              <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  class="w-full flex items-center justify-between py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  @click="showImportPanel = !showImportPanel"
+                >
+                  <span>导入文本</span>
+                  <svg class="w-3 h-3 transition-transform" :class="showImportPanel ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+                <div v-if="showImportPanel" class="mt-2 space-y-2">
+                  <textarea
+                    v-model="importText"
+                    rows="6"
+                    class="input text-xs resize-none"
+                    placeholder="粘贴章节正文，点击导入后将替换当前内容..."
+                  />
+                  <button
+                    :disabled="!importText.trim()"
+                    class="w-full py-1.5 text-xs font-medium bg-gray-600 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                    @click="handleImportContent"
+                  >导入</button>
+                </div>
+              </div>
             </div>
           </template>
 
@@ -1109,6 +1218,16 @@ async function fetchShotsForChapter() {
           <!-- ── 脚本 AI ── -->
           <template v-else-if="pageMode === 'script'">
             <div class="p-4 space-y-4">
+              <!-- 用户提示词 -->
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">额外要求（可选）</label>
+                <textarea
+                  v-model="scriptUserPrompt"
+                  rows="4"
+                  placeholder="例如：镜头以第一视角为主，多用近景特写，风格写实…"
+                  class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
               <button
                 class="w-full px-4 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
                 :disabled="generatingScript || videoStore.generating || videoStore.storyboardTaskStatus === 'pending' || videoStore.storyboardTaskStatus === 'running'"
@@ -1120,7 +1239,7 @@ async function fetchShotsForChapter() {
                 <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                 </svg>
-                {{ generatingScript ? '创建中…' : videoStore.generating ? '生成中…' : '生成分镜脚本' }}
+                {{ generatingScript ? '创建中…' : videoStore.generating ? '生成中…' : videoStore.storyboard.length > 0 ? '更新分镜脚本' : '生成分镜脚本' }}
               </button>
             </div>
           </template>
@@ -1212,6 +1331,24 @@ async function fetchShotsForChapter() {
               >
                 <span class="text-sm font-semibold">{{ tier.name }}</span>
                 <span class="text-[10px] mt-0.5 opacity-70 text-center leading-tight">{{ tier.desc }}</span>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">视频模式</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="m in VIDEO_MODES"
+                :key="m.id"
+                type="button"
+                class="flex flex-col items-center py-3 px-2 rounded-xl border-2 transition-all"
+                :class="storyboardForm.mode === m.id
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'"
+                @click="storyboardForm.mode = m.id"
+              >
+                <span class="text-sm font-semibold">{{ m.name }}</span>
+                <span class="text-[10px] mt-0.5 opacity-70 text-center leading-tight">{{ m.desc }}</span>
               </button>
             </div>
           </div>

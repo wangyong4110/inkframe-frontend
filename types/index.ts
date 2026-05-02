@@ -19,6 +19,14 @@ export interface Novel {
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
   reference_style?: string  // 参考作品
+  channel?: string
+  target_word_count?: number
+  target_chapters?: number
+  video_type?: string               // 视频类型：narration(图片解说)/animation(动画)
+  video_resolution?: string         // 分辨率：720p/1080p/4K
+  video_fps?: number                // 帧率：24/30/60
+  video_aspect_ratio?: string       // 宽高比：16:9/9:16/1:1/4:3
+  char_consistency_weight?: number  // 角色一致性权重 0-1
   created_at: string
   updated_at: string
 }
@@ -191,6 +199,8 @@ export interface StoryboardShot {
   video_url?: string
   audio_path?: string
   audio_url?: string  // 后端转换后的可播放 URL（file:// 已转为 API 端点）
+  scene_anchor_id?: number
+  character_ids?: number[]
 }
 
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
@@ -244,6 +254,7 @@ export interface ModelProvider {
   api_secret_key?: string
   api_version?: string
   is_active: boolean
+  has_key?: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
   created_at?: string
   updated_at?: string

@@ -416,7 +416,7 @@ export const useVideoApi = () => {
   const deleteVideo = (id: number) =>
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
-  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string }) =>
+  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string }) =>
     request<{ task_id: string; message: string; data: { task_id: string } }>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
@@ -499,6 +499,22 @@ export const useModelApi = () => {
       body: JSON.stringify(data),
     })
 
+  const createModel = (data: {
+    provider_id: number
+    model_id: string
+    name: string
+    task_types: string   // JSON array string e.g. '["chapter"]'
+    max_tokens?: number
+    is_default?: boolean
+  }) =>
+    request<ApiResponse<AIModel>>('/models', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const deleteModel = (id: number) =>
+    request<ApiResponse<null>>(`/models/${id}`, { method: 'DELETE' })
+
   const createProvider = (data: {
     name: string
     display_name?: string
@@ -543,6 +559,8 @@ export const useModelApi = () => {
     getModels,
     getAvailableModels,
     selectModel,
+    createModel,
+    deleteModel,
     createProvider,
     updateProvider,
     deleteProvider,

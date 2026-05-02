@@ -234,7 +234,7 @@ async function generateWorldview() {
       <!-- Overview -->
       <div v-if="activeTab === 'overview'" class="grid gap-6 md:grid-cols-2">
         <div class="card p-6">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">基本信息</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">基本信息</h3>
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">世界观名称</label>
@@ -273,7 +273,7 @@ async function generateWorldview() {
         </div>
 
         <div class="card p-6">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">世界规则</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">世界规则</h3>
           <textarea v-model="worldview.rules" rows="10" class="input" placeholder="列出世界的核心规则..."></textarea>
           <p class="mt-2 text-sm text-gray-500">每行一条规则，这些规则将约束AI生成的内容</p>
         </div>
@@ -282,7 +282,7 @@ async function generateWorldview() {
       <!-- Magic System -->
       <div v-if="activeTab === 'magic'" class="card p-6">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">修炼体系</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">修炼体系</h3>
         </div>
         <textarea v-model="worldview.magic_system" rows="10" class="input" placeholder="描述修炼/能力体系..."></textarea>
       </div>
@@ -290,7 +290,7 @@ async function generateWorldview() {
       <!-- Geography -->
       <div v-if="activeTab === 'geography'" class="card p-6">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">地理环境</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">地理环境</h3>
         </div>
         <textarea v-model="worldview.geography" rows="8" class="input" placeholder="描述地理环境..."></textarea>
 
@@ -307,7 +307,7 @@ async function generateWorldview() {
 
       <!-- History -->
       <div v-if="activeTab === 'history'" class="card p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">历史背景</h3>
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">历史背景</h3>
         <textarea v-model="worldview.history" rows="10" class="input" placeholder="描述世界的历史背景..."></textarea>
 
         <div class="mt-4">
@@ -319,7 +319,7 @@ async function generateWorldview() {
       <!-- Entities -->
       <div v-if="activeTab === 'entities'" class="space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">势力 / 实体设定</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">势力 / 实体设定</h3>
           <button class="btn-primary text-sm" @click="openCreateEntity">
             <svg class="w-4 h-4 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -374,7 +374,7 @@ async function generateWorldview() {
     <div v-if="showEntityModal" class="fixed inset-0 z-50 flex items-center justify-center">
       <div class="fixed inset-0 bg-black/50" @click="showEntityModal = false"></div>
       <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
           {{ editingEntity ? '编辑实体' : '新增实体' }}
         </h3>
         <div class="space-y-4">
@@ -422,7 +422,7 @@ async function generateWorldview() {
     <div v-if="showGenerateModal" class="fixed inset-0 z-50 flex items-center justify-center">
       <div class="fixed inset-0 bg-black/50" @click="showGenerateModal = false"></div>
       <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI 生成世界观</h3>
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">AI 生成世界观</h3>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">补充说明（可选）</label>
           <textarea v-model="generateHints" rows="3" class="input" placeholder="描述你想要的世界观特点..."></textarea>

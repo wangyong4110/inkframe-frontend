@@ -303,29 +303,35 @@ onUnmounted(() => stopCrawlPoll())
 
     <!-- ═══ Screen 2a: ai-form ══════════════════════════════════════════════════ -->
     <template v-else-if="step === 'ai-form'">
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+      <div class="card p-6 space-y-5">
 
-        <!-- 封面颜色 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">项目图标</label>
-          <div class="flex items-center gap-4">
-            <div
-              class="w-16 h-16 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-              :style="{ background: iconGradient(aiForm.cover_image) }"
-            >
-              <span class="text-2xl font-bold text-white opacity-80 select-none">
-                {{ aiForm.title.charAt(0) || 'I' }}
-              </span>
-            </div>
-            <div class="flex flex-wrap gap-2">
+        <!-- 图标 + 名称 同行 -->
+        <div class="flex items-start gap-4">
+          <div
+            class="w-16 h-16 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
+            :style="{ background: iconGradient(aiForm.cover_image) }"
+          >
+            <span class="text-2xl font-bold text-white opacity-80 select-none">
+              {{ aiForm.title.charAt(0) || 'I' }}
+            </span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <input
+              v-model="aiForm.title"
+              type="text"
+              maxlength="100"
+              placeholder="给小说起个名字"
+              class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white dark:bg-gray-700 dark:text-white mb-2"
+            />
+            <div class="flex gap-1.5 flex-wrap">
               <button
                 v-for="opt in iconOptions"
                 :key="opt.value"
                 type="button"
-                class="w-8 h-8 rounded-lg transition-all"
+                class="w-6 h-6 rounded-md transition-all"
                 :class="aiForm.cover_image === opt.value
-                  ? 'ring-2 ring-offset-2 ring-gray-400 scale-110'
-                  : 'hover:scale-105'"
+                  ? 'ring-2 ring-offset-1 ring-gray-400 scale-110'
+                  : 'hover:scale-110'"
                 :style="{ background: opt.gradient }"
                 @click="aiForm.cover_image = opt.value"
               />
@@ -333,23 +339,9 @@ onUnmounted(() => stopCrawlPoll())
           </div>
         </div>
 
-        <!-- 小说名称 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            小说名称 <span class="text-red-500">*</span>
-          </label>
-          <input
-            v-model="aiForm.title"
-            type="text"
-            maxlength="100"
-            placeholder="给小说起个名字"
-            class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white dark:bg-gray-700 dark:text-white"
-          />
-        </div>
-
         <!-- 频道 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">频道</label>
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">频道</p>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="opt in channelOptions"
@@ -366,16 +358,16 @@ onUnmounted(() => stopCrawlPoll())
 
         <!-- 小说类型 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说类型</label>
-          <div class="flex flex-wrap gap-2">
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">小说类型</p>
+          <div class="flex flex-wrap gap-1.5">
             <button
               v-for="opt in genreOptions"
               :key="opt.value"
               type="button"
-              class="px-3 py-1.5 text-sm rounded-lg border transition-colors"
+              class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
               :class="aiForm.genre === opt.value
                 ? 'bg-purple-600 border-purple-600 text-white'
-                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-400'"
+                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-purple-400'"
               @click="aiForm.genre = opt.value"
             >{{ opt.label }}</button>
           </div>
@@ -383,75 +375,74 @@ onUnmounted(() => stopCrawlPoll())
 
         <!-- 作品概要 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">作品概要 <span class="text-red-500">*</span></label>
-          <textarea
-            v-model="aiForm.description"
-            rows="3"
-            placeholder="简要描述故事背景、主角、核心冲突，AI 会根据此生成大纲"
-            class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm resize-none bg-white dark:bg-gray-700 dark:text-white"
-          />
-          <p class="mt-1 text-xs text-gray-400 text-right">{{ aiForm.description.length }} 字</p>
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            作品概要 <span class="text-red-500 normal-case font-normal">*</span>
+          </p>
+          <div class="relative">
+            <textarea
+              v-model="aiForm.description"
+              rows="3"
+              placeholder="简要描述故事背景、主角、核心冲突，AI 会根据此生成大纲"
+              class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm resize-none bg-white dark:bg-gray-700 dark:text-white"
+            />
+            <span class="absolute bottom-2.5 right-3 text-xs text-gray-400 pointer-events-none">{{ aiForm.description.length }} 字</span>
+          </div>
         </div>
 
-        <!-- 目标字数 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">目标字数</label>
-          <div class="flex flex-wrap gap-2 mb-2">
-            <button
-              v-for="opt in wordCountOptions"
-              :key="opt.value"
-              type="button"
-              class="px-3 py-1.5 text-sm rounded-lg border transition-colors"
-              :class="aiForm.target_word_count === opt.value
-                ? 'bg-purple-600 border-purple-600 text-white'
-                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-400'"
-              @click="aiForm.target_word_count = opt.value"
-            >{{ opt.label }}</button>
-          </div>
-          <div class="flex items-center gap-2">
+        <!-- 目标规模 2 列 -->
+        <div class="grid grid-cols-2 gap-4">
+          <!-- 目标字数 -->
+          <div>
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">目标字数</p>
+            <div class="flex flex-wrap gap-1.5 mb-2">
+              <button
+                v-for="opt in wordCountOptions"
+                :key="opt.value"
+                type="button"
+                class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
+                :class="aiForm.target_word_count === opt.value
+                  ? 'bg-purple-600 border-purple-600 text-white'
+                  : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-purple-400'"
+                @click="aiForm.target_word_count = opt.value"
+              >{{ opt.label }}</button>
+            </div>
             <input
               v-model.number="aiForm.target_word_count"
               type="number"
               min="1000"
               step="10000"
-              class="w-36 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
-              placeholder="自定义字数"
+              class="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
             />
-            <span class="text-xs text-gray-400 dark:text-gray-500">字</span>
           </div>
-        </div>
 
-        <!-- 期望章节数 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">期望章节数</label>
-          <div class="flex flex-wrap gap-2 mb-2">
-            <button
-              v-for="opt in chapterCountOptions"
-              :key="opt.value"
-              type="button"
-              class="px-3 py-1.5 text-sm rounded-lg border transition-colors"
-              :class="aiForm.target_chapters === opt.value
-                ? 'bg-purple-600 border-purple-600 text-white'
-                : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-purple-400'"
-              @click="aiForm.target_chapters = opt.value"
-            >{{ opt.label }}</button>
-          </div>
-          <div class="flex items-center gap-2">
+          <!-- 期望章节数 -->
+          <div>
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">期望章节数</p>
+            <div class="flex flex-wrap gap-1.5 mb-2">
+              <button
+                v-for="opt in chapterCountOptions"
+                :key="opt.value"
+                type="button"
+                class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
+                :class="aiForm.target_chapters === opt.value
+                  ? 'bg-purple-600 border-purple-600 text-white'
+                  : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-purple-400'"
+                @click="aiForm.target_chapters = opt.value"
+              >{{ opt.label }}</button>
+            </div>
             <input
               v-model.number="aiForm.target_chapters"
               type="number"
               min="1"
               step="10"
-              class="w-36 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
-              placeholder="自定义章节数"
+              class="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-purple-400"
             />
-            <span class="text-xs text-gray-400 dark:text-gray-500">章</span>
           </div>
         </div>
 
         <p v-if="aiError" class="text-red-500 text-sm">{{ aiError }}</p>
 
-        <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center justify-between pt-1">
           <button
             type="button"
             class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -460,7 +451,7 @@ onUnmounted(() => stopCrawlPoll())
           <button
             type="button"
             :disabled="aiLoading || !aiForm.title.trim() || !aiForm.description.trim()"
-            class="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-medium rounded-lg transition-colors"
+            class="btn-primary"
             @click="submitAI"
           >{{ aiLoading ? '创建中...' : '创建并开始分析' }}</button>
         </div>
@@ -511,7 +502,7 @@ onUnmounted(() => stopCrawlPoll())
 
     <!-- ═══ Screen 3a: import-file ══════════════════════════════════════════════ -->
     <template v-else-if="step === 'import-file'">
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+      <div class="card p-6 space-y-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">上传本地文件</h2>
 
         <!-- 拖拽上传区 -->
@@ -572,7 +563,7 @@ onUnmounted(() => stopCrawlPoll())
           <button
             type="button"
             :disabled="fileUploading || !selectedFile"
-            class="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-medium rounded-lg transition-colors"
+            class="btn-primary"
             @click="uploadFile"
           >{{ fileUploading ? '上传中...' : '开始导入' }}</button>
         </div>
@@ -581,7 +572,7 @@ onUnmounted(() => stopCrawlPoll())
 
     <!-- ═══ Screen 3b: import-crawl ═════════════════════════════════════════════ -->
     <template v-else-if="step === 'import-crawl'">
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+      <div class="card p-6 space-y-6">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">爬取小说</h2>
 
         <div>
@@ -641,7 +632,7 @@ onUnmounted(() => stopCrawlPoll())
           <button
             type="button"
             :disabled="crawlLoading || !!crawlStatus || !crawlForm.url.trim()"
-            class="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-medium rounded-lg transition-colors"
+            class="btn-primary"
             @click="startCrawl"
           >{{ crawlLoading ? '启动中...' : crawlStatus ? '爬取中...' : '开始爬取' }}</button>
         </div>

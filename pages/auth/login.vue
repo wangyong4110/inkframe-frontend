@@ -232,9 +232,7 @@ function devLogin() {
               title="支付宝登录"
               class="w-11 h-11 flex items-center justify-center rounded-full border border-gray-200 hover:border-[#1677FF] hover:bg-[#1677FF]/5 transition-colors group"
             >
-              <svg viewBox="0 0 24 24" class="w-6 h-6 fill-gray-400 group-hover:fill-[#1677FF] transition-colors" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21.422 15.358c-2.485-.977-4.09-1.67-4.09-1.67l.007-.028c1.13-2.836 1.738-5.932 1.738-9.082V4.578A2.578 2.578 0 0 0 16.5 2H7.5A2.578 2.578 0 0 0 4.922 4.578V19.422A2.578 2.578 0 0 0 7.5 22h9a2.578 2.578 0 0 0 2.578-2.578v-.09c1.32.55 2.558 1.118 3.16 1.41a1.5 1.5 0 0 0 2.263-1.29 1.5 1.5 0 0 0-.947-1.142z"/>
-              </svg>
+              <img :src="'/images/alipay.png'" alt="支付宝" class="w-6 h-6 object-contain opacity-30 group-hover:opacity-100 transition-opacity" />
             </button>
             <!-- 抖音 -->
             <button

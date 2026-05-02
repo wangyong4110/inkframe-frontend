@@ -183,7 +183,7 @@ function goBack() {
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <button
-          class="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          class="btn-ghost p-2"
           @click="goBack"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

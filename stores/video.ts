@@ -176,7 +176,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number, provider?: string) {
+    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string) {
       this.generating = true
       this.error = null
       this.storyboardTaskId = null
@@ -184,7 +184,10 @@ export const useVideoStore = defineStore('video', {
 
       try {
         const api = useVideoApi()
-        const response = await api.generateStoryboard(videoId, provider ? { provider } : undefined)
+        const body: { provider?: string; user_prompt?: string } = {}
+        if (provider) body.provider = provider
+        if (userPrompt?.trim()) body.user_prompt = userPrompt.trim()
+        const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')
         this.storyboardTaskId = taskId
@@ -270,8 +273,7 @@ export const useVideoStore = defineStore('video', {
       try {
         const api = useVideoApi()
         const response = await api.generateShot(videoId, shotId, provider)
-        const index = this.storyboard.findIndex(s => s.id === shotId)
-        if (index !== -1) this.storyboard[index] = response.data
+        // Backend now returns {task_id}
         return response.data
       } catch (e: any) {
         this.error = e.message || 'Failed to generate shot'
@@ -279,17 +281,14 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async batchGenerateShots(videoId: number, shotIds: number[], qualityTier?: string, provider?: string) {
+    async batchGenerateShots(videoId: number, shotIds: number[], qualityTier?: string, provider?: string): Promise<string> {
       this.generating = true
       this.error = null
       try {
         const api = useVideoApi()
         const response = await api.batchGenerateShots(videoId, shotIds, qualityTier, provider)
-        for (const updated of response.data) {
-          const index = this.storyboard.findIndex(s => s.id === updated.id)
-          if (index !== -1) this.storyboard[index] = updated
-        }
-        return response.data
+        // Backend now returns {task_id} instead of shot array
+        return (response.data as any)?.task_id as string
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate shots'
         throw e

@@ -42,6 +42,111 @@ const stitching = ref(false)
 const exportingCapCut = ref(false)
 const exportUrl = ref('')
 
+// Scene anchors
+const sceneAnchorStore = useSceneAnchorStore()
+const anchors = computed(() => sceneAnchorStore.anchors)
+
+// Characters
+const characterStore = useCharacterStore()
+const characters = computed(() => characterStore.characters)
+const showAnchorForm = ref(false)
+const editingAnchorId = ref<number | null>(null)
+const anchorForm = ref({ name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' })
+const savingAnchor = ref(false)
+const extractingAnchors = ref(false)
+
+async function extractAnchorsFromCurrentChapter() {
+  const novelId = video.value?.novel_id
+  if (!novelId) { toast.error('无法获取小说 ID'); return }
+  // 使用 video 关联的章节内容（从第一个已生成 shot 的描述拼合）
+  const chapterContent = shots.value.map(s => s.description || '').filter(Boolean).join('\n')
+  if (!chapterContent) { toast.error('当前分镜无内容可提取'); return }
+  extractingAnchors.value = true
+  try {
+    const added = await sceneAnchorStore.extractAnchors(novelId, chapterContent, undefined)
+    toast.success(`已提取 ${added.length} 个新场景锚点`)
+  } catch (e: any) {
+    toast.error(e.message || '提取失败')
+  } finally {
+    extractingAnchors.value = false
+  }
+}
+
+function startAnchorCreate() {
+  editingAnchorId.value = null
+  anchorForm.value = { name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' }
+  showAnchorForm.value = true
+}
+
+function startAnchorEdit(anchor: any) {
+  editingAnchorId.value = anchor.id
+  anchorForm.value = { name: anchor.name, type: anchor.type || 'interior', description: anchor.description || '', prompt_lock: anchor.prompt_lock || '', style_tokens: anchor.style_tokens || '', notes: anchor.notes || '' }
+  showAnchorForm.value = true
+}
+
+async function saveAnchor() {
+  if (!anchorForm.value.name) { toast.error('请输入场景名称'); return }
+  savingAnchor.value = true
+  try {
+    const novelId = video.value?.novel_id
+    if (!novelId) return
+    if (editingAnchorId.value) {
+      await sceneAnchorStore.updateAnchor(editingAnchorId.value, anchorForm.value)
+    } else {
+      await sceneAnchorStore.createAnchor(novelId, anchorForm.value)
+    }
+    showAnchorForm.value = false
+    toast.success(editingAnchorId.value ? '场景已更新' : '场景已创建')
+  } catch (e: any) {
+    toast.error(e.message || '保存失败')
+  } finally {
+    savingAnchor.value = false
+  }
+}
+
+async function deleteAnchor(id: number) {
+  if (!confirm('确定删除该场景锚点？')) return
+  try {
+    await sceneAnchorStore.deleteAnchor(id)
+    toast.success('已删除')
+  } catch (e: any) {
+    toast.error(e.message || '删除失败')
+  }
+}
+
+async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null) {
+  try {
+    const api = useSceneAnchorApi()
+    await api.setShotAnchor(props.videoId, shot.id, anchorId)
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error('绑定失败：' + (e.message || ''))
+  }
+}
+
+// ──────── Shot character binding ────────
+async function handleSetShotCharacters(shot: StoryboardShot, characterIds: number[]) {
+  try {
+    const { request } = useApi()
+    await request(`/videos/${props.videoId}/shots/${shot.id}/characters`, {
+      method: 'PUT',
+      body: JSON.stringify({ character_ids: characterIds }),
+    })
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error('角色绑定失败：' + (e.message || ''))
+  }
+}
+function addCharToShot(shot: StoryboardShot, event: Event) {
+  const id = Number((event.target as HTMLSelectElement).value)
+  if (!id) return
+  ;(event.target as HTMLSelectElement).value = ''
+  handleSetShotCharacters(shot, [...(shot.character_ids || []), id])
+}
+function removeCharFromShot(shot: StoryboardShot, charId: number) {
+  handleSetShotCharacters(shot, (shot.character_ids || []).filter(id => id !== charId))
+}
+
 // ──────── Labels ────────
 const QUALITY_LABELS: Record<VideoQualityTier, string> = { draft: '草稿', preview: '预览', final: '正式' }
 const QUALITY_COLORS: Record<VideoQualityTier, string> = {
@@ -98,6 +203,7 @@ const completedShots = computed(() => shots.value.filter(s => s.status === 'comp
 
 const TABS = computed(() => [
   { key: 'script', label: '分镜脚本', icon: 'M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4', locked: false },
+  { key: 'scenes', label: '场景管理', icon: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z', locked: false },
   { key: 'voice', label: '配音字幕', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z', locked: !productionEnabled.value },
   { key: 'bgm', label: '背景音乐', icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', locked: !productionEnabled.value },
   { key: 'export', label: '导出', icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4', locked: !productionEnabled.value },
@@ -112,6 +218,9 @@ async function load() {
     await videoStore.fetchVideo(props.videoId)
     await videoStore.fetchStoryboard(props.videoId)
     videoStore.resumeStoryboardTask(props.videoId)
+    const novelId = videoStore.currentVideo?.novel_id
+    if (novelId) sceneAnchorStore.fetchAnchors(novelId)
+    if (novelId) characterStore.fetchCharacters(novelId)
   } catch (e: any) {
     toast.error('加载失败：' + (e.message || ''))
   }
@@ -144,12 +253,12 @@ watch(shots, (list) => {
 }, { immediate: true })
 
 // ──────── Script phase ────────
-async function handleGenerateStoryboard() {
+async function handleGenerateStoryboard(userPrompt?: string) {
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
   try {
-    await videoStore.generateStoryboard(props.videoId, props.llmProvider || undefined)
+    await videoStore.generateStoryboard(props.videoId, props.llmProvider || undefined, userPrompt)
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
@@ -214,8 +323,19 @@ async function handleUnconfirmScript() {
 // ──────── Production phase ────────
 async function handleGenerateShot(shot: StoryboardShot) {
   try {
-    await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
-    toast.success(`镜头 ${shot.shot_no} 已加入生成队列`)
+    const res = await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
+    const taskId = (res as any)?.task_id as string | undefined
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
+    toast.info(`镜头 #${shot.shot_no} 素材生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success(`镜头 #${shot.shot_no} 素材已生成`)
+      } else {
+        toast.error(`镜头 #${shot.shot_no} 生成失败`)
+      }
+    })
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
   }
@@ -226,11 +346,21 @@ async function handleGenerateAll() {
   if (pending.length === 0) { toast.error('没有待生成的镜头'); return }
   batchGenerating.value = true
   try {
-    await videoStore.batchGenerateShots(props.videoId, pending.map(s => s.id), video.value?.quality_tier, selectedVideoProvider.value || undefined)
-    toast.success(`${pending.length} 个镜头已加入生成队列`)
+    const taskId = await videoStore.batchGenerateShots(props.videoId, pending.map(s => s.id), video.value?.quality_tier, selectedVideoProvider.value || undefined)
+    if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); batchGenerating.value = false; return }
+    toast.info(`${pending.length} 个镜头素材生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      batchGenerating.value = false
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success('全部镜头素材生成完成')
+      } else {
+        toast.error('批量生成失败，请重试')
+      }
+    })
   } catch (e: any) {
     toast.error('批量生成失败：' + (e.message || ''))
-  } finally {
     batchGenerating.value = false
   }
 }
@@ -402,11 +532,27 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       <!-- Toolbar -->
       <div class="flex items-center gap-2 mb-4">
 
+        <!-- Mode toggle badge -->
+        <button
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+          :class="video?.mode === 'slideshow'
+            ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700'
+            : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-700'"
+          :title="video?.mode === 'slideshow' ? '点击切换为 AI 视频模式' : '点击切换为图片解说模式'"
+          @click="videoStore.updateVideo(props.videoId, { mode: video?.mode === 'slideshow' ? 'video' : 'slideshow' }).then(() => videoStore.fetchVideo(props.videoId))"
+        >
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path v-if="video?.mode === 'slideshow'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          {{ video?.mode === 'slideshow' ? '图片解说' : 'AI 视频' }}
+        </button>
+
         <div class="flex-1" />
 
         <!-- Production toolbar (confirmed) -->
         <template v-if="isScriptConfirmed">
-          <div v-if="videoProviders.length > 0" class="flex items-center gap-1.5">
+          <div v-if="video?.mode !== 'slideshow' && videoProviders.length > 0" class="flex items-center gap-1.5">
             <label class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">视频提供商</label>
             <select v-model="selectedVideoProvider" class="input text-sm py-1 h-8">
               <option value="">默认</option>
@@ -620,6 +766,71 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 </div>
               </div>
             </div>
+            <!-- Anchor selector + score bar -->
+            <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">📍 场景锚点</span>
+              <select
+                :value="shot.scene_anchor_id || ''"
+                class="input text-xs py-0.5 h-6 flex-1 min-w-0 max-w-[180px]"
+                @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+              >
+                <option value="">不绑定</option>
+                <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+              </select>
+              <!-- Score bar -->
+              <template v-if="shot.scene_anchor_id">
+                <div class="flex-1 flex items-center gap-1.5 min-w-0">
+                  <div class="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all"
+                      :class="{
+                        'bg-green-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.85,
+                        'bg-amber-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.70 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.85,
+                        'bg-red-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.70,
+                        'bg-gray-300': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) === 0,
+                      }"
+                      :style="{ width: `${Math.min(100, ((anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) * 100))}%` }"
+                    />
+                  </div>
+                  <span class="text-xs flex-shrink-0"
+                    :class="{
+                      'text-green-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.85,
+                      'text-amber-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.70 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.85,
+                      'text-red-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.70,
+                      'text-gray-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) === 0,
+                    }"
+                  >
+                    {{ (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0
+                      ? (anchors.find(a => a.id === shot.scene_anchor_id)!.avg_cons_score).toFixed(2)
+                      : '待评分'
+                    }}
+                  </span>
+                </div>
+              </template>
+            </div>
+            <!-- Character binding row -->
+            <div class="mt-1 flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
+              <template v-for="charId in (shot.character_ids || [])" :key="charId">
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                  <img
+                    v-if="characters.find(c => c.id === charId)?.portrait"
+                    :src="characters.find(c => c.id === charId)!.portrait"
+                    class="w-3 h-3 rounded-full object-cover"
+                  />
+                  {{ characters.find(c => c.id === charId)?.name || charId }}
+                  <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
+                </span>
+              </template>
+              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
+                <option value="">+ 绑定角色</option>
+                <option
+                  v-for="c in characters.filter(c => !(shot.character_ids || []).includes(c.id))"
+                  :key="c.id"
+                  :value="c.id"
+                >{{ c.name }}</option>
+              </select>
+            </div>
           </div>
         </template>
 
@@ -684,6 +895,119 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- ==============================
+         场景管理 Tab
+         ============================== -->
+    <div v-if="activeTab === 'scenes'" class="space-y-4">
+
+      <!-- 场景锚点库 -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">场景锚点库</h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">锁定场景视觉描述，确保跨镜头布景一致</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn-secondary text-sm" :disabled="extractingAnchors" @click="extractAnchorsFromCurrentChapter">
+              {{ extractingAnchors ? 'AI 提取中…' : 'AI 提取' }}
+            </button>
+            <button class="btn-primary text-sm" @click="startAnchorCreate">+ 新建场景</button>
+          </div>
+        </div>
+
+        <!-- 新建/编辑表单 -->
+        <div v-if="showAnchorForm" class="mb-5 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
+              <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">类型</label>
+              <select v-model="anchorForm.type" class="input w-full text-sm">
+                <option value="interior">室内</option>
+                <option value="exterior">室外</option>
+                <option value="imaginary">虚构/幻境</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
+            <textarea v-model="anchorForm.description" rows="2" placeholder="用自然语言描述场景外观、氛围…" class="input w-full text-sm resize-none" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词（逗号分隔，生成时强制注入）</label>
+            <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">风格标签</label>
+            <input v-model="anchorForm.style_tokens" type="text" placeholder="warm lighting, soft focus" class="input w-full text-sm" />
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">
+              {{ savingAnchor ? '保存中…' : (editingAnchorId ? '更新' : '创建') }}
+            </button>
+            <button class="btn-outline text-sm" @click="showAnchorForm = false">取消</button>
+          </div>
+        </div>
+
+        <!-- 锚点列表 -->
+        <div v-if="anchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
+          暂无场景锚点，点击「新建场景」创建
+        </div>
+        <div class="space-y-3">
+          <div
+            v-for="anchor in anchors"
+            :key="anchor.id"
+            class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+          >
+            <!-- 参考图缩略图 -->
+            <div class="w-16 h-12 rounded-md overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+              <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
+              <div v-else class="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md p-1">
+                <span class="text-xs text-center text-gray-400 leading-tight">首次生成后<br>自动锁定</span>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-sm text-gray-900 dark:text-white truncate">{{ anchor.name }}</span>
+                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{{ anchor.type || 'interior' }}</span>
+                <span v-if="anchor.ref_image_url" class="text-xs text-amber-600 dark:text-amber-400" title="参考图已锁定">🔒</span>
+              </div>
+              <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{{ anchor.description }}</p>
+              <p v-if="anchor.prompt_lock" class="text-xs text-blue-500 dark:text-blue-400 mt-0.5 truncate font-mono">{{ anchor.prompt_lock }}</p>
+            </div>
+            <div class="flex gap-1.5 flex-shrink-0">
+              <button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" @click="startAnchorEdit(anchor)">编辑</button>
+              <button class="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" @click="deleteAnchor(anchor.id)">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分镜场景绑定 -->
+      <div v-if="shots.length > 0" class="card p-5">
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-1">分镜场景绑定</h3>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">为每个镜头指定场景锚点，生成图像时自动注入一致的布景描述</p>
+        <div class="space-y-2">
+          <div v-for="shot in shots" :key="shot.id" class="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+            <span class="text-xs font-mono text-gray-500 w-12 flex-shrink-0">镜 #{{ shot.shot_no }}</span>
+            <p class="flex-1 text-xs text-gray-600 dark:text-gray-400 truncate">{{ shot.description || '—' }}</p>
+            <select
+              :value="shot.scene_anchor_id || ''"
+              class="input text-xs py-1 h-7 w-36 flex-shrink-0"
+              @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+            >
+              <option value="">未绑定</option>
+              <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+            </select>
+            <span v-if="shot.scene_anchor_id" class="text-xs text-amber-500" title="已绑定场景锚点">🔒</span>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ==============================

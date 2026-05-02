@@ -20,6 +20,12 @@ const {
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
+const showUnconfigured = ref(false)
+const filteredProviders = computed(() =>
+  showUnconfigured.value
+    ? providers.value
+    : providers.value.filter(p => p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+)
 const listLoading = ref(false)
 const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
@@ -155,6 +161,84 @@ function toggleReveal(id: number) {
 function maskKey(key?: string) {
   if (!key || key === '****') return '—'
   return key.length <= 8 ? '****' : key
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Provider Models — inline model management per provider
+// ═══════════════════════════════════════════════════════════════════════════
+const { createModel, deleteModel } = useModelApi()
+const providerModels = ref<Record<number, AIModel[]>>({})
+const expandedModels = ref<Set<number>>(new Set())
+const addModelForms = ref<Record<number, { name: string; tasks: string; saving: boolean }>>({})
+
+const TASK_TYPE_OPTIONS = [
+  { value: 'chapter',   label: 'LLM 生成' },
+  { value: 'image_gen', label: '图像生成' },
+  { value: 'video_gen', label: '视频生成' },
+  { value: 'voice_gen', label: '语音合成' },
+  { value: 'embedding', label: '向量嵌入' },
+]
+
+async function toggleProviderModels(providerId: number) {
+  const s = new Set(expandedModels.value)
+  if (s.has(providerId)) {
+    s.delete(providerId)
+  } else {
+    s.add(providerId)
+    if (!providerModels.value[providerId]) {
+      await refreshProviderModels(providerId)
+    }
+  }
+  expandedModels.value = s
+}
+
+async function refreshProviderModels(providerId: number) {
+  try {
+    const res = await getModels({ provider_id: providerId })
+    providerModels.value = { ...providerModels.value, [providerId]: ((res as any).data as AIModel[]) || [] }
+  } catch {}
+}
+
+function openAddModelForm(providerId: number, providerType: string) {
+  const defaultTask = providerType === 'image' ? 'image_gen'
+    : providerType === 'video' ? 'video_gen'
+    : providerType === 'embedding' ? 'embedding'
+    : 'chapter'
+  addModelForms.value = { ...addModelForms.value, [providerId]: { name: '', tasks: defaultTask, saving: false } }
+}
+
+function closeAddModelForm(providerId: number) {
+  const forms = { ...addModelForms.value }
+  delete forms[providerId]
+  addModelForms.value = forms
+}
+
+async function handleCreateModel(providerId: number) {
+  const form = addModelForms.value[providerId]
+  if (!form || !form.name.trim()) return
+  form.saving = true
+  try {
+    const tasksJson = JSON.stringify([form.tasks])
+    await createModel({ provider_id: providerId, model_id: form.name.trim(), name: form.name.trim(), task_types: tasksJson })
+    toast.success('模型已添加')
+    closeAddModelForm(providerId)
+    await refreshProviderModels(providerId)
+  } catch (e: any) {
+    toast.error(e.message || '添加失败')
+  } finally {
+    if (form) form.saving = false
+  }
+}
+
+async function handleDeleteModel(providerId: number, modelId: number) {
+  if (!confirm('确认删除该模型？')) return
+  try {
+    await deleteModel(modelId)
+    toast.success('模型已删除')
+    await refreshProviderModels(providerId)
+  } catch (e: any) {
+    toast.error(e.message || '删除失败')
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -364,16 +448,26 @@ watch(activeTab, (tab) => {
           配置 AI 供应商、管理 MCP 工具并绑定到对应模型
         </p>
       </div>
-      <button
-        v-if="activeTab === 'providers'"
-        class="btn-primary flex items-center gap-1.5"
-        @click="openAddProvider"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        添加提供商
-      </button>
+      <template v-if="activeTab === 'providers'">
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          @click="showUnconfigured = !showUnconfigured"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+          </svg>
+          {{ showUnconfigured ? '隐藏未配置' : '显示全部' }}
+        </button>
+        <button
+          class="btn-primary flex items-center gap-1.5"
+          @click="openAddProvider"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          添加提供商
+        </button>
+      </template>
       <button
         v-else
         class="btn-primary flex items-center gap-1.5"
@@ -430,19 +524,19 @@ watch(activeTab, (tab) => {
         </div>
       </div>
 
-      <div v-else-if="providers.length === 0" class="card p-12 text-center">
+      <div v-else-if="filteredProviders.length === 0" class="card p-12 text-center">
         <div class="mx-auto w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
           <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
           </svg>
         </div>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1">暂无提供商配置</h3>
-        <p class="text-sm text-gray-500 mb-6">添加提供商后，AI 生成将优先使用您配置的密钥</p>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1">{{ showUnconfigured ? '暂无提供商配置' : '暂无已配置的提供商' }}</h3>
+        <p class="text-sm text-gray-500 mb-6">{{ showUnconfigured ? '添加提供商后，AI 生成将优先使用您配置的密钥' : '点击「显示全部」查看未配置的提供商，或添加新提供商' }}</p>
         <button class="btn-primary mx-auto" @click="openAddProvider">立即添加</button>
       </div>
 
       <div v-else class="space-y-4">
-        <div v-for="p in providers" :key="p.id" class="card overflow-hidden">
+        <div v-for="p in filteredProviders" :key="p.id" class="card overflow-hidden">
           <div class="px-5 py-4 flex items-center gap-4">
             <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold shrink-0" :class="providerColor(p.name)">
               {{ (p.display_name || p.name).charAt(0).toUpperCase() }}
@@ -487,6 +581,52 @@ watch(activeTab, (tab) => {
               {{ revealedKeys.has(p.id) ? '隐藏' : '显示' }}
             </button>
             <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" :disabled="p.tenant_id === 0" @click="openEditProvider(p)">更改密钥</button>
+          </div>
+
+          <!-- Model list toggle -->
+          <div class="px-5 py-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <button class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" @click="toggleProviderModels(p.id)">
+              <svg class="w-3.5 h-3.5 transition-transform" :class="expandedModels.has(p.id) ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+              模型列表
+              <span v-if="providerModels[p.id]?.length" class="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">{{ providerModels[p.id].length }}</span>
+            </button>
+            <button v-if="expandedModels.has(p.id) && !addModelForms[p.id]" class="text-xs text-primary-600 hover:text-primary-700" @click="openAddModelForm(p.id, p.type)">
+              + 添加模型
+            </button>
+          </div>
+
+          <!-- Model rows -->
+          <div v-if="expandedModels.has(p.id)" class="border-t border-gray-100 dark:border-gray-700">
+            <div v-if="!providerModels[p.id]?.length && !addModelForms[p.id]" class="px-5 py-3 text-xs text-gray-400 italic">
+              暂无模型，点击「添加模型」后即可在小说设置中选择
+            </div>
+            <div v-for="m in (providerModels[p.id] || [])" :key="m.id" class="px-5 py-2.5 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/30 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+              <span class="flex-1 text-sm font-mono text-gray-700 dark:text-gray-300">{{ m.name }}</span>
+              <span class="text-xs text-gray-400">
+                {{ Array.isArray(m.suitable_tasks) ? m.suitable_tasks.join(', ') : (m.suitable_tasks || '—') }}
+              </span>
+              <button class="text-xs text-red-400 hover:text-red-600" @click="handleDeleteModel(p.id, m.id)">删除</button>
+            </div>
+
+            <!-- Inline add form -->
+            <div v-if="addModelForms[p.id]" class="px-5 py-3 bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-3">
+              <input
+                v-model="addModelForms[p.id].name"
+                type="text"
+                class="input text-sm flex-1"
+                placeholder="模型名称，如 gpt-4o"
+                @keydown.enter="handleCreateModel(p.id)"
+              />
+              <select v-model="addModelForms[p.id].tasks" class="input text-sm w-36">
+                <option v-for="t in TASK_TYPE_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+              <button class="btn-primary text-xs px-3 py-1.5" :disabled="addModelForms[p.id].saving" @click="handleCreateModel(p.id)">
+                {{ addModelForms[p.id].saving ? '保存中...' : '确认' }}
+              </button>
+              <button class="btn-ghost text-xs px-3 py-1.5" @click="closeAddModelForm(p.id)">取消</button>
+            </div>
           </div>
         </div>
       </div>

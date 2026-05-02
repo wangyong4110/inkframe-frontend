@@ -15,6 +15,7 @@ if (isNaN(novelId)) {
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
 const characterStore = useCharacterStore()
+const videoStore = useVideoStore()
 const toast = useToast()
 const styleApi = useStyleApi()
 
@@ -36,6 +37,8 @@ const extractingPlotPoints = ref(false)
 const showDeleteNovelConfirm = ref(false)
 const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
+const showDeleteCharacterConfirm = ref(false)
+const characterToDelete = ref<Character | null>(null)
 
 // ── 完善小说信息弹窗 ─────────────────────────────────────────────────────────
 const showNovelInfoModal = ref(false)
@@ -51,8 +54,8 @@ const novelInfoForm = ref({
 const savingNovelInfo = ref(false)
 
 const channelOptions = [
-  { value: 'female', label: '女生原创' },
-  { value: 'male',   label: '男生原创' },
+  { value: 'female',  label: '女生原创' },
+  { value: 'male',    label: '男生原创' },
   { value: 'publish', label: '出版图书' },
 ]
 
@@ -70,6 +73,37 @@ const wordCountOptions = [
   { value: 100, label: '50万-100万' },
   { value: 200, label: '100万-200万' },
   { value: 201, label: '200万以上' },
+]
+
+// Settings tab — icon, word count, chapter count options (create-form style)
+const iconOptions = [
+  { value: 'purple', gradient: 'linear-gradient(135deg,#8B5CF6,#3B82F6)' },
+  { value: 'blue',   gradient: 'linear-gradient(135deg,#3B82F6,#06B6D4)' },
+  { value: 'green',  gradient: 'linear-gradient(135deg,#10B981,#84CC16)' },
+  { value: 'orange', gradient: 'linear-gradient(135deg,#F59E0B,#EF4444)' },
+  { value: 'red',    gradient: 'linear-gradient(135deg,#EF4444,#EC4899)' },
+  { value: 'pink',   gradient: 'linear-gradient(135deg,#EC4899,#8B5CF6)' },
+  { value: 'teal',   gradient: 'linear-gradient(135deg,#14B8A6,#3B82F6)' },
+  { value: 'indigo', gradient: 'linear-gradient(135deg,#6366F1,#8B5CF6)' },
+  { value: 'amber',  gradient: 'linear-gradient(135deg,#F59E0B,#84CC16)' },
+  { value: 'cyan',   gradient: 'linear-gradient(135deg,#06B6D4,#10B981)' },
+]
+function iconGradient(value: string | undefined) {
+  return iconOptions.find(o => o.value === value)?.gradient ?? 'linear-gradient(135deg,#8B5CF6,#3B82F6)'
+}
+const settingsWCOptions = [
+  { label: '5万字',   value: 50000 },
+  { label: '10万字',  value: 100000 },
+  { label: '30万字',  value: 300000 },
+  { label: '50万字',  value: 500000 },
+  { label: '100万字', value: 1000000 },
+]
+const settingsCCOptions = [
+  { label: '30章',  value: 30 },
+  { label: '50章',  value: 50 },
+  { label: '100章', value: 100 },
+  { label: '200章', value: 200 },
+  { label: '300章', value: 300 },
 ]
 
 function openNovelInfoModal() {
@@ -127,8 +161,37 @@ const imageModels = ref<AIModel[]>([])
 const videoModels = ref<AIModel[]>([])
 const ttsModels = ref<AIModel[]>([])
 
+const videoTypes = [
+  {
+    value: 'narration',
+    label: '图片解说',
+    icon: '🖼️',
+    desc: '静态图片 + 旁白/字幕，成本低、易批量生产',
+  },
+  {
+    value: 'animation',
+    label: '动画',
+    icon: '🎬',
+    desc: 'AI 生成连续动画帧，画面更生动',
+  },
+]
+
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
+const novelChapterCount = computed(() => chapters.value.length)
+const novelTotalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count ?? 0), 0))
+const completedChapterCount = computed(() => chapters.value.filter(c => c.status === 'completed' || c.status === 'published').length)
+const chapterProgress = computed(() => {
+  const target = novel.value?.target_chapters ?? 0
+  if (!target) return completedChapterCount.value > 0 ? 100 : 0
+  return Math.min(100, Math.round((completedChapterCount.value / target) * 100))
+})
+const completedVideoCount = computed(() => videoStore.videos.filter(v => v.status === 'completed').length)
+const videoProgress = computed(() => {
+  const total = novelChapterCount.value
+  if (!total) return 0
+  return Math.min(100, Math.round((completedVideoCount.value / total) * 100))
+})
 const characters = computed(() => characterStore.characters)
 
 // Worldview list for linking
@@ -194,6 +257,145 @@ function handleImageStyleSelect(styleId: string) {
   })
 }
 
+// ── 场景锚点 tab ──────────────────────────────────────────────────────────────
+const sceneAnchorStore = useSceneAnchorStore()
+const showAnchorModal = ref(false)
+const editingAnchor = ref<any | null>(null)
+const anchorForm = ref({
+  name: '',
+  type: 'exterior' as string,
+  description: '',
+  prompt_lock: '',
+  style_tokens: '',
+  notes: '',
+  variant: '',
+  parent_anchor_id: undefined as number | undefined,
+})
+const savingAnchor = ref(false)
+const extractingAnchors = ref(false)
+const extractingAllAnchors = ref(false)
+const extractAllProgress = ref({ current: 0, total: 0 })
+const selectedChapterForExtract = ref<number | 'all'>('all')
+const expandedAnchorId = ref<number | null>(null)
+const anchorConsistencyLogs = ref<Record<number, any[]>>({})
+const generatingRefImage = ref<Record<number, boolean>>({})
+
+function startAnchorCreate() {
+  editingAnchor.value = null
+  anchorForm.value = { name: '', type: 'exterior', description: '', prompt_lock: '', style_tokens: '', notes: '', variant: '', parent_anchor_id: undefined }
+  showAnchorModal.value = true
+}
+
+function startAnchorEdit(anchor: any) {
+  router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}`)
+}
+
+async function saveAnchor() {
+  if (!anchorForm.value.name) { toast.error('请输入场景名称'); return }
+  savingAnchor.value = true
+  try {
+    const created = await sceneAnchorStore.createAnchor(novelId, anchorForm.value)
+    showAnchorModal.value = false
+    toast.success('场景已创建，跳转到详情页编辑…')
+    router.push(`/scene-anchor/${created.id}?novelId=${novelId}`)
+  } catch (e: any) {
+    toast.error(e.message || '创建失败')
+  } finally {
+    savingAnchor.value = false
+  }
+}
+
+async function deleteAnchor(id: number) {
+  if (!confirm('确定删除该场景锚点？')) return
+  try {
+    await sceneAnchorStore.deleteAnchor(id)
+    toast.success('已删除')
+  } catch (e: any) {
+    toast.error(e.message || '删除失败')
+  }
+}
+
+async function extractAnchors() {
+  if (selectedChapterForExtract.value === 'all') {
+    await extractAllAnchors()
+    return
+  }
+  const chapter = chapterStore.chapters.find(c => c.id === selectedChapterForExtract.value)
+  if (!chapter?.content) { toast.error('所选章节无内容'); return }
+  extractingAnchors.value = true
+  try {
+    const novel = novelStore.currentNovel
+    const added = await sceneAnchorStore.extractAnchors(novelId, chapter.content, novel?.title)
+    toast.success(`已提取 ${added.length} 个新场景锚点`)
+  } catch (e: any) {
+    toast.error(e.message || '提取失败')
+  } finally {
+    extractingAnchors.value = false
+  }
+}
+
+// 遍历全部章节依次提取，后端已自动去重，跳过名称重复的锚点
+async function extractAllAnchors() {
+  const chapters = chapterStore.chapters.filter(c => c.content)
+  if (chapters.length === 0) { toast.error('没有有内容的章节'); return }
+  extractingAllAnchors.value = true
+  extractAllProgress.value = { current: 0, total: chapters.length }
+  const novel = novelStore.currentNovel
+  let totalAdded = 0
+  let failed = 0
+  for (const ch of chapters) {
+    extractAllProgress.value.current++
+    try {
+      const added = await sceneAnchorStore.extractAnchors(novelId, ch.content!, novel?.title)
+      totalAdded += added.length
+    } catch {
+      failed++
+    }
+  }
+  extractingAllAnchors.value = false
+  extractAllProgress.value = { current: 0, total: 0 }
+  if (failed > 0) {
+    toast.error(`完成，${failed} 章提取失败，共新增 ${totalAdded} 个锚点`)
+  } else {
+    toast.success(`全部章节提取完成，共新增 ${totalAdded} 个新场景锚点`)
+  }
+}
+
+async function toggleAnchorExpand(anchor: any) {
+  if (expandedAnchorId.value === anchor.id) {
+    expandedAnchorId.value = null
+    return
+  }
+  expandedAnchorId.value = anchor.id
+  if (!anchorConsistencyLogs.value[anchor.id]) {
+    try {
+      const api = useSceneAnchorApi()
+      const logs = await api.getConsistencyLogs(anchor.id)
+      anchorConsistencyLogs.value[anchor.id] = logs
+    } catch {
+      anchorConsistencyLogs.value[anchor.id] = []
+    }
+  }
+}
+
+async function generateRefImage(anchor: any) {
+  generatingRefImage.value[anchor.id] = true
+  try {
+    await sceneAnchorStore.generateRefImage(anchor.id)
+    toast.success('参考图已生成')
+  } catch (e: any) {
+    toast.error(e.message || '生成失败')
+  } finally {
+    generatingRefImage.value[anchor.id] = false
+  }
+}
+
+function anchorScoreColor(score: number) {
+  if (score >= 0.85) return 'text-green-600'
+  if (score >= 0.70) return 'text-amber-500'
+  return 'text-red-500'
+}
+
 const tabs = [
   { key: 'chapters', label: '章节', icon: 'book-open' },
   { key: 'characters', label: '角色', icon: 'users' },
@@ -201,6 +403,7 @@ const tabs = [
   { key: 'skills', label: '技能', icon: 'zap' },
   { key: 'worldview', label: '世界观', icon: 'globe' },
   { key: 'plot_points', label: '剧情点', icon: 'flag' },
+  { key: 'scene_anchors', label: '场景锚点', icon: 'map-pin' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -210,6 +413,8 @@ onMounted(async () => {
     novelStore.fetchNovel(novelId),
     chapterStore.fetchChapters(novelId),
     characterStore.fetchCharacters(novelId),
+    videoStore.fetchVideos({ novel_id: novelId }),
+    sceneAnchorStore.fetchAnchors(novelId),
   ])
   // Auto-trigger analysis when coming from the import/create page.
   // Remove the query params immediately to prevent re-triggering on refresh.
@@ -338,6 +543,23 @@ async function confirmDeleteChapter() {
     await chapterStore.deleteChapter(novelId, chapterToDelete.value.chapter_no)
     toast.success('章节已删除')
     chapterToDelete.value = null
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || '未知错误'))
+  }
+}
+
+function handleDeleteCharacter(event: MouseEvent, character: Character) {
+  event.stopPropagation()
+  characterToDelete.value = character
+  showDeleteCharacterConfirm.value = true
+}
+
+async function confirmDeleteCharacter() {
+  if (!characterToDelete.value) return
+  try {
+    await characterStore.deleteCharacter(characterToDelete.value.id)
+    toast.success('角色已删除')
+    characterToDelete.value = null
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || '未知错误'))
   }
@@ -587,6 +809,7 @@ const skills = ref<Skill[]>([])
 const skillsLoading = ref(false)
 const showSkillModal = ref(false)
 const showAdvancedAI = ref(false)
+const showVideoConfig = ref(false)
 const deletingSkillId = ref<number | null>(null)
 const generatingSkills = ref(false)
 const savingSkill = ref(false)
@@ -656,6 +879,7 @@ watch(activeTab, (tab) => {
     fetchPlotPoints()
   }
 })
+
 
 async function createSkill() {
   if (!newSkillForm.value.name.trim()) return
@@ -795,14 +1019,52 @@ function getSkillStatusLabel(status: string): string {
                 {{ descExpanded ? '收起' : '展开' }}
               </button>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex flex-wrap items-center gap-3 mb-3">
               <span class="tag tag-primary">{{ novel.genre }}</span>
               <span class="text-sm text-gray-500 dark:text-gray-400">
-                {{ novel.chapter_count }} 章
+                {{ novelChapterCount }} 章
               </span>
               <span class="text-sm text-gray-500 dark:text-gray-400">
-                {{ novel.total_words.toLocaleString() }} 字
+                {{ novelTotalWords.toLocaleString() }} 字
               </span>
+            </div>
+
+            <!-- 整体进度 -->
+            <div class="space-y-2">
+              <!-- 章节进度 -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-gray-500 dark:text-gray-400">章节进度</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ completedChapterCount }} / {{ novel.target_chapters || novelChapterCount }} 章
+                    <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ chapterProgress }}%</span>
+                  </span>
+                </div>
+                <div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="chapterProgress >= 100 ? 'bg-green-500' : 'bg-purple-500'"
+                    :style="{ width: `${chapterProgress}%` }"
+                  />
+                </div>
+              </div>
+              <!-- 视频进度 -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-gray-500 dark:text-gray-400">视频进度</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ completedVideoCount }} / {{ novelChapterCount }} 章
+                    <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ videoProgress }}%</span>
+                  </span>
+                </div>
+                <div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="videoProgress >= 100 ? 'bg-green-500' : 'bg-orange-500'"
+                    :style="{ width: `${videoProgress}%` }"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <div class="flex items-center space-x-2">
@@ -1045,9 +1307,19 @@ function getSkillStatusLabel(status: string): string {
         <div
           v-for="character in characters"
           :key="character.id"
-          class="card p-4 hover:shadow-soft transition-shadow cursor-pointer"
+          class="card p-4 hover:shadow-soft transition-shadow cursor-pointer group relative"
           @click="goToCharacter(character)"
         >
+          <!-- 删除按钮：hover 时出现 -->
+          <button
+            class="absolute top-2 right-2 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            title="删除角色"
+            @click="handleDeleteCharacter($event, character)"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
           <div class="flex items-start space-x-4">
             <div class="w-16 h-16 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 flex items-center justify-center">
               <img
@@ -1486,38 +1758,293 @@ function getSkillStatusLabel(status: string): string {
       </div>
     </div>
 
-    <!-- Settings Tab -->
-    <div v-if="activeTab === 'settings'" class="card p-6">
-      <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">项目设置</h3>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">项目名称</label>
-          <input
-            type="text"
-            :value="novel?.title"
-            class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { title: (e.target as HTMLInputElement).value })"
-          />
+    <!-- Scene Anchors Tab -->
+    <div v-if="activeTab === 'scene_anchors'" class="space-y-4">
+      <!-- 工具栏 -->
+      <div class="flex flex-wrap items-center gap-3">
+        <select v-model="selectedChapterForExtract" class="input text-sm flex-1 min-w-0 max-w-xs">
+          <option value="all">全部章节</option>
+          <option v-for="ch in chapterStore.chapters" :key="ch.id" :value="ch.id">
+            第 {{ ch.chapter_no }} 章 {{ ch.title }}
+          </option>
+        </select>
+        <button class="btn btn-primary text-sm" :disabled="extractingAnchors || extractingAllAnchors" @click="extractAnchors">
+          <span v-if="extractingAllAnchors">提取中 {{ extractAllProgress.current }}/{{ extractAllProgress.total }}…</span>
+          <span v-else-if="extractingAnchors">提取中…</span>
+          <span v-else>AI 提取</span>
+        </button>
+        <button class="btn btn-secondary text-sm ml-auto" @click="startAnchorCreate">+ 手动新建</button>
+      </div>
+
+      <!-- 锚点列表 -->
+      <div v-if="sceneAnchorStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div v-for="i in 4" :key="i" class="card p-4">
+          <div class="skeleton h-28 w-full rounded-lg mb-3"></div>
+          <div class="skeleton h-4 w-1/2 mb-2"></div>
+          <div class="skeleton h-3 w-3/4"></div>
         </div>
+      </div>
+
+      <div v-else-if="sceneAnchorStore.anchors.length === 0" class="card p-8 text-center">
+        <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <p class="text-gray-500 dark:text-gray-400 mb-1">暂无场景锚点</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500">可手动新建，或通过「AI 提取」从章节内容自动生成</p>
+      </div>
+
+      <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div
+          v-for="anchor in sceneAnchorStore.anchors"
+          :key="anchor.id"
+          class="card overflow-hidden group cursor-pointer hover:shadow-medium transition-shadow"
+          @click="startAnchorEdit(anchor)"
+        >
+          <!-- 参考图区域 -->
+          <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+            <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" :alt="anchor.name" />
+            <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span class="text-xs">暂无参考图</span>
+            </div>
+            <!-- 类型徽章 -->
+            <span
+              class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
+              :class="{
+                'bg-blue-100 text-blue-700': anchor.type === 'interior',
+                'bg-green-100 text-green-700': anchor.type === 'exterior',
+                'bg-purple-100 text-purple-700': anchor.type === 'imaginary',
+              }"
+            >{{ anchor.type }}</span>
+            <!-- 锁定状态 -->
+            <span v-if="anchor.ref_image_locked_at" class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
+              <svg class="w-3 h-3 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </span>
+            <!-- 生成图按钮 (stop propagation) -->
+            <button
+              class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-500 hover:text-primary-600 rounded opacity-0 group-hover:opacity-100 transition-opacity text-xs flex items-center gap-1"
+              :disabled="generatingRefImage[anchor.id]"
+              :title="anchor.ref_image_url ? '重新生成参考图' : '生成参考图'"
+              @click.stop="generateRefImage(anchor)"
+            >
+              <svg v-if="generatingRefImage[anchor.id]" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+            </button>
+            <!-- 删除按钮 -->
+            <button
+              class="absolute bottom-2 left-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+              title="删除锚点"
+              @click.stop="deleteAnchor(anchor.id)"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- 信息区 -->
+          <div class="p-3">
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1">{{ anchor.name }}</h3>
+              <span v-if="anchor.variant" class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0">
+                {{ anchor.variant }}
+              </span>
+            </div>
+            <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ anchor.description }}</p>
+            <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
+              <span>引用 {{ anchor.usage_count }}</span>
+              <span v-if="anchor.avg_cons_score > 0" :class="anchorScoreColor(anchor.avg_cons_score)">
+                均分 {{ anchor.avg_cons_score.toFixed(2) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新建 Modal（仅用于快速创建，编辑跳转到详情页） -->
+      <div v-if="showAnchorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div class="card w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <h3 class="text-base font-semibold">新建场景锚点</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="label">名称 <span class="text-red-500">*</span></label>
+              <input v-model="anchorForm.name" class="input w-full" placeholder="如：皇宫正殿" maxlength="100" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="label">类型</label>
+                <select v-model="anchorForm.type" class="input w-full">
+                  <option value="exterior">室外 (exterior)</option>
+                  <option value="interior">室内 (interior)</option>
+                  <option value="imaginary">虚幻 (imaginary)</option>
+                </select>
+              </div>
+              <div>
+                <label class="label">变体</label>
+                <input v-model="anchorForm.variant" class="input w-full" placeholder="day/night/winter" />
+              </div>
+            </div>
+            <div>
+              <label class="label">视觉描述（英文）</label>
+              <textarea v-model="anchorForm.description" class="input w-full resize-none" rows="2" placeholder="Brief English description..."></textarea>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400">创建后可在详情页完善 Prompt Lock、Style Tokens 等高级设置。</p>
+          <div class="flex gap-3 justify-end pt-2">
+            <button class="btn btn-secondary" @click="showAnchorModal = false">取消</button>
+            <button class="btn btn-primary" :disabled="savingAnchor" @click="saveAnchor">
+              {{ savingAnchor ? '创建中…' : '创建' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div v-if="activeTab === 'settings'" class="space-y-4">
+
+      <!-- ① 基本信息 -->
+      <div class="card p-6 space-y-5">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">基本信息</h3>
+
+        <!-- 图标 + 名称 (同行) -->
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0">
+            <div
+              class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shadow-sm"
+              :style="{ background: iconGradient(novel?.cover_image) }"
+            >{{ novel?.title?.[0]?.toUpperCase() ?? 'I' }}</div>
+            <div class="flex gap-1.5 flex-wrap mt-2 max-w-[9rem]">
+              <button
+                v-for="opt in iconOptions" :key="opt.value"
+                type="button"
+                class="w-6 h-6 rounded-lg transition-all hover:scale-110 focus:outline-none"
+                :class="novel?.cover_image === opt.value ? 'ring-2 ring-offset-1 ring-primary-500 scale-110' : ''"
+                :style="{ background: opt.gradient }"
+                @click="novelStore.updateNovel(novelId, { cover_image: opt.value })"
+              />
+            </div>
+          </div>
+          <div class="flex-1 min-w-0 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">小说名称</label>
+              <input
+                type="text" :value="novel?.title" class="input" maxlength="100"
+                @change="(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (v) novelStore.updateNovel(novelId, { title: v }) }"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">频道</label>
+              <div class="flex gap-2">
+                <button
+                  v-for="opt in channelOptions" :key="opt.value" type="button"
+                  class="px-3 py-1 text-xs rounded-full border transition-colors"
+                  :class="novel?.channel === opt.value
+                    ? 'bg-amber-400 border-amber-400 text-white font-medium'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-amber-300'"
+                  @click="novelStore.updateNovel(novelId, { channel: opt.value })"
+                >{{ opt.label }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 小说类型 -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">项目描述</label>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">小说类型</label>
+          <div class="flex gap-1.5 flex-wrap">
+            <button
+              v-for="g in genreOptions" :key="g" type="button"
+              class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+              :class="novel?.genre === g
+                ? 'bg-amber-400 border-amber-400 text-white font-medium'
+                : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-amber-300'"
+              @click="novelStore.updateNovel(novelId, { genre: g as any })"
+            >{{ g }}</button>
+          </div>
+        </div>
+
+        <!-- 作品概要 -->
+        <div>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">作品概要</label>
           <textarea
-            :value="novel?.description"
-            rows="3"
-            class="input"
+            :value="novel?.description" rows="3" maxlength="1000"
+            class="input resize-none text-sm"
+            placeholder="简要描述故事背景、主角、核心冲突，AI 会根据此生成大纲…"
             @change="(e) => novelStore.updateNovel(novelId, { description: (e.target as HTMLTextAreaElement).value })"
           ></textarea>
+          <p class="mt-0.5 text-xs text-gray-400 text-right">{{ novel?.description?.length ?? 0 }}/1000</p>
         </div>
-        <!-- Writing Style -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <div class="flex items-center justify-between mb-3">
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">写作风格</h4>
+
+        <!-- 目标规模 (双列) -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">目标字数</label>
+            <div class="flex gap-1.5 flex-wrap mb-2">
+              <button
+                v-for="opt in settingsWCOptions" :key="opt.value" type="button"
+                class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                :class="novel?.target_word_count === opt.value
+                  ? 'bg-primary-500 border-primary-500 text-white font-medium'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
+                @click="novelStore.updateNovel(novelId, { target_word_count: opt.value })"
+              >{{ opt.label }}</button>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input
+                type="number" :value="novel?.target_word_count ?? 0"
+                class="input w-28 text-sm" min="0" step="10000"
+                @change="(e) => novelStore.updateNovel(novelId, { target_word_count: parseInt((e.target as HTMLInputElement).value) || 0 })"
+              />
+              <span class="text-xs text-gray-400">字</span>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">期望章节数</label>
+            <div class="flex gap-1.5 flex-wrap mb-2">
+              <button
+                v-for="opt in settingsCCOptions" :key="opt.value" type="button"
+                class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                :class="novel?.target_chapters === opt.value
+                  ? 'bg-primary-500 border-primary-500 text-white font-medium'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
+                @click="novelStore.updateNovel(novelId, { target_chapters: opt.value })"
+              >{{ opt.label }}</button>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input
+                type="number" :value="novel?.target_chapters ?? 0"
+                class="input w-28 text-sm" min="0" max="10000"
+                @change="(e) => novelStore.updateNovel(novelId, { target_chapters: parseInt((e.target as HTMLInputElement).value) || 0 })"
+              />
+              <span class="text-xs text-gray-400">章</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 创作风格 -->
+      <div class="card p-6 space-y-4">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">创作风格</h3>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">写作风格预设</label>
             <NuxtLink to="/style" class="text-xs text-primary-600 hover:underline">浏览风格库 →</NuxtLink>
           </div>
-          <div class="relative flex items-center gap-2">
+          <div class="flex items-center gap-2">
             <select
-              :value="selectedWritingPreset"
-              :disabled="applyingWritingPreset"
+              :value="selectedWritingPreset" :disabled="applyingWritingPreset"
               class="input flex-1"
               @change="handleWritingPresetSelect(($event.target as HTMLSelectElement).value)"
             >
@@ -1527,180 +2054,193 @@ function getSkillStatusLabel(status: string): string {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </div>
-          <div class="mt-3">
-            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">当前风格提示词（可手动编辑）</label>
-            <textarea
-              :value="novel?.style_prompt"
-              rows="2"
-              class="input text-sm"
-              placeholder="选择预设后自动填充，或手动输入..."
-              @change="(e) => novelStore.updateNovel(novelId, { style_prompt: (e.target as HTMLTextAreaElement).value })"
-            ></textarea>
-          </div>
+          <textarea
+            :value="novel?.style_prompt" rows="2"
+            class="input text-sm mt-2 resize-none"
+            placeholder="风格提示词，选择预设后自动填充，或手动输入…"
+            @change="(e) => novelStore.updateNovel(novelId, { style_prompt: (e.target as HTMLTextAreaElement).value })"
+          ></textarea>
         </div>
 
-        <!-- Image / Art Style -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">图片风格</h4>
-          <select
-            :value="novel?.image_style || IMAGE_PRESETS[0]?.id || ''"
-            class="input"
-            @change="handleImageStyleSelect(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">-- 不使用预设 --</option>
-            <option v-for="p in IMAGE_PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </div>
-
-        <!-- Reference Works -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">参考作品</h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            输入参考小说的书名、URL 或风格描述，AI 将模仿其写作风格生成内容
-          </p>
-          <input
-            type="text"
-            :value="novel?.reference_style"
-            class="input"
-            placeholder="如：《斗破苍穹》的战斗描写风格，或粘贴章节 URL..."
-            @change="(e) => novelStore.updateNovel(novelId, { reference_style: (e.target as HTMLInputElement).value })"
-          />
-          <p class="mt-1 text-xs text-gray-400">
-            也可使用
-            <NuxtLink :to="`/import?novel_id=${novel?.id}`" class="text-primary-600 hover:underline">导入章节</NuxtLink>
-            功能，直接爬取起点、晋江等平台的作品作为参考
-          </p>
-        </div>
-
-        <!-- AI Config (collapsible) -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <button
-            type="button"
-            class="flex items-center justify-between w-full text-left"
-            @click="showAdvancedAI = !showAdvancedAI"
-          >
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">高级设置</h4>
-            <svg
-              class="w-4 h-4 text-gray-400 transition-transform"
-              :class="{ 'rotate-180': showAdvancedAI }"
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">图片风格</label>
+            <select
+              :value="novel?.image_style || IMAGE_PRESETS[0]?.id || ''"
+              class="input"
+              @change="handleImageStyleSelect(($event.target as HTMLSelectElement).value)"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <div v-if="showAdvancedAI" class="mt-4 space-y-4">
-            <!-- LLM model -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">LLM 模型</label>
-              <select
-                :value="novel?.ai_model ?? ''"
-                class="input"
-                @change="(e) => novelStore.updateNovel(novelId, { ai_model: (e.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="">使用默认模型</option>
-                <option v-for="m in availableModels" :key="m.id" :value="m.name">
-                  {{ m.display_name || m.name }}
-                </option>
-              </select>
-              <p v-if="availableModels.length === 0" class="mt-1 text-xs text-gray-400">
-                暂无可用模型，可在
-                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
-                中添加
-              </p>
-            </div>
-            <!-- Image model -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图片模型</label>
-              <select
-                :value="novel?.image_model ?? ''"
-                class="input"
-                @change="(e) => novelStore.updateNovel(novelId, { image_model: (e.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="">使用默认模型</option>
-                <option v-for="m in imageModels" :key="m.id" :value="m.name">
-                  {{ m.display_name || m.name }}
-                </option>
-              </select>
-              <p v-if="imageModels.length === 0" class="mt-1 text-xs text-gray-400">
-                暂无可用图片模型，可在
-                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
-                中添加
-              </p>
-            </div>
-            <!-- Video model -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视频模型</label>
-              <select
-                :value="novel?.video_model ?? ''"
-                class="input"
-                @change="(e) => novelStore.updateNovel(novelId, { video_model: (e.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="">使用默认模型</option>
-                <option v-for="m in videoModels" :key="m.id" :value="m.name">
-                  {{ m.display_name || m.name }}
-                </option>
-              </select>
-              <p v-if="videoModels.length === 0" class="mt-1 text-xs text-gray-400">
-                暂无可用视频模型，可在
-                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
-                中添加
-              </p>
-            </div>
-            <!-- TTS / voice model -->
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">语音模型</label>
-              <select
-                :value="novel?.tts_model ?? ''"
-                class="input"
-                @change="(e) => novelStore.updateNovel(novelId, { tts_model: (e.target as HTMLSelectElement).value || undefined })"
-              >
-                <option value="">使用默认模型</option>
-                <option v-for="m in ttsModels" :key="m.id" :value="m.name">
-                  {{ m.display_name || m.name }}
-                </option>
-              </select>
-              <p v-if="ttsModels.length === 0" class="mt-1 text-xs text-gray-400">
-                暂无可用语音模型，可在
-                <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink>
-                中添加
-              </p>
-            </div>
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  创意度 <span class="font-normal text-gray-400">({{ novel?.temperature ?? 0.7 }})</span>
-                </label>
-              </div>
-              <input
-                type="range"
-                :value="novel?.temperature ?? 0.7"
-                min="0" max="2" step="0.1"
-                class="w-full accent-primary-500"
-                @change="(e) => novelStore.updateNovel(novelId, { temperature: parseFloat((e.target as HTMLInputElement).value) })"
-              />
-              <div class="flex justify-between text-xs text-gray-400 mt-0.5">
-                <span>确定（0）</span>
-                <span>均衡（0.7）</span>
-                <span>创意（2）</span>
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">每章最大 Tokens</label>
-              <input
-                type="number"
-                :value="novel?.max_tokens ?? 4096"
-                class="input"
-                min="512" max="32000" step="512"
-                @change="(e) => novelStore.updateNovel(novelId, { max_tokens: parseInt((e.target as HTMLInputElement).value) })"
-              />
-              <p class="mt-1 text-xs text-gray-400">约 {{ Math.round((novel?.max_tokens ?? 4096) * 0.75) }} 中文字</p>
-            </div>
+              <option value="">-- 不使用预设 --</option>
+              <option v-for="p in IMAGE_PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
           </div>
-        </div>
-        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button class="btn-error" @click="showDeleteNovelConfirm = true">删除项目</button>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">参考作品</label>
+            <input
+              type="text" :value="novel?.reference_style" class="input"
+              placeholder="书名、URL 或风格描述…"
+              @change="(e) => novelStore.updateNovel(novelId, { reference_style: (e.target as HTMLInputElement).value })"
+            />
+            <p class="mt-1 text-xs text-gray-400">
+              或
+              <NuxtLink :to="`/import?novel_id=${novel?.id}`" class="text-primary-600 hover:underline">导入章节</NuxtLink>
+              直接爬取参考作品
+            </p>
+          </div>
         </div>
       </div>
+
+      <!-- ③ 模型配置 -->
+      <div class="card p-6 space-y-4">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">模型配置</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">LLM 模型</label>
+            <select :value="novel?.ai_model ?? ''" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { ai_model: (e.target as HTMLSelectElement).value || undefined })">
+              <option value="">使用默认</option>
+              <option v-for="m in availableModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
+            </select>
+            <p v-if="availableModels.length === 0" class="mt-1 text-xs text-gray-400">
+              可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
+            </p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">图片模型</label>
+            <select :value="novel?.image_model ?? ''" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { image_model: (e.target as HTMLSelectElement).value || undefined })">
+              <option value="">使用默认</option>
+              <option v-for="m in imageModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
+            </select>
+            <p v-if="imageModels.length === 0" class="mt-1 text-xs text-gray-400">
+              可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
+            </p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">视频模型</label>
+            <select :value="novel?.video_model ?? ''" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { video_model: (e.target as HTMLSelectElement).value || undefined })">
+              <option value="">使用默认</option>
+              <option v-for="m in videoModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
+            </select>
+            <p v-if="videoModels.length === 0" class="mt-1 text-xs text-gray-400">
+              可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
+            </p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">语音模型</label>
+            <select :value="novel?.tts_model ?? ''" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { tts_model: (e.target as HTMLSelectElement).value || undefined })">
+              <option value="">使用默认</option>
+              <option v-for="m in ttsModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
+            </select>
+            <p v-if="ttsModels.length === 0" class="mt-1 text-xs text-gray-400">
+              可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
+            </p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-medium text-gray-500 dark:text-gray-400">创意度</label>
+              <span class="text-xs text-gray-400">{{ novel?.temperature ?? 0.7 }}</span>
+            </div>
+            <input type="range" :value="novel?.temperature ?? 0.7" min="0" max="2" step="0.1"
+              class="w-full accent-primary-500"
+              @change="(e) => novelStore.updateNovel(novelId, { temperature: parseFloat((e.target as HTMLInputElement).value) })" />
+            <div class="flex justify-between text-xs text-gray-400 mt-0.5">
+              <span>确定</span><span>均衡</span><span>创意</span>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">每章最大 Tokens</label>
+            <input type="number" :value="novel?.max_tokens ?? 4096" class="input" min="512" max="32000" step="512"
+              @change="(e) => novelStore.updateNovel(novelId, { max_tokens: parseInt((e.target as HTMLInputElement).value) })" />
+            <p class="mt-1 text-xs text-gray-400">≈ {{ Math.round((novel?.max_tokens ?? 4096) * 0.75) }} 中文字</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ④ 视频配置 -->
+      <div class="card p-6 space-y-4">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">视频配置</h3>
+
+        <!-- 视频类型 -->
+        <div>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">视频类型</label>
+          <div class="grid grid-cols-2 gap-3">
+            <button
+              v-for="vt in videoTypes"
+              :key="vt.value"
+              type="button"
+              class="relative flex flex-col gap-1 rounded-lg border-2 p-4 text-left transition-colors"
+              :class="(novel?.video_type ?? 'animation') === vt.value
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'"
+              @click="novelStore.updateNovel(novelId, { video_type: vt.value })"
+            >
+              <span class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                <span class="text-base">{{ vt.icon }}</span>
+                {{ vt.label }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{{ vt.desc }}</span>
+              <span v-if="(novel?.video_type ?? 'animation') === vt.value"
+                class="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary-500" />
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">默认分辨率</label>
+            <select :value="novel?.video_resolution ?? '1080p'" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { video_resolution: (e.target as HTMLSelectElement).value })">
+              <option value="720p">720p (1280×720)</option>
+              <option value="1080p">1080p (1920×1080)</option>
+              <option value="4K">4K (3840×2160)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">默认帧率</label>
+            <select :value="novel?.video_fps ?? 30" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { video_fps: parseInt((e.target as HTMLSelectElement).value) })">
+              <option :value="24">24 fps（电影）</option>
+              <option :value="30">30 fps（标准）</option>
+              <option :value="60">60 fps（流畅）</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">默认宽高比</label>
+            <select :value="novel?.video_aspect_ratio ?? '16:9'" class="input"
+              @change="(e) => novelStore.updateNovel(novelId, { video_aspect_ratio: (e.target as HTMLSelectElement).value })">
+              <option value="16:9">16:9（宽屏）</option>
+              <option value="9:16">9:16（竖屏）</option>
+              <option value="1:1">1:1（方形）</option>
+              <option value="4:3">4:3（传统）</option>
+            </select>
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-medium text-gray-500 dark:text-gray-400">角色一致性权重</label>
+              <span class="text-xs text-gray-400">{{ Math.round((novel?.char_consistency_weight ?? 1) * 100) }}%</span>
+            </div>
+            <input type="range" :value="novel?.char_consistency_weight ?? 1" min="0" max="1" step="0.05"
+              class="w-full accent-primary-500"
+              @change="(e) => novelStore.updateNovel(novelId, { char_consistency_weight: parseFloat((e.target as HTMLInputElement).value) })" />
+            <div class="flex justify-between text-xs text-gray-400 mt-0.5">
+              <span>自由</span><span>平衡</span><span>严格</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ 危险区 -->
+      <div class="card p-6 border border-red-100 dark:border-red-900/40">
+        <h3 class="text-sm font-semibold text-red-500 uppercase tracking-wider mb-3">危险区</h3>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">删除项目将永久移除所有章节、角色和相关数据，此操作不可撤销。</p>
+        <button class="btn-error" @click="showDeleteNovelConfirm = true">删除项目</button>
+      </div>
+
     </div>
   </div>
 
@@ -1722,6 +2262,16 @@ function getSkillStatusLabel(status: string): string {
     variant="danger"
     confirm-text="确认删除"
     @confirm="confirmDeleteChapter"
+  />
+
+  <!-- Delete character confirm -->
+  <ConfirmDialog
+    v-model="showDeleteCharacterConfirm"
+    title="删除角色"
+    :description="`确认删除角色「${characterToDelete?.name || ''}」？此操作不可撤销。`"
+    variant="danger"
+    confirm-text="确认删除"
+    @confirm="confirmDeleteCharacter"
   />
 
   <!-- 新建物品弹窗 -->
