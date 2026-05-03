@@ -5,7 +5,7 @@ import type { ModelProvider, AIModel, McpTool } from '~/types'
 const toast = useToast()
 
 // ── tabs ────────────────────────────────────────────────────────────────────
-const activeTab = ref<'providers' | 'mcp'>('providers')
+const activeTab = ref<'providers' | 'mcp' | 'settings'>('providers')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TAB 1 — 模型提供商 (unchanged logic)
@@ -540,6 +540,45 @@ async function toggleModelBinding(modelId: number) {
   finally { bindSaving.value = false }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TAB 3 — 系统设置（并发度控制）
+// ═══════════════════════════════════════════════════════════════════════════
+const { listSettings, updateSetting } = useSystemSettingsApi()
+
+const imageConcurrency = ref(1)
+const videoConcurrency = ref(1)
+const settingsLoading = ref(false)
+const settingsSaving = ref<string | null>(null)
+
+async function loadSettings() {
+  settingsLoading.value = true
+  try {
+    const res = await listSettings()
+    const items = res.data ?? []
+    const img = items.find(s => s.key === 'image_concurrency')
+    const vid = items.find(s => s.key === 'video_concurrency')
+    if (img) imageConcurrency.value = Number(img.value) || 1
+    if (vid) videoConcurrency.value = Number(vid.value) || 1
+  } catch (e: any) {
+    toast.error(e?.message || '加载系统设置失败')
+  } finally {
+    settingsLoading.value = false
+  }
+}
+
+async function saveConcurrency(key: string, value: number) {
+  if (value < 1 || value > 20) { toast.error('并发数范围 1–20'); return }
+  settingsSaving.value = key
+  try {
+    await updateSetting(key, String(value))
+    toast.success('已保存')
+  } catch (e: any) {
+    toast.error(e?.message || '保存失败')
+  } finally {
+    settingsSaving.value = null
+  }
+}
+
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadProviderTemplates()
@@ -548,6 +587,7 @@ onMounted(() => {
 
 watch(activeTab, (tab) => {
   if (tab === 'mcp' && mcpTools.value.length === 0 && !mcpLoading.value) loadMcpTools()
+  if (tab === 'settings') loadSettings()
 })
 </script>
 
@@ -583,7 +623,7 @@ watch(activeTab, (tab) => {
         </button>
       </template>
       <button
-        v-else
+        v-else-if="activeTab === 'mcp'"
         class="btn-primary flex items-center gap-1.5"
         @click="openAddMcp"
       >
@@ -617,6 +657,15 @@ watch(activeTab, (tab) => {
           <span v-if="mcpTools.length > 0" class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">
             {{ mcpTools.length }}
           </span>
+        </button>
+        <button
+          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
+          :class="activeTab === 'settings'
+            ? 'border-primary-500 text-primary-600'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+          @click="activeTab = 'settings'"
+        >
+          系统设置
         </button>
       </nav>
     </div>
@@ -1206,6 +1255,78 @@ watch(activeTab, (tab) => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 3: 系统设置                                                     -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <template v-if="activeTab === 'settings'">
+      <div class="max-w-lg">
+        <div v-if="settingsLoading" class="py-12 text-center text-gray-400">加载中…</div>
+        <div v-else class="space-y-6">
+
+          <!-- 图像生成并发度 -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="mb-4">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">图像生成并发度</h3>
+              <p class="text-xs text-gray-500 mt-0.5">同时进行图像生成的最大任务数（1–20）</p>
+            </div>
+            <div class="flex items-center gap-4">
+              <input
+                v-model.number="imageConcurrency"
+                type="number" min="1" max="20"
+                class="w-24 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <input
+                v-model.number="imageConcurrency"
+                type="range" min="1" max="20"
+                class="flex-1 accent-primary-500"
+              />
+              <span class="w-6 text-sm font-medium text-gray-700 dark:text-gray-300 text-right">{{ imageConcurrency }}</span>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button
+                class="btn-primary text-sm"
+                :disabled="settingsSaving === 'image_concurrency'"
+                @click="saveConcurrency('image_concurrency', imageConcurrency)"
+              >
+                {{ settingsSaving === 'image_concurrency' ? '保存中…' : '保存' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 视频生成并发度 -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="mb-4">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">视频生成并发度</h3>
+              <p class="text-xs text-gray-500 mt-0.5">同时进行视频生成的最大任务数（1–20）</p>
+            </div>
+            <div class="flex items-center gap-4">
+              <input
+                v-model.number="videoConcurrency"
+                type="number" min="1" max="20"
+                class="w-24 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <input
+                v-model.number="videoConcurrency"
+                type="range" min="1" max="20"
+                class="flex-1 accent-primary-500"
+              />
+              <span class="w-6 text-sm font-medium text-gray-700 dark:text-gray-300 text-right">{{ videoConcurrency }}</span>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button
+                class="btn-primary text-sm"
+                :disabled="settingsSaving === 'video_concurrency'"
+                @click="saveConcurrency('video_concurrency', videoConcurrency)"
+              >
+                {{ settingsSaving === 'video_concurrency' ? '保存中…' : '保存' }}
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>
 
   </div>
 </template>
