@@ -27,8 +27,9 @@ const videoProviders = ref<{ name: string; display_name: string }[]>([])
 const selectedVideoProvider = ref('')
 const batchGenerating = ref(false)
 
-// Voice
-const voiceStyle = ref('neutral')
+// Voice — narration voice is read from novel project config (项目配置 > 视频配置)
+const novelStore = useNovelStore()
+const narrationVoice = computed(() => novelStore.currentNovel?.narration_voice ?? '')
 const subtitleEnabled = ref(true)
 const generatingVoice = ref<Record<number, boolean>>({})
 const shotAudioUrls = ref<Record<number, string>>({})
@@ -213,8 +214,8 @@ const TABS = computed(() => [
 // ──────── Lifecycle ────────
 async function load() {
   const { getVideoProviders } = useVideoApi()
-  const videoRes = await Promise.allSettled([getVideoProviders()])
-  if (videoRes[0].status === 'fulfilled') videoProviders.value = (videoRes[0].value as any)?.data ?? []
+  const [videoRes] = await Promise.allSettled([getVideoProviders()])
+  if (videoRes.status === 'fulfilled') videoProviders.value = (videoRes.value as any)?.data ?? []
   try {
     await videoStore.fetchVideo(props.videoId)
     await videoStore.fetchStoryboard(props.videoId)
@@ -403,11 +404,10 @@ async function handleGenerateAll() {
 
 // ──────── Voice ────────
 async function handleGenerateVoice(shot: StoryboardShot) {
-  if (!shot.dialogue) { toast.error('该镜头无对话文本，无法生成配音'); return }
   generatingVoice.value[shot.id] = true
   try {
     const api = useVideoApi()
-    const res = await api.generateVoice(props.videoId, shot.id)
+    const res = await api.generateVoice(props.videoId, shot.id, narrationVoice.value || undefined)
     const taskId = res.data?.task_id
     if (!taskId) { toast.error('配音生成失败：未获取到任务ID'); generatingVoice.value[shot.id] = false; return }
     toast.info(`镜头 #${shot.shot_no} 配音生成中…`)
@@ -431,9 +431,8 @@ async function handleGenerateVoice(shot: StoryboardShot) {
 }
 
 async function handleGenerateAllVoice() {
-  const list = shots.value.filter(s => s.dialogue)
-  if (list.length === 0) { toast.error('没有带对话的镜头，无法生成配音'); return }
-  for (const shot of list) {
+  if (shots.value.length === 0) { toast.error('没有分镜，无法生成配音'); return }
+  for (const shot of shots.value) {
     await handleGenerateVoice(shot)
   }
 }
@@ -928,23 +927,10 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </div>
           <button class="btn-primary" @click="handleGenerateAllVoice">一键生成全部配音</button>
         </div>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">配音风格</label>
-            <select v-model="voiceStyle" class="input">
-              <option value="neutral">标准旁白</option>
-              <option value="dramatic">戏剧化</option>
-              <option value="soft">温柔</option>
-              <option value="powerful">激昂</option>
-            </select>
-          </div>
-          <div class="flex items-center gap-2 pt-6">
-            <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
-              <input v-model="subtitleEnabled" type="checkbox" class="rounded accent-primary-500" />
-              同步生成字幕
-            </label>
-          </div>
-        </div>
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+          <input v-model="subtitleEnabled" type="checkbox" class="rounded accent-primary-500" />
+          同步生成字幕
+        </label>
       </div>
 
       <div class="space-y-2">

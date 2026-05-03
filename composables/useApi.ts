@@ -453,10 +453,10 @@ export const useVideoApi = () => {
   const exportCapcut = (id: number) =>
     requestBlob(`/videos/${id}/export/capcut`)
 
-  const generateVoice = (videoId: number, shotId: number) =>
+  const generateVoice = (videoId: number, shotId: number, narrationVoice?: string) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/storyboard/${shotId}/voice`, {
       method: 'POST',
-      body: '{}',
+      body: JSON.stringify(narrationVoice ? { narration_voice: narrationVoice } : {}),
     })
 
   return {

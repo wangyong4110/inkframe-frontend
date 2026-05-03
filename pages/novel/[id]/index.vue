@@ -178,6 +178,27 @@ const videoTypes = [
   },
 ]
 
+const NARRATION_FALLBACK_VOICES = [
+  { id: 'nova',    label: 'Nova — 女声·活泼' },
+  { id: 'shimmer', label: 'Shimmer — 女声·温柔' },
+  { id: 'echo',    label: 'Echo — 男声·磁性' },
+  { id: 'onyx',    label: 'Onyx — 男声·低沉' },
+  { id: 'fable',   label: 'Fable — 男声·权威' },
+  { id: 'alloy',   label: 'Alloy — 中性·平衡' },
+]
+const narrationVoiceGroups = computed(() => {
+  if (ttsModels.value.length === 0)
+    return [{ key: 'openai', label: 'OpenAI', voices: NARRATION_FALLBACK_VOICES }]
+  const map: Record<string, { key: string; label: string; voices: { id: string; label: string }[] }> = {}
+  for (const m of ttsModels.value) {
+    const key = m.provider?.name ?? 'unknown'
+    const label = m.provider?.display_name ?? key
+    if (!map[key]) map[key] = { key, label, voices: [] }
+    map[key].voices.push({ id: m.name, label: m.display_name || m.name })
+  }
+  return Object.values(map)
+})
+
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
 const novelChapterCount = computed(() => chapters.value.length)
@@ -2485,6 +2506,21 @@ function getSkillStatusLabel(status: string): string {
               <span>自由</span><span>平衡</span><span>严格</span>
             </div>
           </div>
+        </div>
+
+        <!-- 旁白音色 -->
+        <div>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">旁白音色</label>
+          <select :value="novel?.narration_voice ?? ''" class="input"
+            @change="(e) => novelStore.updateNovel(novelId, { narration_voice: (e.target as HTMLSelectElement).value })">
+            <option value="">自动（alloy）</option>
+            <template v-for="group in narrationVoiceGroups" :key="group.key">
+              <optgroup :label="group.label">
+                <option v-for="v in group.voices" :key="v.id" :value="v.id">{{ v.label }}</option>
+              </optgroup>
+            </template>
+          </select>
+          <p class="text-xs text-gray-400 mt-1">无角色专属配音时用此音色朗读旁白，选项与角色配音设置一致</p>
         </div>
       </div>
 
