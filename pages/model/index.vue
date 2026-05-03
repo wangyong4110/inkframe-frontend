@@ -92,6 +92,8 @@ const PROVIDER_OPTIONS = [
   // ── 视频生成 ──────────────────────────────────────────────────────────────
   { name: 'kling',             label: '可灵（快手）',         endpoint: 'https://api.klingai.com',                                         needsSecretKey: false },
   { name: 'seedance',          label: 'Seedance（字节跳动）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                        needsSecretKey: false },
+  // ── 语音合成 ──────────────────────────────────────────────────────────────
+  { name: 'doubao-speech',     label: '豆包语音合成',          endpoint: 'https://openspeech.bytedance.com/api/v3',                        needsSecretKey: false },
   // ── 自定义 ────────────────────────────────────────────────────────────────
   { name: 'custom',            label: '自定义',              endpoint: '',                                                                  needsSecretKey: false },
 ]
@@ -191,6 +193,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   azure:              'bg-sky-100     text-sky-700',
   'volcengine-visual':'bg-amber-100   text-amber-700',
   seedance:           'bg-violet-100  text-violet-700',
+  'doubao-speech':    'bg-teal-100    text-teal-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
