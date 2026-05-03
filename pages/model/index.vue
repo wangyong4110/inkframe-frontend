@@ -17,6 +17,7 @@ const {
   deleteProvider,
   getModels,
   testProvider: apiTestProvider,
+  fetchProviderModels,
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
@@ -33,38 +34,58 @@ const providerLoading = ref(false)
 const testingId = ref<number | null>(null)
 const revealedKeys = ref<Set<number>>(new Set())
 
+// 从云商接口获取模型列表
+const providerModelList = ref<string[]>([])
+const fetchingModels = ref(false)
+
+async function doFetchProviderModels() {
+  const endpoint = providerForm.value.api_endpoint
+  const apiKey = providerForm.value.api_key
+  const providerId = editingProvider.value?.id
+
+  if (!endpoint) { toast.error('请先填写 API 端点'); return }
+  if (!apiKey && !providerId) { toast.error('请先填写 API Key'); return }
+
+  fetchingModels.value = true
+  providerModelList.value = []
+  try {
+    const payload: Record<string, unknown> = { endpoint }
+    if (providerId) payload.provider_id = providerId
+    if (apiKey) payload.api_key = apiKey
+    const res = await fetchProviderModels(payload as { provider_id?: number; endpoint?: string; api_key?: string })
+    providerModelList.value = res.data?.models ?? []
+    if (providerModelList.value.length === 0) toast.warning('未获取到模型列表，请检查端点和密钥')
+  } catch (e: any) {
+    toast.error(e?.message || '获取模型列表失败')
+  } finally {
+    fetchingModels.value = false
+  }
+}
+
 const providerForm = ref({
   name: '', display_name: '', type: 'llm',
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
 })
 
 // needsSecretKey: true 表示需要 AccessKey + SecretKey 双密钥（如火山引擎 AK/SK）
+// 供应商预设列表（按平台/公司，不区分模型类型）
+// name 作为系统内部唯一标识，endpoint 自动填充，needsSecretKey 表示是否需要 AK/SK 双密钥
 const PROVIDER_OPTIONS = [
-  // LLM 提供商
-  { name: 'openai',             label: 'OpenAI',                  endpoint: 'https://api.openai.com/v1',                                    type: 'llm',   needsSecretKey: false },
-  { name: 'anthropic',          label: 'Anthropic',               endpoint: 'https://api.anthropic.com',                                    type: 'llm',   needsSecretKey: false },
-  { name: 'google',             label: 'Google',                  endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      type: 'llm',   needsSecretKey: false },
-  { name: 'doubao',             label: '豆包 LLM（火山方舟）',    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                    type: 'llm',   needsSecretKey: false },
-  { name: 'deepseek',           label: 'DeepSeek',                endpoint: 'https://api.deepseek.com/v1',                                  type: 'llm',   needsSecretKey: false },
-  { name: 'qwen',               label: '通义千问（阿里云）',      endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           type: 'llm',   needsSecretKey: false },
-  { name: 'moonshot',           label: 'Moonshot（Kimi）',        endpoint: 'https://api.moonshot.cn/v1',                                   type: 'llm',   needsSecretKey: false },
-  { name: 'zhipu',              label: '智谱 AI',                 endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         type: 'llm',   needsSecretKey: false },
-  { name: 'siliconflow',        label: '硅基流动',                endpoint: 'https://api.siliconflow.cn/v1',                               type: 'llm',   needsSecretKey: false },
-  { name: 'stepfun',            label: '阶跃星辰',                endpoint: 'https://api.stepfun.com/v1',                                  type: 'llm',   needsSecretKey: false },
-  { name: 'minimax',            label: 'MiniMax',                 endpoint: 'https://api.minimax.chat/v1',                                  type: 'llm',   needsSecretKey: false },
-  { name: 'baidu',              label: '百度文心',                endpoint: 'https://qianfan.baidubce.com/v2',                             type: 'llm',   needsSecretKey: false },
-  { name: 'azure',              label: 'Azure OpenAI',            endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', type: 'llm', needsSecretKey: false },
-  // 图像生成提供商
-  { name: 'volcengine-visual',  label: '即梦AI Visual（火山引擎）', endpoint: '',                                                          type: 'image', needsSecretKey: true  },
-  { name: 'volcengine-ark-img', label: 'Seedream 图像（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'image', needsSecretKey: false },
-  // 视频生成提供商
-  { name: 'seedance',           label: 'Seedance 视频（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'video', needsSecretKey: false },
-  // 语音合成提供商
-  { name: 'doubao-tts',         label: '豆包语音（火山方舟）',      endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  type: 'voice', needsSecretKey: false },
-  { name: 'openai-tts',         label: 'OpenAI TTS',               endpoint: 'https://api.openai.com/v1',                                  type: 'voice', needsSecretKey: false },
-  { name: 'minimax-tts',        label: 'MiniMax 语音',             endpoint: 'https://api.minimax.chat/v1',                                type: 'voice', needsSecretKey: false },
-  // 自定义
-  { name: 'custom',             label: '自定义',                  endpoint: '',                                                            type: 'llm',   needsSecretKey: false },
+  { name: 'openai',            label: 'OpenAI',            endpoint: 'https://api.openai.com/v1',                                    needsSecretKey: false },
+  { name: 'anthropic',         label: 'Anthropic',         endpoint: 'https://api.anthropic.com',                                    needsSecretKey: false },
+  { name: 'google',            label: 'Google',            endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      needsSecretKey: false },
+  { name: 'azure',             label: 'Azure OpenAI',      endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', needsSecretKey: false },
+  { name: 'doubao',            label: '火山方舟（字节跳动）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  needsSecretKey: false },
+  { name: 'volcengine-visual', label: '即梦AI（火山引擎）', endpoint: '',                                                            needsSecretKey: true  },
+  { name: 'deepseek',          label: 'DeepSeek',          endpoint: 'https://api.deepseek.com/v1',                                  needsSecretKey: false },
+  { name: 'qwen',              label: '通义千问（阿里云）', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           needsSecretKey: false },
+  { name: 'moonshot',          label: 'Moonshot（Kimi）',  endpoint: 'https://api.moonshot.cn/v1',                                   needsSecretKey: false },
+  { name: 'zhipu',             label: '智谱 AI',           endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         needsSecretKey: false },
+  { name: 'siliconflow',       label: '硅基流动',          endpoint: 'https://api.siliconflow.cn/v1',                               needsSecretKey: false },
+  { name: 'stepfun',           label: '阶跃星辰',          endpoint: 'https://api.stepfun.com/v1',                                  needsSecretKey: false },
+  { name: 'minimax',           label: 'MiniMax',           endpoint: 'https://api.minimax.chat/v1',                                  needsSecretKey: false },
+  { name: 'baidu',             label: '百度文心',          endpoint: 'https://qianfan.baidubce.com/v2',                             needsSecretKey: false },
+  { name: 'custom',            label: '自定义',            endpoint: '',                                                            needsSecretKey: false },
 ]
 
 // 当前选中提供商是否需要 AK/SK 双密钥
@@ -73,13 +94,57 @@ const selectedProviderNeedsSecretKey = computed(() => {
   return opt?.needsSecretKey ?? false
 })
 
+// 当前选中供应商的默认端点（用于 placeholder 和自动填充）
+const selectedProviderEndpoint = computed(() => {
+  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  return opt?.endpoint ?? ''
+})
+
+// 根据"提供商标识-类型"规则生成显示名称（仅新建时自动填充）
+function autoDisplayName() {
+  if (editingProvider.value) return  // 编辑已有提供商时不覆盖
+  const name = providerForm.value.name
+  const type = providerForm.value.type
+  if (name) providerForm.value.display_name = type ? `${name}-${type}` : name
+}
+
 function onProviderSelect() {
   const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
   if (!opt || opt.name === 'custom') return
-  if (!providerForm.value.display_name) providerForm.value.display_name = opt.label
-  if (!providerForm.value.api_endpoint) providerForm.value.api_endpoint = opt.endpoint
-  providerForm.value.type = opt.type
+  // 切换供应商时始终更新端点为该供应商的默认值，用户可在下方输入框中覆盖
+  providerForm.value.api_endpoint = opt.endpoint
+  // 自动生成显示名称
+  autoDisplayName()
 }
+
+// 类型变化时同步更新显示名称
+watch(() => providerForm.value.type, autoDisplayName)
+
+// 填完端点和 Key 后自动获取模型列表（静默，失败则回退手动输入）
+let _autoFetchTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  [() => providerForm.value.api_endpoint, () => providerForm.value.api_key],
+  ([endpoint, apiKey]) => {
+    if (_autoFetchTimer) { clearTimeout(_autoFetchTimer); _autoFetchTimer = null }
+    providerModelList.value = []
+    const providerId = editingProvider.value?.id
+    if (!endpoint || (!apiKey && !providerId)) return
+    _autoFetchTimer = setTimeout(async () => {
+      fetchingModels.value = true
+      try {
+        const payload: Record<string, unknown> = { endpoint }
+        if (providerId) payload.provider_id = providerId
+        if (apiKey) payload.api_key = apiKey
+        const res = await fetchProviderModels(payload as { provider_id?: number; endpoint?: string; api_key?: string })
+        providerModelList.value = res.data?.models ?? []
+      } catch {
+        // 静默失败，回退手动输入
+      } finally {
+        fetchingModels.value = false
+      }
+    }, 800)
+  }
+)
 
 const PROVIDER_COLORS: Record<string, string> = {
   openai:             'bg-emerald-100 text-emerald-700',
@@ -111,12 +176,16 @@ async function loadProviders() {
 function openAddProvider() {
   editingProvider.value = null
   providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true }
+  providerModelList.value = []
   showProviderModal.value = true
 }
 function openEditProvider(p: ModelProvider) {
   editingProvider.value = p
-  providerForm.value = { name: p.name, display_name: p.display_name || '', type: p.type || 'llm',
+  const knownTypes = ['llm', 'image', 'video', 'voice', 'embedding']
+  const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
+  providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
     api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active }
+  providerModelList.value = []
   showProviderModal.value = true
 }
 async function submitProviderForm() {
@@ -570,7 +639,7 @@ watch(activeTab, (tab) => {
                 </span>
                 <span v-else>测试连接</span>
               </button>
-              <button class="btn-ghost text-xs px-3 py-1.5" :disabled="p.tenant_id === 0" @click="openEditProvider(p)">编辑</button>
+              <button class="btn-ghost text-xs px-3 py-1.5" @click="openEditProvider(p)">编辑</button>
               <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" :disabled="p.tenant_id === 0" @click="handleDeleteProvider(p.id)">删除</button>
             </div>
           </div>
@@ -585,7 +654,7 @@ watch(activeTab, (tab) => {
             <button v-if="p.api_key && p.api_key !== '—'" class="text-xs text-gray-400 hover:text-gray-600 underline" @click="toggleReveal(p.id)">
               {{ revealedKeys.has(p.id) ? '隐藏' : '显示' }}
             </button>
-            <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" :disabled="p.tenant_id === 0" @click="openEditProvider(p)">更改密钥</button>
+            <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" @click="openEditProvider(p)">更改密钥</button>
           </div>
 
           <!-- Model list toggle -->
@@ -763,12 +832,9 @@ watch(activeTab, (tab) => {
                 <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
                 <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
                   <option value="" disabled>请选择提供商</option>
-                  <option v-for="opt in PROVIDER_OPTIONS" :key="opt.name" :value="opt.name">{{ opt.label }}（{{ opt.name }}）</option>
+                  <option v-for="opt in PROVIDER_OPTIONS" :key="opt.name" :value="opt.name">{{ opt.label }}</option>
                 </select>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
-                <input v-model="providerForm.display_name" type="text" class="input" placeholder="如：OpenAI" />
+                <p v-if="providerForm.name" class="mt-1 text-xs text-gray-400 font-mono">标识：{{ providerForm.name }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">类型</label>
@@ -781,9 +847,15 @@ watch(activeTab, (tab) => {
                 </select>
               </div>
               <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
+                <input v-model="providerForm.display_name" type="text" class="input" placeholder="如：doubao-voice" />
+                <p class="mt-1 text-xs text-gray-400">默认按「提供商标识-类型」生成，可自定义</p>
+              </div>
+              <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">API 端点</label>
-                <input v-model="providerForm.api_endpoint" type="url" class="input font-mono text-sm" placeholder="https://api.openai.com/v1" />
-                <p class="mt-1 text-xs text-gray-400">留空则使用提供商默认端点</p>
+                <input v-model="providerForm.api_endpoint" type="url" class="input font-mono text-sm"
+                  :placeholder="selectedProviderEndpoint || 'https://api.example.com/v1'" />
+                <p class="mt-1 text-xs text-gray-400">已预填供应商默认端点，如需使用代理或自定义地址可直接修改</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
@@ -806,9 +878,37 @@ watch(activeTab, (tab) => {
                 <p class="mt-1 text-xs text-gray-400">即梦AI Visual API 使用 AccessKey + SecretKey 进行 HMAC-SHA256 签名鉴权</p>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">默认模型</label>
-                <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm" placeholder="gpt-4o / claude-3-5-sonnet-20241022" />
-                <p class="mt-1 text-xs text-gray-400">生成请求中未指定模型时使用此值</p>
+                <div class="flex items-center justify-between mb-1.5">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">默认模型</label>
+                  <button type="button"
+                    class="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                    :disabled="fetchingModels"
+                    @click="doFetchProviderModels">
+                    <svg v-if="fetchingModels" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    {{ fetchingModels ? '获取中...' : '从接口获取' }}
+                  </button>
+                </div>
+                <!-- 已获取到模型列表时：下拉选择 + 保留手动输入 -->
+                <div v-if="providerModelList.length > 0" class="space-y-1.5">
+                  <select v-model="providerForm.api_version" class="input font-mono text-sm">
+                    <option value="">（不设置默认模型）</option>
+                    <option v-for="m in providerModelList" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                  <p class="text-xs text-gray-400">共 {{ providerModelList.length }} 个模型，或手动输入：
+                    <button type="button" class="underline text-primary-600" @click="providerModelList = []">切换手动</button>
+                  </p>
+                </div>
+                <!-- 默认：文本框手动输入 -->
+                <div v-else>
+                  <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm" placeholder="gpt-4o / claude-3-5-sonnet-20241022" />
+                  <p class="mt-1 text-xs text-gray-400">生成请求中未指定模型时使用此值，或点击右上角按钮从接口获取</p>
+                </div>
               </div>
               <div class="flex items-center gap-3 py-1">
                 <button type="button" role="switch" :aria-checked="providerForm.is_active"

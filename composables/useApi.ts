@@ -551,6 +551,12 @@ export const useModelApi = () => {
       method: 'POST',
     })
 
+  const fetchProviderModels = (data: { provider_id?: number; endpoint?: string; api_key?: string }) =>
+    request<ApiResponse<{ models: string[] }>>('/model-providers/fetch-models', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
   return {
     getProviders,
     getCapableProviders,
@@ -565,6 +571,7 @@ export const useModelApi = () => {
     updateProvider,
     deleteProvider,
     testProvider,
+    fetchProviderModels,
   }
 }
 
