@@ -176,7 +176,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string) {
+    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number) {
       this.generating = true
       this.error = null
       this.storyboardTaskId = null
@@ -184,9 +184,11 @@ export const useVideoStore = defineStore('video', {
 
       try {
         const api = useVideoApi()
-        const body: { provider?: string; user_prompt?: string } = {}
+        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number } = {}
         if (provider) body.provider = provider
         if (userPrompt?.trim()) body.user_prompt = userPrompt.trim()
+        if (pacing) body.pacing = pacing
+        if (targetDuration) body.target_duration = targetDuration
         const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')

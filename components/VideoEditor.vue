@@ -254,12 +254,47 @@ watch(shots, (list) => {
 }, { immediate: true })
 
 // ──────── Script phase ────────
+const pacing = ref<'slow' | 'normal' | 'fast'>('normal')
+const targetDuration = ref<number>(0) // 0 = 自动
+
+// 从 video 初始化节奏/时长（刷新后还原上次所选）
+watch(video, (v) => {
+  if (v) {
+    pacing.value = v.pacing ?? 'normal'
+    targetDuration.value = v.target_duration ?? 0
+  }
+}, { immediate: true })
+
+const pacingOptions = [
+  { value: 'slow' as const,   label: '慢' },
+  { value: 'normal' as const, label: '标准' },
+  { value: 'fast' as const,   label: '快' },
+]
+const durationOptions = [
+  { value: 0,   label: '自动' },
+  { value: 60,  label: '1分钟' },
+  { value: 180, label: '3分钟' },
+  { value: 300, label: '5分钟' },
+]
+const avgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[pacing.value]))
+const estimatedShots = computed(() =>
+  targetDuration.value > 0
+    ? Math.max(3, Math.round(targetDuration.value / avgShotDur.value))
+    : '自动'
+)
+
 async function handleGenerateStoryboard(userPrompt?: string) {
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
   try {
-    await videoStore.generateStoryboard(props.videoId, props.llmProvider || undefined, userPrompt)
+    await videoStore.generateStoryboard(
+      props.videoId,
+      props.llmProvider || undefined,
+      userPrompt,
+      pacing.value !== 'normal' ? pacing.value : undefined,
+      targetDuration.value || undefined,
+    )
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
@@ -588,10 +623,45 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
         </svg>
         <h3 class="text-base font-semibold text-gray-700 dark:text-gray-300 mb-1.5">还没有分镜脚本</h3>
-        <p class="text-sm text-gray-400 dark:text-gray-500 mb-6">
+        <p class="text-sm text-gray-400 dark:text-gray-500 mb-4">
           点击「生成分镜脚本」，AI 将自动从章节内容提取镜头<br>
           生成后可逐条编辑，确认无误再生成素材
         </p>
+        <!-- 分镜生成控制 -->
+        <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 text-sm">
+          <!-- 节奏 -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500 dark:text-gray-400 text-xs">节奏</span>
+            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button v-for="p in pacingOptions" :key="p.value"
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="pacing === p.value
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="pacing = p.value">
+                {{ p.label }}
+              </button>
+            </div>
+          </div>
+          <!-- 时长 -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500 dark:text-gray-400 text-xs">时长</span>
+            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button v-for="d in durationOptions" :key="d.value"
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="targetDuration === d.value
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="targetDuration = d.value">
+                {{ d.label }}
+              </button>
+            </div>
+          </div>
+          <!-- 预计镜头数提示 -->
+          <span class="text-xs text-gray-400 dark:text-gray-500">
+            预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ estimatedShots }}</span> 个镜头
+          </span>
+        </div>
         <button class="btn-primary" :disabled="generatingStoryboard" @click="handleGenerateStoryboard">
           生成分镜脚本
         </button>
@@ -755,6 +825,14 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   <div class="flex-shrink-0 flex flex-col items-end gap-2">
                     <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="SHOT_STATUS_COLORS[shot.status]">
                       {{ SHOT_STATUS_LABELS[shot.status] }}
+                    </span>
+                    <!-- 失败原因提示 -->
+                    <span
+                      v-if="shot.status === 'failed' && shot.error_message"
+                      class="text-[10px] text-red-400 dark:text-red-500 max-w-[160px] text-right leading-snug"
+                      :title="shot.error_message"
+                    >
+                      {{ shot.error_message.length > 60 ? shot.error_message.slice(0, 60) + '…' : shot.error_message }}
                     </span>
                     <button
                       v-if="shot.status !== 'generating'"

@@ -424,7 +424,7 @@ export const useVideoApi = () => {
   const deleteVideo = (id: number) =>
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
-  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string }) =>
+  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number }) =>
     request<{ task_id: string; message: string; data: { task_id: string } }>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,

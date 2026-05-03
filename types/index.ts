@@ -171,6 +171,8 @@ export interface Video {
   resolution: string
   aspect_ratio: string
   art_style?: string
+  pacing?: 'slow' | 'normal' | 'fast'
+  target_duration?: number               // 秒，0 或 undefined = 自动
   total_shots: number
   url?: string
   created_at: string
@@ -201,6 +203,7 @@ export interface StoryboardShot {
   video_url?: string
   audio_path?: string
   audio_url?: string  // 后端转换后的可播放 URL（file:// 已转为 API 端点）
+  error_message?: string  // 生成失败原因
   scene_anchor_id?: number
   character_ids?: number[]
 }
