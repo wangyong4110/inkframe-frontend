@@ -342,9 +342,13 @@ async function extractAllAnchors() {
     const api = useSceneAnchorApi()
     const res = await api.aiExtractFromNovel(novelId)
     const taskId = (res as any)?.task_id ?? (res as any)?.data?.task_id
-    taskStore.trackTask(taskId, async () => {
-      await sceneAnchorStore.fetchAnchors(novelId)
+    taskStore.trackTask(taskId, async (task) => {
       extractingAllAnchors.value = false
+      if (task?.status === 'failed') {
+        toast.error('场景锚点提取失败：' + (task.error || '未知错误'))
+        return
+      }
+      await sceneAnchorStore.fetchAnchors(novelId)
       toast.success('场景锚点提取完成')
     })
   } catch (e: any) {
@@ -498,9 +502,13 @@ async function handleAICharacters() {
   try {
     const res = await characterApi.aiBatchGenerate(novelId)
     const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
-    taskStore.trackTask(taskId, async () => {
-      await characterStore.fetchCharacters(novelId)
+    taskStore.trackTask(taskId, async (task) => {
       generatingCharacters.value = false
+      if (task?.status === 'failed') {
+        toast.error('角色生成失败：' + (task.error || '未知错误'))
+        return
+      }
+      await characterStore.fetchCharacters(novelId)
       toast.success('角色已生成/更新')
     })
   } catch (e: any) {
@@ -514,9 +522,13 @@ async function handleAIItems() {
   try {
     const res = await itemApiForAI.aiExtract(novelId)
     const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
-    taskStore.trackTask(taskId, async () => {
-      await fetchItems()
+    taskStore.trackTask(taskId, async (task) => {
       extractingItems.value = false
+      if (task?.status === 'failed') {
+        toast.error('物品提取失败：' + (task.error || '未知错误'))
+        return
+      }
+      await fetchItems()
       toast.success('物品已提取/更新')
     })
   } catch (e: any) {
@@ -530,9 +542,13 @@ async function handleAIPlotPoints() {
   try {
     const res = await plotPointApi.aiExtractFromNovel(novelId)
     const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
-    taskStore.trackTask(taskId, async () => {
-      await fetchPlotPoints(1)
+    taskStore.trackTask(taskId, async (task) => {
       extractingPlotPoints.value = false
+      if (task?.status === 'failed') {
+        toast.error('剧情点提取失败：' + (task.error || '未知错误'))
+        return
+      }
+      await fetchPlotPoints(1)
       toast.success('剧情点已提取/更新')
     })
   } catch (e: any) {
@@ -701,6 +717,8 @@ function startAnalysisPoll() {
           ])
           fetchItems()
           window.location.reload()
+        } else {
+          toast.error('AI 分析失败：' + (analysisStatus.value.error || '未知错误'))
         }
       }
     } catch { /* ignore transient errors */ }
