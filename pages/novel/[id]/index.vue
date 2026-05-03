@@ -20,12 +20,15 @@ const videoStore = useVideoStore()
 const toast = useToast()
 const styleApi = useStyleApi()
 
-const activeTab = ref('chapters')
+const validTabKeys = new Set(['chapters', 'characters', 'items', 'skills', 'worldview', 'plot_points', 'scene_anchors', 'settings'])
+const initialTab = route.query.tab as string
+const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
 
 function switchTab(key: string) {
   activeTab.value = key
   if (key === 'chapters') chapterPage.value = 1
+  router.replace({ query: { ...route.query, tab: key } })
   nextTick(() => {
     tabSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
@@ -36,8 +39,11 @@ const generatingOutline = ref(false)
 const chapterPage = ref(1)
 const CHAPTER_PAGE_SIZE = 20
 const generatingCharacters = ref(false)
+const batchGeneratingCharImages = ref(false)
 const extractingItems = ref(false)
+const batchGeneratingItemImages = ref(false)
 const extractingPlotPoints = ref(false)
+const batchGeneratingAnchorImages = ref(false)
 const showDeleteNovelConfirm = ref(false)
 const showDeleteChapterConfirm = ref(false)
 const showDirPicker = ref(false)
@@ -534,6 +540,70 @@ async function handleAIItems() {
   } catch (e: any) {
     extractingItems.value = false
     toast.error('提取失败：' + (e.message || ''))
+  }
+}
+
+async function handleBatchCharacterImages() {
+  batchGeneratingCharImages.value = true
+  try {
+    const res = await characterApi.batchGenerateImages(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async (task) => {
+      batchGeneratingCharImages.value = false
+      if (task?.status === 'failed') {
+        toast.error('批量生成图片失败：' + (task.error || '未知错误'))
+        return
+      }
+      const result = task?.result as any
+      toast.success(`角色图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
+      await characterStore.fetchCharacters(novelId)
+    })
+  } catch (e: any) {
+    batchGeneratingCharImages.value = false
+    toast.error('批量生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleBatchItemImages() {
+  batchGeneratingItemImages.value = true
+  try {
+    const res = await itemApiForAI.batchGenerateImages(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async (task) => {
+      batchGeneratingItemImages.value = false
+      if (task?.status === 'failed') {
+        toast.error('批量生成图片失败：' + (task.error || '未知错误'))
+        return
+      }
+      const result = task?.result as any
+      toast.success(`物品图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
+      await fetchItems()
+    })
+  } catch (e: any) {
+    batchGeneratingItemImages.value = false
+    toast.error('批量生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleBatchAnchorImages() {
+  batchGeneratingAnchorImages.value = true
+  try {
+    const anchorApi = useSceneAnchorApi()
+    const res = await anchorApi.batchGenerateRefImages(novelId)
+    const taskId = (res as any)?.data?.task_id ?? (res as any)?.task_id
+    taskStore.trackTask(taskId, async (task) => {
+      batchGeneratingAnchorImages.value = false
+      if (task?.status === 'failed') {
+        toast.error('批量生成参考图失败：' + (task.error || '未知错误'))
+        return
+      }
+      const result = task?.result as any
+      toast.success(`场景参考图生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
+      await sceneAnchorStore.fetchAnchors(novelId)
+    })
+  } catch (e: any) {
+    batchGeneratingAnchorImages.value = false
+    toast.error('批量生成失败：' + (e.message || ''))
   }
 }
 
@@ -1238,7 +1308,7 @@ function getSkillStatusLabel(status: string): string {
           :class="activeTab === tab.key
             ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 -mb-px'
             : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
-          @click="activeTab = tab.key"
+          @click="switchTab(tab.key)"
         >
           {{ tab.label }}
         </button>
@@ -1387,6 +1457,16 @@ function getSkillStatusLabel(status: string): string {
             </svg>
             {{ generatingCharacters ? 'AI 生成中...' : (characters.length > 0 ? 'AI 更新角色' : 'AI 生成角色') }}
           </button>
+          <button class="btn-secondary text-sm" :disabled="batchGeneratingCharImages || characters.length === 0" @click="handleBatchCharacterImages" title="批量为所有角色生成正面图（跳过已有图片的角色）">
+            <svg v-if="batchGeneratingCharImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            {{ batchGeneratingCharImages ? '生成中...' : '批量生成图片' }}
+          </button>
           <NuxtLink to="/character/create" class="btn-primary">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1474,6 +1554,16 @@ function getSkillStatusLabel(status: string): string {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
             {{ extractingItems ? 'AI 提取中...' : (items.length > 0 ? 'AI 更新物品' : 'AI 提取物品') }}
+          </button>
+          <button class="btn-secondary text-sm" :disabled="batchGeneratingItemImages || items.length === 0" @click="handleBatchItemImages" title="批量为所有物品生成图片（跳过已有图片的物品）">
+            <svg v-if="batchGeneratingItemImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            {{ batchGeneratingItemImages ? '生成中...' : '批量生成图片' }}
           </button>
           <button class="btn-primary" @click="showItemModal = true">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1913,6 +2003,13 @@ function getSkillStatusLabel(status: string): string {
         <button class="btn btn-primary text-sm" :disabled="extractingAnchors || extractingAllAnchors" @click="extractAnchors">
           <span v-if="extractingAllAnchors || extractingAnchors">提取中…</span>
           <span v-else>AI 提取</span>
+        </button>
+        <button class="btn btn-secondary text-sm" :disabled="batchGeneratingAnchorImages || sceneAnchorStore.anchors.length === 0" @click="handleBatchAnchorImages" title="批量为所有锚点生成参考图（跳过已有参考图的锚点）">
+          <svg v-if="batchGeneratingAnchorImages" class="w-4 h-4 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <span>{{ batchGeneratingAnchorImages ? '生成中...' : '批量生成参考图' }}</span>
         </button>
         <button class="btn btn-secondary text-sm ml-auto" @click="startAnchorCreate">+ 手动新建</button>
       </div>
