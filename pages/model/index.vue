@@ -100,19 +100,27 @@ const selectedProviderNeedsSecretKey = computed(() => {
 })
 
 // 按提供商定制凭证字段的标签 / placeholder / 说明
-const CREDENTIAL_META: Record<string, { akLabel: string; akPlaceholder: string; skLabel: string; skPlaceholder: string; skHint: string }> = {
+type CredentialMeta = {
+  akLabel: string; akPlaceholder: string
+  skLabel: string; skPlaceholder: string; skHint: string
+  versionLabel?: string; versionPlaceholder?: string; versionHint?: string
+}
+const CREDENTIAL_META: Record<string, CredentialMeta> = {
   'volcengine-visual': {
     akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
     skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
     skHint: '即梦AI Visual API 使用 AccessKey + SecretKey 进行 HMAC-SHA256 签名鉴权',
   },
   'doubao-speech-v1': {
-    akLabel: 'App ID', akPlaceholder: '火山引擎应用 App ID',
+    akLabel: 'App ID', akPlaceholder: '火山引擎应用 App ID（如 6762154031）',
     skLabel: 'Access Token', skPlaceholder: '火山引擎 Access Token',
-    skHint: '豆包语音合成 V1 使用 App ID + Access Token 鉴权，在火山引擎控制台「语音技术」创建应用后获取',
+    skHint: '豆包语音合成 V1 使用 App ID + Access Token 鉴权，在火山引擎方舟控制台「语音技术」页面获取',
+    versionLabel: 'Cluster（集群）',
+    versionPlaceholder: 'volcano_mega',
+    versionHint: 'volcano_mega：豆包2.0大模型音色（_uranus_bigtts / _tob）；volcano_tts：经典音色（BV001_streaming 等）',
   },
 }
-const credentialMeta = computed(() => {
+const credentialMeta = computed<CredentialMeta>(() => {
   const name = editingProvider.value?.name ?? providerForm.value.name
   return CREDENTIAL_META[name] ?? {
     akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
@@ -991,7 +999,7 @@ watch(activeTab, (tab) => {
               </div>
               <div>
                 <div class="flex items-center justify-between mb-1.5">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">默认模型</label>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ credentialMeta.versionLabel || '默认模型' }}</label>
                   <span v-if="fetchingModels" class="flex items-center gap-1 text-xs text-gray-400">
                     <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -1033,8 +1041,11 @@ watch(activeTab, (tab) => {
                 </div>
                 <!-- 默认：文本框手动输入 -->
                 <div v-else>
-                  <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm" placeholder="gpt-4o / claude-3-5-sonnet-20241022" />
-                  <p class="mt-1 text-xs text-gray-400">生成请求中未指定模型时使用此值，填写端点和 Key 后自动获取</p>
+                  <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm"
+                    :placeholder="credentialMeta.versionPlaceholder || 'gpt-4o / claude-3-5-sonnet-20241022'" />
+                  <p class="mt-1 text-xs text-gray-400">
+                    {{ credentialMeta.versionHint || '生成请求中未指定模型时使用此值，填写端点和 Key 后自动获取' }}
+                  </p>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">
