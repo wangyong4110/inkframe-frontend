@@ -277,6 +277,7 @@ export interface ProviderTemplate {
 export interface AIModel {
   id: number
   provider_id: number
+  provider?: ModelProvider
   name: string
   display_name: string
   description?: string
