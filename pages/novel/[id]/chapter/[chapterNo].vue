@@ -11,13 +11,14 @@ const chapterStore = useChapterStore()
 const novelStore = useNovelStore()
 const characterStore = useCharacterStore()
 const videoStore = useVideoStore()
+const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 
 const saving = ref(false)
 const generating = ref(false)
 
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
-type PageMode = 'outline' | 'write' | 'character' | 'script'
+type PageMode = 'outline' | 'write' | 'character' | 'scenes' | 'script'
 const pageMode = ref<PageMode>('outline')
 
 function pageModeClass(mode: PageMode) {
@@ -165,6 +166,8 @@ onMounted(async () => {
     await switchToScript()
   } else if (tabParam === 'character') {
     switchToCharacter()
+  } else if (tabParam === 'scenes') {
+    await switchToScenes()
   } else if (tabParam === 'write' || tabParam === 'outline') {
     pageMode.value = tabParam as PageMode
   }
@@ -415,11 +418,98 @@ function switchToCharacter() {
   if (chapterItems.value.length === 0) fetchChapterItems()
 }
 
+async function switchToScenes() {
+  pageMode.value = 'scenes'
+  sceneAnchorStore.fetchAnchors(novelId)
+  fetchShotsForChapter()
+}
+
+// ── 场景锚点管理（场景管理 Tab）──────────────────────────────────────────────
+const anchors = computed(() => sceneAnchorStore.anchors)
+const showAnchorForm = ref(false)
+const editingAnchorId = ref<number | null>(null)
+const anchorForm = ref({ name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' })
+const savingAnchor = ref(false)
+
+function startAnchorCreate() {
+  editingAnchorId.value = null
+  anchorForm.value = { name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' }
+  showAnchorForm.value = true
+}
+
+function startAnchorEdit(anchor: any) {
+  editingAnchorId.value = anchor.id
+  anchorForm.value = {
+    name: anchor.name, type: anchor.type || 'interior',
+    description: anchor.description || '', prompt_lock: anchor.prompt_lock || '',
+    style_tokens: anchor.style_tokens || '', notes: anchor.notes || '',
+  }
+  showAnchorForm.value = true
+}
+
+async function saveAnchor() {
+  if (!anchorForm.value.name) { toast.error('请输入场景名称'); return }
+  savingAnchor.value = true
+  try {
+    if (editingAnchorId.value) {
+      await sceneAnchorStore.updateAnchor(editingAnchorId.value, anchorForm.value)
+    } else {
+      await sceneAnchorStore.createAnchor(novelId, anchorForm.value)
+    }
+    showAnchorForm.value = false
+    toast.success(editingAnchorId.value ? '场景已更新' : '场景已创建')
+  } catch (e: any) {
+    toast.error(e.message || '保存失败')
+  } finally {
+    savingAnchor.value = false
+  }
+}
+
+async function deleteAnchor(id: number) {
+  if (!confirm('确定删除该场景锚点？')) return
+  try {
+    await sceneAnchorStore.deleteAnchor(id)
+    toast.success('已删除')
+  } catch (e: any) {
+    toast.error(e.message || '删除失败')
+  }
+}
+
+async function handleSetShotAnchor(shot: any, anchorId: number | null) {
+  if (!shotsVideoId.value) return
+  try {
+    const api = useSceneAnchorApi()
+    await api.setShotAnchor(shotsVideoId.value, shot.id, anchorId)
+    fetchShotsForChapter()
+  } catch (e: any) {
+    toast.error('绑定失败：' + (e.message || ''))
+  }
+}
+
 // currentVideoId: null = empty state, number = show VideoEditor
 const currentVideoId = ref<number | null>(null)
 const videoEditorRef = ref<any>(null)
 const generatingScript = ref(false)
 const scriptUserPrompt = ref('')
+const scriptPacing = ref<'slow' | 'normal' | 'fast'>('normal')
+const scriptTargetDuration = ref<number>(0)
+const pacingOptions = [
+  { value: 'slow' as const, label: '慢' },
+  { value: 'normal' as const, label: '标准' },
+  { value: 'fast' as const, label: '快' },
+]
+const durationOptions = [
+  { value: 0, label: '自动' },
+  { value: 60, label: '1分钟' },
+  { value: 180, label: '3分钟' },
+  { value: 300, label: '5分钟' },
+]
+const scriptAvgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[scriptPacing.value]))
+const scriptEstimatedShots = computed(() =>
+  scriptTargetDuration.value > 0
+    ? Math.max(3, Math.round(scriptTargetDuration.value / scriptAvgShotDur.value))
+    : '自动'
+)
 
 async function switchToScript() {
   pageMode.value = 'script'
@@ -431,6 +521,9 @@ async function switchToScript() {
 
 async function handleGenerateScript() {
   if (!chapter.value) return
+  const prompt = scriptUserPrompt.value || undefined
+  const pacing = scriptPacing.value !== 'normal' ? scriptPacing.value : undefined
+  const duration = scriptTargetDuration.value || undefined
   if (!currentVideoId.value) {
     // Auto-create project with defaults, then generate
     generatingScript.value = true
@@ -440,14 +533,14 @@ async function handleGenerateScript() {
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
-      videoEditorRef.value?.generateStoryboard(scriptUserPrompt.value || undefined)
+      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration)
     } catch (e: any) {
       toast.error('创建失败：' + (e.message || '未知错误'))
     } finally {
       generatingScript.value = false
     }
   } else {
-    videoEditorRef.value?.generateStoryboard(scriptUserPrompt.value || undefined)
+    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration)
   }
 }
 
@@ -706,6 +799,7 @@ async function fetchShotsForChapter() {
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
+          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
           <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">脚本</button>
         </div>
       </div>
@@ -1015,6 +1109,113 @@ async function fetchShotsForChapter() {
           </div>
         </div>
 
+        <!-- ─ 场景管理模式 ─ -->
+        <div v-else-if="pageMode === 'scenes'" class="h-full overflow-auto">
+          <div class="max-w-3xl mx-auto px-8 py-10 space-y-6">
+
+            <!-- 场景锚点库 -->
+            <div class="card p-5">
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h3 class="font-semibold text-gray-900 dark:text-white">场景锚点库</h3>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">锁定场景视觉描述，确保跨镜头布景一致</p>
+                </div>
+                <button class="btn-primary text-sm" @click="startAnchorCreate">+ 新建场景</button>
+              </div>
+
+              <!-- 新建/编辑表单 -->
+              <div v-if="showAnchorForm" class="mb-5 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
+                    <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
+                  </div>
+                  <div>
+                    <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">类型</label>
+                    <select v-model="anchorForm.type" class="input w-full text-sm">
+                      <option value="interior">室内</option>
+                      <option value="exterior">室外</option>
+                      <option value="imaginary">虚构/幻境</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
+                  <textarea v-model="anchorForm.description" rows="2" placeholder="用自然语言描述场景外观、氛围…" class="input w-full text-sm resize-none" />
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词（逗号分隔，生成时强制注入）</label>
+                  <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">风格标签</label>
+                  <input v-model="anchorForm.style_tokens" type="text" placeholder="warm lighting, soft focus" class="input w-full text-sm" />
+                </div>
+                <div class="flex gap-2 pt-1">
+                  <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">
+                    {{ savingAnchor ? '保存中…' : (editingAnchorId ? '更新' : '创建') }}
+                  </button>
+                  <button class="btn-outline text-sm" @click="showAnchorForm = false">取消</button>
+                </div>
+              </div>
+
+              <!-- 锚点列表 -->
+              <div v-if="anchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
+                暂无场景锚点，点击「新建场景」创建，或从右侧 AI 助手中提取
+              </div>
+              <div class="space-y-3">
+                <div
+                  v-for="anchor in anchors"
+                  :key="anchor.id"
+                  class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                >
+                  <div class="w-16 h-12 rounded-md overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                    <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
+                    <div v-else class="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md p-1">
+                      <span class="text-xs text-center text-gray-400 leading-tight">首次生成后<br>自动锁定</span>
+                    </div>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-sm text-gray-900 dark:text-white truncate">{{ anchor.name }}</span>
+                      <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{{ anchor.type || 'interior' }}</span>
+                      <span v-if="anchor.ref_image_url" class="text-xs text-amber-600 dark:text-amber-400" title="参考图已锁定">🔒</span>
+                    </div>
+                    <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{{ anchor.description }}</p>
+                    <p v-if="anchor.prompt_lock" class="text-xs text-blue-500 dark:text-blue-400 mt-0.5 truncate font-mono">{{ anchor.prompt_lock }}</p>
+                  </div>
+                  <div class="flex gap-1.5 flex-shrink-0">
+                    <button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" @click="startAnchorEdit(anchor)">编辑</button>
+                    <button class="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" @click="deleteAnchor(anchor.id)">删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 分镜场景绑定（需要有分镜数据） -->
+            <div v-if="chapterShots.length > 0" class="card p-5">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-1">分镜场景绑定</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">为每个镜头指定场景锚点，生成图像时自动注入一致的布景描述</p>
+              <div class="space-y-2">
+                <div v-for="shot in chapterShots" :key="shot.id" class="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                  <span class="text-xs font-mono text-gray-500 w-12 flex-shrink-0">镜 #{{ shot.shot_no }}</span>
+                  <p class="flex-1 text-xs text-gray-600 dark:text-gray-400 truncate">{{ shot.description || '—' }}</p>
+                  <select
+                    :value="shot.scene_anchor_id || ''"
+                    class="input text-xs py-1 h-7 w-36 flex-shrink-0"
+                    @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+                  >
+                    <option value="">未绑定</option>
+                    <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+                  </select>
+                  <span v-if="shot.scene_anchor_id" class="text-xs text-amber-500" title="已绑定场景锚点">🔒</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         <!-- ─ 脚本模式 ─ -->
         <div v-else-if="pageMode === 'script'" class="h-full overflow-auto">
           <!-- Video editor -->
@@ -1039,7 +1240,7 @@ async function fetchShotsForChapter() {
         <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <p class="text-xs font-semibold text-gray-900 dark:text-white">AI 助手</p>
           <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-            {{ pageMode === 'outline' ? '大纲' : pageMode === 'write' ? '写作' : pageMode === 'character' ? '角色' : '脚本' }}
+            {{ pageMode === 'outline' ? '大纲' : pageMode === 'write' ? '写作' : pageMode === 'character' ? '角色' : pageMode === 'scenes' ? '场景' : '脚本' }}
           </p>
         </div>
 
@@ -1345,15 +1546,58 @@ async function fetchShotsForChapter() {
             </div>
           </template>
 
+          <!-- ── 场景管理 AI ── -->
+          <template v-else-if="pageMode === 'scenes'">
+            <div class="p-4 space-y-3">
+              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中 AI 提取场景，或手动创建场景锚点以确保视觉一致性。</p>
+              <button
+                :disabled="extractingChapterAnchors || !chapter?.content"
+                class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors disabled:opacity-50"
+                @click="handleExtractChapterAnchors"
+              >
+                <svg v-if="extractingChapterAnchors" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                {{ extractingChapterAnchors ? 'AI 提取中...' : 'AI 提取场景锚点' }}
+              </button>
+            </div>
+          </template>
+
           <!-- ── 脚本 AI ── -->
           <template v-else-if="pageMode === 'script'">
             <div class="p-4 space-y-4">
+              <!-- 节奏 -->
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">节奏</label>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button
+                    v-for="p in pacingOptions" :key="p.value"
+                    class="flex-1 py-1.5 text-xs transition-colors"
+                    :class="scriptPacing === p.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="scriptPacing = p.value"
+                  >{{ p.label }}</button>
+                </div>
+              </div>
+              <!-- 时长 -->
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">目标时长</label>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button
+                    v-for="d in durationOptions" :key="d.value"
+                    class="flex-1 py-1.5 text-xs transition-colors"
+                    :class="scriptTargetDuration === d.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="scriptTargetDuration = d.value"
+                  >{{ d.label }}</button>
+                </div>
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+                  预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头
+                </p>
+              </div>
               <!-- 用户提示词 -->
               <div>
                 <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">额外要求（可选）</label>
                 <textarea
                   v-model="scriptUserPrompt"
-                  rows="4"
+                  rows="3"
                   placeholder="例如：镜头以第一视角为主，多用近景特写，风格写实…"
                   class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />

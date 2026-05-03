@@ -426,7 +426,7 @@ const tabs = [
   { key: 'skills', label: '技能', icon: 'zap' },
   { key: 'worldview', label: '世界观', icon: 'globe' },
   { key: 'plot_points', label: '剧情点', icon: 'flag' },
-  { key: 'scene_anchors', label: '场景锚点', icon: 'map-pin' },
+  { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -2521,6 +2521,104 @@ function getSkillStatusLabel(status: string): string {
             </template>
           </select>
           <p class="text-xs text-gray-400 mt-1">无角色专属配音时用此音色朗读旁白，选项与角色配音设置一致</p>
+        </div>
+
+        <!-- 字幕配置 -->
+        <div class="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">字幕配置</span>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <span class="text-xs text-gray-500 dark:text-gray-400">启用字幕</span>
+              <div
+                class="relative w-9 h-5 rounded-full transition-colors cursor-pointer"
+                :class="(novel?.subtitle_enabled ?? true) ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                @click="novelStore.updateNovel(novelId, { subtitle_enabled: !(novel?.subtitle_enabled ?? true) })"
+              >
+                <span
+                  class="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  :class="(novel?.subtitle_enabled ?? true) ? 'translate-x-4' : 'translate-x-0.5'"
+                />
+              </div>
+            </label>
+          </div>
+
+          <div v-if="novel?.subtitle_enabled ?? true" class="grid grid-cols-2 gap-3">
+            <!-- 字幕位置 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">位置</label>
+              <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <button
+                  v-for="pos in [{ value: 'top', label: '顶部' }, { value: 'center', label: '居中' }, { value: 'bottom', label: '底部' }]"
+                  :key="pos.value"
+                  type="button"
+                  class="flex-1 py-1.5 text-xs transition-colors"
+                  :class="(novel?.subtitle_position ?? 'bottom') === pos.value
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="novelStore.updateNovel(novelId, { subtitle_position: pos.value as any })"
+                >{{ pos.label }}</button>
+              </div>
+            </div>
+
+            <!-- 字体大小 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">字体大小</label>
+              <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <button
+                  v-for="sz in [{ value: 36, label: '小' }, { value: 48, label: '中' }, { value: 60, label: '大' }, { value: 72, label: '特大' }]"
+                  :key="sz.value"
+                  type="button"
+                  class="flex-1 py-1.5 text-xs transition-colors"
+                  :class="(novel?.subtitle_font_size ?? 48) === sz.value
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="novelStore.updateNovel(novelId, { subtitle_font_size: sz.value })"
+                >{{ sz.label }}</button>
+              </div>
+            </div>
+
+            <!-- 字体颜色 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">字体颜色</label>
+              <div class="flex items-center gap-2">
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button
+                    v-for="clr in [{ value: '#FFFFFF', label: '白', bg: 'bg-white' }, { value: '#FFFF00', label: '黄', bg: 'bg-yellow-300' }, { value: '#000000', label: '黑', bg: 'bg-gray-900' }]"
+                    :key="clr.value"
+                    type="button"
+                    class="w-8 h-8 flex items-center justify-center text-xs transition-all"
+                    :class="[clr.bg, (novel?.subtitle_color ?? '#FFFFFF') === clr.value ? 'ring-2 ring-primary-500 ring-offset-1' : '']"
+                    @click="novelStore.updateNovel(novelId, { subtitle_color: clr.value })"
+                  >
+                    <span :class="clr.value === '#FFFFFF' ? 'text-gray-400' : 'text-white'">{{ clr.label }}</span>
+                  </button>
+                </div>
+                <input
+                  type="color"
+                  class="w-8 h-8 rounded cursor-pointer border border-gray-200 dark:border-gray-700 p-0.5"
+                  :value="novel?.subtitle_color ?? '#FFFFFF'"
+                  @change="(e) => novelStore.updateNovel(novelId, { subtitle_color: (e.target as HTMLInputElement).value })"
+                />
+              </div>
+            </div>
+
+            <!-- 背景样式 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">背景样式</label>
+              <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <button
+                  v-for="bg in [{ value: 'none', label: '无' }, { value: 'shadow', label: '阴影' }, { value: 'box', label: '底框' }]"
+                  :key="bg.value"
+                  type="button"
+                  class="flex-1 py-1.5 text-xs transition-colors"
+                  :class="(novel?.subtitle_bg_style ?? 'shadow') === bg.value
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="novelStore.updateNovel(novelId, { subtitle_bg_style: bg.value as any })"
+                >{{ bg.label }}</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

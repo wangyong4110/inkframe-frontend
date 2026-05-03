@@ -28,7 +28,12 @@ export interface Novel {
   video_aspect_ratio?: string       // 宽高比：16:9/9:16/1:1/4:3
   char_consistency_weight?: number  // 角色一致性权重 0-1
   asset_export_path?: string        // 素材导出路径
-  narration_voice?: string          // 旁白音色 ID
+  narration_voice?: string
+  subtitle_enabled?: boolean
+  subtitle_position?: 'bottom' | 'center' | 'top'
+  subtitle_font_size?: number
+  subtitle_color?: string
+  subtitle_bg_style?: 'none' | 'shadow' | 'box'          // 旁白音色 ID
   created_at: string
   updated_at: string
 }
