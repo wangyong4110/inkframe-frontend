@@ -70,22 +70,30 @@ const providerForm = ref({
 // needsSecretKey: true 表示需要 AccessKey + SecretKey 双密钥（如火山引擎 AK/SK）
 // 供应商预设列表（按平台/公司，不区分模型类型）
 // name 作为系统内部唯一标识，endpoint 自动填充，needsSecretKey 表示是否需要 AK/SK 双密钥
+// needsSecretKey: true  → 需要 AccessKey + SecretKey 双密钥（HMAC-SHA256 签名鉴权）
+// needsSecretKey: false → 仅需单一 API Key（Bearer Token 鉴权）
 const PROVIDER_OPTIONS = [
-  { name: 'openai',            label: 'OpenAI',            endpoint: 'https://api.openai.com/v1',                                    needsSecretKey: false },
-  { name: 'anthropic',         label: 'Anthropic',         endpoint: 'https://api.anthropic.com',                                    needsSecretKey: false },
-  { name: 'google',            label: 'Google',            endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',      needsSecretKey: false },
-  { name: 'azure',             label: 'Azure OpenAI',      endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', needsSecretKey: false },
-  { name: 'doubao',            label: '火山方舟（字节跳动）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                  needsSecretKey: false },
-  { name: 'volcengine-visual', label: '即梦AI（火山引擎）', endpoint: '',                                                            needsSecretKey: true  },
-  { name: 'deepseek',          label: 'DeepSeek',          endpoint: 'https://api.deepseek.com/v1',                                  needsSecretKey: false },
-  { name: 'qwen',              label: '通义千问（阿里云）', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           needsSecretKey: false },
-  { name: 'moonshot',          label: 'Moonshot（Kimi）',  endpoint: 'https://api.moonshot.cn/v1',                                   needsSecretKey: false },
-  { name: 'zhipu',             label: '智谱 AI',           endpoint: 'https://open.bigmodel.cn/api/paas/v4',                         needsSecretKey: false },
-  { name: 'siliconflow',       label: '硅基流动',          endpoint: 'https://api.siliconflow.cn/v1',                               needsSecretKey: false },
-  { name: 'stepfun',           label: '阶跃星辰',          endpoint: 'https://api.stepfun.com/v1',                                  needsSecretKey: false },
-  { name: 'minimax',           label: 'MiniMax',           endpoint: 'https://api.minimax.chat/v1',                                  needsSecretKey: false },
-  { name: 'baidu',             label: '百度文心',          endpoint: 'https://qianfan.baidubce.com/v2',                             needsSecretKey: false },
-  { name: 'custom',            label: '自定义',            endpoint: '',                                                            needsSecretKey: false },
+  // ── LLM ──────────────────────────────────────────────────────────────────
+  { name: 'openai',            label: 'OpenAI',             endpoint: 'https://api.openai.com/v1',                                         needsSecretKey: false },
+  { name: 'anthropic',         label: 'Anthropic',          endpoint: 'https://api.anthropic.com',                                         needsSecretKey: false },
+  { name: 'google',            label: 'Google',             endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',           needsSecretKey: false },
+  { name: 'azure',             label: 'Azure OpenAI',       endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', needsSecretKey: false },
+  { name: 'doubao',            label: '火山方舟（字节跳动）',  endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                        needsSecretKey: false },
+  { name: 'deepseek',          label: 'DeepSeek',           endpoint: 'https://api.deepseek.com/v1',                                       needsSecretKey: false },
+  { name: 'qianwen',           label: '通义千问（阿里云）',   endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',               needsSecretKey: false },
+  { name: 'moonshot',          label: 'Moonshot（Kimi）',   endpoint: 'https://api.moonshot.cn/v1',                                        needsSecretKey: false },
+  { name: 'zhipu',             label: '智谱 AI',            endpoint: 'https://open.bigmodel.cn/api/paas/v4',                              needsSecretKey: false },
+  { name: 'siliconflow',       label: '硅基流动',            endpoint: 'https://api.siliconflow.cn/v1',                                    needsSecretKey: false },
+  { name: 'stepfun',           label: '阶跃星辰',            endpoint: 'https://api.stepfun.com/v1',                                       needsSecretKey: false },
+  { name: 'minimax',           label: 'MiniMax',            endpoint: 'https://api.minimax.chat/v1',                                       needsSecretKey: false },
+  { name: 'baidu',             label: '百度文心',            endpoint: 'https://qianfan.baidubce.com/v2',                                  needsSecretKey: false },
+  // ── 图像生成 ──────────────────────────────────────────────────────────────
+  { name: 'volcengine-visual', label: '即梦AI（火山引擎）',  endpoint: '',                                                                  needsSecretKey: true  }, // AK + SK
+  // ── 视频生成 ──────────────────────────────────────────────────────────────
+  { name: 'kling',             label: '可灵（快手）',         endpoint: 'https://api.klingai.com',                                         needsSecretKey: false },
+  { name: 'seedance',          label: 'Seedance（字节跳动）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                        needsSecretKey: false },
+  // ── 自定义 ────────────────────────────────────────────────────────────────
+  { name: 'custom',            label: '自定义',              endpoint: '',                                                                  needsSecretKey: false },
 ]
 
 // 当前选中提供商是否需要 AK/SK 双密钥
