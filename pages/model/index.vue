@@ -99,6 +99,28 @@ const selectedProviderNeedsSecretKey = computed(() => {
   return opt?.needsSecretKey ?? false
 })
 
+// 按提供商定制凭证字段的标签 / placeholder / 说明
+const CREDENTIAL_META: Record<string, { akLabel: string; akPlaceholder: string; skLabel: string; skPlaceholder: string; skHint: string }> = {
+  'volcengine-visual': {
+    akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
+    skHint: '即梦AI Visual API 使用 AccessKey + SecretKey 进行 HMAC-SHA256 签名鉴权',
+  },
+  'doubao-speech-v1': {
+    akLabel: 'App ID', akPlaceholder: '火山引擎应用 App ID',
+    skLabel: 'Access Token', skPlaceholder: '火山引擎 Access Token',
+    skHint: '豆包语音合成 V1 使用 App ID + Access Token 鉴权，在火山引擎控制台「语音技术」创建应用后获取',
+  },
+}
+const credentialMeta = computed(() => {
+  const name = editingProvider.value?.name ?? providerForm.value.name
+  return CREDENTIAL_META[name] ?? {
+    akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
+    skHint: '',
+  }
+})
+
 // 当前选中供应商的默认端点（用于 placeholder 和自动填充）
 const selectedProviderEndpoint = computed(() => {
   const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
@@ -195,6 +217,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   'volcengine-visual':'bg-amber-100   text-amber-700',
   seedance:           'bg-violet-100  text-violet-700',
   'doubao-speech':    'bg-teal-100    text-teal-700',
+  'doubao-speech-v1': 'bg-teal-100    text-teal-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
@@ -948,23 +971,23 @@ watch(activeTab, (tab) => {
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  {{ selectedProviderNeedsSecretKey ? 'Access Key（AK）' : 'API Key' }}
+                  {{ selectedProviderNeedsSecretKey ? credentialMeta.akLabel : 'API Key' }}
                   <span v-if="!editingProvider" class="text-red-500">*</span>
                 </label>
                 <input v-model="providerForm.api_key" type="password" class="input font-mono text-sm"
-                  :placeholder="editingProvider ? '留空则保持当前密钥不变' : (selectedProviderNeedsSecretKey ? '火山引擎 AccessKey' : 'sk-…')"
+                  :placeholder="editingProvider ? '留空则保持当前密钥不变' : (selectedProviderNeedsSecretKey ? credentialMeta.akPlaceholder : 'sk-…')"
                   autocomplete="new-password" />
                 <p v-if="editingProvider" class="mt-1 text-xs text-gray-400">当前密钥：<span class="font-mono">{{ maskKey(editingProvider.api_key) }}</span></p>
               </div>
-              <!-- AK/SK 双密钥提供商（如即梦AI Visual）额外展示 Secret Key 输入框 -->
+              <!-- AK/SK 双密钥提供商额外展示第二密钥输入框 -->
               <div v-if="selectedProviderNeedsSecretKey || (editingProvider && editingProvider.name === 'volcengine-visual')">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Secret Key（SK）<span v-if="!editingProvider" class="text-red-500">*</span>
+                  {{ credentialMeta.skLabel }}<span v-if="!editingProvider" class="text-red-500">*</span>
                 </label>
                 <input v-model="providerForm.api_secret_key" type="password" class="input font-mono text-sm"
-                  :placeholder="editingProvider ? '留空则保持当前 SK 不变' : '火山引擎 SecretKey'"
+                  :placeholder="editingProvider ? '留空则保持当前值不变' : credentialMeta.skPlaceholder"
                   autocomplete="new-password" />
-                <p class="mt-1 text-xs text-gray-400">即梦AI Visual API 使用 AccessKey + SecretKey 进行 HMAC-SHA256 签名鉴权</p>
+                <p v-if="credentialMeta.skHint" class="mt-1 text-xs text-gray-400">{{ credentialMeta.skHint }}</p>
               </div>
               <div>
                 <div class="flex items-center justify-between mb-1.5">
