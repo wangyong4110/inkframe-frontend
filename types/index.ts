@@ -262,6 +262,15 @@ export interface ModelProvider {
   updated_at?: string
 }
 
+export interface ProviderTemplate {
+  name: string
+  display_name: string
+  type: string
+  api_endpoint: string
+  needs_secret_key: boolean
+  static_models?: string[]
+}
+
 export interface AIModel {
   id: number
   provider_id: number

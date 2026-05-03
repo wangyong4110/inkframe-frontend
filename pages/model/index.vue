@@ -18,6 +18,7 @@ const {
   getModels,
   testProvider: apiTestProvider,
   fetchProviderModels,
+  getProviderTemplates,
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
@@ -67,46 +68,40 @@ const providerForm = ref({
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
 })
 
-// needsSecretKey: true 表示需要 AccessKey + SecretKey 双密钥（如火山引擎 AK/SK）
-// 供应商预设列表（按平台/公司，不区分模型类型）
-// name 作为系统内部唯一标识，endpoint 自动填充，needsSecretKey 表示是否需要 AK/SK 双密钥
-// needsSecretKey: true  → 需要 AccessKey + SecretKey 双密钥（HMAC-SHA256 签名鉴权）
-// needsSecretKey: false → 仅需单一 API Key（Bearer Token 鉴权）
-const PROVIDER_OPTIONS = [
-  // ── LLM ──────────────────────────────────────────────────────────────────
-  { name: 'openai',            label: 'OpenAI',             endpoint: 'https://api.openai.com/v1',                                         needsSecretKey: false },
-  { name: 'anthropic',         label: 'Anthropic',          endpoint: 'https://api.anthropic.com',                                         needsSecretKey: false },
-  { name: 'google',            label: 'Google',             endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',           needsSecretKey: false },
-  { name: 'azure',             label: 'Azure OpenAI',       endpoint: 'https://infra-okone-office-azure-llm-eu.cognitiveservices.azure.com/openai', needsSecretKey: false },
-  { name: 'doubao',            label: '火山方舟（字节跳动）',  endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                        needsSecretKey: false },
-  { name: 'deepseek',          label: 'DeepSeek',           endpoint: 'https://api.deepseek.com/v1',                                       needsSecretKey: false },
-  { name: 'qianwen',           label: '通义千问（阿里云）',   endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',               needsSecretKey: false },
-  { name: 'moonshot',          label: 'Moonshot（Kimi）',   endpoint: 'https://api.moonshot.cn/v1',                                        needsSecretKey: false },
-  { name: 'zhipu',             label: '智谱 AI',            endpoint: 'https://open.bigmodel.cn/api/paas/v4',                              needsSecretKey: false },
-  { name: 'siliconflow',       label: '硅基流动',            endpoint: 'https://api.siliconflow.cn/v1',                                    needsSecretKey: false },
-  { name: 'stepfun',           label: '阶跃星辰',            endpoint: 'https://api.stepfun.com/v1',                                       needsSecretKey: false },
-  { name: 'minimax',           label: 'MiniMax',            endpoint: 'https://api.minimax.chat/v1',                                       needsSecretKey: false },
-  { name: 'baidu',             label: '百度文心',            endpoint: 'https://qianfan.baidubce.com/v2',                                  needsSecretKey: false },
-  // ── 图像生成 ──────────────────────────────────────────────────────────────
-  { name: 'volcengine-visual', label: '即梦AI（火山引擎）',  endpoint: '',                                                                  needsSecretKey: true  }, // AK + SK
-  // ── 视频生成 ──────────────────────────────────────────────────────────────
-  { name: 'kling',             label: '可灵（快手）',         endpoint: 'https://api.klingai.com',                                         needsSecretKey: false },
-  { name: 'seedance',          label: 'Seedance（字节跳动）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3',                        needsSecretKey: false },
-  // ── 语音合成 ──────────────────────────────────────────────────────────────
-  { name: 'doubao-speech',     label: '豆包语音合成',          endpoint: 'https://openspeech.bytedance.com/api/v3',                        needsSecretKey: false },
-  // ── 自定义 ────────────────────────────────────────────────────────────────
-  { name: 'custom',            label: '自定义',              endpoint: '',                                                                  needsSecretKey: false },
-]
+// 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
+type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; staticModels?: string[] }
+const PROVIDER_OPTIONS = ref<ProviderOption[]>([
+  { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
+])
+
+async function loadProviderTemplates() {
+  try {
+    const res = await getProviderTemplates()
+    const templates = res.data ?? []
+    PROVIDER_OPTIONS.value = [
+      ...templates.map((t: any) => ({
+        name:           t.name,
+        label:          t.display_name,
+        endpoint:       t.api_endpoint,
+        needsSecretKey: t.needs_secret_key,
+        staticModels:   t.static_models,
+      })),
+      { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
+    ]
+  } catch {
+    // 加载失败时保留默认"自定义"选项，不影响其他功能
+  }
+}
 
 // 当前选中提供商是否需要 AK/SK 双密钥
 const selectedProviderNeedsSecretKey = computed(() => {
-  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
   return opt?.needsSecretKey ?? false
 })
 
 // 当前选中供应商的默认端点（用于 placeholder 和自动填充）
 const selectedProviderEndpoint = computed(() => {
-  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
   return opt?.endpoint ?? ''
 })
 
@@ -119,10 +114,16 @@ function autoDisplayName() {
 }
 
 function onProviderSelect() {
-  const opt = PROVIDER_OPTIONS.find(o => o.name === providerForm.value.name)
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
   if (!opt || opt.name === 'custom') return
   // 切换供应商时始终更新端点为该供应商的默认值，用户可在下方输入框中覆盖
   providerForm.value.api_endpoint = opt.endpoint
+  // 若提供商有静态模型列表，直接填充（无需再请求 /models 接口）
+  if (opt.staticModels && opt.staticModels.length > 0) {
+    providerModelList.value = opt.staticModels
+  } else {
+    providerModelList.value = []
+  }
   // 自动生成显示名称
   autoDisplayName()
 }
@@ -541,6 +542,7 @@ async function toggleModelBinding(modelId: number) {
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
+  loadProviderTemplates()
   loadProviders()
 })
 

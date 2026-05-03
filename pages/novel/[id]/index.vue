@@ -1197,6 +1197,9 @@ function getSkillStatusLabel(status: string): string {
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}
         </p>
+        <div v-if="analysisStatus.warnings?.length" class="mt-1 space-y-0.5">
+          <p v-for="w in analysisStatus.warnings" :key="w" class="text-yellow-600 dark:text-yellow-400 text-xs">⚠️ {{ w }}</p>
+        </div>
       </div>
 
       <!-- 失败状态 -->

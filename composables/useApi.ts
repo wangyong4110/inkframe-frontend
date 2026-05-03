@@ -8,6 +8,7 @@ import type {
   StoryboardShot,
   AIModel,
   ModelProvider,
+  ProviderTemplate,
   McpTool,
   QualityReport,
   Item,
@@ -557,6 +558,9 @@ export const useModelApi = () => {
       body: JSON.stringify(data),
     })
 
+  const getProviderTemplates = () =>
+    request<ApiResponse<ProviderTemplate[]>>('/model-providers/templates')
+
   return {
     getProviders,
     getCapableProviders,
@@ -572,6 +576,7 @@ export const useModelApi = () => {
     deleteProvider,
     testProvider,
     fetchProviderModels,
+    getProviderTemplates,
   }
 }
 
@@ -626,6 +631,7 @@ export interface AnalysisStatus {
   progress: number
   step: string
   error?: string
+  warnings?: string[]
 }
 
 export const useAnalysisApi = () => {
