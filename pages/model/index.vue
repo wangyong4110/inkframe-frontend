@@ -146,6 +146,33 @@ watch(
   }
 )
 
+// 按提供商类型过滤模型列表（基于名称模式，外部 API 不返回类型元数据）
+const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> = {
+  llm:       { exclude: /tts|whisper|dall-e|embedding|text-embedding|image-gen|video|audio-gen/i },
+  image:     { include: /dall|image|img|draw|flux|stable|wanx|seedream|visual|t2i|text.to.image/i },
+  voice:     { include: /tts|whisper|voice|audio|speech/i },
+  video:     { include: /video|sora|kling|seedance/i },
+  embedding: { include: /embed/i },
+}
+const filteredProviderModelList = computed(() => {
+  const f = MODEL_TYPE_FILTER[providerForm.value.type]
+  if (!f) return providerModelList.value
+  const list = providerModelList.value.filter(m => {
+    if (f.include && !f.include.test(m)) return false
+    if (f.exclude && f.exclude.test(m)) return false
+    return true
+  })
+  // 若过滤后为空则回退到完整列表（避免全部被过滤掉）
+  return list.length > 0 ? list : providerModelList.value
+})
+
+// 下拉搜索状态
+const showModelDropdown = ref(false)
+const modelDropdownList = computed(() => {
+  const q = (providerForm.value.api_version || '').toLowerCase()
+  return filteredProviderModelList.value.filter(m => !q || m.toLowerCase().includes(q))
+})
+
 const PROVIDER_COLORS: Record<string, string> = {
   openai:             'bg-emerald-100 text-emerald-700',
   anthropic:          'bg-purple-100  text-purple-700',
@@ -880,34 +907,49 @@ watch(activeTab, (tab) => {
               <div>
                 <div class="flex items-center justify-between mb-1.5">
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">默认模型</label>
-                  <button type="button"
-                    class="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 disabled:opacity-50"
-                    :disabled="fetchingModels"
-                    @click="doFetchProviderModels">
-                    <svg v-if="fetchingModels" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <span v-if="fetchingModels" class="flex items-center gap-1 text-xs text-gray-400">
+                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                     </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    {{ fetchingModels ? '获取中...' : '从接口获取' }}
-                  </button>
+                    获取中...
+                  </span>
                 </div>
-                <!-- 已获取到模型列表时：下拉选择 + 保留手动输入 -->
+                <!-- 已获取到模型列表时：可搜索下拉 combobox -->
                 <div v-if="providerModelList.length > 0" class="space-y-1.5">
-                  <select v-model="providerForm.api_version" class="input font-mono text-sm">
-                    <option value="">（不设置默认模型）</option>
-                    <option v-for="m in providerModelList" :key="m" :value="m">{{ m }}</option>
-                  </select>
-                  <p class="text-xs text-gray-400">共 {{ providerModelList.length }} 个模型，或手动输入：
-                    <button type="button" class="underline text-primary-600" @click="providerModelList = []">切换手动</button>
+                  <div class="relative">
+                    <input
+                      v-model="providerForm.api_version"
+                      type="text"
+                      class="input font-mono text-sm w-full pr-7"
+                      placeholder="搜索或直接输入模型名..."
+                      autocomplete="off"
+                      @focus="showModelDropdown = true"
+                      @blur="showModelDropdown = false"
+                    />
+                    <svg class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <ul
+                      v-if="showModelDropdown && modelDropdownList.length > 0"
+                      class="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:bg-gray-800 dark:border-gray-700"
+                    >
+                      <li
+                        v-for="m in modelDropdownList" :key="m"
+                        class="cursor-pointer px-3 py-1.5 text-sm font-mono hover:bg-gray-100 dark:hover:bg-gray-700"
+                        @mousedown.prevent="providerForm.api_version = m; showModelDropdown = false"
+                      >{{ m }}</li>
+                    </ul>
+                  </div>
+                  <p class="text-xs text-gray-400">
+                    显示 {{ filteredProviderModelList.length }} / {{ providerModelList.length }} 个模型，或
+                    <button type="button" class="underline text-primary-600" @click="providerModelList = []">切换纯手动</button>
                   </p>
                 </div>
                 <!-- 默认：文本框手动输入 -->
                 <div v-else>
                   <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm" placeholder="gpt-4o / claude-3-5-sonnet-20241022" />
-                  <p class="mt-1 text-xs text-gray-400">生成请求中未指定模型时使用此值，或点击右上角按钮从接口获取</p>
+                  <p class="mt-1 text-xs text-gray-400">生成请求中未指定模型时使用此值，填写端点和 Key 后自动获取</p>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">
