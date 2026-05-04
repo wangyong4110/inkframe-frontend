@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { Video, StoryboardShot } from '~/types'
+import { useTaskStore } from '~/stores/task'
 
 interface VideoState {
   videos: Video[]
@@ -196,6 +197,8 @@ export const useVideoStore = defineStore('video', {
         this.storyboardTaskStatus = 'pending'
         localStorage.setItem(`storyboard_task_${videoId}`, taskId)
         this.pollStoryboardTask(videoId, taskId)
+        // 同步注册到统一任务面板（右下角【任务进度】）
+        useTaskStore().trackTask(taskId)
       } catch (e: any) {
         this.error = e.message || 'Failed to generate storyboard'
         this.generating = false
@@ -243,6 +246,9 @@ export const useVideoStore = defineStore('video', {
       this.storyboardTaskStatus = 'running'
       this.generating = true
       this.pollStoryboardTask(videoId, taskId)
+      // 刷新后恢复时，task store 的 loadActiveTasks 通常已经覆盖；
+      // 此处兜底注册，保证面板可见
+      useTaskStore().trackTask(taskId)
     },
 
     async updateShot(videoId: number, shotId: number, data: Partial<StoryboardShot>) {
