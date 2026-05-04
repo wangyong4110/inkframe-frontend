@@ -48,6 +48,10 @@ const selectedBgm = ref('')
 const bgmVolume = ref(60)
 const generatingBgm = ref(false)
 
+// SFX
+const generatingSFX = ref(false)
+const sfxTaskId = ref<string | null>(null)
+
 // Export
 const stitching = ref(false)
 const exportingCapCut = ref(false)
@@ -152,6 +156,7 @@ const TABS = computed(() => [
   { key: 'script', label: '分镜脚本', icon: 'M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4', locked: false },
   { key: 'voice', label: '配音字幕', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z', locked: !productionEnabled.value },
   { key: 'bgm', label: '背景音乐', icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', locked: !productionEnabled.value },
+  { key: 'sfx', label: '音效', icon: 'M15.536 8.464a5 5 0 010 7.072M12 6a7 7 0 010 12M8.464 8.464a5 5 0 000 7.072M3 12a9 9 0 1018 0 9 9 0 00-18 0z', locked: !productionEnabled.value },
   { key: 'export', label: '导出', icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4', locked: !productionEnabled.value },
 ])
 
@@ -252,6 +257,7 @@ function startEdit(shot: StoryboardShot) {
   editingId.value = shot.id
   editForm.value = {
     description: shot.description,
+    narration: shot.narration,
     dialogue: shot.dialogue,
     emotional_tone: (shot as any).emotional_tone || '',
     shot_size: shot.shot_size,
@@ -400,6 +406,26 @@ async function handleGenerateBgm() {
     toast.error('BGM 生成失败：' + (e.message || ''))
   } finally {
     generatingBgm.value = false
+  }
+}
+
+// ──────── SFX ────────
+async function handleGenerateSFX() {
+  if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
+  generatingSFX.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.batchGenerateSFX(props.videoId)
+    const taskId = (res as any)?.data?.task_id
+    if (taskId) {
+      sfxTaskId.value = taskId
+      useTaskStore().trackTask(taskId)
+      toast.success('音效生成任务已提交，请在右下角任务面板查看进度')
+    }
+  } catch (e: any) {
+    toast.error('音效生成失败：' + (e.message || ''))
+  } finally {
+    generatingSFX.value = false
   }
 }
 
@@ -651,12 +677,16 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 </div>
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">场景描述</label>
-                <textarea v-model="editForm.description" rows="3" class="input text-sm resize-none" placeholder="描述这个镜头的画面内容..." />
+                <label class="block text-xs font-medium text-gray-500 mb-1">画面描述（英文，用于AI图片生成）</label>
+                <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="English visual prompt for image generation..." />
               </div>
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">对白 / 旁白</label>
-                <textarea v-model="editForm.dialogue" rows="2" class="input text-sm resize-none" placeholder="角色对话或画外音旁白（可留空）" />
+                <label class="block text-xs font-medium text-gray-500 mb-1">旁白文案（中文，用于TTS和字幕）</label>
+                <textarea v-model="editForm.narration" rows="2" class="input text-sm resize-none" placeholder="观众听到的旁白内容，不含镜头语言..." />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">角色台词（格式：角色名：台词内容）</label>
+                <textarea v-model="editForm.dialogue" rows="2" class="input text-sm resize-none" placeholder="凌云：你敢再说一遍！（无对话可留空）" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">情绪基调</label>
@@ -707,11 +737,21 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 </div>
               </div>
 
-              <p class="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-1.5">
+              <!-- 旁白文案（TTS/字幕内容，优先展示）-->
+              <p v-if="shot.narration" class="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-1.5">
+                {{ shot.narration }}
+              </p>
+              <!-- 角色台词 -->
+              <p v-if="shot.dialogue" class="text-sm text-primary-600 dark:text-primary-400 italic mb-1.5">
+                「{{ shot.dialogue }}」
+              </p>
+              <!-- 英文画面描述（折叠显示，仅在无旁白时展示兜底） -->
+              <p v-if="!shot.narration && !shot.dialogue" class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-1.5 font-mono text-xs">
                 {{ shot.description || '（无场景描述）' }}
               </p>
-              <p v-if="shot.dialogue" class="text-sm text-gray-500 dark:text-gray-400 italic mb-2.5">
-                「{{ shot.dialogue }}」
+              <!-- 有旁白时，画面描述收折为小标签 -->
+              <p v-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.description">
+                <span class="text-gray-300 dark:text-gray-600 mr-1">img:</span>{{ shot.description }}
               </p>
 
               <!-- Metadata tags -->
@@ -757,9 +797,9 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
                     <p class="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug">
-                      {{ shot.description || '（无描述）' }}
+                      {{ shot.narration || shot.description || '（无描述）' }}
                     </p>
-                    <p v-if="shot.dialogue" class="text-xs text-gray-400 italic mt-0.5 line-clamp-1">
+                    <p v-if="shot.dialogue" class="text-xs text-primary-500 dark:text-primary-400 italic mt-0.5 line-clamp-1">
                       「{{ shot.dialogue }}」
                     </p>
                     <div class="flex items-center gap-1.5 mt-1.5 text-xs text-gray-400 flex-wrap">
@@ -906,7 +946,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-0.5">镜头 {{ shot.shot_no }}</p>
             <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-              {{ shot.dialogue || shot.description || '（无台词）' }}
+              {{ shot.dialogue || shot.narration || shot.description || '（无台词）' }}
             </p>
             <audio
               v-if="shotAudioUrls[shot.id]"
@@ -924,7 +964,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 background: subtitleConfig.bg_style === 'box' ? 'rgba(0,0,0,0.6)' : 'transparent',
                 textShadow: subtitleConfig.bg_style === 'shadow' ? '0 1px 3px rgba(0,0,0,0.9)' : 'none',
               }"
-            >{{ shot.dialogue || shot.description }}</div>
+            >{{ shot.dialogue || shot.narration || shot.description }}</div>
           </div>
           <button
             class="btn-outline text-sm flex-shrink-0"
@@ -974,6 +1014,76 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </svg>
           {{ generatingBgm ? '生成中...' : '生成背景音乐' }}
         </button>
+      </div>
+    </div>
+
+    <!-- ==============================
+         音效 Tab
+         ============================== -->
+    <div v-if="activeTab === 'sfx'" class="space-y-4">
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">自动音效</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">AI 根据镜头内容自动匹配或生成场景音效，导出剪映时自动附加独立音效轨道</p>
+          </div>
+          <button
+            class="btn-primary"
+            :disabled="generatingSFX || shots.length === 0"
+            @click="handleGenerateSFX"
+          >
+            <svg v-if="generatingSFX" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ generatingSFX ? '提交中...' : '一键生成音效' }}
+          </button>
+        </div>
+        <!-- 生成流程说明 -->
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+          <p class="font-medium">三层降级策略（按优先级自动选择）</p>
+          <p>① 本地音效库 — 从服务器预设音效库精确匹配（0延迟）</p>
+          <p>② Freesound CC0 — 从开放音效平台搜索授权素材</p>
+          <p>③ ElevenLabs AI — 按镜头描述实时生成定制音效（最高质量）</p>
+        </div>
+      </div>
+
+      <!-- 分镜音效列表 -->
+      <div class="space-y-2">
+        <div
+          v-for="shot in shots"
+          :key="shot.id"
+          class="card p-3 flex items-center gap-3"
+        >
+          <div class="w-16 h-10 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
+            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+            <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</span>
+              <span
+                v-if="shot.sfx_url"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+                已生成
+              </span>
+              <span v-else class="text-xs text-gray-400">待生成</span>
+            </div>
+            <p class="text-xs text-gray-400 truncate">
+              {{ shot.sfx_tags ? JSON.parse(shot.sfx_tags).join('、') : (shot.description || '—') }}
+            </p>
+          </div>
+          <!-- 音量标签 -->
+          <span v-if="shot.sfx_volume && shot.sfx_volume > 0" class="text-xs text-gray-400 flex-shrink-0">
+            {{ Math.round(shot.sfx_volume * 100) }}%
+          </span>
+        </div>
+        <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">
+          请先在「分镜脚本」Tab 生成分镜
+        </p>
       </div>
     </div>
 

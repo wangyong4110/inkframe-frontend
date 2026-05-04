@@ -415,6 +415,14 @@ export const useVideoApi = () => {
       body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier, provider }),
     })
 
+  // 批量为所有分镜自动生成音效（异步任务，返回 task_id）
+  const batchGenerateSFX = (videoId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, { method: 'POST' })
+
+  // 为单个分镜生成音效（异步任务）
+  const generateShotSFX = (videoId: number, shotId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/sfx`, { method: 'POST' })
+
   const updateVideo = (id: number, data: Partial<Video>) =>
     request<ApiResponse<Video>>(`/videos/${id}`, {
       method: 'PUT',
@@ -481,6 +489,8 @@ export const useVideoApi = () => {
     updateStoryboardShot,
     generateShot,
     batchGenerateShots,
+    batchGenerateSFX,
+    generateShotSFX,
     exportCapcut,
     getVideoProviders,
     generateVoice,

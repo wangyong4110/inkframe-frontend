@@ -194,8 +194,9 @@ export interface StoryboardShot {
   video_id: number
   uuid: string
   shot_no: number
-  description?: string
-  dialogue?: string
+  description?: string  // 英文画面描述，供 AI 图片/视频生成
+  narration?: string    // 中文旁白文案，供 TTS 朗读和字幕显示
+  dialogue?: string     // 角色台词（格式："角色名：台词"），无对话时为空
   camera_type: CameraType
   camera_angle: CameraAngle
   shot_size: ShotSize
@@ -212,6 +213,9 @@ export interface StoryboardShot {
   error_message?: string  // 生成失败原因
   scene_anchor_id?: number
   character_ids?: number[]
+  sfx_url?: string      // 音效文件URL
+  sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
+  sfx_volume?: number   // 混音音量（0=自动）
 }
 
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
