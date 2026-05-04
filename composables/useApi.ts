@@ -461,6 +461,9 @@ export const useVideoApi = () => {
   const exportCapcut = (id: number) =>
     requestBlob(`/videos/${id}/export/capcut`)
 
+  const exportVideo = (id: number, format: string) =>
+    requestBlob(`/videos/${id}/export/${format}`)
+
   const reviewStoryboard = (id: number, provider?: string) =>
     request<ApiResponse<{
       overall_score: number
@@ -514,6 +517,7 @@ export const useVideoApi = () => {
     batchGenerateSFX,
     generateShotSFX,
     exportCapcut,
+    exportVideo,
     getVideoProviders,
     generateVoice,
     reviewStoryboard,

@@ -54,8 +54,19 @@ const sfxTaskId = ref<string | null>(null)
 
 // Export
 const stitching = ref(false)
-const exportingCapCut = ref(false)
+const exporting = ref<Record<string, boolean>>({})
 const exportUrl = ref('')
+
+const exportFormats = [
+  { key: 'capcut', label: '剪映草稿',    desc: '.zip · 剪映 / CapCut',         ext: '.zip'  },
+  { key: 'fcpxml', label: 'FCPXML',      desc: '.zip · DaVinci / Final Cut Pro', ext: '.zip'  },
+  { key: 'zip',    label: '素材包',      desc: '.zip · 任意剪辑软件',           ext: '.zip'  },
+  { key: 'edl',    label: 'EDL',         desc: '.edl · Avid / Premiere / Vegas', ext: '.edl'  },
+  { key: 'otio',   label: 'OpenTimelineIO', desc: '.otio · Premiere / FCP / DaVinci', ext: '.otio' },
+  { key: 'srt',    label: 'SRT 字幕',    desc: '.srt · 通用字幕',               ext: '.srt'  },
+  { key: 'vtt',    label: 'WebVTT',      desc: '.vtt · 浏览器 / 网络视频',      ext: '.vtt'  },
+  { key: 'csv',    label: '分镜表',      desc: '.csv · Excel / Notion',          ext: '.csv'  },
+] as const
 
 // Scene anchors
 const sceneAnchorStore = useSceneAnchorStore()
@@ -482,24 +493,26 @@ async function handleStitch() {
   }
 }
 
-async function handleExportCapCut() {
-  exportingCapCut.value = true
+async function handleExport(format: string) {
+  exporting.value = { ...exporting.value, [format]: true }
   try {
     const api = useVideoApi()
-    const blob = await api.exportCapcut(props.videoId)
+    const blob = await api.exportVideo(props.videoId, format)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${video.value?.title || 'video_' + props.videoId}_capcut.zip`
+    const fmtInfo = exportFormats.find(f => f.key === format)
+    const ext = fmtInfo?.ext ?? '.zip'
+    a.download = `${video.value?.title || 'video_' + props.videoId}_${format}${ext}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    toast.success('剪映草稿已导出')
+    toast.success('导出成功')
   } catch (e: any) {
     toast.error('导出失败：' + (e.message || ''))
   } finally {
-    exportingCapCut.value = false
+    exporting.value = { ...exporting.value, [format]: false }
   }
 }
 
@@ -1171,17 +1184,29 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       <!-- Export formats -->
       <div class="card p-5">
         <h3 class="font-semibold text-gray-900 dark:text-white mb-4">导出格式</h3>
-        <div class="flex gap-3">
-          <button
-            class="btn-primary"
-            :disabled="completedShots.length === 0 || exportingCapCut"
-            @click="handleExportCapCut"
-          >
-            <svg v-if="exportingCapCut" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            导出剪映草稿
-          </button>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <template v-for="fmt in exportFormats" :key="fmt.key">
+            <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex flex-col gap-2">
+              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ fmt.label }}</div>
+              <div class="text-xs text-gray-400">{{ fmt.desc }}</div>
+              <button
+                class="btn-primary mt-auto text-xs py-1.5"
+                :disabled="completedShots.length === 0 || exporting[fmt.key]"
+                @click="handleExport(fmt.key)"
+              >
+                <svg v-if="exporting[fmt.key]" class="w-3 h-3 mr-1 animate-spin inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ exporting[fmt.key] ? '导出中...' : '导出' }}
+              </button>
+            </div>
+          </template>
+        </div>
+        <p v-if="completedShots.length === 0" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+          请先在「分镜脚本」Tab 生成视频/图片素材
+        </p>
+        <!-- 合成 MP4 -->
+        <div class="mt-3 flex gap-3">
           <button
             class="btn-outline"
             :disabled="completedShots.length === 0 || stitching"
@@ -1191,9 +1216,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </button>
           <a v-if="exportUrl" :href="exportUrl" target="_blank" class="btn-outline">下载文件</a>
         </div>
-        <p v-if="completedShots.length === 0" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-          请先在「分镜脚本」Tab 生成视频/图片素材
-        </p>
       </div>
     </div>
 
