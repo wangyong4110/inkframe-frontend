@@ -77,6 +77,35 @@ async function saveSubtitle(shot: StoryboardShot) {
   }
 }
 
+// 旁白/台词内联编辑
+const editingVoiceTextId = ref<number | null>(null)
+const editingVoiceTextType = ref<'narration' | 'dialogue'>('narration')
+const voiceTextDraft = ref('')
+const savingVoiceText = ref(false)
+
+function startEditVoiceText(shot: StoryboardShot, type: 'narration' | 'dialogue') {
+  editingVoiceTextId.value = shot.id
+  editingVoiceTextType.value = type
+  voiceTextDraft.value = type === 'narration' ? (shot.narration || '') : (shot.dialogue || '')
+}
+
+function cancelEditVoiceText() {
+  editingVoiceTextId.value = null
+  voiceTextDraft.value = ''
+}
+
+async function saveVoiceText(shot: StoryboardShot) {
+  savingVoiceText.value = true
+  try {
+    await videoStore.updateShot(props.videoId, shot.id, { [editingVoiceTextType.value]: voiceTextDraft.value.trim() } as any)
+    editingVoiceTextId.value = null
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    savingVoiceText.value = false
+  }
+}
+
 // BGM
 const selectedBgm = ref('')
 const bgmVolume = ref(60)
@@ -174,9 +203,16 @@ const CAMERA_TYPE_OPTIONS = [
   { value: 'dolly', label: '移镜' },
   { value: 'crane', label: '升降' },
 ]
+const TRANSITION_OPTIONS = [
+  { value: 'cut',      label: '硬切' },
+  { value: 'fade',     label: '淡入淡出' },
+  { value: 'dissolve', label: '溶解' },
+  { value: 'wipe',     label: '划像' },
+]
 const SHOT_SIZE_LABEL: Record<string, string> = Object.fromEntries(SHOT_SIZE_OPTIONS.map(o => [o.value, o.label]))
 const CAMERA_ANGLE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_ANGLE_OPTIONS.map(o => [o.value, o.label]))
 const CAMERA_TYPE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_TYPE_OPTIONS.map(o => [o.value, o.label]))
+const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_OPTIONS.map(o => [o.value, o.label]))
 const SHOT_STATUS_COLORS: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-500',
   generating: 'bg-yellow-100 text-yellow-700',
@@ -349,6 +385,7 @@ function startEdit(shot: StoryboardShot) {
     camera_angle: shot.camera_angle,
     camera_type: shot.camera_type,
     duration: shot.duration,
+    transition: shot.transition || 'cut',
   }
 }
 
@@ -804,6 +841,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   <input v-model.number="editForm.duration" type="number" min="1" max="30" step="0.5" class="input text-sm py-1" />
                 </div>
               </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">过渡方式（接下一镜）</label>
+                <select v-model="editForm.transition" class="input text-sm py-1">
+                  <option v-for="o in TRANSITION_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </div>
             </div>
 
             <!-- View mode -->
@@ -825,18 +868,57 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 </div>
               </div>
 
-              <!-- 旁白文案（TTS/字幕内容，优先展示）-->
-              <p v-if="shot.narration" class="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-1.5">
-                {{ shot.narration }}
-              </p>
-              <!-- 角色台词 -->
-              <p v-if="shot.dialogue" class="text-sm text-primary-600 dark:text-primary-400 italic mb-1.5">
-                「{{ shot.dialogue }}」
-              </p>
-              <!-- 英文画面描述（折叠显示，仅在无旁白时展示兜底） -->
-              <p v-if="!shot.narration && !shot.dialogue" class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-1.5 font-mono text-xs">
-                {{ shot.description || '（无场景描述）' }}
-              </p>
+              <!-- 旁白/台词内联编辑区（复用配音 tab 的编辑状态） -->
+              <div v-if="editingVoiceTextId === shot.id" class="mb-1.5">
+                <p class="text-xs text-gray-400 mb-0.5">{{ editingVoiceTextType === 'narration' ? '旁白' : '台词' }}</p>
+                <textarea
+                  v-model="voiceTextDraft"
+                  rows="3"
+                  class="input text-sm resize-none w-full"
+                  :placeholder="editingVoiceTextType === 'narration' ? '观众听到的旁白内容…' : '角色名：台词内容'"
+                  @keydown.enter.ctrl="saveVoiceText(shot)"
+                  @keydown.esc="cancelEditVoiceText"
+                />
+                <div class="flex items-center gap-1.5 mt-1">
+                  <button class="btn-primary text-xs py-0.5 px-2" :disabled="savingVoiceText" @click="saveVoiceText(shot)">
+                    {{ savingVoiceText ? '保存中…' : '保存' }}
+                  </button>
+                  <button class="btn-outline text-xs py-0.5 px-2" @click="cancelEditVoiceText">取消</button>
+                  <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存</span>
+                </div>
+              </div>
+              <template v-else>
+                <!-- 旁白文案 -->
+                <p v-if="shot.narration" class="text-sm text-gray-800 dark:text-gray-200 leading-relaxed mb-1.5">
+                  {{ shot.narration }}
+                  <button
+                    class="inline-flex items-center ml-1 p-0.5 rounded text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors align-middle"
+                    title="编辑旁白"
+                    @click="startEditVoiceText(shot, 'narration')"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </p>
+                <!-- 角色台词 -->
+                <p v-if="shot.dialogue" class="text-sm text-primary-600 dark:text-primary-400 italic mb-1.5">
+                  「{{ shot.dialogue }}」
+                  <button
+                    class="inline-flex items-center ml-1 p-0.5 rounded text-primary-300 hover:text-primary-500 dark:hover:text-primary-300 transition-colors align-middle not-italic"
+                    title="编辑台词"
+                    @click="startEditVoiceText(shot, 'dialogue')"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </p>
+                <!-- 英文画面描述（折叠显示，仅在无旁白时展示兜底） -->
+                <p v-if="!shot.narration && !shot.dialogue" class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-1.5 font-mono text-xs">
+                  {{ shot.description || '（无场景描述）' }}
+                </p>
+              </template>
               <!-- 有旁白时，画面描述收折为小标签 -->
               <p v-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.description">
                 <span class="text-gray-300 dark:text-gray-600 mr-1">img:</span>{{ shot.description }}
@@ -861,6 +943,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
                 >
                   {{ (shot as any).emotional_tone }}
+                </span>
+                <span
+                  v-if="shot.transition && shot.transition !== 'cut'"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                >
+                  → {{ TRANSITION_LABEL[shot.transition] || shot.transition }}
                 </span>
               </div>
             </div>
@@ -1034,40 +1122,55 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-0.5">镜头 {{ shot.shot_no }}</p>
 
-            <!-- 字幕编辑区 -->
-            <div v-if="editingSubtitleId === shot.id" class="mb-1.5">
+            <!-- 旁白/台词内联编辑区 -->
+            <div v-if="editingVoiceTextId === shot.id" class="mb-1.5">
+              <p class="text-xs text-gray-400 mb-0.5">{{ editingVoiceTextType === 'narration' ? '旁白' : '台词' }}</p>
               <textarea
-                v-model="subtitleDraft"
-                rows="2"
+                v-model="voiceTextDraft"
+                rows="3"
                 class="input text-sm resize-none w-full"
-                placeholder="字幕文本（留空则使用台词/旁白）"
-                @keydown.enter.ctrl="saveSubtitle(shot)"
-                @keydown.esc="cancelEditSubtitle"
+                :placeholder="editingVoiceTextType === 'narration' ? '观众听到的旁白内容…' : '角色名：台词内容'"
+                @keydown.enter.ctrl="saveVoiceText(shot)"
+                @keydown.esc="cancelEditVoiceText"
               />
               <div class="flex items-center gap-1.5 mt-1">
                 <button
                   class="btn-primary text-xs py-0.5 px-2"
-                  :disabled="savingSubtitle"
-                  @click="saveSubtitle(shot)"
-                >{{ savingSubtitle ? '保存中…' : '保存' }}</button>
-                <button class="btn-outline text-xs py-0.5 px-2" @click="cancelEditSubtitle">取消</button>
-                <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存，Esc 取消</span>
+                  :disabled="savingVoiceText"
+                  @click="saveVoiceText(shot)"
+                >{{ savingVoiceText ? '保存中…' : '保存' }}</button>
+                <button class="btn-outline text-xs py-0.5 px-2" @click="cancelEditVoiceText">取消</button>
+                <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存</span>
               </div>
             </div>
-            <div v-else class="flex items-start gap-1 mb-1.5 group">
-              <p class="text-sm text-gray-500 dark:text-gray-400 flex-1 min-w-0" :class="shot.subtitle ? 'text-gray-800 dark:text-gray-200' : ''">
-                {{ effectiveSubtitle(shot) || '（无台词）' }}
-                <span v-if="shot.subtitle" class="ml-1 text-xs text-primary-500 font-medium">[已覆盖]</span>
+            <div v-else class="mb-1.5 space-y-0.5">
+              <!-- 旁白文本 + 内联编辑图标 -->
+              <p v-if="shot.narration" class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                {{ shot.narration }}
+                <button
+                  class="inline-flex items-center ml-1 p-0.5 rounded text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors align-middle"
+                  title="编辑旁白"
+                  @click="startEditVoiceText(shot, 'narration')"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
               </p>
-              <button
-                class="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-opacity"
-                title="编辑字幕"
-                @click="startEditSubtitle(shot)"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
+              <!-- 台词文本 + 内联编辑图标 -->
+              <p v-if="shot.dialogue" class="text-sm text-primary-600 dark:text-primary-400 italic leading-relaxed">
+                「{{ shot.dialogue }}」
+                <button
+                  class="inline-flex items-center ml-1 p-0.5 rounded text-primary-300 hover:text-primary-500 dark:hover:text-primary-300 transition-colors align-middle not-italic"
+                  title="编辑台词"
+                  @click="startEditVoiceText(shot, 'dialogue')"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              </p>
+              <p v-if="!shot.narration && !shot.dialogue" class="text-sm text-gray-400 dark:text-gray-500">（无台词）</p>
             </div>
 
             <audio

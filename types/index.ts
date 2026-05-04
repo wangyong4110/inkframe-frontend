@@ -217,11 +217,13 @@ export interface StoryboardShot {
   sfx_url?: string      // 音效文件URL
   sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
   sfx_volume?: number   // 混音音量（0=自动）
+  transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
 }
 
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
 export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
 export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'
+export type ShotTransition = 'cut' | 'fade' | 'dissolve' | 'wipe'
 export type ShotStatus = 'pending' | 'generating' | 'completed' | 'failed'
 
 export interface ShotCharacterConfig {
