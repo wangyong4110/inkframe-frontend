@@ -11,7 +11,7 @@ interface VideoState {
   generating: boolean
   error: string | null
   storyboardTaskId: string | null
-  storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | null
+  storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
   generationProgress: {
     currentShot: number
     totalShots: number
@@ -225,6 +225,11 @@ export const useVideoStore = defineStore('video', {
             this.generating = false
             localStorage.removeItem(`storyboard_task_${videoId}`)
             this.error = task.error || '分镜生成失败'
+            return
+          }
+          if (task.status === 'cancelled') {
+            this.generating = false
+            localStorage.removeItem(`storyboard_task_${videoId}`)
             return
           }
           // still running/pending — poll again
