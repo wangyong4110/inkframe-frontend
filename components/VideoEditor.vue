@@ -43,6 +43,40 @@ const generatingVoice = ref<Record<number, boolean>>({})
 const shotAudioUrls = ref<Record<number, string>>({})
 const shotSubtitles = ref<Record<number, string>>({})
 
+// 字幕编辑
+const editingSubtitleId = ref<number | null>(null)
+const subtitleDraft = ref('')
+const savingSubtitle = ref(false)
+
+function effectiveSubtitle(shot: StoryboardShot): string {
+  return shot.subtitle || shot.dialogue || shot.narration || shot.description || ''
+}
+
+function startEditSubtitle(shot: StoryboardShot) {
+  editingSubtitleId.value = shot.id
+  subtitleDraft.value = effectiveSubtitle(shot)
+}
+
+function cancelEditSubtitle() {
+  editingSubtitleId.value = null
+  subtitleDraft.value = ''
+}
+
+async function saveSubtitle(shot: StoryboardShot) {
+  savingSubtitle.value = true
+  try {
+    // 若用户输入与自动推导值相同，清除覆盖（让后端回落到 dialogue/narration）
+    const effective = shot.dialogue || shot.narration || shot.description || ''
+    const value = subtitleDraft.value.trim() === effective ? '' : subtitleDraft.value.trim()
+    await videoStore.updateShot(props.videoId, shot.id, { subtitle: value } as any)
+    editingSubtitleId.value = null
+  } catch (e: any) {
+    toast.error('保存字幕失败：' + (e.message || ''))
+  } finally {
+    savingSubtitle.value = false
+  }
+}
+
 // BGM
 const selectedBgm = ref('')
 const bgmVolume = ref(60)
@@ -309,6 +343,7 @@ function startEdit(shot: StoryboardShot) {
     description: shot.description,
     narration: shot.narration,
     dialogue: shot.dialogue,
+    subtitle: shot.subtitle,
     emotional_tone: (shot as any).emotional_tone || '',
     shot_size: shot.shot_size,
     camera_angle: shot.camera_angle,
@@ -422,9 +457,11 @@ async function handleGenerateVoice(shot: StoryboardShot) {
     taskStore.trackTask(taskId, (task) => {
       generatingVoice.value[shot.id] = false
       if (task.status === 'completed') {
-        const audioUrl = ((task.data as any)?.audio_url as string | undefined)
+        const base = ((task.data as any)?.audio_url as string | undefined)
           || `/api/v1/videos/${props.videoId}/storyboard/${shot.id}/audio`
-        shotAudioUrls.value[shot.id] = audioUrl
+        // 追加时间戳强制浏览器跳过缓存重新加载音频
+        const sep = base.includes('?') ? '&' : '?'
+        shotAudioUrls.value[shot.id] = `${base}${sep}t=${Date.now()}`
         const srt = (task.data as any)?.subtitle_srt as string | undefined
         if (srt) shotSubtitles.value[shot.id] = srt
         toast.success(`镜头 #${shot.shot_no} 配音已生成`)
@@ -733,6 +770,13 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 <textarea v-model="editForm.dialogue" rows="2" class="input text-sm resize-none" placeholder="凌云：你敢再说一遍！（无对话可留空）" />
               </div>
               <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  字幕覆盖
+                  <span class="ml-1 text-gray-400 font-normal">（留空则自动使用台词/旁白）</span>
+                </label>
+                <textarea v-model="editForm.subtitle" rows="2" class="input text-sm resize-none" placeholder="自定义字幕文本，可与旁白不同..." />
+              </div>
+              <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">情绪基调</label>
                 <input v-model="editForm.emotional_tone" type="text" class="input text-sm" placeholder="如：紧张、浪漫史诗、压抑→释怀" />
               </div>
@@ -989,26 +1033,49 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </div>
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-0.5">镜头 {{ shot.shot_no }}</p>
-            <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-              {{ shot.dialogue || shot.narration || shot.description || '（无台词）' }}
-            </p>
+
+            <!-- 字幕编辑区 -->
+            <div v-if="editingSubtitleId === shot.id" class="mb-1.5">
+              <textarea
+                v-model="subtitleDraft"
+                rows="2"
+                class="input text-sm resize-none w-full"
+                placeholder="字幕文本（留空则使用台词/旁白）"
+                @keydown.enter.ctrl="saveSubtitle(shot)"
+                @keydown.esc="cancelEditSubtitle"
+              />
+              <div class="flex items-center gap-1.5 mt-1">
+                <button
+                  class="btn-primary text-xs py-0.5 px-2"
+                  :disabled="savingSubtitle"
+                  @click="saveSubtitle(shot)"
+                >{{ savingSubtitle ? '保存中…' : '保存' }}</button>
+                <button class="btn-outline text-xs py-0.5 px-2" @click="cancelEditSubtitle">取消</button>
+                <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存，Esc 取消</span>
+              </div>
+            </div>
+            <div v-else class="flex items-start gap-1 mb-1.5 group">
+              <p class="text-sm text-gray-500 dark:text-gray-400 flex-1 min-w-0" :class="shot.subtitle ? 'text-gray-800 dark:text-gray-200' : ''">
+                {{ effectiveSubtitle(shot) || '（无台词）' }}
+                <span v-if="shot.subtitle" class="ml-1 text-xs text-primary-500 font-medium">[已覆盖]</span>
+              </p>
+              <button
+                class="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-opacity"
+                title="编辑字幕"
+                @click="startEditSubtitle(shot)"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            </div>
+
             <audio
               v-if="shotAudioUrls[shot.id]"
               :src="shotAudioUrls[shot.id]"
               controls
               class="mt-1.5 w-full h-8"
             />
-            <!-- 字幕预览 -->
-            <div
-              v-if="shotSubtitles[shot.id]"
-              class="mt-1.5 px-2 py-1 rounded text-xs text-center"
-              :style="{
-                color: subtitleConfig.color,
-                fontSize: subtitleConfig.font_size * 0.22 + 'px',
-                background: subtitleConfig.bg_style === 'box' ? 'rgba(0,0,0,0.6)' : 'transparent',
-                textShadow: subtitleConfig.bg_style === 'shadow' ? '0 1px 3px rgba(0,0,0,0.9)' : 'none',
-              }"
-            >{{ shot.dialogue || shot.narration || shot.description }}</div>
           </div>
           <button
             class="btn-outline text-sm flex-shrink-0"

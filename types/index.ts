@@ -197,6 +197,7 @@ export interface StoryboardShot {
   description?: string  // 英文画面描述，供 AI 图片/视频生成
   narration?: string    // 中文旁白文案，供 TTS 朗读和字幕显示
   dialogue?: string     // 角色台词（格式："角色名：台词"），无对话时为空
+  subtitle?: string     // 字幕覆盖文本，非空时优先用于导出，不影响 TTS
   camera_type: CameraType
   camera_angle: CameraAngle
   shot_size: ShotSize
