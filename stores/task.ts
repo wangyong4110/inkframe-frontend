@@ -118,7 +118,11 @@ export const useTaskStore = defineStore('task', {
         if (this._dismissed[taskId]) return
 
         const task = await this.refreshTask(taskId)
-        if (!task) return
+        if (!task) {
+          // 网络或服务端瞬时错误，继续轮询，不永久停止
+          this._timers[taskId] = setTimeout(poll, POLL_INTERVAL_MS)
+          return
+        }
 
         if (task.status === 'completed' || task.status === 'failed') {
           clearTimeout(this._timers[taskId])
