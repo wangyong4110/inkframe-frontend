@@ -461,6 +461,28 @@ export const useVideoApi = () => {
   const exportCapcut = (id: number) =>
     requestBlob(`/videos/${id}/export/capcut`)
 
+  const reviewStoryboard = (id: number, provider?: string) =>
+    request<ApiResponse<{
+      overall_score: number
+      narrative_score: number
+      visual_score: number
+      pacing_score: number
+      narration_score: number
+      summary: string
+      strengths: string[]
+      weaknesses: string[]
+      global_suggestions: string[]
+      shot_feedback: Array<{
+        shot_no: number
+        issues: string[]
+        suggestion: string
+        severity: 'info' | 'warning' | 'error'
+      }>
+    }>>(`/videos/${id}/storyboard/review`, {
+      method: 'POST',
+      body: provider ? JSON.stringify({ provider }) : undefined,
+    })
+
   const generateVoice = (
     videoId: number,
     shotId: number,
@@ -494,6 +516,7 @@ export const useVideoApi = () => {
     exportCapcut,
     getVideoProviders,
     generateVoice,
+    reviewStoryboard,
   }
 }
 

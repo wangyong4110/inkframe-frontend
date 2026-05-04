@@ -318,5 +318,11 @@ export const useVideoStore = defineStore('video', {
       this.storyboard = []
       this.currentShot = null
     },
+
+    async reviewStoryboard(videoId: number, provider?: string) {
+      const api = useVideoApi()
+      const response = await api.reviewStoryboard(videoId, provider)
+      return response.data
+    },
   },
 })

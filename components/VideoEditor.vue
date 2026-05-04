@@ -233,6 +233,45 @@ const estimatedShots = computed(() =>
     : '自动'
 )
 
+// ── 分镜审查 ─────────────────────────────────────────────────────────────
+type ShotFeedback = { shot_no: number; issues: string[]; suggestion: string; severity: 'info' | 'warning' | 'error' }
+type StoryboardReview = {
+  overall_score: number; narrative_score: number; visual_score: number
+  pacing_score: number; narration_score: number
+  summary: string; strengths: string[]; weaknesses: string[]
+  global_suggestions: string[]; shot_feedback: ShotFeedback[]
+}
+const showReviewPanel = ref(false)
+const reviewing = ref(false)
+const reviewResult = ref<StoryboardReview | null>(null)
+const reviewError = ref('')
+
+async function handleReviewStoryboard() {
+  reviewing.value = true
+  reviewError.value = ''
+  reviewResult.value = null
+  showReviewPanel.value = true
+  try {
+    reviewResult.value = await videoStore.reviewStoryboard(props.videoId, props.llmProvider || undefined)
+  } catch (e: any) {
+    reviewError.value = e.message || '审查失败，请稍后重试'
+  } finally {
+    reviewing.value = false
+  }
+}
+
+function scoreColor(score: number) {
+  if (score >= 8) return 'text-green-600 dark:text-green-400'
+  if (score >= 6) return 'text-yellow-600 dark:text-yellow-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
+function severityClass(severity: string) {
+  if (severity === 'error') return 'border-red-400 bg-red-50 dark:bg-red-900/20'
+  if (severity === 'warning') return 'border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
+  return 'border-blue-300 bg-blue-50 dark:bg-blue-900/20'
+}
+
 async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: string, overrideTargetDuration?: number) {
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
@@ -503,30 +542,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
          ============================== -->
     <div v-if="activeTab === 'script'">
 
-      <!-- Generation progress bar -->
-      <div
-        v-if="videoStore.storyboardTaskStatus === 'pending' || videoStore.storyboardTaskStatus === 'running' || videoStore.storyboardTaskStatus === 'failed'"
-        class="mb-4"
-      >
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-xs font-medium" :class="videoStore.storyboardTaskStatus === 'failed' ? 'text-red-500' : 'text-primary-600 dark:text-primary-400'">
-            <span v-if="videoStore.storyboardTaskStatus === 'pending'">排队中，等待 AI 处理…</span>
-            <span v-else-if="videoStore.storyboardTaskStatus === 'running'">AI 正在生成分镜脚本…</span>
-            <span v-else>生成失败：{{ videoStore.error || '未知错误' }}</span>
-          </span>
-          <span v-if="videoStore.storyboardTaskStatus !== 'failed'" class="text-[10px] text-gray-400 dark:text-gray-500">请稍候</span>
-        </div>
-        <div class="h-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div
-            v-if="videoStore.storyboardTaskStatus === 'failed'"
-            class="h-full w-full bg-red-500 rounded-full"
-          />
-          <div
-            v-else
-            class="h-full bg-primary-500 rounded-full progress-indeterminate"
-          />
-        </div>
-      </div>
 
       <!-- Script confirmed banner -->
       <div v-if="isScriptConfirmed" class="flex items-center gap-3 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg mb-4">
@@ -580,18 +595,34 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </button>
         </template>
 
-        <!-- Confirm script button (not confirmed) -->
-        <button
-          v-else-if="shots.length > 0"
-          class="btn-primary text-sm bg-green-600 hover:bg-green-700 border-green-600"
-          :disabled="confirmingScript"
-          @click="handleConfirmScript"
-        >
-          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          确认脚本
-        </button>
+        <!-- Script toolbar (not confirmed, shots exist) -->
+        <template v-else-if="shots.length > 0">
+          <!-- AI 审查按钮 -->
+          <button
+            class="btn-secondary text-sm flex items-center gap-1.5"
+            :disabled="reviewing"
+            @click="handleReviewStoryboard"
+          >
+            <svg v-if="reviewing" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {{ reviewing ? 'AI 审查中…' : 'AI 审查' }}
+          </button>
+          <!-- 确认脚本按钮 -->
+          <button
+            class="btn-primary text-sm bg-green-600 hover:bg-green-700 border-green-600"
+            :disabled="confirmingScript"
+            @click="handleConfirmScript"
+          >
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            确认脚本
+          </button>
+        </template>
       </div>
 
       <!-- Empty state -->
@@ -1167,9 +1198,159 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     </div>
 
   </div>
+
+  <!-- ── 分镜 AI 审查面板 ────────────────────────────────────────────────── -->
+  <Teleport to="body">
+    <Transition name="slide-right">
+      <div v-if="showReviewPanel" class="fixed inset-0 z-50 flex justify-end">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-black/30" @click="showReviewPanel = false" />
+        <!-- Panel -->
+        <div class="relative w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 class="font-semibold text-gray-900 dark:text-gray-100">AI 分镜脚本审查报告</h3>
+            </div>
+            <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showReviewPanel = false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            <!-- Loading -->
+            <div v-if="reviewing" class="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
+              <svg class="w-8 h-8 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span class="text-sm">AI 正在审查分镜脚本，请稍候…</span>
+            </div>
+
+            <!-- Error -->
+            <div v-else-if="reviewError" class="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
+              {{ reviewError }}
+            </div>
+
+            <!-- Result -->
+            <template v-else-if="reviewResult">
+              <!-- Score Overview -->
+              <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <div class="flex items-end gap-3 mb-4">
+                  <div class="text-4xl font-bold" :class="scoreColor(reviewResult.overall_score)">
+                    {{ reviewResult.overall_score.toFixed(1) }}
+                  </div>
+                  <div class="text-sm text-gray-500 pb-1">/ 10</div>
+                  <div class="flex-1" />
+                  <button class="text-xs text-primary-500 hover:text-primary-600" @click="handleReviewStoryboard">
+                    重新审查
+                  </button>
+                </div>
+                <!-- Sub scores -->
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  <div v-for="item in [
+                    { label: '叙事连贯性', score: reviewResult.narrative_score },
+                    { label: '视觉多样性', score: reviewResult.visual_score },
+                    { label: '节奏控制',   score: reviewResult.pacing_score },
+                    { label: '旁白质量',   score: reviewResult.narration_score },
+                  ]" :key="item.label" class="flex items-center gap-2">
+                    <span class="text-gray-500 w-16 shrink-0">{{ item.label }}</span>
+                    <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                      <div class="h-full rounded-full transition-all"
+                        :class="item.score >= 8 ? 'bg-green-500' : item.score >= 6 ? 'bg-yellow-500' : 'bg-red-500'"
+                        :style="`width:${item.score * 10}%`" />
+                    </div>
+                    <span class="font-medium" :class="scoreColor(item.score)">{{ item.score.toFixed(1) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Summary -->
+              <div class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ reviewResult.summary }}</div>
+
+              <!-- Strengths -->
+              <div v-if="reviewResult.strengths?.length">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">亮点</h4>
+                <ul class="space-y-1">
+                  <li v-for="s in reviewResult.strengths" :key="s" class="flex items-start gap-2 text-sm text-green-700 dark:text-green-400">
+                    <svg class="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                    {{ s }}
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Weaknesses -->
+              <div v-if="reviewResult.weaknesses?.length">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">主要问题</h4>
+                <ul class="space-y-1">
+                  <li v-for="w in reviewResult.weaknesses" :key="w" class="flex items-start gap-2 text-sm text-red-700 dark:text-red-400">
+                    <svg class="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                    </svg>
+                    {{ w }}
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Global suggestions -->
+              <div v-if="reviewResult.global_suggestions?.length">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">整体改进建议</h4>
+                <ol class="space-y-1.5">
+                  <li v-for="(sg, i) in reviewResult.global_suggestions" :key="i" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <span class="shrink-0 w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 text-xs flex items-center justify-center font-medium">{{ i + 1 }}</span>
+                    {{ sg }}
+                  </li>
+                </ol>
+              </div>
+
+              <!-- Shot-level feedback -->
+              <div v-if="reviewResult.shot_feedback?.length">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                  逐镜反馈 <span class="normal-case font-normal text-gray-400">（共 {{ reviewResult.shot_feedback.length }} 条）</span>
+                </h4>
+                <div class="space-y-2">
+                  <div
+                    v-for="fb in reviewResult.shot_feedback"
+                    :key="fb.shot_no"
+                    class="rounded-lg border-l-4 p-3 text-sm"
+                    :class="severityClass(fb.severity)"
+                  >
+                    <div class="font-medium text-gray-800 dark:text-gray-200 mb-1">镜 {{ fb.shot_no }}</div>
+                    <ul class="mb-1.5 space-y-0.5">
+                      <li v-for="issue in fb.issues" :key="issue" class="text-gray-600 dark:text-gray-400">· {{ issue }}</li>
+                    </ul>
+                    <div v-if="fb.suggestion" class="text-gray-500 dark:text-gray-500 text-xs italic">💡 {{ fb.suggestion }}</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.slide-right-enter-from .relative,
+.slide-right-leave-to .relative {
+  transform: translateX(100%);
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  opacity: 0;
+}
 @keyframes indeterminate {
   0%   { transform: translateX(-100%) scaleX(0.4); }
   50%  { transform: translateX(80%)   scaleX(0.8); }
