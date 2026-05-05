@@ -125,6 +125,7 @@ const timelineTotalElapsed = ref(0)
 const timelineTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const timelineSelectedShotId = ref<number | null>(null)
 const timelineVideoRef = ref<HTMLVideoElement | null>(null)
+const timelinePreviewRef = ref<HTMLDivElement | null>(null)
 const timelineVoiceRef = ref<HTMLAudioElement | null>(null)
 const timelineSfxRef = ref<HTMLAudioElement | null>(null)
 const timelineBgmRef = ref<HTMLAudioElement | null>(null)
@@ -2130,6 +2131,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <!-- Video/Image preview -->
           <div class="w-72 flex-shrink-0">
             <div
+              ref="timelinePreviewRef"
               class="relative bg-black rounded-lg overflow-hidden group"
               style="aspect-ratio:16/9"
             >
@@ -2173,7 +2175,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <button
                 class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                 title="全屏"
-                @click="timelineVideoRef ? timelineVideoRef.requestFullscreen().catch(() => {}) : null"
+                @click="timelinePreviewRef ? timelinePreviewRef.requestFullscreen().catch(() => {}) : null"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
