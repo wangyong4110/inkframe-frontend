@@ -1732,7 +1732,7 @@ async function fetchShotsForChapter() {
                   <!-- Max Tokens -->
                   <div>
                     <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Max Tokens <span class="text-gray-400">（0 = 自动 ≥4096）</span>
+                      Max Tokens <span class="text-gray-400">（0 = 自动）</span>
                     </label>
                     <input
                       v-model.number="scriptMaxTokens"
