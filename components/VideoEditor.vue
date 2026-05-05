@@ -1886,11 +1886,9 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           class="w-8 h-8 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0"
           @click="timelinePlaying ? timelinePause() : timelinePlay()"
         >
-          <!-- Play icon -->
           <svg v-if="!timelinePlaying" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
-          <!-- Pause icon -->
           <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
           </svg>
@@ -1903,7 +1901,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <path d="M6 6h12v12H6z" />
           </svg>
         </button>
-        <!-- Time counter -->
         <span class="text-sm font-mono text-gray-600 dark:text-gray-400">
           {{ Math.floor(timelineTotalElapsed / 60).toString().padStart(2, '0') }}:{{ Math.floor(timelineTotalElapsed % 60).toString().padStart(2, '0') }}
           /
@@ -1913,116 +1910,131 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         <span class="text-xs text-gray-400">{{ timelineOrderedShots.length }} 个镜头 · 拖拽调整顺序</span>
       </div>
 
-      <!-- Timeline scroll area -->
+      <!-- Vertical timeline grid -->
       <div class="card overflow-hidden">
-        <div class="overflow-x-auto">
-          <div class="flex min-w-max">
-            <!-- Track header column -->
-            <div class="w-20 flex-shrink-0 border-r border-gray-200 dark:border-gray-700">
-              <div class="h-8 border-b border-gray-200 dark:border-gray-700" />
-              <div class="h-12 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">视频轨</div>
-              <div class="h-8 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">配音轨</div>
-              <div class="h-8 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">音效轨</div>
-              <div class="h-8 flex items-center px-2 text-xs text-gray-500">背景音乐</div>
+        <!-- Column headers (sticky) -->
+        <div class="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 text-xs font-medium text-gray-500 dark:text-gray-400 sticky top-0 z-10">
+          <div class="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700">镜头</div>
+          <div class="flex-1 px-3 py-2 border-r border-gray-200 dark:border-gray-700">视频轨</div>
+          <div class="w-24 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700 text-center">配音轨</div>
+          <div class="w-24 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700 text-center">音效轨</div>
+          <div class="w-20 flex-shrink-0 px-3 py-2 text-center">背景音乐</div>
+        </div>
+
+        <!-- Shot rows scroll area -->
+        <div class="relative overflow-y-auto max-h-[520px]">
+          <!-- Playhead (horizontal red line) -->
+          <div
+            class="absolute left-0 right-0 h-0.5 bg-red-500 z-20 pointer-events-none"
+            :style="`top:${timelineTotalElapsed * 10}px`"
+          >
+            <div class="absolute -top-1 left-32 w-2 h-2 bg-red-500 rounded-full -translate-x-1/2" />
+          </div>
+
+          <!-- Shot rows -->
+          <div
+            v-for="(shot, idx) in timelineOrderedShots"
+            :key="shot.id"
+            class="flex border-b border-gray-100 dark:border-gray-800 transition-colors duration-150"
+            :class="[
+              timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/15' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
+              timelineDragShotId === shot.id ? 'opacity-40' : '',
+            ]"
+            :style="`height:${Math.max(60, (shot.duration || 5) * 10)}px`"
+            draggable="true"
+            @dragstart="timelineDragStart(shot.id)"
+            @dragover="timelineDragOver($event, shot.id)"
+            @dragend="timelineDragEnd"
+          >
+            <!-- Shot info cell: thumbnail + number -->
+            <div
+              class="w-32 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center gap-2 px-2 cursor-pointer select-none"
+              :class="timelineCurrentShotIndex === idx ? 'text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-400'"
+              @click="timelineSeekToShot(idx)"
+            >
+              <!-- Drag handle -->
+              <svg class="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0 cursor-grab" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M9 5a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 17a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2z" />
+              </svg>
+              <!-- Thumbnail -->
+              <div class="w-14 flex-shrink-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700" style="aspect-ratio:16/9">
+                <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+                <div v-else class="w-full h-full flex items-center justify-center">
+                  <span class="text-xs text-gray-400">无图</span>
+                </div>
+              </div>
+              <!-- Shot no + duration -->
+              <div class="min-w-0">
+                <div class="text-xs font-semibold leading-tight">#{{ shot.shot_no }}</div>
+                <div class="text-xs text-gray-400 font-mono">{{ shot.duration || 5 }}s</div>
+              </div>
             </div>
 
-            <!-- Shot columns -->
-            <div class="relative flex-1">
-              <!-- Shot header row -->
-              <div class="flex h-8 border-b border-gray-200 dark:border-gray-700 relative">
-                <!-- Playhead -->
-                <div
-                  class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                  :style="`left:${Math.max(0, timelineTotalElapsed) * 20}px`"
-                />
-                <div
-                  v-for="(shot, idx) in timelineOrderedShots"
-                  :key="shot.id"
-                  class="flex-shrink-0 flex items-center justify-center text-xs font-medium border-r border-gray-200 dark:border-gray-700 cursor-pointer select-none transition-colors"
-                  :class="[
-                    timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800',
-                    timelineDragShotId === shot.id ? 'opacity-50' : '',
-                  ]"
-                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
-                  draggable="true"
-                  @click="timelineSeekToShot(idx)"
-                  @dragstart="timelineDragStart(shot.id)"
-                  @dragover="timelineDragOver($event, shot.id)"
-                  @dragend="timelineDragEnd"
-                >
-                  #{{ shot.shot_no }}
-                </div>
-              </div>
+            <!-- Video track cell: description + shot-level progress bar -->
+            <div
+              class="flex-1 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden cursor-pointer px-3 flex items-center"
+              :class="timelineSelectedShotId === shot.id ? 'ring-2 ring-inset ring-primary-500' : ''"
+              @click="timelineSelectedShotId = timelineSelectedShotId === shot.id ? null : shot.id"
+            >
+              <!-- Faint thumbnail background -->
+              <img
+                v-if="shot.image_url"
+                :src="shot.image_url"
+                class="absolute inset-0 w-full h-full object-cover opacity-10 pointer-events-none"
+              />
+              <span class="relative text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-snug">
+                {{ shot.description || shot.narration || '—' }}
+              </span>
+              <!-- Playback progress fill -->
+              <div
+                v-if="timelineCurrentShotIndex === idx"
+                class="absolute bottom-0 left-0 h-0.5 bg-primary-500 transition-none"
+                :style="`width:${(timelineShotElapsed / (shot.duration || 5)) * 100}%`"
+              />
+            </div>
 
-              <!-- Video track row -->
-              <div class="flex h-12 border-b border-gray-100 dark:border-gray-800">
-                <div
-                  v-for="shot in timelineOrderedShots"
-                  :key="shot.id"
-                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden cursor-pointer"
-                  :class="timelineSelectedShotId === shot.id ? 'ring-2 ring-inset ring-primary-500' : ''"
-                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
-                  @click="timelineSelectedShotId = timelineSelectedShotId === shot.id ? null : shot.id"
-                >
-                  <img
-                    v-if="shot.image_url"
-                    :src="shot.image_url"
-                    class="w-full h-full object-cover"
-                  />
-                  <div v-else class="w-full h-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                    <span class="text-xs text-blue-400">无图</span>
-                  </div>
-                  <!-- Duration label -->
-                  <span class="absolute bottom-0.5 right-1 text-xs text-white drop-shadow font-mono">{{ shot.duration || 5 }}s</span>
-                </div>
-              </div>
+            <!-- Voice track cell -->
+            <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center px-3">
+              <div
+                class="w-full rounded"
+                :class="(shotAudioUrls[shot.id] || shot.audio_url) ? 'bg-green-400 dark:bg-green-500' : 'bg-gray-200 dark:bg-gray-700'"
+                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
+              />
+            </div>
 
-              <!-- Voice track row -->
-              <div class="flex h-8 border-b border-gray-100 dark:border-gray-800">
-                <div
-                  v-for="shot in timelineOrderedShots"
-                  :key="shot.id"
-                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center"
-                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
-                >
-                  <div
-                    v-if="shotAudioUrls[shot.id] || shot.audio_url"
-                    class="mx-1 h-4 rounded-sm bg-green-400 dark:bg-green-600 w-full"
-                  />
-                  <div v-else class="mx-1 h-1 rounded-sm bg-gray-200 dark:bg-gray-700 w-full" />
-                </div>
-              </div>
+            <!-- SFX track cell -->
+            <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center px-3">
+              <div
+                class="w-full rounded"
+                :class="shot.sfx_url ? 'bg-orange-400 dark:bg-orange-500' : 'bg-gray-200 dark:bg-gray-700'"
+                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
+              />
+            </div>
 
-              <!-- SFX track row -->
-              <div class="flex h-8 border-b border-gray-100 dark:border-gray-800">
-                <div
-                  v-for="shot in timelineOrderedShots"
-                  :key="shot.id"
-                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center"
-                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
-                >
-                  <div
-                    v-if="shot.sfx_url"
-                    class="mx-1 h-4 rounded-sm bg-orange-400 dark:bg-orange-600 w-full"
-                  />
-                  <div v-else class="mx-1 h-1 rounded-sm bg-gray-200 dark:bg-gray-700 w-full" />
-                </div>
-              </div>
-
-              <!-- BGM track row (single full-width bar) -->
-              <div class="flex h-8 relative">
-                <div
-                  class="absolute inset-0 mx-1 my-1.5 rounded-sm flex items-center pl-2"
-                  :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-600' : 'bg-gray-200 dark:bg-gray-700'"
-                >
-                  <span v-if="selectedBgm" class="text-xs text-white font-medium truncate">
-                    {{ BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm }} · {{ bgmVolume }}%
-                  </span>
-                  <span v-else class="text-xs text-gray-400">未选择 BGM</span>
-                </div>
-              </div>
+            <!-- BGM track cell -->
+            <div class="w-20 flex-shrink-0 flex items-center justify-center px-2">
+              <div
+                class="w-full rounded"
+                :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-500' : 'bg-gray-200 dark:bg-gray-700'"
+                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
+              />
             </div>
           </div>
+
+          <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-12">
+            请先在「分镜脚本」Tab 生成分镜
+          </p>
+        </div>
+
+        <!-- BGM footer bar -->
+        <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 text-xs">
+          <svg class="w-3.5 h-3.5 text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+          <span v-if="selectedBgm" class="text-purple-600 dark:text-purple-400 font-medium">
+            {{ BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm }} · {{ bgmVolume }}%
+          </span>
+          <span v-else class="text-gray-400">背景音乐：未选择（在「背景音乐」Tab 中设置）</span>
         </div>
       </div>
 
@@ -2040,33 +2052,25 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </div>
         <template v-if="timelineEditDraft[timelineSelectedShotId]">
           <div class="grid grid-cols-3 gap-3">
-            <!-- Duration -->
             <div>
               <label class="block text-xs text-gray-500 mb-1">时长（秒）</label>
               <input
                 v-model.number="timelineEditDraft[timelineSelectedShotId].duration"
-                type="number"
-                min="1"
-                max="60"
+                type="number" min="1" max="60"
                 class="input w-full text-sm"
               />
             </div>
-            <!-- Transition -->
             <div>
               <label class="block text-xs text-gray-500 mb-1">转场方式</label>
               <select v-model="timelineEditDraft[timelineSelectedShotId].transition" class="input w-full text-sm">
                 <option v-for="opt in TRANSITION_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
-            <!-- SFX volume -->
             <div>
               <label class="block text-xs text-gray-500 mb-1">音效音量 {{ Math.round((timelineEditDraft[timelineSelectedShotId].sfx_volume ?? 0) * 100) }}%</label>
               <input
                 v-model.number="timelineEditDraft[timelineSelectedShotId].sfx_volume"
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
+                type="range" min="0" max="1" step="0.05"
                 class="w-full accent-primary-500"
               />
             </div>
@@ -2082,10 +2086,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </div>
         </template>
       </div>
-
-      <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">
-        请先在「分镜脚本」Tab 生成分镜
-      </p>
     </div>
 
     <!-- ==============================
