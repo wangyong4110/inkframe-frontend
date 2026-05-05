@@ -261,6 +261,22 @@ const timelineOrderedShots = computed(() => {
 })
 const timelineCurrentShot = computed(() => timelineOrderedShots.value[timelineCurrentShotIndex.value] ?? null)
 
+const TL_PX_PER_SEC = 16   // pixels per second for vertical timeline scale
+const timelineShotStartTimes = computed(() => {
+  const times: number[] = []
+  let cum = 0
+  for (const shot of timelineOrderedShots.value) {
+    times.push(cum)
+    cum += shot.duration || 5
+  }
+  return times
+})
+function tlFmtTime(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`
+}
+
 const TABS = computed(() => [
   { key: 'script', label: '分镜脚本', icon: 'M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4', locked: false },
   { key: 'voice', label: '配音字幕', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z', locked: !productionEnabled.value },
@@ -1914,7 +1930,8 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       <div class="card overflow-hidden">
         <!-- Column headers (sticky) -->
         <div class="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 text-xs font-medium text-gray-500 dark:text-gray-400 sticky top-0 z-10">
-          <div class="w-32 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700">镜头</div>
+          <div class="w-10 flex-shrink-0 border-r border-gray-200 dark:border-gray-700" />
+          <div class="w-36 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700">镜头</div>
           <div class="flex-1 px-3 py-2 border-r border-gray-200 dark:border-gray-700">视频轨</div>
           <div class="w-24 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700 text-center">配音轨</div>
           <div class="w-24 flex-shrink-0 px-3 py-2 border-r border-gray-200 dark:border-gray-700 text-center">音效轨</div>
@@ -1922,13 +1939,13 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </div>
 
         <!-- Shot rows scroll area -->
-        <div class="relative overflow-y-auto max-h-[520px]">
-          <!-- Playhead (horizontal red line) -->
+        <div class="relative overflow-y-auto max-h-[560px]">
+          <!-- Playhead (horizontal red line, moves at TL_PX_PER_SEC px/s) -->
           <div
             class="absolute left-0 right-0 h-0.5 bg-red-500 z-20 pointer-events-none"
-            :style="`top:${timelineTotalElapsed * 10}px`"
+            :style="`top:${timelineTotalElapsed * TL_PX_PER_SEC}px`"
           >
-            <div class="absolute -top-1 left-32 w-2 h-2 bg-red-500 rounded-full -translate-x-1/2" />
+            <div class="absolute -top-1 left-10 w-2 h-2 bg-red-500 rounded-full -translate-x-1/2" />
           </div>
 
           <!-- Shot rows -->
@@ -1940,15 +1957,30 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/15' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
               timelineDragShotId === shot.id ? 'opacity-40' : '',
             ]"
-            :style="`height:${Math.max(60, (shot.duration || 5) * 10)}px`"
+            :style="`height:${(shot.duration || 5) * TL_PX_PER_SEC}px`"
             draggable="true"
             @dragstart="timelineDragStart(shot.id)"
             @dragover="timelineDragOver($event, shot.id)"
             @dragend="timelineDragEnd"
           >
+            <!-- Time ruler cell -->
+            <div class="w-10 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 relative select-none">
+              <!-- Start-time label at top of cell -->
+              <span
+                class="absolute top-0.5 left-0 right-0 text-center text-[9px] font-mono leading-none"
+                :class="timelineCurrentShotIndex === idx ? 'text-primary-500' : 'text-gray-400 dark:text-gray-600'"
+              >
+                {{ tlFmtTime(timelineShotStartTimes[idx]) }}
+              </span>
+              <!-- Tick mark at top -->
+              <div class="absolute top-0 right-0 w-2 h-px bg-gray-300 dark:bg-gray-600" />
+              <!-- Tick mark at bottom (= end time of this shot) -->
+              <div class="absolute bottom-0 right-0 w-2 h-px bg-gray-300 dark:bg-gray-600" />
+            </div>
+
             <!-- Shot info cell: thumbnail + number -->
             <div
-              class="w-32 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center gap-2 px-2 cursor-pointer select-none"
+              class="w-36 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center gap-2 px-2 cursor-pointer select-none"
               :class="timelineCurrentShotIndex === idx ? 'text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-400'"
               @click="timelineSeekToShot(idx)"
             >
@@ -1957,7 +1989,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 <path d="M9 5a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 17a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2z" />
               </svg>
               <!-- Thumbnail -->
-              <div class="w-14 flex-shrink-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700" style="aspect-ratio:16/9">
+              <div class="w-16 flex-shrink-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700" style="aspect-ratio:16/9">
                 <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <span class="text-xs text-gray-400">无图</span>
@@ -1970,13 +2002,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               </div>
             </div>
 
-            <!-- Video track cell: description + shot-level progress bar -->
+            <!-- Video track cell -->
             <div
               class="flex-1 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden cursor-pointer px-3 flex items-center"
               :class="timelineSelectedShotId === shot.id ? 'ring-2 ring-inset ring-primary-500' : ''"
               @click="timelineSelectedShotId = timelineSelectedShotId === shot.id ? null : shot.id"
             >
-              <!-- Faint thumbnail background -->
               <img
                 v-if="shot.image_url"
                 :src="shot.image_url"
@@ -1985,7 +2016,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <span class="relative text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-snug">
                 {{ shot.description || shot.narration || '—' }}
               </span>
-              <!-- Playback progress fill -->
+              <!-- Playback progress fill (left→right, bottom edge) -->
               <div
                 v-if="timelineCurrentShotIndex === idx"
                 class="absolute bottom-0 left-0 h-0.5 bg-primary-500 transition-none"
@@ -1993,12 +2024,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               />
             </div>
 
-            <!-- Voice track cell -->
+            <!-- Voice track cell (bar height proportional to duration) -->
             <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center px-3">
               <div
                 class="w-full rounded"
                 :class="(shotAudioUrls[shot.id] || shot.audio_url) ? 'bg-green-400 dark:bg-green-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
+                :style="`height:${Math.min(100, ((shot.duration || 5) / (timelineTotalDuration || 1)) * 400)}%`"
               />
             </div>
 
@@ -2007,17 +2038,30 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <div
                 class="w-full rounded"
                 :class="shot.sfx_url ? 'bg-orange-400 dark:bg-orange-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
+                :style="`height:${Math.min(100, ((shot.duration || 5) / (timelineTotalDuration || 1)) * 400)}%`"
               />
             </div>
 
-            <!-- BGM track cell -->
+            <!-- BGM track cell (always full height = continuous) -->
             <div class="w-20 flex-shrink-0 flex items-center justify-center px-2">
               <div
-                class="w-full rounded"
-                :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.max(6, Math.min((shot.duration || 5) * 3, 28))}px`"
-              />
+                class="w-full h-full py-1.5 flex items-stretch"
+              >
+                <div
+                  class="w-full rounded"
+                  :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-500' : 'bg-gray-200 dark:bg-gray-700'"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Total duration end marker -->
+          <div v-if="shots.length > 0" class="flex items-center h-6">
+            <div class="w-10 flex-shrink-0 relative">
+              <span class="absolute top-0.5 left-0 right-0 text-center text-[9px] font-mono leading-none text-gray-400 dark:text-gray-600">
+                {{ tlFmtTime(timelineTotalDuration) }}
+              </span>
+              <div class="absolute top-0 right-0 w-2 h-px bg-gray-300 dark:bg-gray-600" />
             </div>
           </div>
 
