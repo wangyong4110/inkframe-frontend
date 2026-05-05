@@ -177,7 +177,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number, maxTokens?: number, temperature?: number, timeoutSeconds?: number) {
+    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number, maxTokens?: number, temperature?: number, timeoutSeconds?: number, voiceMode?: string) {
       this.generating = true
       this.error = null
       this.storyboardTaskId = null
@@ -185,7 +185,7 @@ export const useVideoStore = defineStore('video', {
 
       try {
         const api = useVideoApi()
-        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number } = {}
+        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number; voice_mode?: string } = {}
         if (provider) body.provider = provider
         if (userPrompt?.trim()) body.user_prompt = userPrompt.trim()
         if (pacing) body.pacing = pacing
@@ -193,6 +193,7 @@ export const useVideoStore = defineStore('video', {
         if (maxTokens && maxTokens > 0) body.max_tokens = maxTokens
         if (temperature && temperature > 0) body.temperature = temperature
         if (timeoutSeconds && timeoutSeconds > 0) body.timeout_seconds = timeoutSeconds
+        if (voiceMode && voiceMode !== 'both') body.voice_mode = voiceMode
         const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')

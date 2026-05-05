@@ -379,7 +379,7 @@ function severityClass(severity: string) {
   return 'border-blue-300 bg-blue-50 dark:bg-blue-900/20'
 }
 
-async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: string, overrideTargetDuration?: number, overrideMaxTokens?: number, overrideTemperature?: number, overrideTimeoutSeconds?: number) {
+async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: string, overrideTargetDuration?: number, overrideMaxTokens?: number, overrideTemperature?: number, overrideTimeoutSeconds?: number, overrideVoiceMode?: string) {
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
@@ -400,6 +400,7 @@ async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: st
       effectiveMaxTokens || undefined,
       effectiveTemperature || undefined,
       effectiveTimeout || undefined,
+      overrideVoiceMode || undefined,
     )
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {

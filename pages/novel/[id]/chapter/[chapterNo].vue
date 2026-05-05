@@ -513,6 +513,7 @@ const generatingScript = ref(false)
 const scriptUserPrompt = ref('')
 const scriptPacing = ref<'slow' | 'normal' | 'fast'>('normal')
 const scriptTargetDuration = ref<number>(0)
+const scriptVoiceMode = ref<'both' | 'narration' | 'dialogue'>('both')
 // 高级 AI 参数（各面板共享，0 = 使用系统默认，不覆盖）
 const showAdvancedParams = ref(false)
 const advMaxTokens = ref(0)
@@ -558,6 +559,7 @@ async function handleGenerateScript() {
   const maxTokens = scriptMaxTokens.value || undefined
   const temperature = scriptTemperature.value || undefined
   const timeout = scriptTimeoutSeconds.value || undefined
+  const voiceMode = scriptVoiceMode.value !== 'both' ? scriptVoiceMode.value : undefined
   if (!currentVideoId.value) {
     // Auto-create project with defaults, then generate
     generatingScript.value = true
@@ -567,14 +569,14 @@ async function handleGenerateScript() {
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
-      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout)
+      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode)
     } catch (e: any) {
       toast.error('创建失败：' + (e.message || '未知错误'))
     } finally {
       generatingScript.value = false
     }
   } else {
-    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout)
+    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode)
   }
 }
 
@@ -1706,6 +1708,27 @@ async function fetchShotsForChapter() {
                 <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
                   预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头
                 </p>
+              </div>
+              <!-- 配音模式 -->
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">配音模式</label>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button
+                    class="flex-1 py-1.5 text-xs transition-colors"
+                    :class="scriptVoiceMode === 'both' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="scriptVoiceMode = 'both'"
+                  >对白+旁白</button>
+                  <button
+                    class="flex-1 py-1.5 text-xs transition-colors"
+                    :class="scriptVoiceMode === 'narration' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="scriptVoiceMode = 'narration'"
+                  >仅旁白</button>
+                  <button
+                    class="flex-1 py-1.5 text-xs transition-colors"
+                    :class="scriptVoiceMode === 'dialogue' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="scriptVoiceMode = 'dialogue'"
+                  >仅对白</button>
+                </div>
               </div>
               <!-- 用户提示词 -->
               <div>
