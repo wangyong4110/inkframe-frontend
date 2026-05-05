@@ -177,7 +177,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number) {
+    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number, maxTokens?: number, temperature?: number, timeoutSeconds?: number) {
       this.generating = true
       this.error = null
       this.storyboardTaskId = null
@@ -185,11 +185,14 @@ export const useVideoStore = defineStore('video', {
 
       try {
         const api = useVideoApi()
-        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number } = {}
+        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number } = {}
         if (provider) body.provider = provider
         if (userPrompt?.trim()) body.user_prompt = userPrompt.trim()
         if (pacing) body.pacing = pacing
         if (targetDuration) body.target_duration = targetDuration
+        if (maxTokens && maxTokens > 0) body.max_tokens = maxTokens
+        if (temperature && temperature > 0) body.temperature = temperature
+        if (timeoutSeconds && timeoutSeconds > 0) body.timeout_seconds = timeoutSeconds
         const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')

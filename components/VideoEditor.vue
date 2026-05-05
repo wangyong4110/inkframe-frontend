@@ -288,11 +288,26 @@ watch(shots, (list) => {
 const pacing = ref<'slow' | 'normal' | 'fast'>('normal')
 const targetDuration = ref<number>(0) // 0 = 自动
 
+// 高级 AI 参数（0 = 使用系统默认，不覆盖）
+const showAdvancedParams = ref(false)
+const advMaxTokens = ref(0)
+const advTemperature = ref(0)
+const advTimeoutSeconds = ref(0)
+
 // 从 video 初始化节奏/时长（刷新后还原上次所选）
 watch(video, (v) => {
   if (v) {
     pacing.value = v.pacing ?? 'normal'
     targetDuration.value = v.target_duration ?? 0
+  }
+}, { immediate: true })
+
+// 从项目配置（novel）读取 AI 高级参数默认值
+watch(() => novelStore.currentNovel, (n) => {
+  if (n) {
+    if (advMaxTokens.value === 0 && n.max_tokens) advMaxTokens.value = n.max_tokens
+    if (advTemperature.value === 0 && n.temperature) advTemperature.value = n.temperature
+    if (advTimeoutSeconds.value === 0 && n.timeout_seconds) advTimeoutSeconds.value = n.timeout_seconds
   }
 }, { immediate: true })
 
@@ -359,12 +374,15 @@ function severityClass(severity: string) {
   return 'border-blue-300 bg-blue-50 dark:bg-blue-900/20'
 }
 
-async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: string, overrideTargetDuration?: number) {
+async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: string, overrideTargetDuration?: number, overrideMaxTokens?: number, overrideTemperature?: number, overrideTimeoutSeconds?: number) {
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
   const effectivePacing = overridePacing ?? pacing.value
   const effectiveDuration = overrideTargetDuration ?? targetDuration.value
+  const effectiveMaxTokens = overrideMaxTokens ?? advMaxTokens.value
+  const effectiveTemperature = overrideTemperature ?? advTemperature.value
+  const effectiveTimeout = overrideTimeoutSeconds ?? advTimeoutSeconds.value
   try {
     await videoStore.generateStoryboard(
       props.videoId,
@@ -372,6 +390,9 @@ async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: st
       userPrompt,
       effectivePacing !== 'normal' ? effectivePacing : undefined,
       effectiveDuration || undefined,
+      effectiveMaxTokens || undefined,
+      effectiveTemperature || undefined,
+      effectiveTimeout || undefined,
     )
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {
@@ -762,6 +783,63 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <span class="text-xs text-gray-400 dark:text-gray-500">
             预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ estimatedShots }}</span> 个镜头
           </span>
+        </div>
+        <!-- 高级 AI 参数（折叠） -->
+        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <button
+            class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            @click="showAdvancedParams = !showAdvancedParams"
+          >
+            <span>高级参数</span>
+            <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
+            <!-- Max Tokens -->
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                Max Tokens <span class="text-gray-400">（0 = 系统默认 ≥4096）</span>
+              </label>
+              <input
+                v-model.number="advMaxTokens"
+                type="number" min="0" max="32768" step="256"
+                placeholder="0"
+                class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+              />
+            </div>
+            <!-- Temperature -->
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                Temperature <span class="text-gray-400">（0 = 系统默认 0.1；范围 0.1-2.0）</span>
+              </label>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model.number="advTemperature"
+                  type="range" min="0" max="2.0" step="0.1"
+                  class="flex-1 accent-primary-500"
+                />
+                <input
+                  v-model.number="advTemperature"
+                  type="number" min="0" max="2.0" step="0.1"
+                  placeholder="0"
+                  class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                />
+              </div>
+            </div>
+            <!-- Timeout -->
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                超时时间（秒）<span class="text-gray-400">（0 = 系统默认 180s；范围 30-600）</span>
+              </label>
+              <input
+                v-model.number="advTimeoutSeconds"
+                type="number" min="0" max="600" step="30"
+                placeholder="0"
+                class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+              />
+            </div>
+          </div>
         </div>
         <button class="btn-primary" :disabled="generatingStoryboard" @click="handleGenerateStoryboard">
           生成分镜脚本

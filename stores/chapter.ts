@@ -120,7 +120,7 @@ export const useChapterStore = defineStore('chapter', {
       }
     },
 
-    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number, model?: string) {
+    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number, model?: string, temperature?: number, timeoutSeconds?: number) {
       this.generating = true
       this.error = null
 
@@ -131,6 +131,8 @@ export const useChapterStore = defineStore('chapter', {
           prompt,
           max_tokens: maxTokens,
           model,
+          temperature,
+          timeout_seconds: timeoutSeconds,
         })
         // Backend returns 202 { data: { task_id } } — do NOT overwrite currentChapter
         const taskId: string = (response as any).data?.task_id

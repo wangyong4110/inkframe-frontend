@@ -173,7 +173,7 @@ export const useNovelStore = defineStore('novel', {
       }
     },
 
-    async generateOutline(id: number, chapterNum: number, prompt?: string) {
+    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number }) {
       this.loading = true
       this.error = null
 
@@ -182,6 +182,7 @@ export const useNovelStore = defineStore('novel', {
         const response = await api.generateOutline(id, {
           chapter_num: chapterNum,
           prompt,
+          ...overrides,
         })
         return response.data
       } catch (e: any) {

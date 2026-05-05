@@ -16,6 +16,7 @@ export interface Novel {
   tts_model?: string      // 语音合成模型
   temperature?: number
   max_tokens?: number
+  timeout_seconds?: number  // 默认超时（秒），0=使用系统默认(180s)
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
   reference_style?: string  // 参考作品

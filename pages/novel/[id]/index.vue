@@ -2406,6 +2406,12 @@ function getSkillStatusLabel(status: string): string {
               @change="(e) => novelStore.updateNovel(novelId, { max_tokens: parseInt((e.target as HTMLInputElement).value) })" />
             <p class="mt-1 text-xs text-gray-400">≈ {{ Math.round((novel?.max_tokens ?? 4096) * 0.75) }} 中文字</p>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">超时时间（秒）</label>
+            <input type="number" :value="novel?.timeout_seconds ?? 0" class="input" min="0" max="600" step="30"
+              @change="(e) => novelStore.updateNovel(novelId, { timeout_seconds: parseInt((e.target as HTMLInputElement).value) })" />
+            <p class="mt-1 text-xs text-gray-400">0 = 系统默认（300秒）</p>
+          </div>
         </div>
       </div>
 

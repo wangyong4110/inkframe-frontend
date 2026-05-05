@@ -158,6 +158,9 @@ export const useNovelApi = () => {
     chapter_num: number
     prompt?: string
     keywords?: string[]
+    max_tokens?: number
+    temperature?: number
+    timeout_seconds?: number
   }) =>
     request<ApiResponse<{ title: string; chapters: any[] }>>(`/novels/${id}/outline`, {
       method: 'POST',
@@ -204,6 +207,8 @@ export const useChapterApi = () => {
     prompt?: string
     max_tokens?: number
     model?: string
+    temperature?: number
+    timeout_seconds?: number
   }) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/generate`, {
       method: 'POST',
@@ -412,7 +417,7 @@ export const useVideoApi = () => {
   const deleteVideo = (id: number) =>
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
-  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number }) =>
+  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number }) =>
     request<{ task_id: string; message: string; data: { task_id: string } }>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
