@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier } from '~/types'
+import type { StoryboardShot, VideoQualityTier, ShotVoiceSegment } from '~/types'
 
 const { openLightbox } = useImageLightbox()
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
@@ -510,6 +510,17 @@ async function handleGenerateAll() {
   }
 }
 
+async function refineShotImage(shot: StoryboardShot, suggestion: string): Promise<string> {
+  const api = useVideoApi()
+  const res = await api.refineShotImage(props.videoId, shot.id, suggestion)
+  const newUrl = res.data?.image_url
+  if (newUrl) {
+    const idx = videoStore.storyboard.findIndex(s => s.id === shot.id)
+    if (idx >= 0) videoStore.storyboard[idx].image_url = newUrl
+  }
+  return newUrl || ''
+}
+
 async function handleGenerateImages() {
   const pending = shots.value.filter(s => !s.image_url && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
   if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); return }
@@ -669,6 +680,144 @@ async function handleExport(format: string) {
     toast.error('导出失败：' + (e.message || ''))
   } finally {
     exporting.value = { ...exporting.value, [format]: false }
+  }
+}
+
+// ──────── Shot insert / copy / delete ────────
+const insertingShotAfter = ref<number | null>(null) // shot_no after which we're inserting
+const insertShotForm = reactive({ narration: '', description: '', duration: 4 })
+const insertingShotLoading = ref(false)
+
+async function handleInsertShot(afterShotNo: number) {
+  insertingShotLoading.value = true
+  try {
+    const api = useVideoApi()
+    await api.insertShot(props.videoId, afterShotNo, insertShotForm.narration, insertShotForm.description, insertShotForm.duration)
+    insertingShotAfter.value = null
+    insertShotForm.narration = ''
+    insertShotForm.description = ''
+    insertShotForm.duration = 4
+    await videoStore.fetchStoryboard(props.videoId)
+    toast.success('镜头已插入')
+  } catch (e: any) {
+    toast.error('插入失败：' + (e.message || ''))
+  } finally {
+    insertingShotLoading.value = false
+  }
+}
+
+async function handleCopyShot(shot: StoryboardShot) {
+  try {
+    const api = useVideoApi()
+    await api.copyShot(props.videoId, shot.id, -1)
+    await videoStore.fetchStoryboard(props.videoId)
+    toast.success('镜头已复制')
+  } catch (e: any) {
+    toast.error('复制失败：' + (e.message || ''))
+  }
+}
+
+async function handleDeleteShot(shot: StoryboardShot) {
+  if (!confirm(`确认删除镜头 #${shot.shot_no}？此操作不可撤销。`)) return
+  try {
+    const api = useVideoApi()
+    await api.deleteShot(props.videoId, shot.id)
+    await videoStore.fetchStoryboard(props.videoId)
+    toast.success('镜头已删除')
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+// ──────── Voice segments ────────
+const shotSegments = ref<Record<number, ShotVoiceSegment[]>>({})
+const loadingSegments = ref<Record<number, boolean>>({})
+const expandedSegmentShotId = ref<number | null>(null)
+const generatingSegmentVoice = ref<Record<number, boolean>>({})
+const newSegmentText = ref<Record<number, string>>({})
+const insertAfterSeqNo = ref<Record<number, number | null>>({}) // shotId → seqNo after which to insert
+
+async function loadSegments(shot: StoryboardShot) {
+  if (loadingSegments.value[shot.id]) return
+  loadingSegments.value[shot.id] = true
+  try {
+    const api = useVideoApi()
+    const res = await api.listVoiceSegments(props.videoId, shot.id)
+    shotSegments.value[shot.id] = res.data ?? []
+  } catch {
+    shotSegments.value[shot.id] = []
+  } finally {
+    loadingSegments.value[shot.id] = false
+  }
+}
+
+async function toggleSegmentExpand(shot: StoryboardShot) {
+  if (expandedSegmentShotId.value === shot.id) {
+    expandedSegmentShotId.value = null
+    return
+  }
+  expandedSegmentShotId.value = shot.id
+  await loadSegments(shot)
+}
+
+async function handleAppendSegment(shot: StoryboardShot) {
+  const text = (newSegmentText.value[shot.id] || '').trim()
+  if (!text) return
+  try {
+    const api = useVideoApi()
+    const res = await api.appendVoiceSegment(props.videoId, shot.id, { text })
+    shotSegments.value[shot.id] = [...(shotSegments.value[shot.id] || []), res.data!]
+    newSegmentText.value[shot.id] = ''
+  } catch (e: any) {
+    toast.error('添加片段失败：' + (e.message || ''))
+  }
+}
+
+async function handleInsertSegment(shot: StoryboardShot, afterSeqNo: number) {
+  const text = (newSegmentText.value[`${shot.id}_ins_${afterSeqNo}`] as string || '').trim()
+  if (!text) return
+  try {
+    const api = useVideoApi()
+    await api.insertVoiceSegment(props.videoId, shot.id, afterSeqNo, { text })
+    await loadSegments(shot)
+    delete (newSegmentText.value as any)[`${shot.id}_ins_${afterSeqNo}`]
+    insertAfterSeqNo.value[shot.id] = null
+  } catch (e: any) {
+    toast.error('插入片段失败：' + (e.message || ''))
+  }
+}
+
+async function handleDeleteSegment(shot: StoryboardShot, seg: ShotVoiceSegment) {
+  try {
+    const api = useVideoApi()
+    await api.deleteVoiceSegment(props.videoId, shot.id, seg.id)
+    shotSegments.value[shot.id] = (shotSegments.value[shot.id] || []).filter(s => s.id !== seg.id)
+  } catch (e: any) {
+    toast.error('删除片段失败：' + (e.message || ''))
+  }
+}
+
+async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSegment) {
+  generatingSegmentVoice.value[seg.id] = true
+  try {
+    const api = useVideoApi()
+    const res = await api.generateSegmentVoice(props.videoId, shot.id, seg.id)
+    const taskId = res.data?.task_id
+    if (taskId) {
+      toast.info(`片段 ${seg.seq_no} 配音生成中…`)
+      useTaskStore().trackTask(taskId, async (task) => {
+        generatingSegmentVoice.value[seg.id] = false
+        if (task.status === 'completed') {
+          await loadSegments(shot)
+          toast.success(`片段 ${seg.seq_no} 配音已完成`)
+        } else {
+          toast.error(`片段 ${seg.seq_no} 配音失败`)
+        }
+      })
+    }
+  } catch (e: any) {
+    toast.error('配音失败：' + (e.message || ''))
+    generatingSegmentVoice.value[seg.id] = false
   }
 }
 
@@ -939,7 +1088,8 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
 
         <!-- ── Script mode (not confirmed): text-focused cards ── -->
         <template v-if="!isScriptConfirmed">
-          <div v-for="shot in shots" :key="shot.id" class="card overflow-hidden">
+          <template v-for="shot in shots" :key="shot.id">
+          <div class="card overflow-hidden">
 
             <!-- Editing mode -->
             <div v-if="editingId === shot.id" class="p-4 space-y-3">
@@ -1021,6 +1171,24 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                    title="复制此镜头（插入在其后）"
+                    @click="handleCopyShot(shot)"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                    title="删除此镜头"
+                    @click="handleDeleteShot(shot)"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
                 </div>
@@ -1111,6 +1279,38 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               </div>
             </div>
           </div>
+
+          <!-- Insert shot between cards -->
+          <div class="relative flex items-center justify-center h-6 group">
+            <div class="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gray-100 dark:bg-gray-700 group-hover:bg-primary-200 dark:group-hover:bg-primary-800 transition-colors" />
+            <button
+              class="relative z-10 flex items-center gap-1 px-2 py-0.5 text-xs text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:text-primary-600 hover:border-primary-300"
+              @click="insertingShotAfter = shot.shot_no; insertShotForm.narration = ''; insertShotForm.description = ''; insertShotForm.duration = 4"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              插入镜头
+            </button>
+          </div>
+
+          <!-- Insert form -->
+          <div v-if="insertingShotAfter === shot.shot_no" class="card p-3 border-2 border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20 space-y-2">
+            <p class="text-xs font-medium text-primary-700 dark:text-primary-300">在镜头 #{{ shot.shot_no }} 之后插入新镜头</p>
+            <textarea v-model="insertShotForm.narration" rows="2" class="input text-sm resize-none" placeholder="旁白/台词（中文）" />
+            <textarea v-model="insertShotForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="画面描述（英文，用于 AI 生图）" />
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500">时长</label>
+              <input v-model.number="insertShotForm.duration" type="number" min="1" max="30" step="0.5" class="input text-sm py-1 w-20" />
+              <span class="text-xs text-gray-400">秒</span>
+              <div class="flex-1" />
+              <button class="btn-outline text-xs py-1 px-2.5" @click="insertingShotAfter = null">取消</button>
+              <button class="btn-primary text-xs py-1 px-2.5" :disabled="insertingShotLoading" @click="handleInsertShot(shot.shot_no)">
+                {{ insertingShotLoading ? '插入中…' : '确认插入' }}
+              </button>
+            </div>
+          </div>
+          </template>
         </template>
 
         <!-- ── Production mode (confirmed): asset-generation cards ── -->
@@ -1119,7 +1319,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <div class="flex gap-3">
               <!-- Thumbnail -->
               <div class="w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center" style="min-height: 72px;">
-                <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url)" />
+                <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => refineShotImage(shot, s))" />
                 <div v-else-if="shot.status === 'generating'" class="p-2 flex items-center justify-center w-full h-full">
                   <div class="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
                 </div>
@@ -1272,79 +1472,123 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       </div>
 
       <div class="space-y-2">
-        <div v-for="shot in shots" :key="shot.id" class="card p-4 flex items-start gap-3">
-          <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url)" />
-            <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
+        <div v-for="shot in shots" :key="shot.id" class="card p-4">
+          <div class="flex items-start gap-3">
+            <!-- Thumbnail -->
+            <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
+              <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => refineShotImage(shot, s))" />
+              <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
+            </div>
+            <!-- Header -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</p>
+                <div class="flex items-center gap-1.5">
+                  <!-- Legacy single-voice button -->
+                  <button
+                    class="text-xs py-0.5 px-2 rounded border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-primary-600 hover:border-primary-300 transition-colors"
+                    :disabled="generatingVoice[shot.id]"
+                    @click="handleGenerateVoice(shot)"
+                  >
+                    {{ generatingVoice[shot.id] ? '生成中…' : (shotAudioUrls[shot.id] ? '重新生成旁白' : '生成旁白配音') }}
+                  </button>
+                  <!-- Expand segments -->
+                  <button
+                    class="text-xs py-0.5 px-2 rounded border transition-colors"
+                    :class="expandedSegmentShotId === shot.id
+                      ? 'border-primary-400 text-primary-600 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-primary-600 hover:border-primary-300'"
+                    @click="toggleSegmentExpand(shot)"
+                  >
+                    多段配音 {{ expandedSegmentShotId === shot.id ? '▲' : '▼' }}
+                  </button>
+                </div>
+              </div>
+              <!-- Narration text preview -->
+              <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
+                {{ shot.narration || shot.dialogue || shot.description || '（无台词）' }}
+              </p>
+              <!-- Legacy audio -->
+              <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-1.5 w-full h-8" />
+            </div>
           </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-0.5">镜头 {{ shot.shot_no }}</p>
 
-            <!-- 旁白/台词内联编辑区 -->
-            <div v-if="editingVoiceTextId === shot.id" class="mb-1.5">
-              <p class="text-xs text-gray-400 mb-0.5">{{ editingVoiceTextType === 'narration' ? '旁白' : '台词' }}</p>
-              <textarea
-                v-model="voiceTextDraft"
-                rows="3"
-                class="input text-sm resize-none w-full"
-                :placeholder="editingVoiceTextType === 'narration' ? '观众听到的旁白内容…' : '角色名：台词内容'"
-                @keydown.enter.ctrl="saveVoiceText(shot)"
-                @keydown.esc="cancelEditVoiceText"
-              />
-              <div class="flex items-center gap-1.5 mt-1">
-                <button
-                  class="btn-primary text-xs py-0.5 px-2"
-                  :disabled="savingVoiceText"
-                  @click="saveVoiceText(shot)"
-                >{{ savingVoiceText ? '保存中…' : '保存' }}</button>
-                <button class="btn-outline text-xs py-0.5 px-2" @click="cancelEditVoiceText">取消</button>
-                <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存</span>
+          <!-- ── Multi-segment panel ── -->
+          <div v-if="expandedSegmentShotId === shot.id" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <div v-if="loadingSegments[shot.id]" class="text-xs text-gray-400 py-2 text-center">加载中…</div>
+            <div v-else class="space-y-2">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">语音片段列表（按顺序播放）</p>
+
+              <!-- Segment list -->
+              <template v-for="seg in (shotSegments[shot.id] || [])" :key="seg.id">
+                <div class="flex items-start gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                  <span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-600 text-xs flex items-center justify-center text-gray-500 font-bold mt-0.5">
+                    {{ seg.seq_no }}
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ seg.text }}</p>
+                    <p v-if="seg.speaker" class="text-xs text-gray-400 mt-0.5">角色：{{ seg.speaker }}</p>
+                    <audio v-if="seg.audio_path" :src="`/api/v1/videos/${props.videoId}/shots/${shot.id}/segments/${seg.id}/audio`" controls class="mt-1 w-full h-7" />
+                  </div>
+                  <div class="flex-shrink-0 flex items-center gap-1">
+                    <button
+                      class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
+                      :disabled="generatingSegmentVoice[seg.id]"
+                      title="生成配音"
+                      @click="handleGenerateSegmentVoice(shot, seg)"
+                    >
+                      <svg v-if="generatingSegmentVoice[seg.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </button>
+                    <button
+                      class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                      title="删除此片段"
+                      @click="handleDeleteSegment(shot, seg)"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <!-- Insert between segments -->
+                <div class="relative flex items-center justify-center h-5 group">
+                  <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-px bg-gray-100 dark:bg-gray-700 group-hover:bg-primary-200 transition-colors" />
+                  <button
+                    class="relative z-10 text-[10px] text-gray-400 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hover:text-primary-600 hover:border-primary-300"
+                    @click="insertAfterSeqNo[shot.id] = (insertAfterSeqNo[shot.id] === seg.seq_no ? null : seg.seq_no)"
+                  >+ 在此插入</button>
+                </div>
+                <!-- Insert form -->
+                <div v-if="insertAfterSeqNo[shot.id] === seg.seq_no" class="flex items-center gap-2 pl-7">
+                  <input
+                    :value="(newSegmentText as any)[`${shot.id}_ins_${seg.seq_no}`] || ''"
+                    class="input text-sm flex-1"
+                    placeholder="新片段文本…"
+                    @input="(e) => { (newSegmentText as any)[`${shot.id}_ins_${seg.seq_no}`] = (e.target as HTMLInputElement).value }"
+                    @keydown.enter="handleInsertSegment(shot, seg.seq_no)"
+                  />
+                  <button class="btn-primary text-xs py-1 px-2" @click="handleInsertSegment(shot, seg.seq_no)">插入</button>
+                  <button class="btn-outline text-xs py-1 px-2" @click="insertAfterSeqNo[shot.id] = null">取消</button>
+                </div>
+              </template>
+
+              <!-- Append new segment -->
+              <div class="flex items-center gap-2 pt-1">
+                <input
+                  v-model="newSegmentText[shot.id]"
+                  class="input text-sm flex-1"
+                  placeholder="添加新片段文本…"
+                  @keydown.enter="handleAppendSegment(shot)"
+                />
+                <button class="btn-primary text-xs py-1 px-2.5" @click="handleAppendSegment(shot)">追加</button>
               </div>
             </div>
-            <div v-else class="mb-1.5 space-y-0.5">
-              <!-- 旁白文本 + 内联编辑图标 -->
-              <p v-if="shot.narration" class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                {{ shot.narration }}
-                <button
-                  class="inline-flex items-center ml-1 p-0.5 rounded text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors align-middle"
-                  title="编辑旁白"
-                  @click="startEditVoiceText(shot, 'narration')"
-                >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
-              </p>
-              <!-- 台词文本 + 内联编辑图标 -->
-              <p v-if="shot.dialogue" class="text-sm text-primary-600 dark:text-primary-400 italic leading-relaxed">
-                「{{ shot.dialogue }}」
-                <button
-                  class="inline-flex items-center ml-1 p-0.5 rounded text-primary-300 hover:text-primary-500 dark:hover:text-primary-300 transition-colors align-middle not-italic"
-                  title="编辑台词"
-                  @click="startEditVoiceText(shot, 'dialogue')"
-                >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
-              </p>
-              <p v-if="!shot.narration && !shot.dialogue" class="text-sm text-gray-400 dark:text-gray-500">（无台词）</p>
-            </div>
-
-            <audio
-              v-if="shotAudioUrls[shot.id]"
-              :src="shotAudioUrls[shot.id]"
-              controls
-              class="mt-1.5 w-full h-8"
-            />
           </div>
-          <button
-            class="btn-outline text-sm flex-shrink-0"
-            :disabled="generatingVoice[shot.id]"
-            @click="handleGenerateVoice(shot)"
-          >
-            {{ generatingVoice[shot.id] ? '生成中...' : (shotAudioUrls[shot.id] ? '重新生成' : '生成配音') }}
-          </button>
         </div>
       </div>
     </div>

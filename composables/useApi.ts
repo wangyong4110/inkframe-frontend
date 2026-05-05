@@ -424,6 +424,12 @@ export const useVideoApi = () => {
       body: JSON.stringify({ shot_ids: shotIds }),
     })
 
+  const refineShotImage = (videoId: number, shotId: number, suggestion: string) =>
+    request<ApiResponse<{ image_url: string }>>(`/videos/${videoId}/shots/${shotId}/refine-image`, {
+      method: 'POST',
+      body: JSON.stringify({ suggestion }),
+    })
+
   // 批量为所有分镜自动生成音效（异步任务，返回 task_id）
   const batchGenerateSFX = (videoId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, { method: 'POST' })
@@ -487,6 +493,50 @@ export const useVideoApi = () => {
       }),
     })
 
+  // ── Shot insert / copy / delete ───────────────────────────────────────────
+  const insertShot = (videoId: number, afterShotNo: number, narration: string, description: string, duration: number) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/insert`, {
+      method: 'POST',
+      body: JSON.stringify({ after_shot_no: afterShotNo, narration, description, duration }),
+    })
+
+  const copyShot = (videoId: number, shotId: number, afterShotNo?: number) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ after_shot_no: afterShotNo ?? -1 }),
+    })
+
+  const deleteShot = (videoId: number, shotId: number) =>
+    request<void>(`/videos/${videoId}/shots/${shotId}`, { method: 'DELETE' })
+
+  // ── Voice segments ────────────────────────────────────────────────────────
+  const listVoiceSegments = (videoId: number, shotId: number) =>
+    request<ApiResponse<import('../types').ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
+
+  const appendVoiceSegment = (videoId: number, shotId: number, data: { text: string; speaker?: string; voice_id?: string }) =>
+    request<ApiResponse<import('../types').ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const insertVoiceSegment = (videoId: number, shotId: number, afterSeqNo: number, data: { text: string; speaker?: string; voice_id?: string }) =>
+    request<ApiResponse<import('../types').ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments/insert`, {
+      method: 'POST',
+      body: JSON.stringify({ after_seq_no: afterSeqNo, ...data }),
+    })
+
+  const updateVoiceSegment = (videoId: number, shotId: number, segId: number, data: { text?: string; speaker?: string; voice_id?: string }) =>
+    request<ApiResponse<import('../types').ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteVoiceSegment = (videoId: number, shotId: number, segId: number) =>
+    request<void>(`/videos/${videoId}/shots/${shotId}/segments/${segId}`, { method: 'DELETE' })
+
+  const generateSegmentVoice = (videoId: number, shotId: number, segId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}/voice`, { method: 'POST' })
+
   return {
     getVideos,
     getVideo,
@@ -500,6 +550,7 @@ export const useVideoApi = () => {
     batchGenerateShots,
     batchGenerateShotImages,
     batchGenerateShotClips,
+    refineShotImage,
     batchGenerateSFX,
     generateShotSFX,
     exportCapcut,
@@ -507,6 +558,15 @@ export const useVideoApi = () => {
     getVideoProviders,
     generateVoice,
     reviewStoryboard,
+    insertShot,
+    copyShot,
+    deleteShot,
+    listVoiceSegments,
+    appendVoiceSegment,
+    insertVoiceSegment,
+    updateVoiceSegment,
+    deleteVoiceSegment,
+    generateSegmentVoice,
   }
 }
 

@@ -222,6 +222,17 @@ export interface StoryboardShot {
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
 }
 
+export interface ShotVoiceSegment {
+  id: number
+  shot_id: number
+  seq_no: number
+  text: string
+  speaker?: string
+  voice_id?: string
+  audio_path?: string
+  duration_secs?: number
+}
+
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
 export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
 export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'
