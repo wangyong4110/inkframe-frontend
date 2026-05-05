@@ -1889,158 +1889,13 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          时间线 Tab
          ============================== -->
-    <div v-if="activeTab === 'timeline'">
+    <div v-if="activeTab === 'timeline'" class="space-y-3">
       <!-- Hidden audio-only elements -->
       <audio ref="timelineVoiceRef" class="hidden" preload="auto" />
       <audio ref="timelineSfxRef" class="hidden" preload="auto" />
       <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
 
-      <!-- Two-column layout: preview left, timeline right -->
-      <div class="flex gap-4 items-start">
-
-        <!-- ── Left: Preview + Controls ── -->
-        <div class="w-72 flex-shrink-0 space-y-3">
-
-          <!-- Video/Image preview card -->
-          <div class="card overflow-hidden bg-black dark:bg-black">
-            <!-- 16:9 display -->
-            <div class="relative w-full bg-black" style="aspect-ratio:16/9">
-              <!-- Video element (visible, shown when shot has video_url) -->
-              <video
-                ref="timelineVideoRef"
-                class="absolute inset-0 w-full h-full object-contain"
-                :class="timelineCurrentShot?.video_url ? 'opacity-100' : 'opacity-0'"
-                preload="auto"
-              />
-              <!-- Image fallback -->
-              <img
-                v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
-                :src="timelineCurrentShot.image_url"
-                class="absolute inset-0 w-full h-full object-contain"
-              />
-              <!-- Empty state -->
-              <div
-                v-if="!timelineCurrentShot"
-                class="absolute inset-0 flex flex-col items-center justify-center gap-2"
-              >
-                <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4" />
-                </svg>
-                <span class="text-xs text-gray-600">点击播放预览</span>
-              </div>
-              <!-- Subtitle overlay -->
-              <div
-                v-if="timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
-                class="absolute bottom-2 left-2 right-2 text-center pointer-events-none"
-              >
-                <span class="inline-block bg-black/75 text-white text-xs px-2 py-1 rounded leading-snug max-w-full">
-                  {{ effectiveSubtitle(timelineCurrentShot) }}
-                </span>
-              </div>
-              <!-- Shot badge -->
-              <div
-                v-if="timelineCurrentShot"
-                class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded"
-              >
-                #{{ timelineCurrentShot.shot_no }}
-              </div>
-            </div>
-
-            <!-- Shot info bar -->
-            <div class="px-3 py-2 flex items-center justify-between text-xs border-t border-gray-800">
-              <span class="text-gray-400 truncate max-w-[60%]">
-                {{ timelineCurrentShot?.description || timelineCurrentShot?.narration || '—' }}
-              </span>
-              <span class="font-mono text-gray-400 flex-shrink-0 ml-2">
-                {{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Playback controls card -->
-          <div class="card p-4 space-y-4">
-            <!-- Play/Pause/Stop + progress bar -->
-            <div class="flex items-center gap-2.5">
-              <button
-                class="w-10 h-10 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm"
-                @click="timelinePlaying ? timelinePause() : timelinePlay()"
-              >
-                <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                </svg>
-              </button>
-              <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center flex-shrink-0"
-                @click="timelineStop"
-              >
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 6h12v12H6z" />
-                </svg>
-              </button>
-              <!-- Progress bar -->
-              <div class="flex-1 min-w-0">
-                <div class="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    class="h-full bg-primary-500 rounded-full transition-none"
-                    :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
-                  />
-                </div>
-                <div class="flex justify-between text-[10px] font-mono text-gray-400 mt-0.5">
-                  <span>{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }}</span>
-                  <span>{{ tlFmtTime(timelineTotalDuration) }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Track status -->
-            <div class="space-y-1.5">
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="timelineCurrentShot?.video_url ? 'bg-blue-500' : timelineCurrentShot?.image_url ? 'bg-blue-300' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12">视频轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">
-                  {{ timelineCurrentShot?.video_url ? '视频已加载' : timelineCurrentShot?.image_url ? '静态图片' : '—' }}
-                </span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="(shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12">配音轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">
-                  {{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '配音已加载' : '—' }}
-                </span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="timelineCurrentShot?.sfx_url ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12">音效轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">
-                  {{ timelineCurrentShot?.sfx_url ? '音效已加载' : '—' }}
-                </span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="selectedBgm ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12">背景音乐</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">
-                  {{ selectedBgm ? (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm) : '—' }}
-                </span>
-              </div>
-            </div>
-
-            <p class="text-[10px] text-gray-400 dark:text-gray-600 text-center">
-              {{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序
-            </p>
-          </div>
-        </div>
-
-        <!-- ── Right: Timeline grid + detail panel ── -->
-        <div class="flex-1 min-w-0 space-y-3">
-
-      <!-- Vertical timeline grid -->
+      <!-- Vertical timeline grid (full width) -->
       <div class="card overflow-hidden">
         <!-- Column headers (sticky) -->
         <div class="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 text-xs font-medium text-gray-500 dark:text-gray-400 sticky top-0 z-10">
@@ -2245,8 +2100,139 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </template>
       </div>
 
-        </div><!-- /right column -->
-      </div><!-- /flex layout -->
+      <!-- Preview + Controls (bottom) -->
+      <div class="card p-4">
+        <div class="flex gap-5 items-start">
+
+          <!-- Video/Image preview -->
+          <div class="w-72 flex-shrink-0">
+            <div
+              class="relative bg-black rounded-lg overflow-hidden group"
+              style="aspect-ratio:16/9"
+            >
+              <video
+                ref="timelineVideoRef"
+                class="absolute inset-0 w-full h-full object-contain"
+                :class="timelineCurrentShot?.video_url ? 'opacity-100' : 'opacity-0'"
+                preload="auto"
+              />
+              <img
+                v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
+                :src="timelineCurrentShot.image_url"
+                class="absolute inset-0 w-full h-full object-contain"
+              />
+              <div
+                v-if="!timelineCurrentShot"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-2"
+              >
+                <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4" />
+                </svg>
+                <span class="text-xs text-gray-600">点击播放预览</span>
+              </div>
+              <!-- Subtitle overlay -->
+              <div
+                v-if="timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
+                class="absolute bottom-2 left-2 right-2 text-center pointer-events-none"
+              >
+                <span class="inline-block bg-black/75 text-white text-xs px-2 py-1 rounded leading-snug">
+                  {{ effectiveSubtitle(timelineCurrentShot) }}
+                </span>
+              </div>
+              <!-- Shot badge (top-left) -->
+              <div
+                v-if="timelineCurrentShot"
+                class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded"
+              >
+                #{{ timelineCurrentShot.shot_no }}
+              </div>
+              <!-- Fullscreen button (top-right, shown on hover) -->
+              <button
+                class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                title="全屏"
+                @click="timelineVideoRef ? timelineVideoRef.requestFullscreen().catch(() => {}) : null"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+            </div>
+            <p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500 line-clamp-2 leading-snug">
+              {{ timelineCurrentShot?.description || timelineCurrentShot?.narration || '—' }}
+            </p>
+          </div>
+
+          <!-- Controls + track status -->
+          <div class="flex-1 space-y-4">
+            <!-- Play/Pause/Stop + progress bar -->
+            <div class="flex items-center gap-3">
+              <button
+                class="w-10 h-10 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm"
+                @click="timelinePlaying ? timelinePause() : timelinePlay()"
+              >
+                <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                </svg>
+              </button>
+              <button
+                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center flex-shrink-0"
+                @click="timelineStop"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 6h12v12H6z" />
+                </svg>
+              </button>
+              <div class="flex-1 min-w-0">
+                <div class="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    class="h-full bg-primary-500 rounded-full transition-none"
+                    :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
+                  />
+                </div>
+                <div class="flex justify-between text-[10px] font-mono text-gray-400 mt-0.5">
+                  <span>{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }}</span>
+                  <span>{{ tlFmtTime(timelineTotalDuration) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Track status (2-column grid) -->
+            <div class="grid grid-cols-2 gap-x-6 gap-y-1.5">
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                  :class="timelineCurrentShot?.video_url ? 'bg-blue-500' : timelineCurrentShot?.image_url ? 'bg-blue-300' : 'bg-gray-300 dark:bg-gray-600'" />
+                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">视频轨</span>
+                <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.video_url ? '视频已加载' : timelineCurrentShot?.image_url ? '静态图片' : '—' }}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                  :class="(shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
+                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">配音轨</span>
+                <span class="text-gray-400 dark:text-gray-500 truncate">{{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '配音已加载' : '—' }}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                  :class="timelineCurrentShot?.sfx_url ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
+                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">音效轨</span>
+                <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.sfx_url ? '音效已加载' : '—' }}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                  :class="selectedBgm ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
+                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">背景音乐</span>
+                <span class="text-gray-400 dark:text-gray-500 truncate">{{ selectedBgm ? (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm) : '—' }}</span>
+              </div>
+            </div>
+
+            <p class="text-[10px] text-gray-400 dark:text-gray-600">
+              {{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ==============================
