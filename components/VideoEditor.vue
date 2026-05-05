@@ -26,6 +26,8 @@ const confirmingScript = ref(false)
 const videoProviders = ref<{ name: string; display_name: string }[]>([])
 const selectedVideoProvider = ref('')
 const batchGenerating = ref(false)
+const batchGeneratingImages = ref(false)
+const batchGeneratingClips = ref(false)
 
 // Voice/subtitle — all config read from novel project config (项目配置 > 视频配置)
 const novelStore = useNovelStore()
@@ -508,6 +510,54 @@ async function handleGenerateAll() {
   }
 }
 
+async function handleGenerateImages() {
+  const pending = shots.value.filter(s => !s.image_url && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
+  if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); return }
+  batchGeneratingImages.value = true
+  try {
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, pending.map(s => s.id))
+    if (!taskId) { toast.error('图片生成失败：未获取到任务ID'); batchGeneratingImages.value = false; return }
+    toast.info(`${pending.length} 个镜头图片生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      batchGeneratingImages.value = false
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success('全部镜头图片生成完成')
+      } else {
+        toast.error('图片生成失败，请重试')
+      }
+    })
+  } catch (e: any) {
+    toast.error('图片生成失败：' + (e.message || ''))
+    batchGeneratingImages.value = false
+  }
+}
+
+async function handleGenerateClips() {
+  const pending = shots.value.filter(s => s.image_url && !s.video_url)
+  if (pending.length === 0) { toast.error('没有需要生成视频的镜头（请先生成图片）'); return }
+  batchGeneratingClips.value = true
+  try {
+    const taskId = await videoStore.batchGenerateShotClips(props.videoId, pending.map(s => s.id))
+    if (!taskId) { toast.error('视频生成失败：未获取到任务ID'); batchGeneratingClips.value = false; return }
+    toast.info(`${pending.length} 个镜头视频生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      batchGeneratingClips.value = false
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success('全部镜头视频生成完成')
+      } else {
+        toast.error('视频生成失败，请重试')
+      }
+    })
+  } catch (e: any) {
+    toast.error('视频生成失败：' + (e.message || ''))
+    batchGeneratingClips.value = false
+  }
+}
+
 // ──────── Voice ────────
 async function handleGenerateVoice(shot: StoryboardShot) {
   generatingVoice.value[shot.id] = true
@@ -706,11 +756,23 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <option v-for="p in videoProviders" :key="p.name" :value="p.name">{{ p.display_name || p.name }}</option>
             </select>
           </div>
-          <button class="btn-primary text-sm" :disabled="batchGenerating" @click="handleGenerateAll">
-            <svg v-if="batchGenerating" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button class="btn-secondary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips" @click="handleGenerateImages">
+            <svg v-if="batchGeneratingImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            生成全部素材
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {{ batchGeneratingImages ? '图片生成中…' : '生成图片' }}
+          </button>
+          <button class="btn-primary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips" @click="handleGenerateClips">
+            <svg v-if="batchGeneratingClips" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            {{ batchGeneratingClips ? '视频生成中…' : '生成视频' }}
           </button>
         </template>
 

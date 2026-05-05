@@ -412,6 +412,18 @@ export const useVideoApi = () => {
       body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier, provider }),
     })
 
+  const batchGenerateShotImages = (videoId: number, shotIds: number[]) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/batch-images`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_ids: shotIds }),
+    })
+
+  const batchGenerateShotClips = (videoId: number, shotIds: number[]) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/batch-clips`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_ids: shotIds }),
+    })
+
   // 批量为所有分镜自动生成音效（异步任务，返回 task_id）
   const batchGenerateSFX = (videoId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, { method: 'POST' })
@@ -486,6 +498,8 @@ export const useVideoApi = () => {
     updateStoryboardShot,
     generateShot,
     batchGenerateShots,
+    batchGenerateShotImages,
+    batchGenerateShotClips,
     batchGenerateSFX,
     generateShotSFX,
     exportCapcut,

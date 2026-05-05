@@ -312,6 +312,36 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
+    async batchGenerateShotImages(videoId: number, shotIds: number[]): Promise<string> {
+      this.generating = true
+      this.error = null
+      try {
+        const api = useVideoApi()
+        const response = await api.batchGenerateShotImages(videoId, shotIds)
+        return (response.data as any)?.task_id as string
+      } catch (e: any) {
+        this.error = e.message || 'Failed to batch generate images'
+        throw e
+      } finally {
+        this.generating = false
+      }
+    },
+
+    async batchGenerateShotClips(videoId: number, shotIds: number[]): Promise<string> {
+      this.generating = true
+      this.error = null
+      try {
+        const api = useVideoApi()
+        const response = await api.batchGenerateShotClips(videoId, shotIds)
+        return (response.data as any)?.task_id as string
+      } catch (e: any) {
+        this.error = e.message || 'Failed to batch generate clips'
+        throw e
+      } finally {
+        this.generating = false
+      }
+    },
+
     setCurrentShot(shot: StoryboardShot | null) {
       this.currentShot = shot
     },
