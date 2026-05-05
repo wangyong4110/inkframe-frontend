@@ -117,6 +117,22 @@ const generatingBgm = ref(false)
 const generatingSFX = ref(false)
 const sfxTaskId = ref<string | null>(null)
 
+// ── Timeline tab ──────────────────────────────────────────
+const timelinePlaying = ref(false)
+const timelineCurrentShotIndex = ref(0)
+const timelineShotElapsed = ref(0)
+const timelineTotalElapsed = ref(0)
+const timelineTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const timelineSelectedShotId = ref<number | null>(null)
+const timelineVideoRef = ref<HTMLVideoElement | null>(null)
+const timelineVoiceRef = ref<HTMLAudioElement | null>(null)
+const timelineSfxRef = ref<HTMLAudioElement | null>(null)
+const timelineBgmRef = ref<HTMLAudioElement | null>(null)
+const timelineDragShotId = ref<number | null>(null)
+const timelineShotsOrder = ref<number[]>([])
+const timelineEditDraft = ref<Record<number, { duration: number; transition: string; sfx_volume: number }>>({})
+const timelineSaving = ref<Record<number, boolean>>({})
+
 // Export
 const stitching = ref(false)
 const exporting = ref<Record<string, boolean>>({})
@@ -235,11 +251,22 @@ const BGM_OPTIONS = [
 
 const completedShots = computed(() => shots.value.filter(s => s.status === 'completed'))
 
+const timelineTotalDuration = computed(() =>
+  shots.value.reduce((sum, s) => sum + (s.duration || 5), 0),
+)
+const timelineOrderedShots = computed(() => {
+  if (timelineShotsOrder.value.length === 0) return shots.value
+  const map = Object.fromEntries(shots.value.map(s => [s.id, s]))
+  return timelineShotsOrder.value.map(id => map[id]).filter(Boolean) as typeof shots.value
+})
+const timelineCurrentShot = computed(() => timelineOrderedShots.value[timelineCurrentShotIndex.value] ?? null)
+
 const TABS = computed(() => [
   { key: 'script', label: '分镜脚本', icon: 'M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4', locked: false },
   { key: 'voice', label: '配音字幕', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z', locked: !productionEnabled.value },
   { key: 'bgm', label: '背景音乐', icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', locked: !productionEnabled.value },
   { key: 'sfx', label: '音效', icon: 'M15.536 8.464a5 5 0 010 7.072M12 6a7 7 0 010 12M8.464 8.464a5 5 0 000 7.072M3 12a9 9 0 1018 0 9 9 0 00-18 0z', locked: !productionEnabled.value },
+  { key: 'timeline', label: '时间线', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', locked: !productionEnabled.value },
   { key: 'export', label: '导出', icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4', locked: !productionEnabled.value },
 ])
 
@@ -821,6 +848,145 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
     generatingSegmentVoice.value[seg.id] = false
   }
 }
+
+// ──────── Timeline ────────
+function timelineSyncMedia() {
+  const shot = timelineCurrentShot.value
+  if (!shot) return
+  nextTick(() => {
+    if (timelineVideoRef.value) {
+      if (shot.video_url) {
+        timelineVideoRef.value.src = shot.video_url
+        timelineVideoRef.value.play().catch(() => {})
+      } else {
+        timelineVideoRef.value.src = ''
+      }
+    }
+    if (timelineVoiceRef.value) {
+      const voiceUrl = shotAudioUrls.value[shot.id]
+      if (voiceUrl) {
+        timelineVoiceRef.value.src = voiceUrl
+        timelineVoiceRef.value.play().catch(() => {})
+      } else {
+        timelineVoiceRef.value.src = ''
+      }
+    }
+    if (timelineSfxRef.value) {
+      if (shot.sfx_url) {
+        timelineSfxRef.value.src = shot.sfx_url
+        timelineSfxRef.value.play().catch(() => {})
+      } else {
+        timelineSfxRef.value.src = ''
+      }
+    }
+  })
+}
+
+function timelineTick() {
+  const shot = timelineCurrentShot.value
+  if (!shot) { timelineStop(); return }
+  timelineShotElapsed.value += 0.1
+  timelineTotalElapsed.value += 0.1
+  if (timelineShotElapsed.value >= (shot.duration || 5)) {
+    if (timelineCurrentShotIndex.value < timelineOrderedShots.value.length - 1) {
+      timelineCurrentShotIndex.value++
+      timelineShotElapsed.value = 0
+      timelineSyncMedia()
+    } else {
+      timelineStop()
+    }
+  }
+}
+
+function timelinePlay() {
+  if (timelinePlaying.value) return
+  timelinePlaying.value = true
+  timelineSyncMedia()
+  if (timelineBgmRef.value && selectedBgm.value) {
+    timelineBgmRef.value.volume = bgmVolume.value / 100
+    timelineBgmRef.value.play().catch(() => {})
+  }
+  timelineTimer.value = setInterval(timelineTick, 100)
+}
+
+function timelinePause() {
+  timelinePlaying.value = false
+  if (timelineTimer.value) { clearInterval(timelineTimer.value); timelineTimer.value = null }
+  timelineVideoRef.value?.pause()
+  timelineVoiceRef.value?.pause()
+  timelineSfxRef.value?.pause()
+  timelineBgmRef.value?.pause()
+}
+
+function timelineStop() {
+  timelinePause()
+  timelineCurrentShotIndex.value = 0
+  timelineShotElapsed.value = 0
+  timelineTotalElapsed.value = 0
+}
+
+function timelineSeekToShot(idx: number) {
+  const wasPlaying = timelinePlaying.value
+  timelinePause()
+  timelineCurrentShotIndex.value = idx
+  timelineShotElapsed.value = 0
+  timelineTotalElapsed.value = timelineOrderedShots.value
+    .slice(0, idx)
+    .reduce((s, sh) => s + (sh.duration || 5), 0)
+  if (wasPlaying) timelinePlay()
+}
+
+function timelineDragStart(shotId: number) { timelineDragShotId.value = shotId }
+function timelineDragOver(e: DragEvent, targetId: number) {
+  e.preventDefault()
+  if (timelineDragShotId.value == null || timelineDragShotId.value === targetId) return
+  const order = [...timelineShotsOrder.value]
+  const from = order.indexOf(timelineDragShotId.value)
+  const to = order.indexOf(targetId)
+  if (from === -1 || to === -1) return
+  order.splice(from, 1)
+  order.splice(to, 0, timelineDragShotId.value)
+  timelineShotsOrder.value = order
+}
+function timelineDragEnd() { timelineDragShotId.value = null }
+
+async function timelineSaveShot(shotId: number) {
+  const draft = timelineEditDraft.value[shotId]
+  if (!draft) return
+  timelineSaving.value[shotId] = true
+  try {
+    await videoStore.updateShot(props.videoId, shotId, {
+      duration: draft.duration,
+      transition: draft.transition as any,
+      sfx_volume: draft.sfx_volume,
+    })
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    timelineSaving.value[shotId] = false
+  }
+}
+
+watch(() => shots.value, (newShots) => {
+  if (timelineShotsOrder.value.length === 0 && newShots.length > 0) {
+    timelineShotsOrder.value = newShots.map(s => s.id)
+  }
+}, { immediate: true })
+
+watch(timelineSelectedShotId, (id) => {
+  if (id == null) return
+  const shot = shots.value.find(s => s.id === id)
+  if (!shot) return
+  if (!timelineEditDraft.value[id]) {
+    timelineEditDraft.value[id] = {
+      duration: shot.duration || 5,
+      transition: shot.transition || 'cut',
+      sfx_volume: shot.sfx_volume ?? 0,
+    }
+  }
+})
+
+onUnmounted(() => { timelinePause() })
 
 defineExpose({ generateStoryboard: handleGenerateStoryboard })
 </script>
@@ -1702,6 +1868,224 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           请先在「分镜脚本」Tab 生成分镜
         </p>
       </div>
+    </div>
+
+    <!-- ==============================
+         时间线 Tab
+         ============================== -->
+    <div v-if="activeTab === 'timeline'" class="space-y-4">
+      <!-- Hidden media elements -->
+      <video ref="timelineVideoRef" class="hidden" preload="auto" />
+      <audio ref="timelineVoiceRef" class="hidden" preload="auto" />
+      <audio ref="timelineSfxRef" class="hidden" preload="auto" />
+      <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
+
+      <!-- Playback toolbar -->
+      <div class="card p-3 flex items-center gap-3">
+        <button
+          class="w-8 h-8 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0"
+          @click="timelinePlaying ? timelinePause() : timelinePlay()"
+        >
+          <!-- Play icon -->
+          <svg v-if="!timelinePlaying" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          <!-- Pause icon -->
+          <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          </svg>
+        </button>
+        <button
+          class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center flex-shrink-0"
+          @click="timelineStop"
+        >
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 6h12v12H6z" />
+          </svg>
+        </button>
+        <!-- Time counter -->
+        <span class="text-sm font-mono text-gray-600 dark:text-gray-400">
+          {{ Math.floor(timelineTotalElapsed / 60).toString().padStart(2, '0') }}:{{ Math.floor(timelineTotalElapsed % 60).toString().padStart(2, '0') }}
+          /
+          {{ Math.floor(timelineTotalDuration / 60).toString().padStart(2, '0') }}:{{ Math.floor(timelineTotalDuration % 60).toString().padStart(2, '0') }}
+        </span>
+        <div class="flex-1" />
+        <span class="text-xs text-gray-400">{{ timelineOrderedShots.length }} 个镜头 · 拖拽调整顺序</span>
+      </div>
+
+      <!-- Timeline scroll area -->
+      <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+          <div class="flex min-w-max">
+            <!-- Track header column -->
+            <div class="w-20 flex-shrink-0 border-r border-gray-200 dark:border-gray-700">
+              <div class="h-8 border-b border-gray-200 dark:border-gray-700" />
+              <div class="h-12 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">视频轨</div>
+              <div class="h-8 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">配音轨</div>
+              <div class="h-8 flex items-center px-2 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">音效轨</div>
+              <div class="h-8 flex items-center px-2 text-xs text-gray-500">背景音乐</div>
+            </div>
+
+            <!-- Shot columns -->
+            <div class="relative flex-1">
+              <!-- Shot header row -->
+              <div class="flex h-8 border-b border-gray-200 dark:border-gray-700 relative">
+                <!-- Playhead -->
+                <div
+                  class="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
+                  :style="`left:${Math.max(0, timelineTotalElapsed) * 20}px`"
+                />
+                <div
+                  v-for="(shot, idx) in timelineOrderedShots"
+                  :key="shot.id"
+                  class="flex-shrink-0 flex items-center justify-center text-xs font-medium border-r border-gray-200 dark:border-gray-700 cursor-pointer select-none transition-colors"
+                  :class="[
+                    timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800',
+                    timelineDragShotId === shot.id ? 'opacity-50' : '',
+                  ]"
+                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
+                  draggable="true"
+                  @click="timelineSeekToShot(idx)"
+                  @dragstart="timelineDragStart(shot.id)"
+                  @dragover="timelineDragOver($event, shot.id)"
+                  @dragend="timelineDragEnd"
+                >
+                  #{{ shot.shot_no }}
+                </div>
+              </div>
+
+              <!-- Video track row -->
+              <div class="flex h-12 border-b border-gray-100 dark:border-gray-800">
+                <div
+                  v-for="shot in timelineOrderedShots"
+                  :key="shot.id"
+                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden cursor-pointer"
+                  :class="timelineSelectedShotId === shot.id ? 'ring-2 ring-inset ring-primary-500' : ''"
+                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
+                  @click="timelineSelectedShotId = timelineSelectedShotId === shot.id ? null : shot.id"
+                >
+                  <img
+                    v-if="shot.image_url"
+                    :src="shot.image_url"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                    <span class="text-xs text-blue-400">无图</span>
+                  </div>
+                  <!-- Duration label -->
+                  <span class="absolute bottom-0.5 right-1 text-xs text-white drop-shadow font-mono">{{ shot.duration || 5 }}s</span>
+                </div>
+              </div>
+
+              <!-- Voice track row -->
+              <div class="flex h-8 border-b border-gray-100 dark:border-gray-800">
+                <div
+                  v-for="shot in timelineOrderedShots"
+                  :key="shot.id"
+                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center"
+                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
+                >
+                  <div
+                    v-if="shotAudioUrls[shot.id] || shot.audio_url"
+                    class="mx-1 h-4 rounded-sm bg-green-400 dark:bg-green-600 w-full"
+                  />
+                  <div v-else class="mx-1 h-1 rounded-sm bg-gray-200 dark:bg-gray-700 w-full" />
+                </div>
+              </div>
+
+              <!-- SFX track row -->
+              <div class="flex h-8 border-b border-gray-100 dark:border-gray-800">
+                <div
+                  v-for="shot in timelineOrderedShots"
+                  :key="shot.id"
+                  class="flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center"
+                  :style="`width:${Math.max(80, (shot.duration || 5) * 20)}px`"
+                >
+                  <div
+                    v-if="shot.sfx_url"
+                    class="mx-1 h-4 rounded-sm bg-orange-400 dark:bg-orange-600 w-full"
+                  />
+                  <div v-else class="mx-1 h-1 rounded-sm bg-gray-200 dark:bg-gray-700 w-full" />
+                </div>
+              </div>
+
+              <!-- BGM track row (single full-width bar) -->
+              <div class="flex h-8 relative">
+                <div
+                  class="absolute inset-0 mx-1 my-1.5 rounded-sm flex items-center pl-2"
+                  :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-600' : 'bg-gray-200 dark:bg-gray-700'"
+                >
+                  <span v-if="selectedBgm" class="text-xs text-white font-medium truncate">
+                    {{ BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm }} · {{ bgmVolume }}%
+                  </span>
+                  <span v-else class="text-xs text-gray-400">未选择 BGM</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shot detail panel -->
+      <div v-if="timelineSelectedShotId != null" class="card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="font-medium text-gray-900 dark:text-white text-sm">
+            镜头 #{{ shots.find(s => s.id === timelineSelectedShotId)?.shot_no }} 参数
+          </h4>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="timelineSelectedShotId = null">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <template v-if="timelineEditDraft[timelineSelectedShotId]">
+          <div class="grid grid-cols-3 gap-3">
+            <!-- Duration -->
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">时长（秒）</label>
+              <input
+                v-model.number="timelineEditDraft[timelineSelectedShotId].duration"
+                type="number"
+                min="1"
+                max="60"
+                class="input w-full text-sm"
+              />
+            </div>
+            <!-- Transition -->
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">转场方式</label>
+              <select v-model="timelineEditDraft[timelineSelectedShotId].transition" class="input w-full text-sm">
+                <option v-for="opt in TRANSITION_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <!-- SFX volume -->
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">音效音量 {{ Math.round((timelineEditDraft[timelineSelectedShotId].sfx_volume ?? 0) * 100) }}%</label>
+              <input
+                v-model.number="timelineEditDraft[timelineSelectedShotId].sfx_volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                class="w-full accent-primary-500"
+              />
+            </div>
+          </div>
+          <div class="mt-3 flex justify-end">
+            <button
+              class="btn-primary text-xs py-1.5 px-3"
+              :disabled="timelineSaving[timelineSelectedShotId]"
+              @click="timelineSaveShot(timelineSelectedShotId)"
+            >
+              {{ timelineSaving[timelineSelectedShotId] ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </template>
+      </div>
+
+      <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">
+        请先在「分镜脚本」Tab 生成分镜
+      </p>
     </div>
 
     <!-- ==============================
