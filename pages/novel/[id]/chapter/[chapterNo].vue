@@ -1314,7 +1314,7 @@ async function fetchShotsForChapter() {
                       </div>
                     </div>
                     <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 180s）</span></label>
+                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
                       <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
                     </div>
                   </div>
@@ -1384,7 +1384,7 @@ async function fetchShotsForChapter() {
                       </div>
                     </div>
                     <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 180s）</span></label>
+                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
                       <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
                     </div>
                   </div>
@@ -1604,7 +1604,7 @@ async function fetchShotsForChapter() {
                       </div>
                     </div>
                     <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 180s）</span></label>
+                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
                       <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
                     </div>
                   </div>
@@ -1660,7 +1660,7 @@ async function fetchShotsForChapter() {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 180s）</span></label>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
                     <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
                   </div>
                 </div>
@@ -1763,7 +1763,7 @@ async function fetchShotsForChapter() {
                   <!-- Timeout -->
                   <div>
                     <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      超时（秒）<span class="text-gray-400">（0 = 自动 180s）</span>
+                      超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span>
                     </label>
                     <input
                       v-model.number="scriptTimeoutSeconds"

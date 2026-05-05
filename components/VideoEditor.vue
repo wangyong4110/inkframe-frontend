@@ -799,7 +799,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <!-- Max Tokens -->
             <div>
               <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                Max Tokens <span class="text-gray-400">（0 = 系统默认 ≥4096）</span>
+                Max Tokens <span class="text-gray-400">（0 = 系统默认）</span>
               </label>
               <input
                 v-model.number="advMaxTokens"
@@ -830,7 +830,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <!-- Timeout -->
             <div>
               <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                超时时间（秒）<span class="text-gray-400">（0 = 系统默认 180s；范围 30-600）</span>
+                超时时间（秒）<span class="text-gray-400">（0 = 系统默认 300s；范围 30-600）</span>
               </label>
               <input
                 v-model.number="advTimeoutSeconds"
