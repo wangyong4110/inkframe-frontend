@@ -378,11 +378,13 @@ async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: st
   if (isScriptConfirmed.value) {
     if (!confirm('重新生成将清空当前脚本，是否继续？')) return
   }
+  const novel = novelStore.currentNovel
   const effectivePacing = overridePacing ?? pacing.value
   const effectiveDuration = overrideTargetDuration ?? targetDuration.value
-  const effectiveMaxTokens = overrideMaxTokens ?? advMaxTokens.value
-  const effectiveTemperature = overrideTemperature ?? advTemperature.value
-  const effectiveTimeout = overrideTimeoutSeconds ?? advTimeoutSeconds.value
+  // adv 参数未设置时，fallback 到 novel 项目配置，确保请求体中始终携带实际生效的值
+  const effectiveMaxTokens = overrideMaxTokens ?? advMaxTokens.value || novel?.max_tokens || undefined
+  const effectiveTemperature = overrideTemperature ?? advTemperature.value || novel?.temperature || undefined
+  const effectiveTimeout = overrideTimeoutSeconds ?? advTimeoutSeconds.value || novel?.timeout_seconds || undefined
   try {
     await videoStore.generateStoryboard(
       props.videoId,
