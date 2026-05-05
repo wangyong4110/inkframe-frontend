@@ -265,10 +265,22 @@ export const useCharacterApi = () => {
   const uploadPortrait = (id: number, file: File) =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
-  const previewVoice = (id: number, text?: string) =>
+  const previewVoice = (id: number, params?: {
+    text?: string
+    voice_id?: string
+    voice_speed?: number
+    voice_style?: string
+    voice_language?: string
+  }) =>
     request<ApiResponse<{ audio_url: string; voice_id: string; voice_speed: number }>>(`/characters/${id}/voice/preview`, {
       method: 'POST',
-      body: JSON.stringify({ text: text ?? '' }),
+      body: JSON.stringify({
+        text: params?.text ?? '',
+        voice_id: params?.voice_id ?? '',
+        voice_speed: params?.voice_speed,
+        voice_style: params?.voice_style ?? '',
+        voice_language: params?.voice_language ?? '',
+      }),
     })
 
   const aiBatchGenerate = (novelId: number) =>

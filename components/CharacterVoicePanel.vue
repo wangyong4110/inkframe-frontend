@@ -197,7 +197,7 @@ async function save() {
       voice_style:    voiceStyle.value,
       voice_language: voiceLanguage.value,
     } as any)
-    emit('update', { voice_id: voiceId.value, voice_speed: voiceSpeed.value, voice_style: voiceStyle.value })
+    emit('update', { voice_id: voiceId.value, voice_speed: voiceSpeed.value, voice_style: voiceStyle.value, voice_language: voiceLanguage.value })
   } catch (e: any) {
     errorMsg.value = e.message
   } finally {
@@ -208,9 +208,14 @@ async function save() {
 async function preview() {
   previewing.value = true
   errorMsg.value = ''
-  await save()
   try {
-    const res = await previewVoice(props.character.id, previewText.value || undefined)
+    const res = await previewVoice(props.character.id, {
+      text:           previewText.value || undefined,
+      voice_id:       voiceId.value || undefined,
+      voice_speed:    voiceSpeed.value,
+      voice_style:    voiceStyle.value || undefined,
+      voice_language: voiceLanguage.value || undefined,
+    })
     audioUrl.value = res.data.audio_url
     await nextTick()
     audioEl.value?.load()

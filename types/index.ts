@@ -114,6 +114,7 @@ export interface Character {
   voice_id?: string
   voice_speed?: number
   voice_style?: string
+  voice_language?: string
   voice_sample?: string
   created_at: string
   updated_at: string
