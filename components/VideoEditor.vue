@@ -133,6 +133,8 @@ const timelineDragShotId = ref<number | null>(null)
 const timelineShotsOrder = ref<number[]>([])
 const timelineEditDraft = ref<Record<number, { duration: number; transition: string; sfx_volume: number }>>({})
 const timelineSaving = ref<Record<number, boolean>>({})
+const timelineResizingShotId = ref<number | null>(null)
+const timelineResizeDraft = ref<Record<number, number>>({})
 
 // Export
 const stitching = ref(false)
@@ -264,6 +266,10 @@ const TL_PX_PER_SEC = 16   // pixels per second for vertical timeline scale
 // Effective duration: max(shot.duration, sum of voice segment duration_secs)
 // Falls back to shot.duration when segments not yet loaded
 function timelineEffectiveDuration(shot: typeof shots.value[0]): number {
+  // During row-resize drag, return the live draft value
+  if (timelineResizeDraft.value[shot.id] != null) {
+    return timelineResizeDraft.value[shot.id]
+  }
   const segs = shotSegments.value[shot.id]
   if (segs && segs.length > 0) {
     const segTotal = segs.reduce((s, seg) => s + (seg.duration_secs || 0), 0)
@@ -994,6 +1000,39 @@ async function timelineSaveShot(shotId: number) {
   } finally {
     timelineSaving.value[shotId] = false
   }
+}
+
+// Drag-the-bottom-edge of a shot row to resize its duration
+function timelineResizeStart(e: MouseEvent, shotId: number, currentDuration: number) {
+  e.preventDefault()
+  timelineResizingShotId.value = shotId
+  timelineResizeDraft.value = { ...timelineResizeDraft.value, [shotId]: currentDuration }
+  const startY = e.clientY
+  const startDur = currentDuration
+
+  function onMove(mv: MouseEvent) {
+    const dy = mv.clientY - startY
+    const newDur = Math.max(1, parseFloat((startDur + dy / TL_PX_PER_SEC).toFixed(1)))
+    timelineResizeDraft.value = { ...timelineResizeDraft.value, [shotId]: newDur }
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    const finalDur = timelineResizeDraft.value[shotId]
+    timelineResizingShotId.value = null
+    if (finalDur != null && finalDur !== startDur) {
+      videoStore.updateShot(props.videoId, shotId, { duration: finalDur }).catch(() => {})
+    }
+    nextTick(() => {
+      const d = { ...timelineResizeDraft.value }
+      delete d[shotId]
+      timelineResizeDraft.value = d
+    })
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 
 watch(() => shots.value, (newShots) => {
@@ -1945,10 +1984,11 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <div
             v-for="(shot, idx) in timelineOrderedShots"
             :key="shot.id"
-            class="flex border-b border-gray-100 dark:border-gray-800 transition-colors duration-150"
+            class="relative flex border-b border-gray-100 dark:border-gray-800 transition-colors duration-150"
             :class="[
               timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/15' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
               timelineDragShotId === shot.id ? 'opacity-40' : '',
+              timelineResizingShotId === shot.id ? 'select-none' : '',
             ]"
             :style="`height:${timelineEffectiveDuration(shot) * TL_PX_PER_SEC}px`"
             draggable="true"
@@ -2044,6 +2084,22 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   class="w-full rounded"
                   :class="selectedBgm ? 'bg-purple-400 dark:bg-purple-500' : 'bg-gray-200 dark:bg-gray-700'"
                 />
+              </div>
+            </div>
+
+            <!-- Resize handle (bottom edge) — drag to adjust shot duration -->
+            <div
+              class="absolute bottom-0 left-10 right-0 h-2 cursor-row-resize z-10 group/rh"
+              draggable="false"
+              @mousedown.stop.prevent="timelineResizeStart($event, shot.id, timelineEffectiveDuration(shot))"
+            >
+              <div class="absolute bottom-0 left-0 right-0 h-px bg-transparent group-hover/rh:bg-primary-400 dark:group-hover/rh:bg-primary-500 transition-colors" />
+              <!-- Duration badge shown while resizing this row -->
+              <div
+                v-if="timelineResizingShotId === shot.id"
+                class="absolute bottom-1 right-2 bg-primary-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded pointer-events-none"
+              >
+                {{ (timelineResizeDraft[shot.id] || 0).toFixed(1) }}s
               </div>
             </div>
           </div>
