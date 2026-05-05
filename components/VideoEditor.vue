@@ -287,6 +287,7 @@ watch(shots, (list) => {
 // ──────── Script phase ────────
 const pacing = ref<'slow' | 'normal' | 'fast'>('normal')
 const targetDuration = ref<number>(0) // 0 = 自动
+const storyboardUserPrompt = ref('') // 额外要求（user_prompt）
 
 // 高级 AI 参数（0 = 使用系统默认，不覆盖）
 const showAdvancedParams = ref(false)
@@ -294,11 +295,13 @@ const advMaxTokens = ref(0)
 const advTemperature = ref(0)
 const advTimeoutSeconds = ref(0)
 
-// 从 video 初始化节奏/时长（刷新后还原上次所选）
+// 从 video 初始化节奏/时长（只在首次加载时初始化，不随后续 video 更新而重置用户手动选择）
+let pacingInitialized = false
 watch(video, (v) => {
-  if (v) {
+  if (v && !pacingInitialized) {
     pacing.value = v.pacing ?? 'normal'
     targetDuration.value = v.target_duration ?? 0
+    pacingInitialized = true
   }
 }, { immediate: true })
 
@@ -843,7 +846,14 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             </div>
           </div>
         </div>
-        <button class="btn-primary" :disabled="generatingStoryboard" @click="handleGenerateStoryboard">
+        <!-- 额外要求 -->
+        <textarea
+          v-model="storyboardUserPrompt"
+          rows="2"
+          placeholder="额外要求（可选）：如「加强战斗场面节奏」、「突出主角情绪变化」..."
+          class="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none mb-2"
+        />
+        <button class="btn-primary" :disabled="generatingStoryboard" @click="handleGenerateStoryboard(storyboardUserPrompt)">
           生成分镜脚本
         </button>
       </div>

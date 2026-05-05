@@ -2402,9 +2402,12 @@ function getSkillStatusLabel(status: string): string {
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">每章最大 Tokens</label>
-            <input type="number" :value="novel?.max_tokens ?? 4096" class="input" min="512" max="32000" step="512"
+            <input type="number" :value="novel?.max_tokens ?? 0" class="input" min="0" max="32000" step="512"
               @change="(e) => novelStore.updateNovel(novelId, { max_tokens: parseInt((e.target as HTMLInputElement).value) })" />
-            <p class="mt-1 text-xs text-gray-400">≈ {{ Math.round((novel?.max_tokens ?? 4096) * 0.75) }} 中文字</p>
+            <p class="mt-1 text-xs text-gray-400">
+              <template v-if="(novel?.max_tokens ?? 0) > 0">≈ {{ Math.round((novel!.max_tokens) * 0.75) }} 中文字</template>
+              <template v-else>0 = 不限制（由模型自身决定）</template>
+            </p>
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">超时时间（秒）</label>
