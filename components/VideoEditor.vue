@@ -251,9 +251,6 @@ const BGM_OPTIONS = [
 
 const completedShots = computed(() => shots.value.filter(s => s.status === 'completed'))
 
-const timelineTotalDuration = computed(() =>
-  shots.value.reduce((sum, s) => sum + (s.duration || 5), 0),
-)
 const timelineOrderedShots = computed(() => {
   if (timelineShotsOrder.value.length === 0) return shots.value
   const map = Object.fromEntries(shots.value.map(s => [s.id, s]))
@@ -262,12 +259,27 @@ const timelineOrderedShots = computed(() => {
 const timelineCurrentShot = computed(() => timelineOrderedShots.value[timelineCurrentShotIndex.value] ?? null)
 
 const TL_PX_PER_SEC = 16   // pixels per second for vertical timeline scale
+
+// Effective duration: max(shot.duration, sum of voice segment duration_secs)
+// Falls back to shot.duration when segments not yet loaded
+function timelineEffectiveDuration(shot: typeof shots.value[0]): number {
+  const segs = shotSegments.value[shot.id]
+  if (segs && segs.length > 0) {
+    const segTotal = segs.reduce((s, seg) => s + (seg.duration_secs || 0), 0)
+    if (segTotal > 0) return Math.max(shot.duration || 5, segTotal)
+  }
+  return shot.duration || 5
+}
+
+const timelineTotalDuration = computed(() =>
+  shots.value.reduce((sum, s) => sum + timelineEffectiveDuration(s), 0),
+)
 const timelineShotStartTimes = computed(() => {
   const times: number[] = []
   let cum = 0
   for (const shot of timelineOrderedShots.value) {
     times.push(cum)
-    cum += shot.duration || 5
+    cum += timelineEffectiveDuration(shot)
   }
   return times
 })
@@ -903,7 +915,7 @@ function timelineTick() {
   if (!shot) { timelineStop(); return }
   timelineShotElapsed.value += 0.1
   timelineTotalElapsed.value += 0.1
-  if (timelineShotElapsed.value >= (shot.duration || 5)) {
+  if (timelineShotElapsed.value >= timelineEffectiveDuration(shot)) {
     if (timelineCurrentShotIndex.value < timelineOrderedShots.value.length - 1) {
       timelineCurrentShotIndex.value++
       timelineShotElapsed.value = 0
@@ -948,7 +960,7 @@ function timelineSeekToShot(idx: number) {
   timelineShotElapsed.value = 0
   timelineTotalElapsed.value = timelineOrderedShots.value
     .slice(0, idx)
-    .reduce((s, sh) => s + (sh.duration || 5), 0)
+    .reduce((s, sh) => s + timelineEffectiveDuration(sh), 0)
   if (wasPlaying) timelinePlay()
 }
 
@@ -998,6 +1010,17 @@ watch(timelineSelectedShotId, (id) => {
       duration: shot.duration || 5,
       transition: shot.transition || 'cut',
       sfx_volume: shot.sfx_volume ?? 0,
+    }
+  }
+})
+
+// Auto-load voice segments for all shots when timeline tab opens
+// so timelineEffectiveDuration() has real duration_secs data
+watch(activeTab, async (tab) => {
+  if (tab !== 'timeline') return
+  for (const shot of shots.value) {
+    if (!shotSegments.value[shot.id]) {
+      await loadSegments(shot)
     }
   }
 })
@@ -1926,7 +1949,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               timelineCurrentShotIndex === idx ? 'bg-primary-50 dark:bg-primary-900/15' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
               timelineDragShotId === shot.id ? 'opacity-40' : '',
             ]"
-            :style="`height:${(shot.duration || 5) * TL_PX_PER_SEC}px`"
+            :style="`height:${timelineEffectiveDuration(shot) * TL_PX_PER_SEC}px`"
             draggable="true"
             @dragstart="timelineDragStart(shot.id)"
             @dragover="timelineDragOver($event, shot.id)"
@@ -1967,7 +1990,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <!-- Shot no + duration -->
               <div class="min-w-0">
                 <div class="text-xs font-semibold leading-tight">#{{ shot.shot_no }}</div>
-                <div class="text-xs text-gray-400 font-mono">{{ shot.duration || 5 }}s</div>
+                <div class="text-xs text-gray-400 font-mono">{{ timelineEffectiveDuration(shot).toFixed(1) }}s</div>
               </div>
             </div>
 
@@ -1989,7 +2012,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <div
                 v-if="timelineCurrentShotIndex === idx"
                 class="absolute bottom-0 left-0 h-0.5 bg-primary-500 transition-none"
-                :style="`width:${(timelineShotElapsed / (shot.duration || 5)) * 100}%`"
+                :style="`width:${(timelineShotElapsed / timelineEffectiveDuration(shot)) * 100}%`"
               />
             </div>
 
@@ -1998,7 +2021,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <div
                 class="w-full rounded"
                 :class="(shotAudioUrls[shot.id] || shot.audio_url) ? 'bg-green-400 dark:bg-green-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.min(100, ((shot.duration || 5) / (timelineTotalDuration || 1)) * 400)}%`"
+                :style="`height:${Math.min(100, (timelineEffectiveDuration(shot) / (timelineTotalDuration || 1)) * 400)}%`"
               />
             </div>
 
@@ -2007,7 +2030,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <div
                 class="w-full rounded"
                 :class="shot.sfx_url ? 'bg-orange-400 dark:bg-orange-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.min(100, ((shot.duration || 5) / (timelineTotalDuration || 1)) * 400)}%`"
+                :style="`height:${Math.min(100, (timelineEffectiveDuration(shot) / (timelineTotalDuration || 1)) * 400)}%`"
               />
             </div>
 
