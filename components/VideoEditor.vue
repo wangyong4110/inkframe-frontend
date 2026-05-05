@@ -382,9 +382,9 @@ async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: st
   const effectivePacing = overridePacing ?? pacing.value
   const effectiveDuration = overrideTargetDuration ?? targetDuration.value
   // adv 参数未设置时，fallback 到 novel 项目配置，确保请求体中始终携带实际生效的值
-  const effectiveMaxTokens = overrideMaxTokens ?? advMaxTokens.value || novel?.max_tokens || undefined
-  const effectiveTemperature = overrideTemperature ?? advTemperature.value || novel?.temperature || undefined
-  const effectiveTimeout = overrideTimeoutSeconds ?? advTimeoutSeconds.value || novel?.timeout_seconds || undefined
+  const effectiveMaxTokens = overrideMaxTokens ?? (advMaxTokens.value || novel?.max_tokens || undefined)
+  const effectiveTemperature = overrideTemperature ?? (advTemperature.value || novel?.temperature || undefined)
+  const effectiveTimeout = overrideTimeoutSeconds ?? (advTimeoutSeconds.value || novel?.timeout_seconds || undefined)
   try {
     await videoStore.generateStoryboard(
       props.videoId,
