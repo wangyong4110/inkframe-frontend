@@ -212,7 +212,7 @@ async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'al
     toast.info('三视图生成任务已提交，AI 正在生成中…')
     threeViewTaskTimer = setInterval(async () => {
       try {
-        const pollRes = await api.getThreeViewTaskStatus(characterId, threeViewTaskId.value)
+        const pollRes = await useTaskApi().getTask(threeViewTaskId.value)
         const task = pollRes.data
         threeViewTaskStatus.value = task.status as any
         if (task.status === 'completed') {

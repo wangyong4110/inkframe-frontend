@@ -333,10 +333,16 @@ async function handleReviewStoryboard() {
   reviewResult.value = null
   showReviewPanel.value = true
   try {
-    reviewResult.value = await videoStore.reviewStoryboard(props.videoId, props.llmProvider || undefined)
+    await videoStore.reviewStoryboard(props.videoId, props.llmProvider || undefined, (task) => {
+      reviewing.value = false
+      if (task.status === 'completed') {
+        reviewResult.value = task.data as StoryboardReview
+      } else {
+        reviewError.value = (task as any).error || '审查失败，请稍后重试'
+      }
+    })
   } catch (e: any) {
     reviewError.value = e.message || '审查失败，请稍后重试'
-  } finally {
     reviewing.value = false
   }
 }

@@ -148,7 +148,7 @@ export const useChapterStore = defineStore('chapter', {
       return new Promise((resolve, reject) => {
         const poll = async () => {
           try {
-            const res: any = await request(`/novels/${novelId}/chapters/generate/${taskId}`)
+            const res: any = await request(`/tasks/${taskId}`)
             const task = res?.data ?? res
             const chapter: Chapter = task.data?.chapter ?? task.chapter
             if (task.status === 'completed' && chapter) {

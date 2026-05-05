@@ -239,25 +239,26 @@ async function pollImportTask(taskId: string) {
       return
     }
     try {
-      const res = await fetch(`${apiBase}/import/status/${taskId}`, { headers: getAuthHeader() })
+      const res = await fetch(`${apiBase}/tasks/${taskId}`, { headers: getAuthHeader() })
       const data = await res.json()
       const task = data.data
       if (!task) { setTimeout(tick, interval); return }
+      const taskData = task.data ?? {}
 
       if (task.status === 'completed') {
         fileProgress.value = 100
         fileUploading.value = false
-        if (task.novel_id) {
+        if (taskData.novel_id) {
           // 若后端已启动分析，直接跟踪已有任务；否则让详情页触发分析
-          const q = task.analysis_task_id
-            ? `analysis_task_id=${task.analysis_task_id}`
+          const q = taskData.analysis_task_id
+            ? `analysis_task_id=${taskData.analysis_task_id}`
             : 'analyze=1'
-          router.push(`/novel/${task.novel_id}?${q}`)
+          router.push(`/novel/${taskData.novel_id}?${q}`)
         } else {
           fileError.value = '导入完成但未返回小说ID'
         }
       } else if (task.status === 'failed') {
-        fileError.value = task.message || '导入失败'
+        fileError.value = task.error || taskData.message || '导入失败'
         fileUploading.value = false
       } else {
         // running/pending — keep polling, animate progress 50→90
@@ -329,36 +330,37 @@ function pollCrawlTask(taskId: string) {
       return
     }
     try {
-      const res = await fetch(`${apiBase}/import/status/${taskId}`, { headers: getAuthHeader() })
+      const res = await fetch(`${apiBase}/tasks/${taskId}`, { headers: getAuthHeader() })
       const data = await res.json()
       const task = data.data
       if (!task) { setTimeout(tick, 2000); return }
+      const taskData = task.data ?? {}
 
       // 同步爬取进度到 crawlStatus
-      if (task.novel_id) crawlNovelId.value = task.novel_id
-      if (task.crawl_total > 0 || task.crawl_done > 0) {
+      if (taskData.novel_id) crawlNovelId.value = taskData.novel_id
+      if (taskData.crawl_total > 0 || taskData.crawl_done > 0) {
         crawlStatus.value = {
-          novel_id: task.novel_id || crawlNovelId.value || 0,
+          novel_id: taskData.novel_id || crawlNovelId.value || 0,
           status: task.status === 'completed' ? 'completed' : 'running',
-          total: task.crawl_total || 0,
-          done: task.crawl_done || 0,
+          total: taskData.crawl_total || 0,
+          done: taskData.crawl_done || 0,
           failed: 0,
-          current: task.crawl_current || '',
+          current: taskData.crawl_current || '',
         }
       }
 
       if (task.status === 'completed') {
         crawlLoading.value = false
-        if (task.novel_id) {
-          const q = task.analysis_task_id
-            ? `analysis_task_id=${task.analysis_task_id}`
+        if (taskData.novel_id) {
+          const q = taskData.analysis_task_id
+            ? `analysis_task_id=${taskData.analysis_task_id}`
             : 'analyze=1'
-          router.push(`/novel/${task.novel_id}?${q}`)
+          router.push(`/novel/${taskData.novel_id}?${q}`)
         } else {
           crawlError.value = '爬取完成但未返回小说ID'
         }
       } else if (task.status === 'failed') {
-        crawlError.value = task.message || '爬取失败'
+        crawlError.value = task.error || taskData.message || '爬取失败'
         crawlLoading.value = false
       } else {
         setTimeout(tick, 2000)

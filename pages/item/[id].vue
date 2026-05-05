@@ -35,7 +35,7 @@ function clearImageTaskTimer() {
 async function pollImageTask() {
   if (!imageTaskId.value) return
   try {
-    const res = await itemApi.getItemImageTaskStatus(itemId, imageTaskId.value)
+    const res = await useTaskApi().getTask(imageTaskId.value)
     const task = res.data
     imageTaskStatus.value = task.status as any
     if (task.status === 'completed') {

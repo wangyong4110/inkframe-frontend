@@ -460,8 +460,9 @@ onMounted(async () => {
     const storedTaskId = localStorage.getItem(`analysis_task_${novelId}`)
     if (storedTaskId) {
       try {
-        const resp = await analysisApi.getAnalysisStatus(novelId, storedTaskId)
-        const status = (resp as any).data as AnalysisStatus
+        const resp = await useTaskApi().getTask(storedTaskId)
+        const task = (resp as any).data
+        const status: AnalysisStatus = { status: task.status, progress: task.progress, step: task.data?.step || '', error: task.error || '', warnings: task.data?.warnings || [] }
         if (status.status === 'running' || status.status === 'pending') {
           analysisTaskId.value = storedTaskId
           analysisStatus.value = status
@@ -795,8 +796,9 @@ function startAnalysisPoll() {
   analysisPollTimer = setInterval(async () => {
     if (!analysisTaskId.value) return
     try {
-      const resp = await analysisApi.getAnalysisStatus(novelId, analysisTaskId.value)
-      analysisStatus.value = (resp as any).data as AnalysisStatus
+      const resp = await useTaskApi().getTask(analysisTaskId.value)
+      const task = (resp as any).data
+      analysisStatus.value = { status: task.status, progress: task.progress, step: task.data?.step || '', error: task.error || '', warnings: task.data?.warnings || [] }
       if (analysisStatus.value.status === 'completed' || analysisStatus.value.status === 'failed') {
         stopAnalysisPoll()
         localStorage.removeItem(`analysis_task_${novelId}`)

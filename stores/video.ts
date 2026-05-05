@@ -208,10 +208,9 @@ export const useVideoStore = defineStore('video', {
     },
 
     async pollStoryboardTask(videoId: number, taskId: string) {
-      const api = useVideoApi()
       const poll = async () => {
         try {
-          const res = await api.getStoryboardGenStatus(videoId, taskId)
+          const res = await useTaskApi().getTask(taskId)
           const task = res.data
           this.storyboardTaskStatus = task.status
           if (task.status === 'completed') {
@@ -324,10 +323,13 @@ export const useVideoStore = defineStore('video', {
       this.currentShot = null
     },
 
-    async reviewStoryboard(videoId: number, provider?: string) {
+    async reviewStoryboard(videoId: number, provider?: string, onDone?: (task: import('~/types').AsyncTask) => void) {
       const api = useVideoApi()
       const response = await api.reviewStoryboard(videoId, provider)
-      return response.data
+      const taskId = response.data?.task_id
+      if (!taskId) throw new Error('未获取到审查任务 ID')
+      useTaskStore().trackTask(taskId, onDone)
+      return taskId
     },
   },
 })

@@ -210,15 +210,6 @@ export const useChapterApi = () => {
       body: JSON.stringify(data),
     })
 
-  const getChapterGenStatus = (novelId: number, taskId: string) =>
-    request<ApiResponse<{
-      task_id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
-      chapter?: Chapter
-      model_used?: string
-      error?: string
-    }>>(`/novels/${novelId}/chapters/generate/${taskId}`)
-
   return {
     getChapters,
     getChapter,
@@ -226,7 +217,6 @@ export const useChapterApi = () => {
     updateChapter,
     deleteChapter,
     generateChapter,
-    getChapterGenStatus,
   }
 }
 
@@ -267,15 +257,6 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ view_type: viewType, style: style ?? '', provider: provider ?? '' }),
     })
 
-  const getThreeViewTaskStatus = (id: number, taskId: string) =>
-    request<ApiResponse<{
-      task_id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
-      character?: Character
-      generated?: Record<string, string>
-      error?: string
-    }>>(`/characters/${id}/three-view/${taskId}`)
-
   const uploadPortrait = (id: number, file: File) =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
@@ -302,7 +283,6 @@ export const useCharacterApi = () => {
     deleteCharacter,
     generateCharacterProfile,
     generateThreeView,
-    getThreeViewTaskStatus,
     uploadPortrait,
     previewVoice,
     aiBatchGenerate,
@@ -441,14 +421,6 @@ export const useVideoApi = () => {
   const getVideoProviders = () =>
     request<ApiResponse<{ name: string; display_name: string }[]>>('/videos/providers')
 
-  const getStoryboardGenStatus = (id: number, taskId: string) =>
-    request<ApiResponse<{
-      task_id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
-      data?: { shots?: StoryboardShot[]; total?: number; [key: string]: unknown }
-      error?: string
-    }>>(`/videos/${id}/storyboard/generate/${taskId}`)
-
   const getStoryboard = (id: number) =>
     request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard`)
 
@@ -465,23 +437,7 @@ export const useVideoApi = () => {
     requestBlob(`/videos/${id}/export/${format}`)
 
   const reviewStoryboard = (id: number, provider?: string) =>
-    request<ApiResponse<{
-      overall_score: number
-      narrative_score: number
-      visual_score: number
-      pacing_score: number
-      narration_score: number
-      summary: string
-      strengths: string[]
-      weaknesses: string[]
-      global_suggestions: string[]
-      shot_feedback: Array<{
-        shot_no: number
-        issues: string[]
-        suggestion: string
-        severity: 'info' | 'warning' | 'error'
-      }>
-    }>>(`/videos/${id}/storyboard/review`, {
+    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/review`, {
       method: 'POST',
       body: provider ? JSON.stringify({ provider }) : undefined,
     })
@@ -509,7 +465,6 @@ export const useVideoApi = () => {
     updateVideo,
     deleteVideo,
     generateStoryboard,
-    getStoryboardGenStatus,
     getStoryboard,
     updateStoryboardShot,
     generateShot,
@@ -697,10 +652,7 @@ export const useAnalysisApi = () => {
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
 
-  const getAnalysisStatus = (novelId: number, taskId: string) =>
-    request<ApiResponse<AnalysisStatus>>(`/novels/${novelId}/analyze/status?task_id=${taskId}`)
-
-  return { startAnalysis, getAnalysisStatus }
+  return { startAnalysis }
 }
 
 // Crawl API
@@ -855,14 +807,6 @@ export const useItemApi = () => {
       body: JSON.stringify({ reference_image_url: referenceImageUrl ?? '', provider: provider ?? '' }),
     })
 
-  const getItemImageTaskStatus = (id: number, taskId: string) =>
-    request<ApiResponse<{
-      task_id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
-      item?: Item
-      error?: string
-    }>>(`/items/${id}/images/${taskId}`)
-
   const listEffectiveItems = (novelId: number, chapterNo: number) =>
     request<ApiResponse<EffectiveItem[]>>(`/novels/${novelId}/chapters/${chapterNo}/items`)
 
@@ -898,7 +842,6 @@ export const useItemApi = () => {
     uploadItemImage,
     uploadItemReference,
     generateItemImage,
-    getItemImageTaskStatus,
     listEffectiveItems,
     upsertChapterItem,
     deleteChapterItem,
