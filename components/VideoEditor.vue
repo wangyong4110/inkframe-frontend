@@ -893,6 +893,16 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
   }
 }
 
+// ──────── Ken Burns ────────
+const KB_ANIMATIONS = ['kb-zoom-in', 'kb-pan-left', 'kb-pan-right', 'kb-zoom-tl', 'kb-zoom-out'] as const
+
+function kenBurnsStyle(shot: StoryboardShot): string {
+  const animName = KB_ANIMATIONS[shot.id % KB_ANIMATIONS.length]
+  const dur = shot.duration || 5
+  const state = timelinePlaying.value ? 'running' : 'paused'
+  return `animation: ${animName} ${dur}s ease-in-out forwards; animation-play-state: ${state}`
+}
+
 // ──────── Timeline ────────
 function timelineSyncMedia() {
   const shot = timelineCurrentShot.value
@@ -2259,8 +2269,10 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               />
               <img
                 v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
+                :key="timelineCurrentShotIndex"
                 :src="timelineCurrentShot.image_url"
-                class="absolute inset-0 w-full h-full object-contain"
+                :style="kenBurnsStyle(timelineCurrentShot)"
+                class="absolute inset-0 w-full h-full object-cover"
               />
               <div
                 v-if="!timelineCurrentShot"
@@ -2618,6 +2630,28 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
 .slide-right-leave-to {
   opacity: 0;
 }
+/* ── Ken Burns effects ────────────────────────────────── */
+@keyframes kb-zoom-in {
+  from { transform: scale(1.0); }
+  to   { transform: scale(1.18); }
+}
+@keyframes kb-pan-left {
+  from { transform: scale(1.1) translateX(4%); }
+  to   { transform: scale(1.15) translateX(-4%); }
+}
+@keyframes kb-pan-right {
+  from { transform: scale(1.1) translateX(-4%); }
+  to   { transform: scale(1.15) translateX(4%); }
+}
+@keyframes kb-zoom-tl {
+  from { transform: scale(1.0) translate(4%, 3%); }
+  to   { transform: scale(1.18) translate(-2%, -2%); }
+}
+@keyframes kb-zoom-out {
+  from { transform: scale(1.18); }
+  to   { transform: scale(1.0); }
+}
+
 @keyframes indeterminate {
   0%   { transform: translateX(-100%) scaleX(0.4); }
   50%  { transform: translateX(80%)   scaleX(0.8); }
