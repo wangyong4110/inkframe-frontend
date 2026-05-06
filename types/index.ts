@@ -244,6 +244,25 @@ export interface ShotVoiceSegment {
   duration_secs?: number
 }
 
+export interface VideoBGMSegment {
+  id: number
+  video_id: number
+  seq_no: number
+  start_shot_no: number
+  end_shot_no: number
+  mood: string
+  tempo: 'fast' | 'medium' | 'slow'
+  search_queries: string // JSON array string
+  url?: string
+  volume: number
+  duration_secs?: number
+  track_name?: string
+  track_artist?: string
+  source?: string // jamendo/local/none
+  created_at?: string
+  updated_at?: string
+}
+
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
 export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
 export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'

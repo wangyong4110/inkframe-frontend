@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier, ShotVoiceSegment } from '~/types'
+import type { StoryboardShot, VideoQualityTier, ShotVoiceSegment, VideoBGMSegment } from '~/types'
 
 const { openLightbox } = useImageLightbox()
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
@@ -113,10 +113,9 @@ async function saveVoiceText(shot: StoryboardShot) {
   }
 }
 
-// BGM
+// BGM (legacy, kept for timeline BGM playback ref)
 const selectedBgm = ref('')
 const bgmVolume = ref(60)
-const generatingBgm = ref(false)
 
 // SFX
 const generatingSFX = ref(false)
@@ -693,28 +692,142 @@ async function handleGenerateVoice(shot: StoryboardShot) {
   }
 }
 
+const batchVoiceTaskId = ref<string | null>(null)
+const batchVoiceGenerating = ref(false)
+
 async function handleGenerateAllVoice() {
   if (shots.value.length === 0) { toast.error('没有分镜，无法生成配音'); return }
-  for (const shot of shots.value) {
-    await handleGenerateVoice(shot)
+  if (batchVoiceGenerating.value) { toast.info('配音批量任务进行中…'); return }
+  batchVoiceGenerating.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.batchGenerateVoice(props.videoId, {
+      subtitle_enabled: subtitleEnabled.value,
+      skip_existing: true,
+      max_shots: 10,
+    })
+    const taskId = (res as any)?.data?.task_id
+    const shotCount = (res as any)?.data?.shot_count ?? 0
+    if (!taskId) {
+      toast.success((res as any)?.message || '所有分镜已有配音')
+      batchVoiceGenerating.value = false
+      return
+    }
+    batchVoiceTaskId.value = taskId
+    toast.info(`批量配音任务已提交（${shotCount} 个分镜），顺序处理中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      batchVoiceGenerating.value = false
+      batchVoiceTaskId.value = null
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        const d = task.data as any
+        toast.success(`批量配音完成：成功 ${d?.success ?? 0} 个，失败 ${d?.fail ?? 0} 个`)
+      } else {
+        toast.error('批量配音任务失败，请重试')
+      }
+    })
+  } catch (e: any) {
+    toast.error('批量配音提交失败：' + (e.message || ''))
+    batchVoiceGenerating.value = false
   }
 }
 
 // ──────── BGM ────────
+const bgmSegments = ref<VideoBGMSegment[]>([])
+const generatingBgm = ref(false)
+const analyzingBgm = ref(false)
+
+async function loadBGMSegments() {
+  const api = useVideoApi()
+  try {
+    const res = await api.listBGMSegments(props.videoId)
+    bgmSegments.value = (res as any)?.data ?? []
+  } catch { /* ignore */ }
+}
+
+async function handleAnalyzeBGM() {
+  if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
+  analyzingBgm.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.analyzeBGMSegments(props.videoId)
+    const taskId = (res as any)?.data?.task_id
+    if (!taskId) { analyzingBgm.value = false; return }
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      analyzingBgm.value = false
+      if (task.status === 'completed') {
+        await loadBGMSegments()
+        toast.success('BGM分段分析完成，请查看分段列表')
+      } else {
+        toast.error('BGM分析失败，请重试')
+      }
+    })
+  } catch (e: any) {
+    toast.error('BGM分析失败：' + (e.message || ''))
+    analyzingBgm.value = false
+  }
+}
+
 async function handleGenerateBgm() {
-  if (!selectedBgm.value) { toast.error('请先选择 BGM 风格'); return }
+  if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
   generatingBgm.value = true
   try {
-    await new Promise(resolve => setTimeout(resolve, 1800))
-    toast.success('背景音乐已生成')
+    const api = useVideoApi()
+    const res = await api.generateBGM(props.videoId)
+    const taskId = (res as any)?.data?.task_id
+    if (!taskId) { generatingBgm.value = false; return }
+    toast.info('BGM生成任务已提交（AI分析 + Jamendo搜索）…')
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      generatingBgm.value = false
+      if (task.status === 'completed') {
+        await loadBGMSegments()
+        const d = task.data as any
+        toast.success(`BGM生成完成：${d?.matched ?? 0}/${d?.total ?? 0} 个分段匹配到音乐`)
+      } else {
+        toast.error('BGM生成失败，请重试')
+      }
+    })
   } catch (e: any) {
-    toast.error('BGM 生成失败：' + (e.message || ''))
-  } finally {
+    toast.error('BGM生成失败：' + (e.message || ''))
     generatingBgm.value = false
   }
 }
 
+function parseBGMSearchQueries(json: string): string[] {
+  try { return JSON.parse(json) } catch { return [] }
+}
+
 // ──────── SFX ────────
+const analyzingTags = ref(false)
+
+async function handleAnalyzeSFXTags() {
+  if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
+  analyzingTags.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.analyzeSFXTags(props.videoId)
+    const taskId = (res as any)?.data?.task_id
+    if (taskId) {
+      useTaskStore().trackTask(taskId, async (task) => {
+        analyzingTags.value = false
+        if (task.status === 'completed') {
+          await videoStore.fetchStoryboard(props.videoId)
+          toast.success('AI 音效标签分析完成，每个镜头已生成精准搜索词')
+        } else {
+          toast.error('AI 音效标签分析失败：' + ((task as any).error || ''))
+        }
+      })
+      toast.info('AI 正在分析分镜脚本，生成精准音效搜索词…')
+    }
+  } catch (e: any) {
+    toast.error('AI 分析失败：' + (e.message || ''))
+    analyzingTags.value = false
+  }
+}
+
 async function handleGenerateSFX() {
   if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
   generatingSFX.value = true
@@ -734,7 +847,7 @@ async function handleGenerateSFX() {
           toast.success(`音效生成完成：${success} 个镜头`)
         }
       })
-      toast.success('音效生成任务已提交，请在右下角任务面板查看进度')
+      toast.success('音效生成任务已提交（含 AI 标签分析），请在右下角任务面板查看进度')
     }
   } catch (e: any) {
     toast.error('音效生成失败：' + (e.message || ''))
@@ -1262,6 +1375,9 @@ watch(activeTab, async (tab) => {
     // Tabs that show video-level data (bgm_url, status, etc.)
     if (['bgm', 'export'].includes(tab)) {
       await videoStore.fetchVideo(props.videoId)
+    }
+    if (tab === 'bgm') {
+      await loadBGMSegments()
     }
     // SFX: load all sfx items for each shot
     if (tab === 'sfx') {
@@ -1950,7 +2066,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             <h3 class="font-semibold text-gray-900 dark:text-white">配音设置</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">为每个镜头的对白和旁白生成语音</p>
           </div>
-          <button class="btn-primary" @click="handleGenerateAllVoice">一键生成全部配音</button>
+          <button class="btn-primary flex items-center gap-1.5" :disabled="batchVoiceGenerating" @click="handleGenerateAllVoice">
+            <svg v-if="batchVoiceGenerating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ batchVoiceGenerating ? '生成中（最多10个）…' : '一键生成全部配音' }}
+          </button>
         </div>
         <div class="flex items-center justify-between">
           <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
@@ -2096,39 +2217,111 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
          背景音乐 Tab
          ============================== -->
     <div v-if="activeTab === 'bgm' && !tabLoading" class="space-y-4">
-      <div class="card p-6">
-        <h3 class="font-semibold text-gray-900 dark:text-white mb-1">背景音乐</h3>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">选择情绪风格，AI 将根据情节节奏智能匹配音乐</p>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mb-5">
-          <button
-            v-for="bgm in BGM_OPTIONS"
-            :key="bgm.id"
-            type="button"
-            class="flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all"
-            :class="selectedBgm === bgm.id
-              ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
-              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
-            @click="selectedBgm = bgm.id"
-          >
-            <div>
-              <p class="font-medium text-sm text-gray-900 dark:text-white">{{ bgm.name }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ bgm.desc }}</p>
-            </div>
-          </button>
-        </div>
-        <div class="mb-5">
-          <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">音量</label>
-            <span class="text-sm text-gray-500">{{ bgmVolume }}%</span>
+      <!-- Toolbar -->
+      <div class="card p-4">
+        <div class="flex items-start justify-between gap-4 mb-3">
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">AI 背景音乐</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              AI 分析全部分镜的情绪走向，将情绪相近的连续分镜归为一组，每组生成专属搜索词，在 Jamendo 免费音乐库匹配曲目
+            </p>
           </div>
-          <input v-model.number="bgmVolume" type="range" min="0" max="100" step="5" class="w-full accent-primary-500" />
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <!-- Step 1: AI分析分段 -->
+            <button
+              class="btn-secondary text-sm"
+              :disabled="analyzingBgm || generatingBgm || shots.length === 0"
+              @click="handleAnalyzeBGM"
+              title="AI分析分镜情绪，规划BGM分段（不下载音频）"
+            >
+              <svg v-if="analyzingBgm" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              {{ analyzingBgm ? 'AI分析中…' : 'AI 分析分段' }}
+            </button>
+            <!-- Step 2: 一键生成 -->
+            <button
+              class="btn-primary text-sm"
+              :disabled="generatingBgm || analyzingBgm || shots.length === 0"
+              @click="handleGenerateBgm"
+            >
+              <svg v-if="generatingBgm" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+              {{ generatingBgm ? '生成中…' : '一键生成BGM' }}
+            </button>
+          </div>
         </div>
-        <button class="btn-primary" :disabled="generatingBgm || !selectedBgm" @click="handleGenerateBgm">
-          <svg v-if="generatingBgm" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          {{ generatingBgm ? '生成中...' : '生成背景音乐' }}
-        </button>
+        <!-- Workflow hint -->
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+          <p class="font-medium">工作流程</p>
+          <p>① <span class="font-medium">AI 分析分段</span>：AI 阅读全部分镜情绪，自动分组并生成 Jamendo 搜索词（可在下方预览）</p>
+          <p>② <span class="font-medium">一键生成BGM</span>：含 AI 分段分析 → Jamendo 免费音乐库搜索，每段独立匹配</p>
+          <p class="text-blue-500 dark:text-blue-400">注：一段BGM可跨越多个分镜，每段独立情绪匹配</p>
+        </div>
+      </div>
+
+      <!-- BGM Segments List -->
+      <div v-if="bgmSegments.length > 0" class="space-y-3">
+        <div
+          v-for="seg in bgmSegments"
+          :key="seg.id"
+          class="card p-4"
+        >
+          <div class="flex items-start gap-3">
+            <!-- Segment badge -->
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-400">
+              {{ seg.seq_no }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <!-- Header row -->
+              <div class="flex items-center flex-wrap gap-2 mb-1">
+                <span class="text-sm font-medium text-gray-900 dark:text-white">镜头 {{ seg.start_shot_no }}–{{ seg.end_shot_no }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">{{ seg.mood }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                  {{ { fast: '快节奏', medium: '中节奏', slow: '慢节奏' }[seg.tempo] ?? seg.tempo }}
+                </span>
+              </div>
+              <!-- Search queries chips -->
+              <div v-if="parseBGMSearchQueries(seg.search_queries).length > 0" class="flex flex-wrap gap-1 mb-2">
+                <span
+                  v-for="q in parseBGMSearchQueries(seg.search_queries)"
+                  :key="q"
+                  class="text-xs px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800"
+                >
+                  {{ q }}
+                </span>
+              </div>
+              <!-- Matched track -->
+              <div v-if="seg.url" class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
+                <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+                <div class="min-w-0">
+                  <p class="font-medium truncate">{{ seg.track_name || '已匹配曲目' }}</p>
+                  <p v-if="seg.track_artist" class="text-gray-400 truncate">{{ seg.track_artist }} · {{ seg.source }}</p>
+                </div>
+                <audio :src="seg.url" controls class="h-7 w-32 flex-shrink-0" />
+              </div>
+              <p v-else class="text-xs text-gray-400 italic">暂无匹配曲目，点击「一键生成BGM」搜索</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div v-else class="card p-8 text-center">
+        <svg class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+        </svg>
+        <p class="text-sm text-gray-500 dark:text-gray-400">尚无BGM分段</p>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">点击「AI 分析分段」或「一键生成BGM」开始</p>
       </div>
     </div>
 
@@ -2137,29 +2330,48 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
          ============================== -->
     <div v-if="activeTab === 'sfx' && !tabLoading" class="space-y-4">
       <div class="card p-4">
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex items-start justify-between gap-4 mb-3">
           <div>
-            <h3 class="font-semibold text-gray-900 dark:text-white">自动音效</h3>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">AI 根据镜头内容自动匹配或生成场景音效，导出剪映时自动附加独立音效轨道</p>
+            <h3 class="font-semibold text-gray-900 dark:text-white">AI 智能音效</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">AI 先分析全部分镜的场景/动作/情绪，生成精准自然语言搜索词，再从音效库匹配素材</p>
           </div>
-          <button
-            class="btn-primary"
-            :disabled="generatingSFX || shots.length === 0"
-            @click="handleGenerateSFX"
-          >
-            <svg v-if="generatingSFX" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {{ generatingSFX ? '提交中...' : '一键生成音效' }}
-          </button>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <!-- Step 1: AI 分析标签 -->
+            <button
+              class="btn-secondary text-sm"
+              :disabled="analyzingTags || generatingSFX || shots.length === 0"
+              @click="handleAnalyzeSFXTags"
+              title="仅更新每个镜头的音效搜索词，不搜索/下载音频"
+            >
+              <svg v-if="analyzingTags" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              {{ analyzingTags ? '分析中…' : 'AI 分析标签' }}
+            </button>
+            <!-- Step 2: 搜索+生成音效 -->
+            <button
+              class="btn-primary text-sm"
+              :disabled="generatingSFX || analyzingTags || shots.length === 0"
+              @click="handleGenerateSFX"
+            >
+              <svg v-if="generatingSFX" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6a7 7 0 010 12M8.464 8.464a5 5 0 000 7.072" />
+              </svg>
+              {{ generatingSFX ? '提交中…' : '一键生成音效' }}
+            </button>
+          </div>
         </div>
         <!-- 生成流程说明 -->
         <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
-          <p class="font-medium">四层降级策略（按优先级自动选择）</p>
-          <p>① 本地音效库 — 从服务器预设音效库精确匹配（0延迟）</p>
-          <p>② Freesound CC0 — 从开放音效平台搜索授权素材</p>
-          <p>③ Jamendo — 从免费器乐平台搜索背景音效</p>
-          <p>④ ElevenLabs AI — 按镜头描述实时生成定制音效（最高质量）</p>
+          <p class="font-medium">推荐两步工作流</p>
+          <p>① <span class="font-medium">AI 分析标签</span>：AI 批量阅读所有分镜，为每个镜头生成场景专属的自然语言搜索词（可在下方预览/编辑）</p>
+          <p>② <span class="font-medium">一键生成音效</span>：含 AI 标签分析 → 本地库 → Freesound CC0 → Jamendo → ElevenLabs AI 四层降级匹配</p>
         </div>
       </div>
 
@@ -2183,6 +2395,19 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               </span>
               <span v-else-if="!sfxItemsLoading" class="ml-2 text-xs text-gray-400">待生成</span>
             </div>
+          </div>
+          <!-- AI 分析出的音效搜索词（sfx_tags）预览 -->
+          <div v-if="parseSfxTags(shot.sfx_tags).length > 0" class="px-3 py-1.5 flex flex-wrap gap-1 border-b border-gray-100 dark:border-gray-700/50">
+            <span
+              v-for="tag in parseSfxTags(shot.sfx_tags)"
+              :key="tag"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+            >
+              <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {{ tag }}
+            </span>
           </div>
           <!-- 音效条目列表 -->
           <div v-if="(sfxItems[shot.id]?.length ?? 0) > 0" class="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -2241,7 +2466,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </div>
           <!-- 空状态占位 -->
           <div v-else-if="!sfxItemsLoading" class="px-3 py-2 text-xs text-gray-400 italic">
-            暂无音效，点击「一键生成音效」自动匹配
+            {{ parseSfxTags(shot.sfx_tags).length > 0 ? '已分析搜索词，点击「一键生成音效」匹配音频' : '点击「AI 分析标签」或「一键生成音效」' }}
           </div>
         </div>
         <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">

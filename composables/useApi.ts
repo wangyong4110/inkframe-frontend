@@ -430,9 +430,32 @@ export const useVideoApi = () => {
       body: JSON.stringify({ suggestion }),
     })
 
+  // AI 批量分析分镜，生成精准自然语言音效搜索词（仅更新 sfx_tags，不搜索/生成音频）
+  const analyzeSFXTags = (videoId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx-tags`, { method: 'POST' })
+
   // 批量为所有分镜自动生成音效（异步任务，返回 task_id）
   const batchGenerateSFX = (videoId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, { method: 'POST' })
+
+  // 批量配音：所有分镜作为单个异步任务，顺序处理（最多10个，避免TTS限流）
+  const batchGenerateVoice = (videoId: number, options?: { narration_voice?: string; subtitle_enabled?: boolean; max_shots?: number; skip_existing?: boolean }) =>
+    request<ApiResponse<{ task_id: string; shot_count: number }>>(`/videos/${videoId}/shots/batch-voice`, {
+      method: 'POST',
+      body: options ? JSON.stringify(options) : undefined,
+    })
+
+  // BGM：获取分段列表
+  const listBGMSegments = (videoId: number) =>
+    request<ApiResponse<import('~/types').VideoBGMSegment[]>>(`/videos/${videoId}/bgm/segments`)
+
+  // BGM：AI分析分段（仅分析，不搜索音频）
+  const analyzeBGMSegments = (videoId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/analyze`, { method: 'POST' })
+
+  // BGM：一键生成（AI分析 + Jamendo搜索）
+  const generateBGM = (videoId: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/generate`, { method: 'POST' })
 
   // 为单个分镜生成音效（异步任务）
   const generateShotSFX = (videoId: number, shotId: number) =>
@@ -564,6 +587,7 @@ export const useVideoApi = () => {
     batchGenerateShotImages,
     batchGenerateShotClips,
     refineShotImage,
+    analyzeSFXTags,
     batchGenerateSFX,
     generateShotSFX,
     listShotSFXItems,
@@ -583,6 +607,10 @@ export const useVideoApi = () => {
     updateVoiceSegment,
     deleteVoiceSegment,
     generateSegmentVoice,
+    batchGenerateVoice,
+    listBGMSegments,
+    analyzeBGMSegments,
+    generateBGM,
   }
 }
 
