@@ -146,6 +146,10 @@ const timelineResizeDraft = ref<Record<number, number>>({})
 const timelinePlaybackSpeed = ref(1.0)
 const timelineMasterVolume = ref(80)
 const timelineMuted = ref(false)
+const timelineSfxMuted = ref(false)
+const timelineBgmMuted = ref(false)
+const timelineRecording = ref(false)
+const timelineMediaRecorder = ref<MediaRecorder | null>(null)
 
 // Export
 const stitching = ref(false)
@@ -865,62 +869,7 @@ function parseBGMSearchQueries(json: string): string[] {
   try { return JSON.parse(json) } catch { return [] }
 }
 
-// ──────── BGM 预览播放器 ────────
-const bgmPreviewAudio = ref<HTMLAudioElement | null>(null)
-const bgmPlayingSegId = ref<number | null>(null)
-const bgmPlaying = ref(false)
-const bgmCurrentTime = ref(0)
-const bgmDuration = ref(0)
-const bgmProgressPct = computed(() =>
-  bgmDuration.value > 0 ? Math.min(100, (bgmCurrentTime.value / bgmDuration.value) * 100) : 0
-)
-const bgmTimeFormatted = computed(() => {
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-  return `${fmt(bgmCurrentTime.value)} / ${fmt(bgmDuration.value)}`
-})
-
-function bgmTogglePlay(seg: VideoBGMSegment) {
-  if (!bgmPreviewAudio.value || !seg.url) return
-  if (bgmPlayingSegId.value === seg.id) {
-    if (bgmPlaying.value) {
-      bgmPreviewAudio.value.pause()
-      bgmPlaying.value = false
-    } else {
-      bgmPreviewAudio.value.play().catch(() => {})
-      bgmPlaying.value = true
-    }
-  } else {
-    bgmPreviewAudio.value.src = seg.url
-    bgmPreviewAudio.value.currentTime = 0
-    bgmCurrentTime.value = 0
-    bgmDuration.value = 0
-    bgmPlayingSegId.value = seg.id
-    bgmPlaying.value = false
-    bgmPreviewAudio.value.play().then(() => { bgmPlaying.value = true }).catch(() => {})
-  }
-}
-function bgmStopPreview() {
-  bgmPreviewAudio.value?.pause()
-  bgmPlaying.value = false
-  bgmPlayingSegId.value = null
-  bgmCurrentTime.value = 0
-}
-function bgmOnTimeUpdate() {
-  if (bgmPreviewAudio.value) bgmCurrentTime.value = bgmPreviewAudio.value.currentTime
-}
-function bgmOnLoaded() {
-  if (bgmPreviewAudio.value) bgmDuration.value = bgmPreviewAudio.value.duration || 0
-}
-function bgmOnEnded() {
-  bgmPlaying.value = false
-  bgmCurrentTime.value = 0
-}
-function bgmSeek(e: MouseEvent) {
-  if (!bgmPreviewAudio.value || bgmDuration.value <= 0) return
-  const bar = e.currentTarget as HTMLElement
-  const rect = bar.getBoundingClientRect()
-  bgmPreviewAudio.value.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * bgmDuration.value
-}
+function bgmStopPreview() { /* no-op: native audio elements stop themselves */ }
 
 // ──────── Jamendo 手动搜索 ────────
 const bgmSearchTargetSeg = ref<VideoBGMSegment | null>(null)
@@ -1334,6 +1283,7 @@ function timelineSyncMedia() {
       if (shot.sfx_url) {
         timelineSfxRef.value.src = shot.sfx_url
         timelineSfxRef.value.volume = vol * (shot.sfx_volume ?? 1)
+        timelineSfxRef.value.muted = timelineSfxMuted.value || timelineMuted.value
         timelineSfxRef.value.playbackRate = speed
         timelineSfxRef.value.play().catch(() => {})
       } else {
@@ -1366,6 +1316,7 @@ function timelinePlay() {
   timelineSyncMedia()
   if (timelineBgmRef.value && selectedBgm.value) {
     timelineBgmRef.value.volume = bgmVolume.value / 100
+    timelineBgmRef.value.muted = timelineBgmMuted.value || timelineMuted.value
     timelineBgmRef.value.play().catch(() => {})
   }
   timelineTimer.value = setInterval(timelineTick, 100)
@@ -1475,9 +1426,54 @@ function timelineCycleSpeed() {
 watch(timelineMuted, (m) => {
   if (timelineVideoRef.value) timelineVideoRef.value.muted = m
   if (timelineVoiceRef.value) timelineVoiceRef.value.muted = m
-  if (timelineSfxRef.value) timelineSfxRef.value.muted = m
-  if (timelineBgmRef.value) timelineBgmRef.value.muted = m
+  if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineSfxMuted.value
+  if (timelineBgmRef.value) timelineBgmRef.value.muted = m || timelineBgmMuted.value
 })
+watch(timelineSfxMuted, (m) => {
+  if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineMuted.value
+})
+watch(timelineBgmMuted, (m) => {
+  if (timelineBgmRef.value) timelineBgmRef.value.muted = m || timelineMuted.value
+})
+
+async function timelineToggleRecording() {
+  if (timelineRecording.value) {
+    timelineMediaRecorder.value?.stop()
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 } as any, audio: true })
+    const chunks: Blob[] = []
+    const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9') ? 'video/webm; codecs=vp9' : 'video/webm'
+    const recorder = new MediaRecorder(stream, { mimeType })
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+    recorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(chunks, { type: recorder.mimeType })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `inkframe-preview-${props.videoId}.webm`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      timelineRecording.value = false
+      timelineMediaRecorder.value = null
+    }
+    recorder.start(1000)
+    timelineMediaRecorder.value = recorder
+    timelineRecording.value = true
+    // Stop when user ends screen share
+    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
+    })
+    // Auto-start playback
+    if (!timelinePlaying.value) timelinePlay()
+  } catch (e: any) {
+    if (e?.name !== 'NotAllowedError') toast.error('录制失败：' + (e?.message || '不支持'))
+  }
+}
 
 watch(timelineMasterVolume, (v) => {
   const vol = v / 100
@@ -1601,7 +1597,11 @@ watch(activeTab, async (tab, prevTab) => {
   }
 })
 
-onUnmounted(() => { timelinePause(); bgmStopPreview() })
+onUnmounted(() => {
+  timelinePause()
+  bgmStopPreview()
+  if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
+})
 
 defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
 </script>
@@ -2563,14 +2563,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
          背景音乐 Tab
          ============================== -->
     <div v-if="activeTab === 'bgm' && !tabLoading" class="space-y-4">
-      <!-- Hidden BGM preview audio element -->
-      <audio
-        ref="bgmPreviewAudio"
-        class="hidden"
-        @timeupdate="bgmOnTimeUpdate"
-        @loadedmetadata="bgmOnLoaded"
-        @ended="bgmOnEnded"
-      />
       <!-- Toolbar -->
       <div class="card p-4">
         <div class="mb-3">
@@ -2710,39 +2702,8 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
                     换曲
                   </button>
                 </div>
-                <!-- Custom preview player -->
-                <div class="flex items-center gap-2">
-                  <!-- Play / Pause button -->
-                  <button
-                    class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-purple-500 hover:bg-purple-600 text-white transition-colors"
-                    @click="bgmTogglePlay(seg)"
-                    :title="bgmPlayingSegId === seg.id && bgmPlaying ? '暂停' : '播放'"
-                  >
-                    <!-- Pause icon -->
-                    <svg v-if="bgmPlayingSegId === seg.id && bgmPlaying" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                    </svg>
-                    <!-- Play icon -->
-                    <svg v-else class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </button>
-                  <!-- Progress bar + time (only shown when this segment is active) -->
-                  <template v-if="bgmPlayingSegId === seg.id">
-                    <div
-                      class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden cursor-pointer"
-                      @click="bgmSeek"
-                    >
-                      <div
-                        class="h-full bg-purple-500 rounded-full transition-all duration-100"
-                        :style="{ width: bgmProgressPct + '%' }"
-                      />
-                    </div>
-                    <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 tabular-nums">{{ bgmTimeFormatted }}</span>
-                  </template>
-                  <!-- Static bar when not playing this segment -->
-                  <div v-else class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full" />
-                </div>
+                <!-- Native audio preview player -->
+                <audio :src="seg.url" controls preload="none" class="w-full mt-1" style="height:32px" />
               </div>
               <div v-else class="flex items-center gap-2">
                 <p class="text-xs text-gray-400 italic flex-1">暂无匹配曲目</p>
@@ -2911,7 +2872,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
           <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 text-xs text-orange-700 dark:text-orange-300 space-y-1">
             <p class="font-medium">推荐两步工作流</p>
             <p>① <span class="font-medium">AI 分析标签</span>：为每个镜头生成场景专属搜索词</p>
-            <p>② <span class="font-medium">一键生成音效</span>：本地库 → Freesound → Jamendo → ElevenLabs 四层降级匹配</p>
+            <p>② <span class="font-medium">一键生成音效</span>：本地库 → Freesound CC0 → ElevenLabs AI 三层降级匹配</p>
           </div>
           <!-- 生成统计 -->
           <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -3346,6 +3307,20 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
             <div v-if="timelineCurrentShot" class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded">
               #{{ timelineCurrentShot.shot_no }}
             </div>
+            <!-- Record button -->
+            <button
+              class="absolute top-1.5 right-8 w-6 h-6 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              :class="timelineRecording ? 'bg-red-600 hover:bg-red-700 opacity-100' : 'bg-black/60 hover:bg-black/80'"
+              :title="timelineRecording ? '停止录制' : '录制屏幕'"
+              @click="timelineToggleRecording"
+            >
+              <svg v-if="timelineRecording" class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="6" width="12" height="12" rx="1" />
+              </svg>
+              <svg v-else class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="6" />
+              </svg>
+            </button>
             <!-- Fullscreen -->
             <button
               class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -3378,6 +3353,20 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
                   <svg v-if="!timelineMuted" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/></svg>
                   <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6m0-6l6 6"/></svg>
                 </button>
+                <!-- SFX mute toggle -->
+                <button
+                  class="px-1 h-5 rounded text-[9px] font-bold transition-colors"
+                  :class="timelineSfxMuted ? 'bg-white/15 text-white/40 line-through' : 'bg-white/20 hover:bg-white/30 text-white'"
+                  :title="timelineSfxMuted ? '开启音效' : '关闭音效'"
+                  @click="timelineSfxMuted = !timelineSfxMuted"
+                >FX</button>
+                <!-- BGM mute toggle -->
+                <button
+                  class="px-1 h-5 rounded text-[9px] font-bold transition-colors"
+                  :class="timelineBgmMuted ? 'bg-white/15 text-white/40 line-through' : 'bg-white/20 hover:bg-white/30 text-white'"
+                  :title="timelineBgmMuted ? '开启背景音乐' : '关闭背景音乐'"
+                  @click="timelineBgmMuted = !timelineBgmMuted"
+                >BGM</button>
                 <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30" :disabled="timelineDownloading" @click="timelineDownloadCurrent" title="下载 MP4">
                   <svg v-if="timelineDownloading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
                   <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -3435,29 +3424,62 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
             </div>
           </div>
 
-          <!-- Track status -->
-          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <!-- Track status (with individual mute toggles) -->
+          <div class="space-y-1">
             <div class="flex items-center gap-1.5 text-xs">
               <div class="w-2 h-2 rounded-full flex-shrink-0" :class="timelineCurrentShot?.video_url ? 'bg-blue-500' : timelineCurrentShot?.image_url ? 'bg-blue-300' : 'bg-gray-300 dark:bg-gray-600'" />
               <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">视频轨</span>
-              <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.video_url ? '已加载' : timelineCurrentShot?.image_url ? '静态图' : '—' }}</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate flex-1">{{ timelineCurrentShot?.video_url ? '已加载' : timelineCurrentShot?.image_url ? '静态图' : '—' }}</span>
             </div>
             <div class="flex items-center gap-1.5 text-xs">
               <div class="w-2 h-2 rounded-full flex-shrink-0" :class="(shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
               <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">配音轨</span>
-              <span class="text-gray-400 dark:text-gray-500 truncate">{{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '已加载' : '—' }}</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate flex-1">{{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '已加载' : '—' }}</span>
             </div>
-            <div class="flex items-center gap-1.5 text-xs">
-              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="timelineCurrentShot?.sfx_url ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
-              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">音效轨</span>
-              <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.sfx_url ? '已加载' : '—' }}</span>
+            <!-- SFX track — clickable mute -->
+            <div
+              class="flex items-center gap-1.5 text-xs rounded px-1 -mx-1 cursor-pointer transition-colors"
+              :class="timelineSfxMuted ? 'bg-orange-50 dark:bg-orange-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'"
+              @click="timelineSfxMuted = !timelineSfxMuted"
+              :title="timelineSfxMuted ? '点击开启音效' : '点击关闭音效'"
+            >
+              <div class="w-2 h-2 rounded-full flex-shrink-0 transition-colors" :class="timelineCurrentShot?.sfx_url && !timelineSfxMuted ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="w-10 flex-shrink-0 transition-colors" :class="timelineSfxMuted ? 'text-gray-300 dark:text-gray-600 line-through' : 'text-gray-500 dark:text-gray-400'">音效轨</span>
+              <span class="truncate flex-1 transition-colors" :class="timelineSfxMuted ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'">{{ timelineCurrentShot?.sfx_url ? (timelineSfxMuted ? '已静音' : '已加载') : '—' }}</span>
+              <svg v-if="timelineSfxMuted" class="w-3 h-3 flex-shrink-0 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+              <svg v-else class="w-3 h-3 flex-shrink-0 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5z"/></svg>
             </div>
-            <div class="flex items-center gap-1.5 text-xs">
-              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="selectedBgm ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
-              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">背景音乐</span>
-              <span class="text-gray-400 dark:text-gray-500 truncate">{{ selectedBgm ? (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm) : '—' }}</span>
+            <!-- BGM track — clickable mute -->
+            <div
+              class="flex items-center gap-1.5 text-xs rounded px-1 -mx-1 cursor-pointer transition-colors"
+              :class="timelineBgmMuted ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'"
+              @click="timelineBgmMuted = !timelineBgmMuted"
+              :title="timelineBgmMuted ? '点击开启背景音乐' : '点击关闭背景音乐'"
+            >
+              <div class="w-2 h-2 rounded-full flex-shrink-0 transition-colors" :class="selectedBgm && !timelineBgmMuted ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="w-10 flex-shrink-0 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600 line-through' : 'text-gray-500 dark:text-gray-400'">背景音乐</span>
+              <span class="truncate flex-1 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'">{{ selectedBgm ? (timelineBgmMuted ? '已静音' : (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm)) : '—' }}</span>
+              <svg v-if="timelineBgmMuted" class="w-3 h-3 flex-shrink-0 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+              <svg v-else class="w-3 h-3 flex-shrink-0 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
             </div>
           </div>
+
+          <!-- Screen recording -->
+          <button
+            class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors"
+            :class="timelineRecording
+              ? 'bg-red-500 hover:bg-red-600 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'"
+            @click="timelineToggleRecording"
+          >
+            <svg v-if="timelineRecording" class="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" rx="1" />
+            </svg>
+            <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="6" />
+            </svg>
+            {{ timelineRecording ? '停止录制 (保存 WebM)' : '录制屏幕' }}
+          </button>
 
           <p class="text-[10px] text-gray-400 dark:text-gray-600">{{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序</p>
         </div>
