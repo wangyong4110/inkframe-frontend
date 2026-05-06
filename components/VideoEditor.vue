@@ -54,6 +54,11 @@ function effectiveSubtitle(shot: StoryboardShot): string {
   return shot.subtitle || shot.dialogue || shot.narration || shot.description || ''
 }
 
+function parseSfxTags(sfxTags?: string): string[] {
+  if (!sfxTags) return []
+  try { return JSON.parse(sfxTags) as string[] } catch { return [] }
+}
+
 function startEditSubtitle(shot: StoryboardShot) {
   editingSubtitleId.value = shot.id
   subtitleDraft.value = effectiveSubtitle(shot)
@@ -1522,6 +1527,18 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 >
                   → {{ TRANSITION_LABEL[shot.transition] || shot.transition }}
                 </span>
+                <!-- SFX tags from LLM -->
+                <span
+                  v-for="tag in parseSfxTags(shot.sfx_tags)"
+                  :key="tag"
+                  class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                  title="音效标签"
+                >
+                  <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M6.343 17.657a8 8 0 010-11.314" />
+                  </svg>
+                  {{ tag }}
+                </span>
               </div>
             </div>
           </div>
@@ -1934,9 +1951,20 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               </span>
               <span v-else class="text-xs text-gray-400">待生成</span>
             </div>
-            <p class="text-xs text-gray-400 truncate">
-              {{ shot.sfx_tags ? JSON.parse(shot.sfx_tags).join('、') : (shot.description || '—') }}
-            </p>
+            <!-- SFX tags as badges, fallback to description -->
+            <div v-if="parseSfxTags(shot.sfx_tags).length > 0" class="flex flex-wrap gap-1 mt-0.5">
+              <span
+                v-for="tag in parseSfxTags(shot.sfx_tags)"
+                :key="tag"
+                class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+              >
+                <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M6.343 17.657a8 8 0 010-11.314" />
+                </svg>
+                {{ tag }}
+              </span>
+            </div>
+            <p v-else class="text-xs text-gray-400 truncate mt-0.5">{{ shot.description || '—' }}</p>
           </div>
           <!-- 音量标签 -->
           <span v-if="shot.sfx_volume && shot.sfx_volume > 0" class="text-xs text-gray-400 flex-shrink-0">
