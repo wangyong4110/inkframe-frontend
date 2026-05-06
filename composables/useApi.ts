@@ -457,6 +457,29 @@ export const useVideoApi = () => {
   const generateBGM = (videoId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/generate`, { method: 'POST' })
 
+  // BGM：Jamendo手动搜索
+  const jamendoSearchBGM = (videoId: number, params: {
+    q?: string; tags?: string; speed?: string; bpm_min?: number; bpm_max?: number; limit?: number
+  }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.tags) qs.set('tags', params.tags)
+    if (params.speed) qs.set('speed', params.speed)
+    if (params.bpm_min) qs.set('bpm_min', String(params.bpm_min))
+    if (params.bpm_max) qs.set('bpm_max', String(params.bpm_max))
+    if (params.limit) qs.set('limit', String(params.limit))
+    return request<ApiResponse<import('~/types').JamendoTrack[]>>(`/videos/${videoId}/bgm/search?${qs}`)
+  }
+
+  // BGM：将选中曲目应用到分段
+  const applyBGMTrack = (videoId: number, segId: number, data: {
+    url: string; track_name?: string; track_artist?: string; source?: string
+  }) =>
+    request<ApiResponse<{ seg_id: number }>>(`/videos/${videoId}/bgm/segments/${segId}/track`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+
   // 为单个分镜生成音效（异步任务）
   const generateShotSFX = (videoId: number, shotId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/sfx`, { method: 'POST' })
@@ -611,6 +634,8 @@ export const useVideoApi = () => {
     listBGMSegments,
     analyzeBGMSegments,
     generateBGM,
+    jamendoSearchBGM,
+    applyBGMTrack,
   }
 }
 

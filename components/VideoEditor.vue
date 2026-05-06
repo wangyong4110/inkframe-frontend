@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier, ShotVoiceSegment, VideoBGMSegment } from '~/types'
+import type { StoryboardShot, VideoQualityTier, ShotVoiceSegment, VideoBGMSegment, JamendoTrack } from '~/types'
 
 const { openLightbox } = useImageLightbox()
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
@@ -798,6 +798,84 @@ async function handleGenerateBgm() {
 
 function parseBGMSearchQueries(json: string): string[] {
   try { return JSON.parse(json) } catch { return [] }
+}
+
+// ──────── Jamendo 手动搜索 ────────
+const bgmSearchTargetSeg = ref<VideoBGMSegment | null>(null)
+const bgmSearchQuery = ref('')
+const bgmSearchTags = ref('')
+const bgmSearchSpeed = ref('')
+const bgmSearchBpmMin = ref(0)
+const bgmSearchBpmMax = ref(0)
+const bgmSearchResults = ref<JamendoTrack[]>([])
+const bgmSearchLoading = ref(false)
+const bgmApplyingId = ref<string | null>(null)
+
+function openBGMSearch(seg: VideoBGMSegment) {
+  bgmSearchTargetSeg.value = seg
+  const queries = parseBGMSearchQueries(seg.search_queries)
+  bgmSearchQuery.value = queries[0] ?? seg.mood ?? ''
+  bgmSearchTags.value = ''
+  bgmSearchSpeed.value = seg.tempo === 'fast' ? 'fast' : seg.tempo === 'slow' ? 'slow' : 'medium'
+  bgmSearchResults.value = []
+}
+
+function closeBGMSearch() {
+  bgmSearchTargetSeg.value = null
+  bgmSearchResults.value = []
+}
+
+async function handleJamendoSearch() {
+  if (!bgmSearchQuery.value && !bgmSearchTags.value) return
+  bgmSearchLoading.value = true
+  bgmSearchResults.value = []
+  try {
+    const api = useVideoApi()
+    const res = await api.jamendoSearchBGM(props.videoId, {
+      q: bgmSearchQuery.value || undefined,
+      tags: bgmSearchTags.value || undefined,
+      speed: bgmSearchSpeed.value || undefined,
+      bpm_min: bgmSearchBpmMin.value || undefined,
+      bpm_max: bgmSearchBpmMax.value || undefined,
+      limit: 15,
+    })
+    bgmSearchResults.value = (res as any)?.data ?? []
+  } catch (e: any) {
+    toast.error('搜索失败：' + (e.message || ''))
+  } finally {
+    bgmSearchLoading.value = false
+  }
+}
+
+function trackPlayURL(track: JamendoTrack): string {
+  return track.audiodownload_allowed && track.audiodownload ? track.audiodownload : track.audio
+}
+
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+async function applyBGMTrack(track: JamendoTrack) {
+  if (!bgmSearchTargetSeg.value) return
+  bgmApplyingId.value = track.id
+  try {
+    const api = useVideoApi()
+    await api.applyBGMTrack(props.videoId, bgmSearchTargetSeg.value.id, {
+      url: trackPlayURL(track),
+      track_name: track.name,
+      track_artist: track.artist_name,
+      source: 'jamendo',
+    })
+    await loadBGMSegments()
+    toast.success(`已应用：${track.name}`)
+    closeBGMSearch()
+  } catch (e: any) {
+    toast.error('应用失败：' + (e.message || ''))
+  } finally {
+    bgmApplyingId.value = null
+  }
 }
 
 // ──────── SFX ────────
@@ -2303,13 +2381,35 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                 </svg>
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                   <p class="font-medium truncate">{{ seg.track_name || '已匹配曲目' }}</p>
                   <p v-if="seg.track_artist" class="text-gray-400 truncate">{{ seg.track_artist }} · {{ seg.source }}</p>
                 </div>
                 <audio :src="seg.url" controls class="h-7 w-32 flex-shrink-0" />
+                <button
+                  class="btn-secondary text-xs flex-shrink-0"
+                  @click="openBGMSearch(seg)"
+                  title="在 Jamendo 搜索替换曲目"
+                >
+                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  换曲
+                </button>
               </div>
-              <p v-else class="text-xs text-gray-400 italic">暂无匹配曲目，点击「一键生成BGM」搜索</p>
+              <div v-else class="flex items-center gap-2">
+                <p class="text-xs text-gray-400 italic flex-1">暂无匹配曲目</p>
+                <button
+                  class="btn-secondary text-xs"
+                  @click="openBGMSearch(seg)"
+                  title="在 Jamendo 搜索曲目"
+                >
+                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  搜索曲目
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2322,6 +2422,101 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </svg>
         <p class="text-sm text-gray-500 dark:text-gray-400">尚无BGM分段</p>
         <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">点击「AI 分析分段」或「一键生成BGM」开始</p>
+      </div>
+
+      <!-- ── Jamendo 手动搜索面板 ── -->
+      <div v-if="bgmSearchTargetSeg" class="card p-4 border-2 border-purple-300 dark:border-purple-700">
+        <!-- Panel header -->
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+              Jamendo 搜索
+              <span class="text-purple-500 ml-1">（第 {{ bgmSearchTargetSeg.seq_no }} 段 · {{ bgmSearchTargetSeg.mood }}）</span>
+            </h4>
+          </div>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1" @click="closeBGMSearch">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Search controls -->
+        <div class="flex flex-wrap gap-2 mb-3">
+          <input
+            v-model="bgmSearchQuery"
+            type="text"
+            placeholder="搜索词，如 epic orchestral battle…"
+            class="input flex-1 min-w-48 text-sm"
+            @keyup.enter="handleJamendoSearch"
+          />
+          <input
+            v-model="bgmSearchTags"
+            type="text"
+            placeholder="精确标签（空格分隔）"
+            class="input w-44 text-sm"
+            @keyup.enter="handleJamendoSearch"
+          />
+          <select v-model="bgmSearchSpeed" class="input w-28 text-sm">
+            <option value="">任意节奏</option>
+            <option value="veryslow">极慢</option>
+            <option value="slow">慢</option>
+            <option value="medium">中</option>
+            <option value="fast">快</option>
+            <option value="veryfast">极快</option>
+          </select>
+          <input v-model.number="bgmSearchBpmMin" type="number" min="0" max="300" placeholder="BPM 最低" class="input w-24 text-sm" />
+          <input v-model.number="bgmSearchBpmMax" type="number" min="0" max="300" placeholder="BPM 最高" class="input w-24 text-sm" />
+          <button
+            class="btn-primary text-sm"
+            :disabled="bgmSearchLoading || (!bgmSearchQuery && !bgmSearchTags)"
+            @click="handleJamendoSearch"
+          >
+            <svg v-if="bgmSearchLoading" class="w-4 h-4 mr-1 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ bgmSearchLoading ? '搜索中…' : '搜索' }}
+          </button>
+        </div>
+
+        <!-- Search results -->
+        <div v-if="bgmSearchResults.length > 0" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+          <div
+            v-for="track in bgmSearchResults"
+            :key="track.id"
+            class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ track.name }}</p>
+              <div class="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                <span class="truncate">{{ track.artist_name }}</span>
+                <span>·</span>
+                <span class="flex-shrink-0">{{ formatDuration(track.duration) }}</span>
+                <span v-if="track.tags?.length" class="hidden sm:flex gap-1">
+                  <span v-for="tag in track.tags.slice(0, 3)" :key="tag"
+                    class="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">{{ tag }}</span>
+                </span>
+              </div>
+            </div>
+            <audio :src="trackPlayURL(track)" controls class="h-7 w-36 flex-shrink-0" preload="none" />
+            <button
+              class="btn-primary text-xs flex-shrink-0"
+              :disabled="bgmApplyingId === track.id"
+              @click="applyBGMTrack(track)"
+            >
+              <svg v-if="bgmApplyingId === track.id" class="w-3 h-3 mr-1 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              应用
+            </button>
+          </div>
+        </div>
+        <div v-else-if="!bgmSearchLoading" class="text-center py-4 text-sm text-gray-400">
+          {{ bgmSearchQuery || bgmSearchTags ? '无搜索结果，请换一个词试试' : '输入搜索词后点击「搜索」' }}
+        </div>
       </div>
     </div>
 

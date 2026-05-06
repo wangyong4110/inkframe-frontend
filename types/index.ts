@@ -244,6 +244,17 @@ export interface ShotVoiceSegment {
   duration_secs?: number
 }
 
+export interface JamendoTrack {
+  id: string
+  name: string
+  artist_name: string
+  duration: number       // seconds
+  audio: string          // streaming URL
+  audiodownload: string  // download URL
+  audiodownload_allowed: boolean
+  tags?: string[]
+}
+
 export interface VideoBGMSegment {
   id: number
   video_id: number
