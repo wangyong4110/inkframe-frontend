@@ -1678,54 +1678,8 @@ async function fetchShotsForChapter() {
           <!-- ── 脚本 AI ── -->
           <template v-else-if="pageMode === 'script'">
 
-            <!-- ── 视频预览（时间线 tab 激活时）── -->
-            <div v-if="videoEditorRef?.activeTab === 'timeline'" class="p-4 space-y-3">
-              <!-- 合成视频 -->
-              <div v-if="videoStore.currentVideo?.url">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">合成视频</p>
-                <video
-                  controls
-                  class="w-full rounded-lg bg-black"
-                  :src="videoStore.currentVideo.url"
-                  style="max-height: 200px;"
-                />
-              </div>
-              <!-- 无合成视频时：镜头缩略图列表 -->
-              <div v-else>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">镜头预览</p>
-                <div class="space-y-2">
-                  <div
-                    v-for="(shot, idx) in videoStore.storyboard"
-                    :key="shot.id"
-                    class="flex items-center gap-2 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
-                  >
-                    <!-- thumbnail -->
-                    <div class="w-16 h-10 flex-shrink-0 bg-gray-900 overflow-hidden">
-                      <img
-                        v-if="shot.image_url"
-                        :src="shot.image_url"
-                        class="w-full h-full object-cover"
-                        :alt="`Shot ${idx + 1}`"
-                      />
-                      <video
-                        v-else-if="shot.video_url"
-                        :src="shot.video_url"
-                        class="w-full h-full object-cover"
-                        muted
-                        preload="metadata"
-                      />
-                      <div v-else class="w-full h-full flex items-center justify-center text-gray-600 text-xs">{{ idx + 1 }}</div>
-                    </div>
-                    <!-- meta -->
-                    <div class="flex-1 min-w-0 py-1 pr-2">
-                      <p class="text-[10px] font-medium text-gray-700 dark:text-gray-300 truncate">镜头 {{ idx + 1 }}</p>
-                      <p class="text-[10px] text-gray-400 dark:text-gray-500 truncate">{{ shot.duration || 5 }}s · {{ shot.transition || 'cut' }}</p>
-                    </div>
-                  </div>
-                  <p v-if="videoStore.storyboard.length === 0" class="text-xs text-gray-400 dark:text-gray-500 text-center py-4">暂无镜头数据</p>
-                </div>
-              </div>
-            </div>
+            <!-- ── 视频预览（时间线 tab 激活时）：接收 VideoEditor 内 Teleport 传送的播放器 ── -->
+            <div v-if="videoEditorRef?.activeTab === 'timeline'" id="timeline-player-slot" />
 
             <!-- ── 脚本 AI 助手（非时间线 tab）── -->
             <div v-else class="p-4 space-y-4">

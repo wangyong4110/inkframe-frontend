@@ -848,6 +848,63 @@ function parseBGMSearchQueries(json: string): string[] {
   try { return JSON.parse(json) } catch { return [] }
 }
 
+// ──────── BGM 预览播放器 ────────
+const bgmPreviewAudio = ref<HTMLAudioElement | null>(null)
+const bgmPlayingSegId = ref<number | null>(null)
+const bgmPlaying = ref(false)
+const bgmCurrentTime = ref(0)
+const bgmDuration = ref(0)
+const bgmProgressPct = computed(() =>
+  bgmDuration.value > 0 ? Math.min(100, (bgmCurrentTime.value / bgmDuration.value) * 100) : 0
+)
+const bgmTimeFormatted = computed(() => {
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  return `${fmt(bgmCurrentTime.value)} / ${fmt(bgmDuration.value)}`
+})
+
+function bgmTogglePlay(seg: VideoBGMSegment) {
+  if (!bgmPreviewAudio.value || !seg.url) return
+  if (bgmPlayingSegId.value === seg.id) {
+    if (bgmPlaying.value) {
+      bgmPreviewAudio.value.pause()
+      bgmPlaying.value = false
+    } else {
+      bgmPreviewAudio.value.play().catch(() => {})
+      bgmPlaying.value = true
+    }
+  } else {
+    bgmPreviewAudio.value.src = seg.url
+    bgmPreviewAudio.value.currentTime = 0
+    bgmCurrentTime.value = 0
+    bgmDuration.value = 0
+    bgmPlayingSegId.value = seg.id
+    bgmPlaying.value = false
+    bgmPreviewAudio.value.play().then(() => { bgmPlaying.value = true }).catch(() => {})
+  }
+}
+function bgmStopPreview() {
+  bgmPreviewAudio.value?.pause()
+  bgmPlaying.value = false
+  bgmPlayingSegId.value = null
+  bgmCurrentTime.value = 0
+}
+function bgmOnTimeUpdate() {
+  if (bgmPreviewAudio.value) bgmCurrentTime.value = bgmPreviewAudio.value.currentTime
+}
+function bgmOnLoaded() {
+  if (bgmPreviewAudio.value) bgmDuration.value = bgmPreviewAudio.value.duration || 0
+}
+function bgmOnEnded() {
+  bgmPlaying.value = false
+  bgmCurrentTime.value = 0
+}
+function bgmSeek(e: MouseEvent) {
+  if (!bgmPreviewAudio.value || bgmDuration.value <= 0) return
+  const bar = e.currentTarget as HTMLElement
+  const rect = bar.getBoundingClientRect()
+  bgmPreviewAudio.value.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * bgmDuration.value
+}
+
 // ──────── Jamendo 手动搜索 ────────
 const bgmSearchTargetSeg = ref<VideoBGMSegment | null>(null)
 const bgmSearchQuery = ref('')
@@ -1491,7 +1548,9 @@ watch(timelineSelectedShotId, (id) => {
 // so timelineEffectiveDuration() has real duration_secs data
 const tabLoading = ref(false)
 
-watch(activeTab, async (tab) => {
+watch(activeTab, async (tab, prevTab) => {
+  // Stop BGM preview when leaving the bgm tab
+  if (prevTab === 'bgm') bgmStopPreview()
   tabLoading.value = true
   try {
     // Tabs that show shot-level data: always refresh storyboard on switch
@@ -1525,7 +1584,7 @@ watch(activeTab, async (tab) => {
   }
 })
 
-onUnmounted(() => { timelinePause() })
+onUnmounted(() => { timelinePause(); bgmStopPreview() })
 
 defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
 </script>
@@ -2509,6 +2568,14 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
          背景音乐 Tab
          ============================== -->
     <div v-if="activeTab === 'bgm' && !tabLoading" class="space-y-4">
+      <!-- Hidden BGM preview audio element -->
+      <audio
+        ref="bgmPreviewAudio"
+        class="hidden"
+        @timeupdate="bgmOnTimeUpdate"
+        @loadedmetadata="bgmOnLoaded"
+        @ended="bgmOnEnded"
+      />
       <!-- Toolbar -->
       <div class="card p-4">
         <div class="flex items-start justify-between gap-4 mb-3">
@@ -2637,25 +2704,60 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
                 </span>
               </div>
               <!-- Matched track -->
-              <div v-if="seg.url" class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
-                <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-                <div class="min-w-0 flex-1">
-                  <p class="font-medium truncate">{{ seg.track_name || '已匹配曲目' }}</p>
-                  <p v-if="seg.track_artist" class="text-gray-400 truncate">{{ seg.track_artist }} · {{ seg.source }}</p>
-                </div>
-                <audio :src="seg.url" controls class="h-7 w-32 flex-shrink-0" />
-                <button
-                  class="btn-secondary text-xs flex-shrink-0"
-                  @click="openBGMSearch(seg)"
-                  title="在 Jamendo 搜索替换曲目"
-                >
-                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <div v-if="seg.url" class="rounded-lg bg-green-50 dark:bg-green-900/20 px-3 py-2 space-y-2">
+                <!-- Track info + action -->
+                <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
-                  换曲
-                </button>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-medium truncate">{{ seg.track_name || '已匹配曲目' }}</p>
+                    <p v-if="seg.track_artist" class="text-gray-400 truncate">{{ seg.track_artist }} · {{ seg.source }}</p>
+                  </div>
+                  <button
+                    class="btn-secondary text-xs flex-shrink-0"
+                    @click="openBGMSearch(seg)"
+                    title="在 Jamendo 搜索替换曲目"
+                  >
+                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    换曲
+                  </button>
+                </div>
+                <!-- Custom preview player -->
+                <div class="flex items-center gap-2">
+                  <!-- Play / Pause button -->
+                  <button
+                    class="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-full bg-purple-500 hover:bg-purple-600 text-white transition-colors"
+                    @click="bgmTogglePlay(seg)"
+                    :title="bgmPlayingSegId === seg.id && bgmPlaying ? '暂停' : '播放'"
+                  >
+                    <!-- Pause icon -->
+                    <svg v-if="bgmPlayingSegId === seg.id && bgmPlaying" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                    <!-- Play icon -->
+                    <svg v-else class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </button>
+                  <!-- Progress bar + time (only shown when this segment is active) -->
+                  <template v-if="bgmPlayingSegId === seg.id">
+                    <div
+                      class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden cursor-pointer"
+                      @click="bgmSeek"
+                    >
+                      <div
+                        class="h-full bg-purple-500 rounded-full transition-all duration-100"
+                        :style="{ width: bgmProgressPct + '%' }"
+                      />
+                    </div>
+                    <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 tabular-nums">{{ bgmTimeFormatted }}</span>
+                  </template>
+                  <!-- Static bar when not playing this segment -->
+                  <div v-else class="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                </div>
               </div>
               <div v-else class="flex items-center gap-2">
                 <p class="text-xs text-gray-400 italic flex-1">暂无匹配曲目</p>
@@ -3214,273 +3316,160 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
         </template>
       </div>
 
-      <!-- Preview + Controls (bottom) -->
-      <div class="card p-4">
-        <div class="flex gap-5 items-start">
-
-          <!-- Video/Image preview -->
-          <div class="w-72 flex-shrink-0">
-            <div
-              ref="timelinePreviewRef"
-              class="timeline-preview relative bg-black rounded-lg overflow-hidden group"
-              style="aspect-ratio:16/9"
-            >
-              <video
-                ref="timelineVideoRef"
-                class="absolute inset-0 w-full h-full object-contain"
-                :class="timelineCurrentShot?.video_url ? 'opacity-100' : 'opacity-0'"
-                preload="auto"
-              />
-              <img
-                v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
-                :key="timelineCurrentShotIndex"
-                :src="timelineCurrentShot.image_url"
-                :style="kenBurnsStyle(timelineCurrentShot)"
-                class="absolute inset-0 w-full h-full object-cover"
-              />
-              <div
-                v-if="!timelineCurrentShot"
-                class="absolute inset-0 flex flex-col items-center justify-center gap-2"
-              >
-                <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4" />
-                </svg>
-                <span class="text-xs text-gray-600">点击播放预览</span>
-              </div>
-              <!-- Subtitle overlay -->
-              <div
-                v-if="timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
-                class="absolute bottom-2 left-2 right-2 text-center pointer-events-none"
-              >
-                <span class="inline-block bg-black/75 text-white text-xs px-2 py-1 rounded leading-snug">
-                  {{ effectiveSubtitle(timelineCurrentShot) }}
-                </span>
-              </div>
-              <!-- Shot badge (top-left) -->
-              <div
-                v-if="timelineCurrentShot"
-                class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded"
-              >
-                #{{ timelineCurrentShot.shot_no }}
-              </div>
-              <!-- Fullscreen button (top-right, shown on hover) -->
-              <button
-                class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                title="全屏"
-                @click="timelinePreviewRef ? timelinePreviewRef.requestFullscreen().catch(() => {}) : null"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-              </button>
-
-              <!-- ── 悬浮控制栏（hover 显示，全屏时常驻） ── -->
-              <div class="timeline-overlay absolute bottom-0 left-0 right-0 px-2.5 pt-6 pb-2 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
-                <!-- 进度条 -->
-                <div
-                  class="w-full bg-white/30 rounded-full h-1 mb-2 cursor-pointer"
-                  @click="timelineSeekByClick"
-                >
-                  <div
-                    class="h-full bg-white rounded-full transition-none"
-                    :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
-                  />
-                </div>
-                <!-- 控制按钮行 -->
-                <div class="flex items-center gap-1 text-white">
-                  <!-- 上一镜头 -->
-                  <button
-                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
-                    title="上一镜头" :disabled="timelineCurrentShotIndex === 0"
-                    @click="timelineSeekToShot(timelineCurrentShotIndex - 1)"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                  </button>
-                  <!-- 播放/暂停 -->
-                  <button
-                    class="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                    @click="timelinePlaying ? timelinePause() : timelinePlay()"
-                  >
-                    <svg v-if="!timelinePlaying" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                  </button>
-                  <!-- 下一镜头 -->
-                  <button
-                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
-                    title="下一镜头" :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1"
-                    @click="timelineSeekToShot(timelineCurrentShotIndex + 1)"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
-                  </button>
-                  <!-- 时间 -->
-                  <span class="text-[10px] font-mono tabular-nums text-white/80 mx-1 flex-1 text-center">
-                    {{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}
-                  </span>
-                  <!-- 倍速（点击循环切换） -->
-                  <button
-                    class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/20 hover:bg-white/30 transition-colors tabular-nums"
-                    title="切换播放速度" @click="timelineCycleSpeed"
-                  >{{ timelinePlaybackSpeed }}×</button>
-                  <!-- 静音切换 -->
-                  <button
-                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors"
-                    :title="timelineMuted ? '取消静音' : '静音'"
-                    @click="timelineMuted = !timelineMuted"
-                  >
-                    <svg v-if="!timelineMuted" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6m0-6l6 6"/>
-                    </svg>
-                  </button>
-                  <!-- 音量滑块 -->
-                  <input
-                    v-model.number="timelineMasterVolume"
-                    type="range" min="0" max="100" step="5"
-                    class="w-14 accent-white h-1 cursor-pointer"
-                    :disabled="timelineMuted"
-                  />
-                  <!-- 下载 -->
-                  <button
-                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
-                    title="下载完整 MP4"
-                    :disabled="timelineDownloading"
-                    @click="timelineDownloadCurrent"
-                  >
-                    <svg v-if="timelineDownloading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
+      <!-- Preview player — teleported into the aside panel via #timeline-player-slot -->
+      <Teleport to="#timeline-player-slot">
+        <div class="p-4 space-y-3">
+          <!-- Video / Image preview -->
+          <div
+            ref="timelinePreviewRef"
+            class="timeline-preview relative bg-black rounded-lg overflow-hidden group w-full"
+            style="aspect-ratio:16/9"
+          >
+            <video
+              ref="timelineVideoRef"
+              class="absolute inset-0 w-full h-full object-contain"
+              :class="timelineCurrentShot?.video_url ? 'opacity-100' : 'opacity-0'"
+              preload="auto"
+            />
+            <img
+              v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
+              :key="timelineCurrentShotIndex"
+              :src="timelineCurrentShot.image_url"
+              :style="kenBurnsStyle(timelineCurrentShot)"
+              class="absolute inset-0 w-full h-full object-cover"
+            />
+            <div v-if="!timelineCurrentShot" class="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4" />
+              </svg>
+              <span class="text-xs text-gray-600">点击播放预览</span>
             </div>
-            <p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500 line-clamp-2 leading-snug">
-              {{ timelineCurrentShot?.description || timelineCurrentShot?.narration || '—' }}
-            </p>
-          </div>
-
-          <!-- Controls + track status -->
-          <div class="flex-1 min-w-0 space-y-3">
-
-            <!-- Transport row: prev | play/pause | next | stop | download -->
-            <div class="flex items-center gap-1.5">
-              <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
-                title="上一镜头"
-                :disabled="timelineCurrentShotIndex === 0"
-                @click="timelineSeekToShot(timelineCurrentShotIndex - 1)"
-              >
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-              </button>
-              <button
-                class="w-10 h-10 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm"
-                @click="timelinePlaying ? timelinePause() : timelinePlay()"
-              >
-                <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-              </button>
-              <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
-                title="下一镜头"
-                :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1"
-                @click="timelineSeekToShot(timelineCurrentShotIndex + 1)"
-              >
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
-              </button>
-              <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
-                title="下载完整 MP4"
-                :disabled="timelineDownloading"
-                @click="timelineDownloadCurrent"
-              >
-                <svg v-if="timelineDownloading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              </button>
-              <div class="flex-1"/>
-              <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">
-                {{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}
+            <!-- Subtitle overlay -->
+            <div v-if="timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)" class="absolute bottom-2 left-2 right-2 text-center pointer-events-none">
+              <span class="inline-block bg-black/75 text-white text-xs px-2 py-1 rounded leading-snug">
+                {{ effectiveSubtitle(timelineCurrentShot) }}
               </span>
             </div>
-
-            <!-- Progress bar (clickable seek) -->
-            <div
-              class="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden cursor-pointer"
-              @click="timelineSeekByClick"
+            <!-- Shot badge -->
+            <div v-if="timelineCurrentShot" class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded">
+              #{{ timelineCurrentShot.shot_no }}
+            </div>
+            <!-- Fullscreen -->
+            <button
+              class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="全屏"
+              @click="timelinePreviewRef ? timelinePreviewRef.requestFullscreen().catch(() => {}) : null"
             >
-              <div
-                class="h-full bg-primary-500 rounded-full transition-none"
-                :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
-              />
-            </div>
-
-            <!-- Speed + Volume row -->
-            <div class="flex items-center gap-4 flex-wrap">
-              <!-- Playback speed -->
-              <div class="flex items-center gap-1">
-                <span class="text-[10px] text-gray-400 dark:text-gray-500 mr-0.5">速度</span>
-                <button
-                  v-for="s in [0.5, 1.0, 1.5, 2.0]"
-                  :key="s"
-                  class="px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors"
-                  :class="timelinePlaybackSpeed === s
-                    ? 'bg-primary-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
-                  @click="timelinePlaybackSpeed = s"
-                >{{ s }}x</button>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
+            <!-- Hover overlay controls -->
+            <div class="timeline-overlay absolute bottom-0 left-0 right-0 px-2.5 pt-6 pb-2 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
+              <div class="w-full bg-white/30 rounded-full h-1 mb-2 cursor-pointer" @click="timelineSeekByClick">
+                <div class="h-full bg-white rounded-full transition-none" :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`" />
               </div>
-              <!-- Master volume -->
-              <div class="flex items-center gap-1.5 flex-1 min-w-24">
-                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
-                </svg>
-                <input
-                  v-model.number="timelineMasterVolume"
-                  type="range" min="0" max="100" step="5"
-                  class="flex-1 accent-primary-500 h-1.5"
-                />
-                <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 w-7 text-right">{{ timelineMasterVolume }}%</span>
+              <div class="flex items-center gap-1 text-white">
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30" title="上一镜头" :disabled="timelineCurrentShotIndex === 0" @click="timelineSeekToShot(timelineCurrentShotIndex - 1)">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30" @click="timelinePlaying ? timelinePause() : timelinePlay()">
+                  <svg v-if="!timelinePlaying" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30" title="下一镜头" :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1" @click="timelineSeekToShot(timelineCurrentShotIndex + 1)">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+                </button>
+                <span class="text-[10px] font-mono tabular-nums text-white/80 mx-1 flex-1 text-center">{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}</span>
+                <button class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/20 hover:bg-white/30 tabular-nums" @click="timelineCycleSpeed">{{ timelinePlaybackSpeed }}×</button>
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20" :title="timelineMuted ? '取消静音' : '静音'" @click="timelineMuted = !timelineMuted">
+                  <svg v-if="!timelineMuted" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6m0-6l6 6"/></svg>
+                </button>
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30" :disabled="timelineDownloading" @click="timelineDownloadCurrent" title="下载 MP4">
+                  <svg v-if="timelineDownloading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                </button>
               </div>
             </div>
-
-            <!-- Track status (2-column grid) -->
-            <div class="grid grid-cols-2 gap-x-6 gap-y-1.5">
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="timelineCurrentShot?.video_url ? 'bg-blue-500' : timelineCurrentShot?.image_url ? 'bg-blue-300' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">视频轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.video_url ? '视频已加载' : timelineCurrentShot?.image_url ? '静态图片' : '—' }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="(shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">配音轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">{{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '配音已加载' : '—' }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="timelineCurrentShot?.sfx_url ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">音效轨</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.sfx_url ? '音效已加载' : '—' }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                  :class="selectedBgm ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
-                <span class="text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">背景音乐</span>
-                <span class="text-gray-400 dark:text-gray-500 truncate">{{ selectedBgm ? (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm) : '—' }}</span>
-              </div>
-            </div>
-
-            <p class="text-[10px] text-gray-400 dark:text-gray-600">
-              {{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序
-            </p>
           </div>
+
+          <!-- Description -->
+          <p class="text-xs text-gray-400 dark:text-gray-500 line-clamp-2 leading-snug">
+            {{ timelineCurrentShot?.description || timelineCurrentShot?.narration || '—' }}
+          </p>
+
+          <!-- Progress bar -->
+          <div class="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden cursor-pointer" @click="timelineSeekByClick">
+            <div class="h-full bg-primary-500 rounded-full transition-none" :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`" />
+          </div>
+
+          <!-- Transport row -->
+          <div class="flex items-center gap-1.5">
+            <button class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center disabled:opacity-30" title="上一镜头" :disabled="timelineCurrentShotIndex === 0" @click="timelineSeekToShot(timelineCurrentShotIndex - 1)">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="w-10 h-10 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center shadow-sm" @click="timelinePlaying ? timelinePause() : timelinePlay()">
+              <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center disabled:opacity-30" title="下一镜头" :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1" @click="timelineSeekToShot(timelineCurrentShotIndex + 1)">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+            </button>
+            <button class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center disabled:opacity-30" title="下载 MP4" :disabled="timelineDownloading" @click="timelineDownloadCurrent">
+              <svg v-if="timelineDownloading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            </button>
+            <div class="flex-1" />
+            <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}</span>
+          </div>
+
+          <!-- Speed + Volume -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] text-gray-400 dark:text-gray-500 mr-0.5">速度</span>
+              <button v-for="s in [0.5, 1.0, 1.5, 2.0]" :key="s"
+                class="px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors"
+                :class="timelinePlaybackSpeed === s ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                @click="timelinePlaybackSpeed = s"
+              >{{ s }}x</button>
+            </div>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+              <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+              </svg>
+              <input v-model.number="timelineMasterVolume" type="range" min="0" max="100" step="5" class="flex-1 accent-primary-500 h-1.5" />
+              <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 w-7 text-right">{{ timelineMasterVolume }}%</span>
+            </div>
+          </div>
+
+          <!-- Track status -->
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            <div class="flex items-center gap-1.5 text-xs">
+              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="timelineCurrentShot?.video_url ? 'bg-blue-500' : timelineCurrentShot?.image_url ? 'bg-blue-300' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">视频轨</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.video_url ? '已加载' : timelineCurrentShot?.image_url ? '静态图' : '—' }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs">
+              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="(shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">配音轨</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate">{{ (shotAudioUrls[timelineCurrentShot?.id ?? -1] || timelineCurrentShot?.audio_url) ? '已加载' : '—' }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs">
+              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="timelineCurrentShot?.sfx_url ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">音效轨</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate">{{ timelineCurrentShot?.sfx_url ? '已加载' : '—' }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs">
+              <div class="w-2 h-2 rounded-full flex-shrink-0" :class="selectedBgm ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <span class="text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">背景音乐</span>
+              <span class="text-gray-400 dark:text-gray-500 truncate">{{ selectedBgm ? (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm) : '—' }}</span>
+            </div>
+          </div>
+
+          <p class="text-[10px] text-gray-400 dark:text-gray-600">{{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序</p>
         </div>
-      </div>
+      </Teleport>
     </div>
 
     <!-- ==============================
