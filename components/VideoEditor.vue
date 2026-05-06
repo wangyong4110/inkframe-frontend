@@ -140,6 +140,8 @@ const timelineEditDraft = ref<Record<number, { duration: number; transition: str
 const timelineSaving = ref<Record<number, boolean>>({})
 const timelineResizingShotId = ref<number | null>(null)
 const timelineResizeDraft = ref<Record<number, number>>({})
+const timelinePlaybackSpeed = ref(1.0)
+const timelineMasterVolume = ref(80)
 
 // Export
 const stitching = ref(false)
@@ -907,19 +909,25 @@ function kenBurnsStyle(shot: StoryboardShot): string {
 function timelineSyncMedia() {
   const shot = timelineCurrentShot.value
   if (!shot) return
+  const vol = timelineMasterVolume.value / 100
+  const speed = timelinePlaybackSpeed.value
   nextTick(() => {
     if (timelineVideoRef.value) {
       if (shot.video_url) {
         timelineVideoRef.value.src = shot.video_url
+        timelineVideoRef.value.volume = vol
+        timelineVideoRef.value.playbackRate = speed
         timelineVideoRef.value.play().catch(() => {})
       } else {
         timelineVideoRef.value.src = ''
       }
     }
     if (timelineVoiceRef.value) {
-      const voiceUrl = shotAudioUrls.value[shot.id]
+      const voiceUrl = shotAudioUrls.value[shot.id] || shot.audio_url
       if (voiceUrl) {
         timelineVoiceRef.value.src = voiceUrl
+        timelineVoiceRef.value.volume = vol
+        timelineVoiceRef.value.playbackRate = speed
         timelineVoiceRef.value.play().catch(() => {})
       } else {
         timelineVoiceRef.value.src = ''
@@ -928,6 +936,8 @@ function timelineSyncMedia() {
     if (timelineSfxRef.value) {
       if (shot.sfx_url) {
         timelineSfxRef.value.src = shot.sfx_url
+        timelineSfxRef.value.volume = vol * (shot.sfx_volume ?? 1)
+        timelineSfxRef.value.playbackRate = speed
         timelineSfxRef.value.play().catch(() => {})
       } else {
         timelineSfxRef.value.src = ''
@@ -939,8 +949,9 @@ function timelineSyncMedia() {
 function timelineTick() {
   const shot = timelineCurrentShot.value
   if (!shot) { timelineStop(); return }
-  timelineShotElapsed.value += 0.1
-  timelineTotalElapsed.value += 0.1
+  const inc = 0.1 * timelinePlaybackSpeed.value
+  timelineShotElapsed.value += inc
+  timelineTotalElapsed.value += inc
   if (timelineShotElapsed.value >= timelineEffectiveDuration(shot)) {
     if (timelineCurrentShotIndex.value < timelineOrderedShots.value.length - 1) {
       timelineCurrentShotIndex.value++
@@ -1003,6 +1014,56 @@ function timelineDragOver(e: DragEvent, targetId: number) {
   timelineShotsOrder.value = order
 }
 function timelineDragEnd() { timelineDragShotId.value = null }
+
+// 点击进度条跳转
+function timelineSeekByClick(e: MouseEvent) {
+  const bar = e.currentTarget as HTMLElement
+  const ratio = Math.max(0, Math.min(1, e.offsetX / bar.clientWidth))
+  const targetTime = ratio * timelineTotalDuration.value
+  let elapsed = 0
+  for (let i = 0; i < timelineOrderedShots.value.length; i++) {
+    const dur = timelineEffectiveDuration(timelineOrderedShots.value[i])
+    if (elapsed + dur >= targetTime) {
+      const wasPlaying = timelinePlaying.value
+      timelinePause()
+      timelineCurrentShotIndex.value = i
+      timelineShotElapsed.value = targetTime - elapsed
+      timelineTotalElapsed.value = targetTime
+      if (wasPlaying) timelinePlay()
+      return
+    }
+    elapsed += dur
+  }
+}
+
+// 下载当前镜头素材
+function timelineDownloadCurrent() {
+  const shot = timelineCurrentShot.value
+  if (!shot) return
+  const url = shot.video_url || shot.image_url
+  if (!url) return
+  const ext = shot.video_url ? 'mp4' : 'jpg'
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `shot-${shot.shot_no}.${ext}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+// 实时更新正在播放的媒体的音量和速度
+watch(timelineMasterVolume, (v) => {
+  const vol = v / 100
+  if (timelineVideoRef.value) timelineVideoRef.value.volume = vol
+  if (timelineVoiceRef.value) timelineVoiceRef.value.volume = vol
+  if (timelineSfxRef.value) timelineSfxRef.value.volume = vol
+  if (timelineBgmRef.value) timelineBgmRef.value.volume = vol * (bgmVolume.value / 100)
+})
+watch(timelinePlaybackSpeed, (speed) => {
+  if (timelineVideoRef.value) timelineVideoRef.value.playbackRate = speed
+  if (timelineVoiceRef.value) timelineVoiceRef.value.playbackRate = speed
+  if (timelineSfxRef.value) timelineSfxRef.value.playbackRate = speed
+})
 
 async function timelineSaveShot(shotId: number) {
   const draft = timelineEditDraft.value[shotId]
@@ -2316,39 +2377,92 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           </div>
 
           <!-- Controls + track status -->
-          <div class="flex-1 space-y-4">
-            <!-- Play/Pause/Stop + progress bar -->
-            <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0 space-y-3">
+
+            <!-- Transport row: prev | play/pause | next | stop | download -->
+            <div class="flex items-center gap-1.5">
+              <button
+                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+                title="上一镜头"
+                :disabled="timelineCurrentShotIndex === 0"
+                @click="timelineSeekToShot(timelineCurrentShotIndex - 1)"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+              </button>
               <button
                 class="w-10 h-10 rounded-full bg-primary-500 hover:bg-primary-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm"
                 @click="timelinePlaying ? timelinePause() : timelinePlay()"
               >
-                <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                </svg>
+                <svg v-if="!timelinePlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
               </button>
               <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center flex-shrink-0"
+                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+                title="下一镜头"
+                :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1"
+                @click="timelineSeekToShot(timelineCurrentShotIndex + 1)"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+              </button>
+              <button
+                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0"
+                title="停止"
                 @click="timelineStop"
               >
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 6h12v12H6z" />
-                </svg>
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
               </button>
-              <div class="flex-1 min-w-0">
-                <div class="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    class="h-full bg-primary-500 rounded-full transition-none"
-                    :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
-                  />
-                </div>
-                <div class="flex justify-between text-[10px] font-mono text-gray-400 mt-0.5">
-                  <span>{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }}</span>
-                  <span>{{ tlFmtTime(timelineTotalDuration) }}</span>
-                </div>
+              <button
+                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+                title="下载当前镜头素材"
+                :disabled="!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url"
+                @click="timelineDownloadCurrent"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              </button>
+              <div class="flex-1"/>
+              <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">
+                {{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}
+              </span>
+            </div>
+
+            <!-- Progress bar (clickable seek) -->
+            <div
+              class="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden cursor-pointer"
+              @click="timelineSeekByClick"
+            >
+              <div
+                class="h-full bg-primary-500 rounded-full transition-none"
+                :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
+              />
+            </div>
+
+            <!-- Speed + Volume row -->
+            <div class="flex items-center gap-4 flex-wrap">
+              <!-- Playback speed -->
+              <div class="flex items-center gap-1">
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 mr-0.5">速度</span>
+                <button
+                  v-for="s in [0.5, 1.0, 1.5, 2.0]"
+                  :key="s"
+                  class="px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors"
+                  :class="timelinePlaybackSpeed === s
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                  @click="timelinePlaybackSpeed = s"
+                >{{ s }}x</button>
+              </div>
+              <!-- Master volume -->
+              <div class="flex items-center gap-1.5 flex-1 min-w-24">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+                </svg>
+                <input
+                  v-model.number="timelineMasterVolume"
+                  type="range" min="0" max="100" step="5"
+                  class="flex-1 accent-primary-500 h-1.5"
+                />
+                <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 w-7 text-right">{{ timelineMasterVolume }}%</span>
               </div>
             </div>
 
