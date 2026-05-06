@@ -652,7 +652,7 @@ async function handleGenerateVoice(shot: StoryboardShot) {
     if (!taskId) { toast.error('配音生成失败：未获取到任务ID'); generatingVoice.value[shot.id] = false; return }
     toast.info(`镜头 #${shot.shot_no} 配音生成中…`)
     const taskStore = useTaskStore()
-    taskStore.trackTask(taskId, (task) => {
+    taskStore.trackTask(taskId, async (task) => {
       generatingVoice.value[shot.id] = false
       if (task.status === 'completed') {
         const base = ((task.data as any)?.audio_url as string | undefined)
@@ -662,6 +662,8 @@ async function handleGenerateVoice(shot: StoryboardShot) {
         shotAudioUrls.value[shot.id] = `${base}${sep}t=${Date.now()}`
         const srt = (task.data as any)?.subtitle_srt as string | undefined
         if (srt) shotSubtitles.value[shot.id] = srt
+        // 刷新分镜列表，以获取后端更新后的 duration
+        await videoStore.fetchStoryboard(props.videoId)
         toast.success(`镜头 #${shot.shot_no} 配音已生成`)
       } else {
         toast.error(`镜头 #${shot.shot_no} 配音生成失败`)
@@ -877,6 +879,8 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
         generatingSegmentVoice.value[seg.id] = false
         if (task.status === 'completed') {
           await loadSegments(shot)
+          // 刷新分镜列表，以获取后端更新后的 duration
+          await videoStore.fetchStoryboard(props.videoId)
           toast.success(`片段 ${seg.seq_no} 配音已完成`)
         } else {
           toast.error(`片段 ${seg.seq_no} 配音失败`)
