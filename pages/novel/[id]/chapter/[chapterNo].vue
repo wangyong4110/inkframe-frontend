@@ -1269,10 +1269,26 @@ async function fetchShotsForChapter() {
         <!-- Panel header -->
         <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <p class="text-xs font-semibold text-gray-900 dark:text-white">
-            {{ pageMode === 'script' && videoEditorRef?.activeTab === 'timeline' ? '视频预览' : 'AI 助手' }}
+            {{
+              pageMode === 'script' && videoEditorRef?.activeTab === 'timeline' ? '视频预览' :
+              pageMode === 'script' && videoEditorRef?.activeTab === 'sfx' ? '音效助手' :
+              pageMode === 'script' && videoEditorRef?.activeTab === 'bgm' ? '背景音乐助手' :
+              pageMode === 'script' && videoEditorRef?.activeTab === 'voice' ? '配音字幕助手' :
+              'AI 助手'
+            }}
           </p>
           <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-            {{ pageMode === 'outline' ? '大纲' : pageMode === 'write' ? '写作' : pageMode === 'character' ? '角色' : pageMode === 'scenes' ? '场景' : (videoEditorRef?.activeTab === 'timeline' ? '时间线预览' : '脚本') }}
+            {{
+              pageMode === 'outline' ? '大纲' :
+              pageMode === 'write' ? '写作' :
+              pageMode === 'character' ? '角色' :
+              pageMode === 'scenes' ? '场景' :
+              videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
+              videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
+              videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
+              videoEditorRef?.activeTab === 'voice' ? '配音模式 & 字幕' :
+              '脚本'
+            }}
           </p>
         </div>
 
@@ -1681,7 +1697,16 @@ async function fetchShotsForChapter() {
             <!-- ── 视频预览（时间线 tab 激活时）：接收 VideoEditor 内 Teleport 传送的播放器 ── -->
             <div v-if="videoEditorRef?.activeTab === 'timeline'" id="timeline-player-slot" />
 
-            <!-- ── 脚本 AI 助手（非时间线 tab）── -->
+            <!-- ── 音效 AI 助手（sfx tab 激活时）：接收 VideoEditor 内 Teleport 传送的音效助手 ── -->
+            <div v-else-if="videoEditorRef?.activeTab === 'sfx'" id="sfx-ai-slot" />
+
+            <!-- ── 背景音乐 AI 助手（bgm tab 激活时）：接收 VideoEditor 内 Teleport 传送的BGM助手 ── -->
+            <div v-else-if="videoEditorRef?.activeTab === 'bgm'" id="bgm-ai-slot" />
+
+            <!-- ── 配音字幕 AI 助手（voice tab 激活时）：接收 VideoEditor 内 Teleport 传送的配音助手 ── -->
+            <div v-else-if="videoEditorRef?.activeTab === 'voice'" id="voice-ai-slot" />
+
+            <!-- ── 脚本 AI 助手（其余 tab）── -->
             <div v-else class="p-4 space-y-4">
               <!-- 节奏 -->
               <div>
