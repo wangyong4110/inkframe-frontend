@@ -9,6 +9,8 @@ interface VideoState {
   currentShot: StoryboardShot | null
   loading: boolean
   generating: boolean
+  /** true only when the current storyboard task was submitted in the current browser session (not resumed from localStorage) */
+  storyboardTaskIsNew: boolean
   error: string | null
   storyboardTaskId: string | null
   storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
@@ -28,6 +30,7 @@ export const useVideoStore = defineStore('video', {
     currentShot: null,
     loading: false,
     generating: false,
+    storyboardTaskIsNew: false,
     error: null,
     storyboardTaskId: null,
     storyboardTaskStatus: null,
@@ -179,6 +182,7 @@ export const useVideoStore = defineStore('video', {
 
     async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number, maxTokens?: number, temperature?: number, timeoutSeconds?: number, voiceMode?: string) {
       this.generating = true
+      this.storyboardTaskIsNew = true
       this.error = null
       this.storyboardTaskId = null
       this.storyboardTaskStatus = 'pending'
@@ -253,6 +257,7 @@ export const useVideoStore = defineStore('video', {
       this.storyboardTaskId = taskId
       this.storyboardTaskStatus = 'running'
       this.generating = true
+      this.storyboardTaskIsNew = false  // resumed task — don't show "generated" toast
       this.pollStoryboardTask(videoId, taskId)
       // 刷新后恢复时，task store 的 loadActiveTasks 通常已经覆盖；
       // 此处兜底注册，保证面板可见
@@ -314,7 +319,6 @@ export const useVideoStore = defineStore('video', {
     },
 
     async batchGenerateShotImages(videoId: number, shotIds: number[]): Promise<string> {
-      this.generating = true
       this.error = null
       try {
         const api = useVideoApi()
@@ -323,13 +327,10 @@ export const useVideoStore = defineStore('video', {
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate images'
         throw e
-      } finally {
-        this.generating = false
       }
     },
 
     async batchGenerateShotClips(videoId: number, shotIds: number[]): Promise<string> {
-      this.generating = true
       this.error = null
       try {
         const api = useVideoApi()
@@ -338,8 +339,6 @@ export const useVideoStore = defineStore('video', {
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate clips'
         throw e
-      } finally {
-        this.generating = false
       }
     },
 

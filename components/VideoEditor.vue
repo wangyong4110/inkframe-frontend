@@ -340,7 +340,10 @@ watch(() => props.videoId, () => {
 
 watch(() => videoStore.storyboardTaskStatus, (status) => {
   if (status === 'completed') {
-    toast.success('分镜脚本生成完成，请检查并确认')
+    // Only show toast for tasks submitted in the current session, not for resumed localStorage tasks
+    if (videoStore.storyboardTaskIsNew) {
+      toast.success('分镜脚本生成完成，请检查并确认')
+    }
     videoStore.fetchStoryboard(props.videoId)
   } else if (status === 'failed') {
     toast.error('分镜生成失败：' + (videoStore.error || ''))
@@ -489,6 +492,8 @@ function startEdit(shot: StoryboardShot) {
     camera_type: shot.camera_type,
     duration: shot.duration,
     transition: shot.transition || 'cut',
+    sfx_tags: shot.sfx_tags || '',
+    sfx_volume: shot.sfx_volume ?? 0,
   }
 }
 
@@ -591,6 +596,10 @@ async function refineShotImage(shot: StoryboardShot, suggestion: string): Promis
 }
 
 async function handleGenerateImages() {
+  if (generatingStoryboard.value) {
+    toast.error('分镜脚本正在生成中，请等待完成后再生成图片')
+    return
+  }
   const pending = shots.value.filter(s => !s.image_url && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
   if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); return }
   batchGeneratingImages.value = true
@@ -615,6 +624,10 @@ async function handleGenerateImages() {
 }
 
 async function handleGenerateClips() {
+  if (generatingStoryboard.value) {
+    toast.error('分镜脚本正在生成中，请等待完成后再生成视频')
+    return
+  }
   const pending = shots.value.filter(s => s.image_url && !s.video_url)
   if (pending.length === 0) { toast.error('没有需要生成视频的镜头（请先生成图片）'); return }
   batchGeneratingClips.value = true
@@ -1301,7 +1314,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <option v-for="p in videoProviders" :key="p.name" :value="p.name">{{ p.display_name || p.name }}</option>
             </select>
           </div>
-          <button class="btn-secondary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips" @click="handleGenerateImages">
+          <button class="btn-secondary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips || generatingStoryboard" @click="handleGenerateImages">
             <svg v-if="batchGeneratingImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
@@ -1310,7 +1323,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
             </svg>
             {{ batchGeneratingImages ? '图片生成中…' : '生成图片' }}
           </button>
-          <button class="btn-primary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips" @click="handleGenerateClips">
+          <button class="btn-primary text-sm" :disabled="batchGeneratingImages || batchGeneratingClips || generatingStoryboard" @click="handleGenerateClips">
             <svg v-if="batchGeneratingClips" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
@@ -1550,6 +1563,21 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 <select v-model="editForm.transition" class="input text-sm py-1">
                   <option v-for="o in TRANSITION_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
                 </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  音效标签
+                  <span class="ml-1 text-gray-400 font-normal">（JSON 数组或逗号分隔，如 ["rain","thunder"]）</span>
+                </label>
+                <input v-model="editForm.sfx_tags" type="text" class="input text-sm font-mono" placeholder='["sword_clash","crowd_gasp"]' />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  音效音量
+                  <span class="ml-1 text-gray-400 font-normal">（0 = 自动，0.1–1.0 = 手动指定）</span>
+                  <span v-if="editForm.sfx_volume" class="ml-1 font-semibold text-blue-500">{{ Math.round((editForm.sfx_volume as number) * 100) }}%</span>
+                </label>
+                <input v-model.number="editForm.sfx_volume" type="range" min="0" max="1" step="0.05" class="w-full accent-blue-500" />
               </div>
             </div>
 
