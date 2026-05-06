@@ -1061,12 +1061,32 @@ watch(timelineSelectedShotId, (id) => {
 
 // Auto-load voice segments for all shots when timeline tab opens
 // so timelineEffectiveDuration() has real duration_secs data
+const tabLoading = ref(false)
+
 watch(activeTab, async (tab) => {
-  if (tab !== 'timeline') return
-  for (const shot of shots.value) {
-    if (!shotSegments.value[shot.id]) {
-      await loadSegments(shot)
+  tabLoading.value = true
+  try {
+    // Tabs that show shot-level data: always refresh storyboard on switch
+    if (['script', 'voice', 'sfx', 'timeline'].includes(tab)) {
+      await videoStore.fetchStoryboard(props.videoId)
     }
+    // Tabs that show video-level data (bgm_url, status, etc.)
+    if (['bgm', 'export'].includes(tab)) {
+      await videoStore.fetchVideo(props.videoId)
+    }
+    // Voice: reload segments for the currently expanded shot (if any)
+    if (tab === 'voice' && expandedSegmentShotId.value != null) {
+      const shot = shots.value.find(s => s.id === expandedSegmentShotId.value)
+      if (shot) await loadSegments(shot)
+    }
+    // Timeline: (re-)load segments for every shot so all tracks are visible
+    if (tab === 'timeline') {
+      for (const shot of shots.value) {
+        await loadSegments(shot)
+      }
+    }
+  } finally {
+    tabLoading.value = false
   }
 })
 
@@ -1106,10 +1126,18 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
       </nav>
     </div>
 
+    <!-- Tab loading overlay -->
+    <div v-if="tabLoading" class="flex items-center justify-center py-16">
+      <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">加载中…</span>
+    </div>
+
     <!-- ==============================
          分镜脚本 Tab
          ============================== -->
-    <div v-if="activeTab === 'script'">
+    <div v-if="activeTab === 'script' && !tabLoading">
 
 
       <!-- Script confirmed banner -->
@@ -1707,7 +1735,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          配音字幕 Tab
          ============================== -->
-    <div v-if="activeTab === 'voice'" class="space-y-4">
+    <div v-if="activeTab === 'voice' && !tabLoading" class="space-y-4">
       <div class="card p-4">
         <div class="flex items-center justify-between mb-4">
           <div>
@@ -1859,7 +1887,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          背景音乐 Tab
          ============================== -->
-    <div v-if="activeTab === 'bgm'" class="space-y-4">
+    <div v-if="activeTab === 'bgm' && !tabLoading" class="space-y-4">
       <div class="card p-6">
         <h3 class="font-semibold text-gray-900 dark:text-white mb-1">背景音乐</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">选择情绪风格，AI 将根据情节节奏智能匹配音乐</p>
@@ -1899,7 +1927,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          音效 Tab
          ============================== -->
-    <div v-if="activeTab === 'sfx'" class="space-y-4">
+    <div v-if="activeTab === 'sfx' && !tabLoading" class="space-y-4">
       <div class="card p-4">
         <div class="flex items-center justify-between mb-3">
           <div>
@@ -1980,7 +2008,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          时间线 Tab
          ============================== -->
-    <div v-if="activeTab === 'timeline'" class="space-y-3">
+    <div v-if="activeTab === 'timeline' && !tabLoading" class="space-y-3">
       <!-- Hidden audio-only elements -->
       <audio ref="timelineVoiceRef" class="hidden" preload="auto" />
       <audio ref="timelineSfxRef" class="hidden" preload="auto" />
@@ -2347,7 +2375,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
     <!-- ==============================
          导出 Tab
          ============================== -->
-    <div v-if="activeTab === 'export'" class="space-y-4">
+    <div v-if="activeTab === 'export' && !tabLoading" class="space-y-4">
       <!-- Progress summary -->
       <div class="card p-4">
         <h3 class="font-semibold text-gray-900 dark:text-white mb-3">制作进度</h3>
