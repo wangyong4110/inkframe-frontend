@@ -370,12 +370,41 @@ const {
   advMaxTokens,
   advTemperature,
   advTimeoutSeconds,
+  voiceMode,
   initFromNovel: initAiParamsFromNovel,
   initFromVideo: initAiParamsFromVideo,
 } = useAiGenerationParams()
 
 const storyboardUserPrompt = ref('') // 额外要求（user_prompt）
 const showAdvancedParams = ref(false)
+const showScriptAiPanel = ref(true)   // script tab AI panel collapsed state
+
+// ── Voice tab AI panel ──
+const showVoiceAiPanel = ref(true)
+const batchFillingSubtitles = ref(false)
+
+// ── BGM tab AI panel ──
+const bgmAiContext = ref('')   // 额外分析提示（会随 analyze/generate 请求发送）
+const showBgmAiPanel = ref(true)
+const bgmMoodPresets = [
+  { label: '史诗宏大', value: '史诗宏大的战斗场面，需要磅礴的管弦乐和鼓点' },
+  { label: '温馨感人', value: '温馨感人的情感场景，需要柔和的弦乐和钢琴' },
+  { label: '紧张刺激', value: '紧张刺激的追逐/危机场景，需要快节奏配乐' },
+  { label: '浪漫唯美', value: '浪漫唯美的爱情场景，需要抒情旋律' },
+  { label: '悬疑神秘', value: '悬疑神秘氛围，需要低沉的弦乐和不和谐音效' },
+  { label: '轻快活泼', value: '轻快活泼的日常场景，需要欢快的音乐' },
+]
+
+// ── SFX tab AI panel ──
+const sfxAiContext = ref('')   // 额外场景背景提示
+const showSfxAiPanel = ref(true)
+const sfxScenePresets = [
+  { label: '古风武侠', value: '古代中国武侠场景，刀剑交击、马蹄、古筝等音效' },
+  { label: '仙侠玄幻', value: '修仙玄幻场景，灵气波动、法术、雷鸣等音效' },
+  { label: '现代都市', value: '现代都市场景，车声、人群、室内环境音等' },
+  { label: '科幻未来', value: '科幻未来场景，机械、能量、空间感等音效' },
+  { label: '自然野外', value: '自然野外场景，风雨、鸟鸣、虫声、水流等' },
+]
 
 // 仅在 cookie 未记录时，从 DB 读取默认值（cookie 优先）
 let pacingInitialized = false
@@ -474,7 +503,7 @@ async function handleGenerateStoryboard(userPrompt?: string, overridePacing?: st
       effectiveMaxTokens || undefined,
       effectiveTemperature || undefined,
       effectiveTimeout || undefined,
-      overrideVoiceMode || undefined,
+      overrideVoiceMode || (voiceMode.value !== 'both' ? voiceMode.value : undefined),
     )
     toast.success('脚本生成任务已提交，请稍候...')
   } catch (e: any) {
@@ -746,12 +775,31 @@ async function loadBGMSegments() {
   } catch { /* ignore */ }
 }
 
+// 批量将旁白/台词复制到字幕字段（仅填充未自定义字幕的镜头）
+async function batchFillSubtitles() {
+  batchFillingSubtitles.value = true
+  try {
+    const toUpdate = shots.value.filter(s => !s.subtitle && (s.narration || s.dialogue))
+    if (toUpdate.length === 0) { toast.info('所有镜头的字幕已填充'); return }
+    await Promise.all(toUpdate.map(s =>
+      videoStore.updateShot(props.videoId, s.id, {
+        subtitle: (s.dialogue || s.narration || '').trim()
+      } as any)
+    ))
+    toast.success(`已填充 ${toUpdate.length} 个镜头的字幕`)
+  } catch (e: any) {
+    toast.error('填充失败：' + (e.message || ''))
+  } finally {
+    batchFillingSubtitles.value = false
+  }
+}
+
 async function handleAnalyzeBGM() {
   if (shots.value.length === 0) { toast.error('没有分镜，请先生成分镜脚本'); return }
   analyzingBgm.value = true
   try {
     const api = useVideoApi()
-    const res = await api.analyzeBGMSegments(props.videoId)
+    const res = await api.analyzeBGMSegments(props.videoId, bgmAiContext.value ? { user_prompt: bgmAiContext.value } : undefined)
     const taskId = (res as any)?.data?.task_id
     if (!taskId) { analyzingBgm.value = false; return }
     const taskStore = useTaskStore()
@@ -775,7 +823,7 @@ async function handleGenerateBgm() {
   generatingBgm.value = true
   try {
     const api = useVideoApi()
-    const res = await api.generateBGM(props.videoId)
+    const res = await api.generateBGM(props.videoId, bgmAiContext.value ? { user_prompt: bgmAiContext.value } : undefined)
     const taskId = (res as any)?.data?.task_id
     if (!taskId) { generatingBgm.value = false; return }
     toast.info('BGM生成任务已提交（AI分析 + Jamendo搜索）…')
@@ -886,7 +934,7 @@ async function handleAnalyzeSFXTags() {
   analyzingTags.value = true
   try {
     const api = useVideoApi()
-    const res = await api.analyzeSFXTags(props.videoId)
+    const res = await api.analyzeSFXTags(props.videoId, sfxAiContext.value ? { user_context: sfxAiContext.value } : undefined)
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       useTaskStore().trackTask(taskId, async (task) => {
@@ -911,7 +959,7 @@ async function handleGenerateSFX() {
   generatingSFX.value = true
   try {
     const api = useVideoApi()
-    const res = await api.batchGenerateSFX(props.videoId)
+    const res = await api.batchGenerateSFX(props.videoId, sfxAiContext.value ? { user_context: sfxAiContext.value } : undefined)
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       sfxTaskId.value = taskId
@@ -1479,7 +1527,7 @@ watch(activeTab, async (tab) => {
 
 onUnmounted(() => { timelinePause() })
 
-defineExpose({ generateStoryboard: handleGenerateStoryboard })
+defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
 </script>
 
 <template>
@@ -1751,6 +1799,109 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
 
       <!-- Shot list -->
       <div v-else-if="shots.length > 0" class="space-y-3">
+
+        <!-- ── AI 助手面板（分镜脚本）── -->
+        <div v-if="!isScriptConfirmed" class="card overflow-hidden">
+          <button
+            class="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+            @click="showScriptAiPanel = !showScriptAiPanel"
+          >
+            <span class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              AI 助手 — 更新分镜脚本
+            </span>
+            <svg class="w-4 h-4 transition-transform" :class="showScriptAiPanel ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div v-if="showScriptAiPanel" class="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-3">
+            <!-- 节奏 + 时长 + 配音模式 -->
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-gray-400">节奏</span>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button v-for="p in pacingOptions" :key="p.value"
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="pacing === p.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="pacing = p.value">{{ p.label }}</button>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-gray-400">时长</span>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button v-for="d in durationOptions" :key="d.value"
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="targetDuration === d.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="targetDuration = d.value">{{ d.label }}</button>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-gray-400">配音</span>
+                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <button
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="voiceMode === 'both' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="voiceMode = 'both'">对白+旁白</button>
+                  <button
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="voiceMode === 'narration' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="voiceMode = 'narration'">仅旁白</button>
+                  <button
+                    class="px-2.5 py-1 text-xs transition-colors"
+                    :class="voiceMode === 'dialogue' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                    @click="voiceMode = 'dialogue'">仅对白</button>
+                </div>
+              </div>
+            </div>
+            <!-- 额外要求 -->
+            <textarea
+              v-model="storyboardUserPrompt"
+              rows="2"
+              placeholder="额外要求（可选）：如「强化战斗场面节奏」、「突出主角情绪变化」..."
+              class="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none"
+            />
+            <!-- 高级参数 -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+              <button
+                class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                @click="showAdvancedParams = !showAdvancedParams"
+              >
+                <span>高级参数</span>
+                <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
+                <div>
+                  <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0=系统默认）</span></label>
+                  <input v-model.number="advMaxTokens" type="number" min="0" max="32768" step="256" placeholder="0"
+                    class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0=默认 0.1）</span></label>
+                  <div class="flex items-center gap-2">
+                    <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500" />
+                    <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0"
+                      class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 更新按钮 -->
+            <button
+              class="btn-primary text-sm w-full"
+              :disabled="generatingStoryboard"
+              @click="handleGenerateStoryboard(storyboardUserPrompt)"
+            >
+              <svg v-if="generatingStoryboard" class="w-4 h-4 mr-1.5 animate-spin inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingStoryboard ? '生成中…' : '更新分镜脚本' }}
+            </button>
+          </div>
+        </div>
 
         <!-- ── Script mode (not confirmed): text-focused cards ── -->
         <template v-if="!isScriptConfirmed">
@@ -2169,6 +2320,69 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </div>
       </div>
 
+      <!-- AI 助手面板（配音字幕）-->
+      <div class="card overflow-hidden">
+        <button
+          class="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          @click="showVoiceAiPanel = !showVoiceAiPanel"
+        >
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            AI 助手 — 配音字幕
+          </span>
+          <svg class="w-4 h-4 transition-transform" :class="showVoiceAiPanel ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <div v-if="showVoiceAiPanel" class="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-3">
+          <!-- 配音模式 -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">配音模式</span>
+            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="voiceMode === 'both' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="voiceMode = 'both'">对白+旁白</button>
+              <button
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="voiceMode === 'narration' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="voiceMode = 'narration'">仅旁白</button>
+              <button
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="voiceMode === 'dialogue' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="voiceMode = 'dialogue'">仅对白</button>
+            </div>
+            <span class="text-xs text-gray-400 dark:text-gray-500">影响下次重新生成脚本时的旁白/台词分配</span>
+          </div>
+          <!-- 字幕快速操作 -->
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-500 dark:text-gray-400">字幕操作</span>
+            <button
+              class="btn-secondary text-xs py-1 px-3"
+              :disabled="batchFillingSubtitles"
+              @click="batchFillSubtitles"
+              title="将未自定义字幕的镜头的字幕字段批量填入旁白/台词内容"
+            >
+              <svg v-if="batchFillingSubtitles" class="w-3.5 h-3.5 mr-1 animate-spin inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              一键填充字幕
+            </button>
+            <span class="text-xs text-gray-400 dark:text-gray-500">
+              {{ shots.filter(s => !s.subtitle && (s.narration || s.dialogue)).length }} 个镜头待填充
+            </span>
+          </div>
+          <!-- 配音进度统计 -->
+          <div class="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2">
+            <span>共 {{ shots.length }} 个镜头</span>
+            <span class="text-green-600 dark:text-green-400">✓ {{ Object.keys(shotAudioUrls).length }} 已配音</span>
+            <span>待生成 {{ shots.length - Object.keys(shotAudioUrls).length }} 个</span>
+          </div>
+        </div>
+      </div>
+
       <div class="space-y-2">
         <div v-for="shot in shots" :key="shot.id" class="card p-4">
           <div class="flex items-start gap-3">
@@ -2342,6 +2556,52 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <p>① <span class="font-medium">AI 分析分段</span>：AI 阅读全部分镜情绪，自动分组并生成 Jamendo 搜索词（可在下方预览）</p>
           <p>② <span class="font-medium">一键生成BGM</span>：含 AI 分段分析 → Jamendo 免费音乐库搜索，每段独立匹配</p>
           <p class="text-blue-500 dark:text-blue-400">注：一段BGM可跨越多个分镜，每段独立情绪匹配</p>
+        </div>
+      </div>
+
+      <!-- AI 助手面板（背景音乐）-->
+      <div class="card overflow-hidden">
+        <button
+          class="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          @click="showBgmAiPanel = !showBgmAiPanel"
+        >
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            AI 助手 — 背景音乐偏好
+          </span>
+          <svg class="w-4 h-4 transition-transform" :class="showBgmAiPanel ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <div v-if="showBgmAiPanel" class="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-3">
+          <!-- 情绪基调快选 -->
+          <div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">情绪基调快选（点击填入分析提示）</p>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="preset in bgmMoodPresets"
+                :key="preset.label"
+                class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                :class="bgmAiContext === preset.value
+                  ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
+                @click="bgmAiContext = bgmAiContext === preset.value ? '' : preset.value"
+              >{{ preset.label }}</button>
+            </div>
+          </div>
+          <!-- 自定义分析提示 -->
+          <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">自定义分析提示（可选）</label>
+            <textarea
+              v-model="bgmAiContext"
+              rows="2"
+              placeholder="例如：整体基调是古风仙侠，战斗场面需要激昂的管弦乐，感情戏需要温婉的琵琶曲..."
+              class="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none"
+            />
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">此提示将在 AI 分析/生成BGM时优先参考</p>
+          </div>
         </div>
       </div>
 
@@ -2567,6 +2827,59 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <p class="font-medium">推荐两步工作流</p>
           <p>① <span class="font-medium">AI 分析标签</span>：AI 批量阅读所有分镜，为每个镜头生成场景专属的自然语言搜索词（可在下方预览/编辑）</p>
           <p>② <span class="font-medium">一键生成音效</span>：含 AI 标签分析 → 本地库 → Freesound CC0 → Jamendo → ElevenLabs AI 四层降级匹配</p>
+        </div>
+      </div>
+
+      <!-- AI 助手面板（音效）-->
+      <div class="card overflow-hidden">
+        <button
+          class="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          @click="showSfxAiPanel = !showSfxAiPanel"
+        >
+          <span class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            AI 助手 — 音效场景偏好
+          </span>
+          <svg class="w-4 h-4 transition-transform" :class="showSfxAiPanel ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <div v-if="showSfxAiPanel" class="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-3">
+          <!-- 场景风格快选 -->
+          <div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">场景风格快选（点击填入分析提示）</p>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="preset in sfxScenePresets"
+                :key="preset.label"
+                class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                :class="sfxAiContext === preset.value
+                  ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
+                @click="sfxAiContext = sfxAiContext === preset.value ? '' : preset.value"
+              >{{ preset.label }}</button>
+            </div>
+          </div>
+          <!-- 自定义场景背景 -->
+          <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">自定义场景背景（可选）</label>
+            <textarea
+              v-model="sfxAiContext"
+              rows="2"
+              placeholder="例如：故事发生在古代中国，主角修炼仙法，主要场景包括竹林、山洞、宫殿..."
+              class="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400 resize-none"
+            />
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">此背景信息将在 AI 分析音效标签时优先参考</p>
+          </div>
+          <!-- 生成统计 -->
+          <div class="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2">
+            <span>共 {{ shots.length }} 个镜头</span>
+            <span class="text-green-600 dark:text-green-400">✓ {{ shots.filter(s => s.sfx_url).length }} 已有音效</span>
+            <span class="text-blue-600 dark:text-blue-400">🏷 {{ shots.filter(s => s.sfx_tags).length }} 已分析标签</span>
+            <span>待生成 {{ shots.filter(s => !s.sfx_url).length }} 个</span>
+          </div>
         </div>
       </div>
 

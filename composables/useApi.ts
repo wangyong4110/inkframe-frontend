@@ -431,12 +431,18 @@ export const useVideoApi = () => {
     })
 
   // AI 批量分析分镜，生成精准自然语言音效搜索词（仅更新 sfx_tags，不搜索/生成音频）
-  const analyzeSFXTags = (videoId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx-tags`, { method: 'POST' })
+  const analyzeSFXTags = (videoId: number, opts?: { user_context?: string }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx-tags`, {
+      method: 'POST',
+      body: opts?.user_context ? JSON.stringify({ user_context: opts.user_context }) : undefined,
+    })
 
   // 批量为所有分镜自动生成音效（异步任务，返回 task_id）
-  const batchGenerateSFX = (videoId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, { method: 'POST' })
+  const batchGenerateSFX = (videoId: number, opts?: { user_context?: string }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, {
+      method: 'POST',
+      body: opts?.user_context ? JSON.stringify({ user_context: opts.user_context }) : undefined,
+    })
 
   // 批量配音：所有分镜作为单个异步任务，顺序处理（最多10个，避免TTS限流）
   const batchGenerateVoice = (videoId: number, options?: { narration_voice?: string; subtitle_enabled?: boolean; max_shots?: number; skip_existing?: boolean }) =>
@@ -450,12 +456,18 @@ export const useVideoApi = () => {
     request<ApiResponse<import('~/types').VideoBGMSegment[]>>(`/videos/${videoId}/bgm/segments`)
 
   // BGM：AI分析分段（仅分析，不搜索音频）
-  const analyzeBGMSegments = (videoId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/analyze`, { method: 'POST' })
+  const analyzeBGMSegments = (videoId: number, opts?: { user_prompt?: string }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/analyze`, {
+      method: 'POST',
+      body: opts?.user_prompt ? JSON.stringify({ user_prompt: opts.user_prompt }) : undefined,
+    })
 
   // BGM：一键生成（AI分析 + Jamendo搜索）
-  const generateBGM = (videoId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/generate`, { method: 'POST' })
+  const generateBGM = (videoId: number, opts?: { user_prompt?: string }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/bgm/generate`, {
+      method: 'POST',
+      body: opts?.user_prompt ? JSON.stringify({ user_prompt: opts.user_prompt }) : undefined,
+    })
 
   // BGM：Jamendo手动搜索
   const jamendoSearchBGM = (videoId: number, params: {
