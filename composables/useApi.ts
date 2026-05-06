@@ -438,6 +438,19 @@ export const useVideoApi = () => {
   const generateShotSFX = (videoId: number, shotId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/sfx`, { method: 'POST' })
 
+  // 音效条目 CRUD
+  const listShotSFXItems = (videoId: number, shotId: number) =>
+    request<ApiResponse<import('~/types').ShotSFXItem[]>>(`/videos/${videoId}/shots/${shotId}/sfx-items`)
+
+  const updateShotSFXItem = (videoId: number, shotId: number, itemId: number, data: { volume: number }) =>
+    request<ApiResponse<import('~/types').ShotSFXItem>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteShotSFXItem = (videoId: number, shotId: number, itemId: number) =>
+    request<void>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, { method: 'DELETE' })
+
   const updateVideo = (id: number, data: Partial<Video>) =>
     request<ApiResponse<Video>>(`/videos/${id}`, {
       method: 'PUT',
@@ -553,6 +566,9 @@ export const useVideoApi = () => {
     refineShotImage,
     batchGenerateSFX,
     generateShotSFX,
+    listShotSFXItems,
+    updateShotSFXItem,
+    deleteShotSFXItem,
     exportCapcut,
     exportVideo,
     getVideoProviders,

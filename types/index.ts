@@ -222,6 +222,17 @@ export interface StoryboardShot {
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
 }
 
+export interface ShotSFXItem {
+  id: number
+  shot_id: number
+  seq_no: number
+  tag: string       // 音效标签，如 "rain_heavy"
+  url: string       // 音效文件 URL
+  volume: number    // 混音音量（0.1–1.0）
+  source: string    // local/freesound/jamendo/elevenlabs
+  created_at?: string
+}
+
 export interface ShotVoiceSegment {
   id: number
   shot_id: number

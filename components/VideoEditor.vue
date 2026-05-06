@@ -121,6 +121,10 @@ const generatingBgm = ref(false)
 // SFX
 const generatingSFX = ref(false)
 const sfxTaskId = ref<string | null>(null)
+const sfxPlayingId = ref<number | null>(null)   // 正在播放的 ShotSFXItem.id
+const sfxAudioRef = ref<HTMLAudioElement | null>(null)
+const sfxItems = ref<Record<number, import('~/types').ShotSFXItem[]>>({})   // shotId → items
+const sfxItemsLoading = ref(false)
 
 // ── Timeline tab ──────────────────────────────────────────
 const timelinePlaying = ref(false)
@@ -720,7 +724,16 @@ async function handleGenerateSFX() {
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       sfxTaskId.value = taskId
-      useTaskStore().trackTask(taskId)
+      useTaskStore().trackTask(taskId, async (task) => {
+        await videoStore.fetchStoryboard(props.videoId)
+        await loadSFXItems()
+        const { success = 0, fail = 0 } = (task.data as any) ?? {}
+        if (fail > 0) {
+          toast.warning(`音效生成完成：${success} 成功，${fail} 失败`)
+        } else {
+          toast.success(`音效生成完成：${success} 个镜头`)
+        }
+      })
       toast.success('音效生成任务已提交，请在右下角任务面板查看进度')
     }
   } catch (e: any) {
@@ -728,6 +741,52 @@ async function handleGenerateSFX() {
   } finally {
     generatingSFX.value = false
   }
+}
+
+async function loadSFXItems() {
+  if (shots.value.length === 0) return
+  sfxItemsLoading.value = true
+  try {
+    const api = useVideoApi()
+    await Promise.all(shots.value.map(async (shot) => {
+      const res = await api.listShotSFXItems(props.videoId, shot.id)
+      sfxItems.value[shot.id] = (res as any)?.data ?? []
+    }))
+  } catch { /* silent */ } finally {
+    sfxItemsLoading.value = false
+  }
+}
+
+function toggleSfxPreview(item: import('~/types').ShotSFXItem) {
+  const audio = sfxAudioRef.value
+  if (!audio) return
+  if (sfxPlayingId.value === item.id) {
+    audio.pause()
+    sfxPlayingId.value = null
+    return
+  }
+  audio.src = item.url
+  audio.currentTime = 0
+  audio.play().catch(() => { sfxPlayingId.value = null })
+  sfxPlayingId.value = item.id
+}
+
+async function deleteSFXItem(shot: StoryboardShot, item: import('~/types').ShotSFXItem) {
+  const api = useVideoApi()
+  await api.deleteShotSFXItem(props.videoId, shot.id, item.id)
+  sfxItems.value[shot.id] = (sfxItems.value[shot.id] ?? []).filter(i => i.id !== item.id)
+  if (sfxPlayingId.value === item.id) {
+    sfxAudioRef.value?.pause()
+    sfxPlayingId.value = null
+  }
+}
+
+async function updateSFXItemVolume(shot: StoryboardShot, item: import('~/types').ShotSFXItem, volume: number) {
+  const api = useVideoApi()
+  await api.updateShotSFXItem(props.videoId, shot.id, item.id, { volume })
+  const list = sfxItems.value[shot.id] ?? []
+  const idx = list.findIndex(i => i.id === item.id)
+  if (idx !== -1) list[idx] = { ...list[idx], volume }
 }
 
 // ──────── Export ────────
@@ -1203,6 +1262,10 @@ watch(activeTab, async (tab) => {
     // Tabs that show video-level data (bgm_url, status, etc.)
     if (['bgm', 'export'].includes(tab)) {
       await videoStore.fetchVideo(props.videoId)
+    }
+    // SFX: load all sfx items for each shot
+    if (tab === 'sfx') {
+      await loadSFXItems()
     }
     // Voice: reload segments for the currently expanded shot (if any)
     if (tab === 'voice' && expandedSegmentShotId.value != null) {
@@ -2092,57 +2155,94 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
         </div>
         <!-- 生成流程说明 -->
         <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
-          <p class="font-medium">三层降级策略（按优先级自动选择）</p>
+          <p class="font-medium">四层降级策略（按优先级自动选择）</p>
           <p>① 本地音效库 — 从服务器预设音效库精确匹配（0延迟）</p>
           <p>② Freesound CC0 — 从开放音效平台搜索授权素材</p>
-          <p>③ ElevenLabs AI — 按镜头描述实时生成定制音效（最高质量）</p>
+          <p>③ Jamendo — 从免费器乐平台搜索背景音效</p>
+          <p>④ ElevenLabs AI — 按镜头描述实时生成定制音效（最高质量）</p>
         </div>
       </div>
 
+      <!-- 隐藏音频元素，用于试听 -->
+      <audio ref="sfxAudioRef" class="hidden" @ended="sfxPlayingId = null" @error="sfxPlayingId = null" />
+
       <!-- 分镜音效列表 -->
       <div class="space-y-2">
-        <div
-          v-for="shot in shots"
-          :key="shot.id"
-          class="card p-3 flex items-center gap-3"
-        >
-          <div class="w-16 h-10 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
-            <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-0.5">
+        <div v-for="shot in shots" :key="shot.id" class="card overflow-hidden">
+          <!-- 镜头标题行 -->
+          <div class="flex items-center gap-3 p-3 border-b border-gray-100 dark:border-gray-700/50">
+            <div class="w-14 h-9 bg-gray-900 rounded flex-shrink-0 overflow-hidden flex items-center justify-center">
+              <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+              <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</span>
-              <span
-                v-if="shot.sfx_url"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                </svg>
-                已生成
+              <span v-if="(sfxItems[shot.id]?.length ?? 0) > 0"
+                class="ml-2 text-xs text-green-600 dark:text-green-400">
+                {{ sfxItems[shot.id].length }} 条音效
               </span>
-              <span v-else class="text-xs text-gray-400">待生成</span>
+              <span v-else-if="!sfxItemsLoading" class="ml-2 text-xs text-gray-400">待生成</span>
             </div>
-            <!-- SFX tags as badges, fallback to description -->
-            <div v-if="parseSfxTags(shot.sfx_tags).length > 0" class="flex flex-wrap gap-1 mt-0.5">
-              <span
-                v-for="tag in parseSfxTags(shot.sfx_tags)"
-                :key="tag"
-                class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
-              >
-                <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M6.343 17.657a8 8 0 010-11.314" />
-                </svg>
-                {{ tag }}
-              </span>
-            </div>
-            <p v-else class="text-xs text-gray-400 truncate mt-0.5">{{ shot.description || '—' }}</p>
           </div>
-          <!-- 音量标签 -->
-          <span v-if="shot.sfx_volume && shot.sfx_volume > 0" class="text-xs text-gray-400 flex-shrink-0">
-            {{ Math.round(shot.sfx_volume * 100) }}%
-          </span>
+          <!-- 音效条目列表 -->
+          <div v-if="(sfxItems[shot.id]?.length ?? 0) > 0" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            <div
+              v-for="item in sfxItems[shot.id]"
+              :key="item.id"
+              class="flex items-center gap-2 px-3 py-2"
+            >
+              <!-- 来源徽标 -->
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
+                :class="{
+                  'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300': item.source === 'freesound',
+                  'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300': item.source === 'jamendo',
+                  'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300': item.source === 'elevenlabs',
+                  'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': item.source === 'local',
+                }">
+                {{ item.source }}
+              </span>
+              <!-- 标签 -->
+              <span class="text-xs text-orange-600 dark:text-orange-400 flex-1 truncate font-medium">
+                {{ item.tag || '—' }}
+              </span>
+              <!-- 音量滑块 -->
+              <input
+                type="range" min="0.1" max="1" step="0.05"
+                :value="item.volume"
+                class="w-16 accent-orange-500 flex-shrink-0"
+                @change="updateSFXItemVolume(shot, item, parseFloat(($event.target as HTMLInputElement).value))"
+              />
+              <span class="text-xs text-gray-400 w-7 text-right flex-shrink-0">{{ Math.round(item.volume * 100) }}%</span>
+              <!-- 播放按钮 -->
+              <button
+                class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+                :class="sfxPlayingId === item.id
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:text-orange-500'"
+                @click="toggleSfxPreview(item)"
+              >
+                <svg v-if="sfxPlayingId !== item.id" class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                </svg>
+              </button>
+              <!-- 删除按钮 -->
+              <button
+                class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                @click="deleteSFXItem(shot, item)"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <!-- 空状态占位 -->
+          <div v-else-if="!sfxItemsLoading" class="px-3 py-2 text-xs text-gray-400 italic">
+            暂无音效，点击「一键生成音效」自动匹配
+          </div>
         </div>
         <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">
           请先在「分镜脚本」Tab 生成分镜
