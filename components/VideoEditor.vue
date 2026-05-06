@@ -1038,18 +1038,41 @@ function timelineSeekByClick(e: MouseEvent) {
 }
 
 // 下载当前镜头素材
-function timelineDownloadCurrent() {
+// 跨域 CDN/OSS 链接直接用 <a download> 会被浏览器忽略，改为先 fetch 成 Blob 再触发下载
+const timelineDownloading = ref(false)
+
+async function timelineDownloadCurrent() {
   const shot = timelineCurrentShot.value
-  if (!shot) return
+  if (!shot || timelineDownloading.value) return
   const url = shot.video_url || shot.image_url
   if (!url) return
   const ext = shot.video_url ? 'mp4' : 'jpg'
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `shot-${shot.shot_no}.${ext}`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  const filename = `shot-${shot.shot_no}.${ext}`
+  timelineDownloading.value = true
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  } catch {
+    // CORS 不允许时回退到直接跳转（浏览器自行决定处理方式）
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.target = '_blank'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } finally {
+    timelineDownloading.value = false
+  }
 }
 
 // 实时更新正在播放的媒体的音量和速度
@@ -2456,10 +2479,13 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   <button
                     class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
                     title="下载当前镜头素材"
-                    :disabled="!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url"
+                    :disabled="(!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url) || timelineDownloading"
                     @click="timelineDownloadCurrent"
                   >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-if="timelineDownloading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                     </svg>
                   </button>
@@ -2502,10 +2528,11 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               <button
                 class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
                 title="下载当前镜头素材"
-                :disabled="!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url"
+                :disabled="(!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url) || timelineDownloading"
                 @click="timelineDownloadCurrent"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                <svg v-if="timelineDownloading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               </button>
               <div class="flex-1"/>
               <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">
