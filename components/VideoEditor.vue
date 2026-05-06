@@ -357,33 +357,31 @@ watch(shots, (list) => {
 }, { immediate: true })
 
 // ──────── Script phase ────────
-const pacing = ref<'slow' | 'normal' | 'fast'>('normal')
-const targetDuration = ref<number>(0) // 0 = 自动
+// AI 参数从 cookie 恢复（刷新页面后保留用户手动设置的值）
+const {
+  pacing,
+  targetDuration,
+  advMaxTokens,
+  advTemperature,
+  advTimeoutSeconds,
+  initFromNovel: initAiParamsFromNovel,
+  initFromVideo: initAiParamsFromVideo,
+} = useAiGenerationParams()
+
 const storyboardUserPrompt = ref('') // 额外要求（user_prompt）
-
-// 高级 AI 参数（0 = 使用系统默认，不覆盖）
 const showAdvancedParams = ref(false)
-const advMaxTokens = ref(0)
-const advTemperature = ref(0)
-const advTimeoutSeconds = ref(0)
 
-// 从 video 初始化节奏/时长（只在首次加载时初始化，不随后续 video 更新而重置用户手动选择）
+// 仅在 cookie 未记录时，从 DB 读取默认值（cookie 优先）
 let pacingInitialized = false
 watch(video, (v) => {
   if (v && !pacingInitialized) {
-    pacing.value = v.pacing ?? 'normal'
-    targetDuration.value = v.target_duration ?? 0
+    initAiParamsFromVideo(v)
     pacingInitialized = true
   }
 }, { immediate: true })
 
-// 从项目配置（novel）读取 AI 高级参数默认值
 watch(() => novelStore.currentNovel, (n) => {
-  if (n) {
-    if (advMaxTokens.value === 0 && n.max_tokens) advMaxTokens.value = n.max_tokens
-    if (advTemperature.value === 0 && n.temperature) advTemperature.value = n.temperature
-    if (advTimeoutSeconds.value === 0 && n.timeout_seconds) advTimeoutSeconds.value = n.timeout_seconds
-  }
+  initAiParamsFromNovel(n)
 }, { immediate: true })
 
 const pacingOptions = [
@@ -897,7 +895,20 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
 }
 
 // ──────── Ken Burns ────────
-const KB_ANIMATIONS = ['kb-zoom-in', 'kb-pan-left', 'kb-pan-right', 'kb-zoom-tl', 'kb-zoom-out'] as const
+const KB_ANIMATIONS = [
+  'kb-zoom-in',       // 中心放大
+  'kb-zoom-out',      // 中心缩小
+  'kb-pan-left',      // 向左平移
+  'kb-pan-right',     // 向右平移
+  'kb-pan-up',        // 向上平移
+  'kb-pan-down',      // 向下平移
+  'kb-zoom-tl',       // 左上角放大
+  'kb-zoom-tr',       // 右上角放大
+  'kb-zoom-bl',       // 左下角放大
+  'kb-zoom-br',       // 右下角放大
+  'kb-drift-diag',    // 对角漂移
+  'kb-slow-reveal',   // 慢速全景展开
+] as const
 
 function kenBurnsStyle(shot: StoryboardShot): string {
   const animName = KB_ANIMATIONS[shot.id % KB_ANIMATIONS.length]
@@ -1037,20 +1048,21 @@ function timelineSeekByClick(e: MouseEvent) {
   }
 }
 
-// 下载当前镜头素材
-// 跨域 CDN/OSS 链接直接用 <a download> 会被浏览器忽略，改为先 fetch 成 Blob 再触发下载
+// 下载完整 MP4（后端拼接所有分镜后直接流式下载）
 const timelineDownloading = ref(false)
 
 async function timelineDownloadCurrent() {
-  const shot = timelineCurrentShot.value
-  if (!shot || timelineDownloading.value) return
-  const url = shot.video_url || shot.image_url
-  if (!url) return
-  const ext = shot.video_url ? 'mp4' : 'jpg'
-  const filename = `shot-${shot.shot_no}.${ext}`
+  if (timelineDownloading.value) return
+  const config = useRuntimeConfig()
+  const apiBase = config.public.apiBase
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+  const url = `${apiBase}/api/v1/videos/${props.videoId}/download`
+  const filename = `inkframe-video-${props.videoId}.mp4`
   timelineDownloading.value = true
   try {
-    const resp = await fetch(url)
+    const resp = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const blob = await resp.blob()
     const objectUrl = URL.createObjectURL(blob)
@@ -1061,15 +1073,8 @@ async function timelineDownloadCurrent() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(objectUrl)
-  } catch {
-    // CORS 不允许时回退到直接跳转（浏览器自行决定处理方式）
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.target = '_blank'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+  } catch (e) {
+    toast.error('下载失败，请先完成视频拼接')
   } finally {
     timelineDownloading.value = false
   }
@@ -2478,8 +2483,8 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   <!-- 下载 -->
                   <button
                     class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
-                    title="下载当前镜头素材"
-                    :disabled="(!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url) || timelineDownloading"
+                    title="下载完整 MP4"
+                    :disabled="timelineDownloading"
                     @click="timelineDownloadCurrent"
                   >
                     <svg v-if="timelineDownloading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2527,8 +2532,8 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
               </button>
               <button
                 class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
-                title="下载当前镜头素材"
-                :disabled="(!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url) || timelineDownloading"
+                title="下载完整 MP4"
+                :disabled="timelineDownloading"
                 @click="timelineDownloadCurrent"
               >
                 <svg v-if="timelineDownloading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a10 10 0 100 20v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/></svg>
@@ -2886,24 +2891,62 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
      scoped CSS renames @keyframes (e.g. kb-zoom-in → kb-zoom-in-[hash]),
      but inline styles from JS still reference the original names. -->
 <style>
+/* ── 基础缩放 ─────────────────────────────────────── */
 @keyframes kb-zoom-in {
   from { transform: scale(1.0); }
-  to   { transform: scale(1.18); }
-}
-@keyframes kb-pan-left {
-  from { transform: scale(1.1) translateX(4%); }
-  to   { transform: scale(1.15) translateX(-4%); }
-}
-@keyframes kb-pan-right {
-  from { transform: scale(1.1) translateX(-4%); }
-  to   { transform: scale(1.15) translateX(4%); }
-}
-@keyframes kb-zoom-tl {
-  from { transform: scale(1.0) translate(4%, 3%); }
-  to   { transform: scale(1.18) translate(-2%, -2%); }
+  to   { transform: scale(1.2); }
 }
 @keyframes kb-zoom-out {
-  from { transform: scale(1.18); }
+  from { transform: scale(1.2); }
   to   { transform: scale(1.0); }
+}
+
+/* ── 纯平移（带轻微缩放以保证无黑边）──────────────── */
+@keyframes kb-pan-left {
+  from { transform: scale(1.12) translateX(5%); }
+  to   { transform: scale(1.12) translateX(-5%); }
+}
+@keyframes kb-pan-right {
+  from { transform: scale(1.12) translateX(-5%); }
+  to   { transform: scale(1.12) translateX(5%); }
+}
+@keyframes kb-pan-up {
+  from { transform: scale(1.12) translateY(5%); }
+  to   { transform: scale(1.12) translateY(-5%); }
+}
+@keyframes kb-pan-down {
+  from { transform: scale(1.12) translateY(-5%); }
+  to   { transform: scale(1.12) translateY(5%); }
+}
+
+/* ── 四角放大（视觉焦点向角落移动）─────────────────── */
+@keyframes kb-zoom-tl {
+  from { transform: scale(1.0) translate(5%, 4%); }
+  to   { transform: scale(1.2) translate(-2%, -2%); }
+}
+@keyframes kb-zoom-tr {
+  from { transform: scale(1.0) translate(-5%, 4%); }
+  to   { transform: scale(1.2) translate(2%, -2%); }
+}
+@keyframes kb-zoom-bl {
+  from { transform: scale(1.0) translate(5%, -4%); }
+  to   { transform: scale(1.2) translate(-2%, 2%); }
+}
+@keyframes kb-zoom-br {
+  from { transform: scale(1.0) translate(-5%, -4%); }
+  to   { transform: scale(1.2) translate(2%, 2%); }
+}
+
+/* ── 对角漂移（缩小+对角滑动，电影感强）────────────── */
+@keyframes kb-drift-diag {
+  from { transform: scale(1.15) translate(-4%, -3%); }
+  to   { transform: scale(1.05) translate(4%, 3%); }
+}
+
+/* ── 慢速全景展开（从中心向外扩散）─────────────────── */
+@keyframes kb-slow-reveal {
+  0%   { transform: scale(1.3); }
+  40%  { transform: scale(1.15) translateX(-3%); }
+  100% { transform: scale(1.0) translateX(0); }
 }
 </style>

@@ -160,18 +160,8 @@ onMounted(async () => {
   if (wordCountOverride.value === 0) {
     wordCountOverride.value = computeDefaultWordCount(novel.value)
   }
-  // 从项目配置读取 AI 高级参数默认值（用户可在高级参数面板中覆盖）
-  if (novel.value) {
-    if (advMaxTokens.value === 0 && novel.value.max_tokens) {
-      advMaxTokens.value = novel.value.max_tokens
-    }
-    if (advTemperature.value === 0 && novel.value.temperature) {
-      advTemperature.value = novel.value.temperature
-    }
-    if (advTimeoutSeconds.value === 0 && novel.value.timeout_seconds) {
-      advTimeoutSeconds.value = novel.value.timeout_seconds
-    }
-  }
+  // 从项目配置读取 AI 高级参数默认值（cookie 中已有值时跳过，保留用户手动设置）
+  initAiParamsFromNovel(novel.value)
   // Restore tab from URL query
   const tabParam = route.query.tab as string | undefined
   if (tabParam === 'script') {
@@ -511,14 +501,18 @@ const currentVideoId = ref<number | null>(null)
 const videoEditorRef = ref<any>(null)
 const generatingScript = ref(false)
 const scriptUserPrompt = ref('')
-const scriptPacing = ref<'slow' | 'normal' | 'fast'>('normal')
-const scriptTargetDuration = ref<number>(0)
-const scriptVoiceMode = ref<'both' | 'narration' | 'dialogue'>('both')
+// AI 参数从 cookie 恢复（刷新页面后保留用户手动设置的值）
+const {
+  pacing: scriptPacing,
+  targetDuration: scriptTargetDuration,
+  voiceMode: scriptVoiceMode,
+  advMaxTokens,
+  advTemperature,
+  advTimeoutSeconds,
+  initFromNovel: initAiParamsFromNovel,
+} = useAiGenerationParams()
 // 高级 AI 参数（各面板共享，0 = 使用系统默认，不覆盖）
 const showAdvancedParams = ref(false)
-const advMaxTokens = ref(0)
-const advTemperature = ref(0)
-const advTimeoutSeconds = ref(0)
 
 // 脚本面板保留独立别名，方便模板区分（实际指向同一组 ref）
 const showScriptAdvancedParams = showAdvancedParams
