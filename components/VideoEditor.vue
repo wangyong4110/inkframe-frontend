@@ -142,6 +142,7 @@ const timelineResizingShotId = ref<number | null>(null)
 const timelineResizeDraft = ref<Record<number, number>>({})
 const timelinePlaybackSpeed = ref(1.0)
 const timelineMasterVolume = ref(80)
+const timelineMuted = ref(false)
 
 // Export
 const stitching = ref(false)
@@ -1052,6 +1053,19 @@ function timelineDownloadCurrent() {
 }
 
 // 实时更新正在播放的媒体的音量和速度
+function timelineCycleSpeed() {
+  const speeds = [0.5, 1.0, 1.5, 2.0]
+  const idx = speeds.indexOf(timelinePlaybackSpeed.value)
+  timelinePlaybackSpeed.value = speeds[(idx + 1) % speeds.length]
+}
+
+watch(timelineMuted, (m) => {
+  if (timelineVideoRef.value) timelineVideoRef.value.muted = m
+  if (timelineVoiceRef.value) timelineVoiceRef.value.muted = m
+  if (timelineSfxRef.value) timelineSfxRef.value.muted = m
+  if (timelineBgmRef.value) timelineBgmRef.value.muted = m
+})
+
 watch(timelineMasterVolume, (v) => {
   const vol = v / 100
   if (timelineVideoRef.value) timelineVideoRef.value.volume = vol
@@ -2319,7 +2333,7 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
           <div class="w-72 flex-shrink-0">
             <div
               ref="timelinePreviewRef"
-              class="relative bg-black rounded-lg overflow-hidden group"
+              class="timeline-preview relative bg-black rounded-lg overflow-hidden group"
               style="aspect-ratio:16/9"
             >
               <video
@@ -2370,6 +2384,87 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                 </svg>
               </button>
+
+              <!-- ── 悬浮控制栏（hover 显示，全屏时常驻） ── -->
+              <div class="timeline-overlay absolute bottom-0 left-0 right-0 px-2.5 pt-6 pb-2 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
+                <!-- 进度条 -->
+                <div
+                  class="w-full bg-white/30 rounded-full h-1 mb-2 cursor-pointer"
+                  @click="timelineSeekByClick"
+                >
+                  <div
+                    class="h-full bg-white rounded-full transition-none"
+                    :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`"
+                  />
+                </div>
+                <!-- 控制按钮行 -->
+                <div class="flex items-center gap-1 text-white">
+                  <!-- 上一镜头 -->
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
+                    title="上一镜头" :disabled="timelineCurrentShotIndex === 0"
+                    @click="timelineSeekToShot(timelineCurrentShotIndex - 1)"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                  </button>
+                  <!-- 播放/暂停 -->
+                  <button
+                    class="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                    @click="timelinePlaying ? timelinePause() : timelinePlay()"
+                  >
+                    <svg v-if="!timelinePlaying" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  </button>
+                  <!-- 下一镜头 -->
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
+                    title="下一镜头" :disabled="timelineCurrentShotIndex >= timelineOrderedShots.length - 1"
+                    @click="timelineSeekToShot(timelineCurrentShotIndex + 1)"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+                  </button>
+                  <!-- 时间 -->
+                  <span class="text-[10px] font-mono tabular-nums text-white/80 mx-1 flex-1 text-center">
+                    {{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}
+                  </span>
+                  <!-- 倍速（点击循环切换） -->
+                  <button
+                    class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/20 hover:bg-white/30 transition-colors tabular-nums"
+                    title="切换播放速度" @click="timelineCycleSpeed"
+                  >{{ timelinePlaybackSpeed }}×</button>
+                  <!-- 静音切换 -->
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+                    :title="timelineMuted ? '取消静音' : '静音'"
+                    @click="timelineMuted = !timelineMuted"
+                  >
+                    <svg v-if="!timelineMuted" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6m0-6l6 6"/>
+                    </svg>
+                  </button>
+                  <!-- 音量滑块 -->
+                  <input
+                    v-model.number="timelineMasterVolume"
+                    type="range" min="0" max="100" step="5"
+                    class="w-14 accent-white h-1 cursor-pointer"
+                    :disabled="timelineMuted"
+                  />
+                  <!-- 下载 -->
+                  <button
+                    class="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 disabled:opacity-30 transition-colors"
+                    title="下载当前镜头素材"
+                    :disabled="!timelineCurrentShot?.video_url && !timelineCurrentShot?.image_url"
+                    @click="timelineDownloadCurrent"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
             <p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500 line-clamp-2 leading-snug">
               {{ timelineCurrentShot?.description || timelineCurrentShot?.narration || '—' }}
@@ -2403,13 +2498,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
                 @click="timelineSeekToShot(timelineCurrentShotIndex + 1)"
               >
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
-              </button>
-              <button
-                class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0"
-                title="停止"
-                @click="timelineStop"
-              >
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
               </button>
               <button
                 class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 flex items-center justify-center flex-shrink-0 disabled:opacity-30"
@@ -2744,7 +2832,33 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
 .slide-right-leave-to {
   opacity: 0;
 }
-/* ── Ken Burns effects ────────────────────────────────── */
+/* ── 全屏时控制栏常驻显示（不依赖 scoped，class 选择器正常工作）─── */
+.timeline-preview:fullscreen .timeline-overlay,
+.timeline-preview:-webkit-full-screen .timeline-overlay,
+.timeline-preview:-moz-full-screen .timeline-overlay {
+  opacity: 1 !important;
+}
+/* 全屏时让 rounded 和 overflow 生效 */
+.timeline-preview:fullscreen,
+.timeline-preview:-webkit-full-screen {
+  border-radius: 0;
+}
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%) scaleX(0.4); }
+  50%  { transform: translateX(80%)   scaleX(0.8); }
+  100% { transform: translateX(300%)  scaleX(0.4); }
+}
+.progress-indeterminate {
+  width: 40%;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+</style>
+
+<!-- Ken Burns keyframes must be in a non-scoped block:
+     scoped CSS renames @keyframes (e.g. kb-zoom-in → kb-zoom-in-[hash]),
+     but inline styles from JS still reference the original names. -->
+<style>
 @keyframes kb-zoom-in {
   from { transform: scale(1.0); }
   to   { transform: scale(1.18); }
@@ -2764,15 +2878,5 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard })
 @keyframes kb-zoom-out {
   from { transform: scale(1.18); }
   to   { transform: scale(1.0); }
-}
-
-@keyframes indeterminate {
-  0%   { transform: translateX(-100%) scaleX(0.4); }
-  50%  { transform: translateX(80%)   scaleX(0.8); }
-  100% { transform: translateX(300%)  scaleX(0.4); }
-}
-.progress-indeterminate {
-  width: 40%;
-  animation: indeterminate 1.4s ease-in-out infinite;
 }
 </style>
