@@ -277,6 +277,52 @@ const timelineOrderedShots = computed(() => {
 })
 const timelineCurrentShot = computed(() => timelineOrderedShots.value[timelineCurrentShotIndex.value] ?? null)
 
+// ── Timeline subtitle styles (按项目配置渲染字幕) ──────────────────────────────
+// font_size 是终片参考值（1080p），预览按 0.3 缩放并限制在 10–22px
+const timelineSubtitleTextStyle = computed(() => {
+  const cfg = subtitleConfig.value
+  const size = Math.max(10, Math.min(22, Math.round(cfg.font_size * 0.3)))
+  const style: Record<string, string> = {
+    fontSize: `${size}px`,
+    color: cfg.color || '#FFFFFF',
+    lineHeight: '1.4',
+    display: 'inline-block',
+    maxWidth: '90%',
+    wordBreak: 'break-word',
+    borderRadius: '3px',
+    padding: '2px 8px',
+  }
+  if (cfg.bg_style === 'shadow') {
+    style.textShadow = '1px 1px 3px rgba(0,0,0,1), -1px -1px 3px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,0.8)'
+  } else if (cfg.bg_style === 'box') {
+    style.backgroundColor = 'rgba(0,0,0,0.72)'
+  }
+  // bg_style === 'none': no extra styles
+  return style
+})
+
+const timelineSubtitleContainerStyle = computed(() => {
+  const pos = subtitleConfig.value.position
+  const base: Record<string, string> = {
+    position: 'absolute',
+    left: '0',
+    right: '0',
+    textAlign: 'center',
+    pointerEvents: 'none',
+    zIndex: '10',
+  }
+  if (pos === 'top') {
+    base.top = '8px'
+  } else if (pos === 'middle') {
+    base.top = '50%'
+    base.transform = 'translateY(-50%)'
+  } else {
+    // bottom — leave room above the controls overlay (≈36px)
+    base.bottom = '40px'
+  }
+  return base
+})
+
 const TL_PX_PER_SEC = 16   // pixels per second for vertical timeline scale
 
 // Effective duration: max(shot.duration, sum of voice segment duration_secs)
@@ -3382,9 +3428,12 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
               </svg>
               <span class="text-xs text-gray-600">点击播放预览</span>
             </div>
-            <!-- Subtitle overlay -->
-            <div v-if="timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)" class="absolute bottom-2 left-2 right-2 text-center pointer-events-none">
-              <span class="inline-block bg-black/75 text-white text-xs px-2 py-1 rounded leading-snug">
+            <!-- Subtitle overlay — 按项目配置渲染 -->
+            <div
+              v-if="subtitleEnabled && timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
+              :style="timelineSubtitleContainerStyle"
+            >
+              <span :style="timelineSubtitleTextStyle">
                 {{ effectiveSubtitle(timelineCurrentShot) }}
               </span>
             </div>
