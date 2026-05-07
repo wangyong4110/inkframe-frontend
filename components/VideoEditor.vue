@@ -811,7 +811,10 @@ async function handleGenerateAllVoice() {
       return
     }
     batchVoiceTaskId.value = taskId
-    toast.info(`批量配音任务已提交（${shotCount} 个分镜），顺序处理中…`)
+    const totalShots = shots.value.length
+    const remaining = totalShots - shotCount
+    const remainingHint = remaining > 0 ? `，还有 ${remaining} 个未处理，完成后可再次提交` : ''
+    toast.info(`批量配音任务已提交（${shotCount} 个分镜）${remainingHint}，顺序处理中…`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
       batchVoiceGenerating.value = false
@@ -819,7 +822,9 @@ async function handleGenerateAllVoice() {
       if (task.status === 'completed') {
         await videoStore.fetchStoryboard(props.videoId)
         const d = task.data as any
-        toast.success(`批量配音完成：成功 ${d?.success ?? 0} 个，失败 ${d?.fail ?? 0} 个`)
+        const newRemaining = totalShots - shotCount - (d?.success ?? 0) + (d?.fail ?? 0)
+        const moreHint = newRemaining > 0 ? `（还有约 ${Math.max(0, remaining - (d?.success ?? 0))} 个待处理）` : ''
+        toast.success(`批量配音完成：成功 ${d?.success ?? 0} 个，失败 ${d?.fail ?? 0} 个${moreHint}`)
       } else {
         toast.error('批量配音任务失败，请重试')
       }
@@ -1281,18 +1286,24 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
     const res = await api.generateSegmentVoice(props.videoId, shot.id, seg.id)
     const taskId = res.data?.task_id
     if (taskId) {
+      // 异步 Task 路径（后端返回 task_id）
       toast.info(`片段 ${seg.seq_no} 配音生成中…`)
       useTaskStore().trackTask(taskId, async (task) => {
         generatingSegmentVoice.value[seg.id] = false
         if (task.status === 'completed') {
           await loadSegments(shot)
-          // 刷新分镜列表，以获取后端更新后的 duration
           await videoStore.fetchStoryboard(props.videoId)
           toast.success(`片段 ${seg.seq_no} 配音已完成`)
         } else {
           toast.error(`片段 ${seg.seq_no} 配音失败`)
         }
       })
+    } else {
+      // 同步路径兜底：后端直接返回更新后的 segment（无 task_id）
+      generatingSegmentVoice.value[seg.id] = false
+      await loadSegments(shot)
+      await videoStore.fetchStoryboard(props.videoId)
+      toast.success(`片段 ${seg.seq_no} 配音已完成`)
     }
   } catch (e: any) {
     toast.error('配音失败：' + (e.message || ''))
@@ -1328,7 +1339,8 @@ function timelineFindCurrentBgmSeg() {
   const shot = timelineCurrentShot.value
   if (!shot) return null
   return bgmSegments.value.find(seg =>
-    !!seg.url &&
+    // Bug ②修复：仅接受 HTTP(S) URL，过滤本地文件路径（浏览器无法访问）
+    !!seg.url && (seg.url.startsWith('http://') || seg.url.startsWith('https://')) &&
     !seg.disabled &&
     seg.start_shot_no <= shot.shot_no &&
     shot.shot_no <= seg.end_shot_no
@@ -1340,7 +1352,10 @@ function timelineSyncBgmAudio() {
   if (!timelineBgmRef.value) return
   if (seg?.url) {
     const el = timelineBgmRef.value
-    const vol = (timelineMasterVolume.value / 100) * ((seg.volume > 0 ? seg.volume : bgmVolume.value) / 100)
+    // Bug ①修复：seg.volume 是后端 0.0-1.0 浮点，不能再除以 100
+    // 最终音量 = 主音量 × 用户BGM音量 × 分段混音比例
+    const segVol = seg.volume > 0 ? seg.volume : 1.0
+    const vol = (timelineMasterVolume.value / 100) * (bgmVolume.value / 100) * segVol
     el.volume = Math.max(0, Math.min(1, vol))
     el.muted = timelineBgmMuted.value || timelineMuted.value
     if (timelineCurrentBgmSegId.value !== seg.id) {
@@ -1587,7 +1602,7 @@ watch(timelineMasterVolume, (v) => {
   if (timelineVideoRef.value) timelineVideoRef.value.volume = vol
   if (timelineVoiceRef.value) timelineVoiceRef.value.volume = vol
   if (timelineSfxRef.value) timelineSfxRef.value.volume = vol
-  if (timelineBgmRef.value) timelineBgmRef.value.volume = vol * (bgmVolume.value / 100)
+  timelineSyncBgmAudio() // 重新计算 BGM 音量（含 seg.volume、bgmVolume 三因子）
 })
 watch(timelinePlaybackSpeed, (speed) => {
   if (timelineVideoRef.value) timelineVideoRef.value.playbackRate = speed
