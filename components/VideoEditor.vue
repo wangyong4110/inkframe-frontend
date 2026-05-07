@@ -1382,39 +1382,65 @@ function timelineSyncMedia() {
   if (!shot) return
   const vol = timelineMasterVolume.value / 100
   const speed = timelinePlaybackSpeed.value
+  // 精确时间点：进度条 seek / 镜头切换时定位到 shot 内偏移量
+  const seekTo = timelineShotElapsed.value
+
+  // 通用同步函数：同一 src 直接 seek；新 src 等 canplay 后 seek 再播放
+  // seekOverride: 若非 undefined，使用该值而非外层 seekTo（用于 SFX start_offset 精确定位）
+  function syncMediaEl(
+    el: HTMLMediaElement | null,
+    url: string | undefined,
+    options: { volume?: number; muted?: boolean; seekOverride?: number } = {},
+  ) {
+    if (!el) return
+    const targetSrc = url ?? ''
+    const targetSeek = options.seekOverride !== undefined ? options.seekOverride : seekTo
+    el.playbackRate = speed
+    if (options.volume != null) el.volume = options.volume
+    if (options.muted != null) el.muted = options.muted
+    if (!targetSrc) {
+      el.dataset.inkframeSrc = ''
+      el.src = ''
+      return
+    }
+    if (el.dataset.inkframeSrc === targetSrc) {
+      // 同一 src：直接定位（误差 > 0.2s 才 seek，避免无谓抖动）并继续播放
+      if (Math.abs(el.currentTime - targetSeek) > 0.2) el.currentTime = targetSeek
+      if (timelinePlaying.value && el.paused) el.play().catch(() => {})
+    } else {
+      // 新 src：加载后精确定位再播放
+      el.dataset.inkframeSrc = targetSrc
+      el.src = targetSrc
+      el.addEventListener('canplay', () => {
+        if (targetSeek > 0.05) el.currentTime = targetSeek
+        if (timelinePlaying.value) el.play().catch(() => {})
+      }, { once: true })
+    }
+  }
+
   nextTick(() => {
-    if (timelineVideoRef.value) {
-      if (shot.video_url) {
-        timelineVideoRef.value.src = shot.video_url
-        timelineVideoRef.value.volume = vol
-        timelineVideoRef.value.playbackRate = speed
-        timelineVideoRef.value.play().catch(() => {})
-      } else {
-        timelineVideoRef.value.src = ''
-      }
-    }
-    if (timelineVoiceRef.value) {
-      const voiceUrl = shotAudioUrls.value[shot.id] || shot.audio_url
-      if (voiceUrl) {
-        timelineVoiceRef.value.src = voiceUrl
-        timelineVoiceRef.value.volume = vol
-        timelineVoiceRef.value.playbackRate = speed
-        timelineVoiceRef.value.play().catch(() => {})
-      } else {
-        timelineVoiceRef.value.src = ''
-      }
-    }
-    if (timelineSfxRef.value) {
-      if (shot.sfx_url) {
-        timelineSfxRef.value.src = shot.sfx_url
-        timelineSfxRef.value.volume = vol * (shot.sfx_volume ?? 1)
-        timelineSfxRef.value.muted = timelineSfxMuted.value || timelineMuted.value
-        timelineSfxRef.value.playbackRate = speed
-        timelineSfxRef.value.play().catch(() => {})
-      } else {
-        timelineSfxRef.value.src = ''
-      }
-    }
+    syncMediaEl(timelineVideoRef.value, shot.video_url, { volume: vol })
+    syncMediaEl(
+      timelineVoiceRef.value,
+      shotAudioUrls.value[shot.id] || shot.audio_url,
+      { volume: vol },
+    )
+    // SFX: 优先用精确定位的 sfxItem；若 seekTo 在 item 开始之前则静音等待
+    const activeSfxItems = (sfxItems.value[shot.id] ?? []).filter(i => !i.disabled && i.url)
+    const activeSfxItem = activeSfxItems.find(i =>
+      seekTo >= (i.start_offset || 0) &&
+      (!(i.duration_secs) || seekTo < (i.start_offset || 0) + i.duration_secs)
+    ) ?? activeSfxItems[0]
+    const sfxUrl = activeSfxItem?.url || shot.sfx_url
+    const sfxStartOffset = activeSfxItem?.start_offset ?? 0
+    const sfxSeekTo = Math.max(0, seekTo - sfxStartOffset)
+    const sfxMuted = timelineSfxMuted.value || timelineMuted.value ||
+      (activeSfxItem != null && seekTo < sfxStartOffset)
+    syncMediaEl(timelineSfxRef.value, sfxUrl, {
+      volume: vol * (shot.sfx_volume ?? activeSfxItem?.volume ?? 1),
+      muted: sfxMuted,
+      seekOverride: sfxSeekTo,
+    })
     timelineSyncBgmAudio()
   })
 }
@@ -1610,6 +1636,22 @@ watch(timelinePlaybackSpeed, (speed) => {
   if (timelineSfxRef.value) timelineSfxRef.value.playbackRate = speed
 })
 
+// timelineSfxBlocks 为单个分镜计算每条 SFX 音效的精确位置（top/height in px，left/width in %）。
+// 多条音效横向等分 SFX 轨道宽度，纵向按 start_offset 和 duration_secs 精确定位。
+function timelineSfxBlocks(shotId: number, shotDuration: number) {
+  const items = (sfxItems.value[shotId] ?? []).filter(i => !i.disabled && i.url)
+  if (items.length === 0) return []
+  const n = items.length
+  const slotW = 100 / n   // 每条音效占 SFX 列宽度的百分比
+  return items.map((item, idx) => ({
+    item,
+    top: (item.start_offset || 0) * TL_PX_PER_SEC,
+    height: Math.max(4, ((item.duration_secs || shotDuration) * TL_PX_PER_SEC)),
+    left: idx * slotW,
+    width: slotW,
+  }))
+}
+
 async function timelineSaveShot(shotId: number) {
   const draft = timelineEditDraft.value[shotId]
   if (!draft) return
@@ -1700,7 +1742,7 @@ watch(activeTab, async (tab, prevTab) => {
       await loadBGMSegments()
     }
     // SFX: load all sfx items for each shot
-    if (tab === 'sfx') {
+    if (tab === 'sfx' || tab === 'timeline') {
       await loadSFXItems()
     }
     // Voice: reload segments for the currently expanded shot (if any)
@@ -3277,13 +3319,26 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
               />
             </div>
 
-            <!-- SFX track cell -->
-            <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center px-3">
+            <!-- SFX track cell — per-item precise position blocks -->
+            <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden">
+              <template v-if="timelineSfxBlocks(shot.id, timelineEffectiveDuration(shot)).length > 0">
+                <div
+                  v-for="{ item, top, height, left, width } in timelineSfxBlocks(shot.id, timelineEffectiveDuration(shot))"
+                  :key="item.id"
+                  class="absolute rounded-sm transition-opacity"
+                  :class="item.disabled ? 'opacity-20 bg-gray-400' : 'bg-orange-400 dark:bg-orange-500'"
+                  :style="`top:${top}px; height:${height}px; left:${left}%; width:${width}%; padding:0 1px`"
+                  :title="`${item.tag} · ${item.source}${item.duration_secs ? ' · ' + item.duration_secs.toFixed(1) + 's' : ''}`"
+                />
+              </template>
+              <!-- No SFX items or only shot.sfx_url legacy -->
               <div
-                class="w-full rounded"
-                :class="shot.sfx_url ? 'bg-orange-400 dark:bg-orange-500' : 'bg-gray-200 dark:bg-gray-700'"
-                :style="`height:${Math.min(100, (timelineEffectiveDuration(shot) / (timelineTotalDuration || 1)) * 400)}%`"
+                v-else-if="shot.sfx_url"
+                class="absolute inset-x-1.5 top-0 rounded-sm bg-orange-300 dark:bg-orange-700"
+                :style="`height:${timelineEffectiveDuration(shot) * TL_PX_PER_SEC}px`"
+                title="音效（旧格式）"
               />
+              <div v-else class="absolute inset-x-1.5 top-0 bottom-0 rounded-sm bg-gray-200 dark:bg-gray-700 opacity-40" />
             </div>
 
             <!-- BGM column spacer — visual handled by absolute overlay below -->

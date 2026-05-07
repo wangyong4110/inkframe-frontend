@@ -226,11 +226,13 @@ export interface ShotSFXItem {
   id: number
   shot_id: number
   seq_no: number
-  tag: string       // 音效标签，如 "rain_heavy"
-  url: string       // 音效文件 URL
-  volume: number    // 混音音量（0.1–1.0）
-  source: string    // local/freesound/jamendo/pixabay/elevenlabs
+  tag: string         // 音效标签，如 "rain_heavy"
+  url: string         // 音效文件 URL
+  volume: number      // 混音音量（0.1–1.0）
+  source: string      // local/freesound/elevenlabs
   disabled?: boolean
+  start_offset?: number  // 在分镜中的开始时间（秒，0=分镜起始）
+  duration_secs?: number // 音效时长（秒，0=未知）
   created_at?: string
 }
 
