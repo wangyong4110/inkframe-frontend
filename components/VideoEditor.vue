@@ -150,6 +150,7 @@ const timelineSfxMuted = ref(false)
 const timelineBgmMuted = ref(false)
 const timelineRecording = ref(false)
 const timelineMediaRecorder = ref<MediaRecorder | null>(null)
+const timelineCurrentBgmSegId = ref<number | null>(null)
 
 // Export
 const stitching = ref(false)
@@ -793,7 +794,9 @@ async function loadBGMSegments() {
   try {
     const res = await api.listBGMSegments(props.videoId)
     bgmSegments.value = (res as any)?.data ?? []
-  } catch { /* ignore */ }
+  } catch (e) {
+    console.error('[BGM] loadBGMSegments failed:', e)
+  }
 }
 
 // 批量将旁白/台词复制到字幕字段（仅填充未自定义字幕的镜头）
@@ -1252,6 +1255,37 @@ function kenBurnsStyle(shot: StoryboardShot): string {
 }
 
 // ──────── Timeline ────────
+function timelineFindCurrentBgmSeg() {
+  const shot = timelineCurrentShot.value
+  if (!shot) return null
+  return bgmSegments.value.find(seg =>
+    !!seg.url &&
+    seg.start_shot_no <= shot.shot_no &&
+    shot.shot_no <= seg.end_shot_no
+  ) ?? null
+}
+
+function timelineSyncBgmAudio() {
+  const seg = timelineFindCurrentBgmSeg()
+  if (!timelineBgmRef.value) return
+  if (seg?.url) {
+    const vol = (timelineMasterVolume.value / 100) * ((seg.volume > 0 ? seg.volume : bgmVolume.value) / 100)
+    timelineBgmRef.value.volume = vol
+    timelineBgmRef.value.muted = timelineBgmMuted.value || timelineMuted.value
+    if (timelineCurrentBgmSegId.value !== seg.id) {
+      timelineCurrentBgmSegId.value = seg.id
+      timelineBgmRef.value.src = seg.url
+    }
+    if (timelinePlaying.value) {
+      timelineBgmRef.value.play().catch(() => {})
+    }
+  } else {
+    timelineCurrentBgmSegId.value = null
+    timelineBgmRef.value.pause()
+    timelineBgmRef.value.src = ''
+  }
+}
+
 function timelineSyncMedia() {
   const shot = timelineCurrentShot.value
   if (!shot) return
@@ -1290,6 +1324,7 @@ function timelineSyncMedia() {
         timelineSfxRef.value.src = ''
       }
     }
+    timelineSyncBgmAudio()
   })
 }
 
@@ -1314,11 +1349,6 @@ function timelinePlay() {
   if (timelinePlaying.value) return
   timelinePlaying.value = true
   timelineSyncMedia()
-  if (timelineBgmRef.value && selectedBgm.value) {
-    timelineBgmRef.value.volume = bgmVolume.value / 100
-    timelineBgmRef.value.muted = timelineBgmMuted.value || timelineMuted.value
-    timelineBgmRef.value.play().catch(() => {})
-  }
   timelineTimer.value = setInterval(timelineTick, 100)
 }
 
@@ -1336,6 +1366,7 @@ function timelineStop() {
   timelineCurrentShotIndex.value = 0
   timelineShotElapsed.value = 0
   timelineTotalElapsed.value = 0
+  timelineCurrentBgmSegId.value = null
 }
 
 function timelineSeekToShot(idx: number) {
@@ -1427,13 +1458,13 @@ watch(timelineMuted, (m) => {
   if (timelineVideoRef.value) timelineVideoRef.value.muted = m
   if (timelineVoiceRef.value) timelineVoiceRef.value.muted = m
   if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineSfxMuted.value
-  if (timelineBgmRef.value) timelineBgmRef.value.muted = m || timelineBgmMuted.value
+  timelineSyncBgmAudio()
 })
 watch(timelineSfxMuted, (m) => {
   if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineMuted.value
 })
-watch(timelineBgmMuted, (m) => {
-  if (timelineBgmRef.value) timelineBgmRef.value.muted = m || timelineMuted.value
+watch(timelineBgmMuted, () => {
+  timelineSyncBgmAudio()
 })
 
 async function timelineToggleRecording() {
@@ -3213,10 +3244,10 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
           <svg class="w-3.5 h-3.5 text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
-          <span v-if="selectedBgm" class="text-purple-600 dark:text-purple-400 font-medium">
-            {{ BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm }} · {{ bgmVolume }}%
+          <span v-if="bgmSegments.some(s => s.url)" class="text-purple-600 dark:text-purple-400 font-medium">
+            {{ bgmSegments.filter(s => s.url).length }}/{{ bgmSegments.length }} 段 BGM · {{ bgmVolume }}%
           </span>
-          <span v-else class="text-gray-400">背景音乐：未选择（在「背景音乐」Tab 中设置）</span>
+          <span v-else class="text-gray-400">背景音乐：未设置（在「背景音乐」Tab 中生成）</span>
         </div>
       </div>
 
@@ -3456,9 +3487,9 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
               @click="timelineBgmMuted = !timelineBgmMuted"
               :title="timelineBgmMuted ? '点击开启背景音乐' : '点击关闭背景音乐'"
             >
-              <div class="w-2 h-2 rounded-full flex-shrink-0 transition-colors" :class="selectedBgm && !timelineBgmMuted ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
+              <div class="w-2 h-2 rounded-full flex-shrink-0 transition-colors" :class="bgmSegments.some(s => s.url) && !timelineBgmMuted ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
               <span class="w-10 flex-shrink-0 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600 line-through' : 'text-gray-500 dark:text-gray-400'">背景音乐</span>
-              <span class="truncate flex-1 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'">{{ selectedBgm ? (timelineBgmMuted ? '已静音' : (BGM_OPTIONS.find(b => b.id === selectedBgm)?.name ?? selectedBgm)) : '—' }}</span>
+              <span class="truncate flex-1 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'">{{ bgmSegments.length > 0 ? (timelineBgmMuted ? '已静音' : `${bgmSegments.filter(s => s.url).length}/${bgmSegments.length} 段`) : '—' }}</span>
               <svg v-if="timelineBgmMuted" class="w-3 h-3 flex-shrink-0 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
               <svg v-else class="w-3 h-3 flex-shrink-0 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
             </div>
