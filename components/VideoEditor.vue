@@ -1269,15 +1269,21 @@ function timelineSyncBgmAudio() {
   const seg = timelineFindCurrentBgmSeg()
   if (!timelineBgmRef.value) return
   if (seg?.url) {
+    const el = timelineBgmRef.value
     const vol = (timelineMasterVolume.value / 100) * ((seg.volume > 0 ? seg.volume : bgmVolume.value) / 100)
-    timelineBgmRef.value.volume = vol
-    timelineBgmRef.value.muted = timelineBgmMuted.value || timelineMuted.value
+    el.volume = Math.max(0, Math.min(1, vol))
+    el.muted = timelineBgmMuted.value || timelineMuted.value
     if (timelineCurrentBgmSegId.value !== seg.id) {
+      // New segment: set src and wait for canplay before playing
       timelineCurrentBgmSegId.value = seg.id
-      timelineBgmRef.value.src = seg.url
-    }
-    if (timelinePlaying.value) {
-      timelineBgmRef.value.play().catch(() => {})
+      el.src = seg.url
+      el.load()
+      if (timelinePlaying.value) {
+        el.addEventListener('canplay', () => { el.play().catch(() => {}) }, { once: true })
+      }
+    } else if (timelinePlaying.value && el.paused) {
+      // Same segment but paused (e.g. after resume): play immediately if already loaded
+      el.play().catch(() => {})
     }
   } else {
     timelineCurrentBgmSegId.value = null
@@ -1639,6 +1645,10 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
 
 <template>
   <div class="space-y-4">
+    <!-- Timeline hidden audio elements — always mounted so refs are never null -->
+    <audio ref="timelineVoiceRef" class="hidden" preload="auto" />
+    <audio ref="timelineSfxRef" class="hidden" preload="auto" />
+    <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
 
     <!-- Tabs -->
     <div class="border-b border-gray-200 dark:border-gray-700">
@@ -3049,11 +3059,6 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
          时间线 Tab
          ============================== -->
     <div v-if="activeTab === 'timeline' && !tabLoading" class="space-y-3">
-      <!-- Hidden audio-only elements -->
-      <audio ref="timelineVoiceRef" class="hidden" preload="auto" />
-      <audio ref="timelineSfxRef" class="hidden" preload="auto" />
-      <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
-
       <!-- Vertical timeline grid (full width) -->
       <div class="card overflow-hidden">
         <!-- Column headers (sticky) -->

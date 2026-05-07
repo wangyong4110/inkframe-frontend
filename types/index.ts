@@ -269,7 +269,7 @@ export interface VideoBGMSegment {
   duration_secs?: number
   track_name?: string
   track_artist?: string
-  source?: string // jamendo/local/none
+  source?: string // jamendo/pixabay/local/none
   created_at?: string
   updated_at?: string
 }
