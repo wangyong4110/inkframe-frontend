@@ -1054,6 +1054,29 @@ async function updateSFXItemVolume(shot: StoryboardShot, item: import('~/types')
   if (idx !== -1) list[idx] = { ...list[idx], volume }
 }
 
+async function toggleSFXItemDisabled(shot: StoryboardShot, item: import('~/types').ShotSFXItem) {
+  const api = useVideoApi()
+  const disabled = !item.disabled
+  await api.toggleShotSFXItem(props.videoId, shot.id, item.id, disabled)
+  const list = sfxItems.value[shot.id] ?? []
+  const idx = list.findIndex(i => i.id === item.id)
+  if (idx !== -1) list[idx] = { ...list[idx], disabled }
+}
+
+async function toggleBGMSegmentDisabled(seg: import('~/types').VideoBGMSegment) {
+  const api = useVideoApi()
+  const disabled = !seg.disabled
+  await api.toggleBGMSegment(props.videoId, seg.id, disabled)
+  const idx = bgmSegments.value.findIndex(s => s.id === seg.id)
+  if (idx !== -1) bgmSegments.value[idx] = { ...bgmSegments.value[idx], disabled }
+  // 若正在播放且该 BGM 被禁用，立即停止 BGM 音频
+  if (disabled && timelineCurrentBgmSegId.value === seg.id) {
+    timelineCurrentBgmSegId.value = null
+    timelineBgmRef.value?.pause()
+    timelineBgmRef.value && (timelineBgmRef.value.src = '')
+  }
+}
+
 // ──────── Export ────────
 async function handleStitch() {
   stitching.value = true
@@ -1260,6 +1283,7 @@ function timelineFindCurrentBgmSeg() {
   if (!shot) return null
   return bgmSegments.value.find(seg =>
     !!seg.url &&
+    !seg.disabled &&
     seg.start_shot_no <= shot.shot_no &&
     shot.shot_no <= seg.end_shot_no
   ) ?? null
@@ -2695,12 +2719,26 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
         <div
           v-for="seg in bgmSegments"
           :key="seg.id"
-          class="card p-4"
+          class="card p-4 transition-opacity"
+          :class="seg.disabled ? 'opacity-50' : ''"
         >
           <div class="flex items-start gap-3">
-            <!-- Segment badge -->
-            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-400">
-              {{ seg.seq_no }}
+            <!-- Segment badge + disable toggle -->
+            <div class="flex flex-col items-center gap-1 flex-shrink-0">
+              <div class="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-400">
+                {{ seg.seq_no }}
+              </div>
+              <button
+                class="w-8 h-5 rounded-full transition-colors flex items-center px-0.5"
+                :class="seg.disabled ? 'bg-gray-300 dark:bg-gray-600' : 'bg-purple-500'"
+                :title="seg.disabled ? '点击启用此BGM段' : '点击禁用此BGM段'"
+                @click="toggleBGMSegmentDisabled(seg)"
+              >
+                <span
+                  class="w-4 h-4 rounded-full bg-white shadow transition-transform"
+                  :class="seg.disabled ? 'translate-x-0' : 'translate-x-3'"
+                />
+              </button>
             </div>
             <div class="flex-1 min-w-0">
               <!-- Header row -->
@@ -2994,12 +3032,23 @@ defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
             <div
               v-for="item in sfxItems[shot.id]"
               :key="item.id"
-              class="flex items-center gap-2 px-3 py-2"
+              class="flex items-center gap-2 px-3 py-2 transition-opacity"
+              :class="item.disabled ? 'opacity-40' : ''"
             >
+              <!-- 禁用开关 -->
+              <button
+                class="w-7 h-4 rounded-full transition-colors flex items-center px-0.5 flex-shrink-0"
+                :class="item.disabled ? 'bg-gray-300 dark:bg-gray-600' : 'bg-orange-400'"
+                :title="item.disabled ? '点击启用此音效' : '点击禁用此音效'"
+                @click="toggleSFXItemDisabled(shot, item)"
+              >
+                <span class="w-3 h-3 rounded-full bg-white shadow transition-transform" :class="item.disabled ? 'translate-x-0' : 'translate-x-3'" />
+              </button>
               <!-- 来源徽标 -->
               <span class="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
                 :class="{
                   'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300': item.source === 'freesound',
+                  'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300': item.source === 'pixabay',
                   'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300': item.source === 'jamendo',
                   'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300': item.source === 'elevenlabs',
                   'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': item.source === 'local',

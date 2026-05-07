@@ -509,6 +509,19 @@ export const useVideoApi = () => {
   const deleteShotSFXItem = (videoId: number, shotId: number, itemId: number) =>
     request<void>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, { method: 'DELETE' })
 
+  const toggleShotSFXItem = (videoId: number, shotId: number, itemId: number, disabled: boolean) =>
+    request<ApiResponse<{ id: number; disabled: boolean }>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}/disabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ disabled }),
+    })
+
+  // BGM：禁用/启用 BGM 分段
+  const toggleBGMSegment = (videoId: number, segId: number, disabled: boolean) =>
+    request<ApiResponse<{ id: number; disabled: boolean }>>(`/videos/${videoId}/bgm/segments/${segId}/disabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ disabled }),
+    })
+
   const updateVideo = (id: number, data: Partial<Video>) =>
     request<ApiResponse<Video>>(`/videos/${id}`, {
       method: 'PUT',
@@ -628,6 +641,7 @@ export const useVideoApi = () => {
     listShotSFXItems,
     updateShotSFXItem,
     deleteShotSFXItem,
+    toggleShotSFXItem,
     exportCapcut,
     exportVideo,
     getVideoProviders,
@@ -648,6 +662,7 @@ export const useVideoApi = () => {
     generateBGM,
     jamendoSearchBGM,
     applyBGMTrack,
+    toggleBGMSegment,
   }
 }
 
