@@ -1591,58 +1591,53 @@ async function timelineToggleRecording() {
     return
   }
   try {
-    const previewEl = timelinePreviewRef.value
-    if (!previewEl) throw new Error('预览区未初始化')
+    const shot = timelineCurrentShot.value
+    const vidEl = timelineVideoRef.value
 
-    // ── 1. Canvas 镜像预览区（video / 静态图 / 字幕）──────────────────────
-    const pw = previewEl.clientWidth || 1280
-    const ph = previewEl.clientHeight || 720
-    const dpr = window.devicePixelRatio || 1
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(pw * dpr)
-    canvas.height = Math.round(ph * dpr)
-    const c2d = canvas.getContext('2d')!
-    c2d.scale(dpr, dpr)
+    // ── 1. 视频轨道 ────────────────────────────────────────────────────────
+    // 直接从 <video> 元素 captureStream()，不经过 canvas。
+    // HTMLVideoElement.captureStream() 无跨域限制（不暴露像素数据），
+    // 避免 canvas.captureStream() 的 "Canvas is not origin-clean" SecurityError。
+    let videoTrack: MediaStreamTrack | null = null
 
-    function drawRecordingFrame() {
-      c2d.fillStyle = '#000'
-      c2d.fillRect(0, 0, pw, ph)
-      const vidEl = timelineVideoRef.value
-      const shot = timelineCurrentShot.value
-      if (vidEl && vidEl.readyState >= 2 && vidEl.src) {
-        c2d.drawImage(vidEl, 0, 0, pw, ph)
-      } else {
-        // 静态图 object-cover
-        const imgEl = previewEl!.querySelector<HTMLImageElement>('img')
-        if (imgEl?.complete && imgEl.naturalWidth > 0) {
-          const ar = imgEl.naturalWidth / imgEl.naturalHeight
-          const boxAr = pw / ph
-          let sx = 0, sy = 0, sw = imgEl.naturalWidth, sh = imgEl.naturalHeight
-          if (ar > boxAr) { sw = Math.round(sh * boxAr); sx = Math.round((imgEl.naturalWidth - sw) / 2) }
-          else { sh = Math.round(sw / boxAr); sy = Math.round((imgEl.naturalHeight - sh) / 2) }
-          c2d.drawImage(imgEl, sx, sy, sw, sh, 0, 0, pw, ph)
-        }
-      }
-      // 字幕覆盖层
-      if (subtitleEnabled.value && shot) {
-        const text = effectiveSubtitle(shot)
-        if (text) {
-          const fs = Math.max(14, Math.round(ph * 0.045))
+    if (vidEl && shot?.video_url && typeof (vidEl as any).captureStream === 'function') {
+      try {
+        videoTrack = ((vidEl as any).captureStream() as MediaStream).getVideoTracks()[0] ?? null
+      } catch { /* 浏览器不支持，回退到下面的 canvas */ }
+    }
+
+    if (!videoTrack) {
+      // 回退：纯文字 canvas（无 drawImage 跨域内容 → 不会被 taint）
+      // 用于仅有静态图的镜头或视频 captureStream 不可用时
+      const pw = 1280, ph = 720
+      const canvas = document.createElement('canvas')
+      canvas.width = pw; canvas.height = ph
+      const c2d = canvas.getContext('2d')!
+
+      const drawFallback = () => {
+        c2d.fillStyle = '#111'
+        c2d.fillRect(0, 0, pw, ph)
+        if (shot) {
+          const fs = 28
           c2d.font = `bold ${fs}px "PingFang SC","Microsoft YaHei",sans-serif`
           c2d.textAlign = 'center'
-          const mx = c2d.measureText(text)
-          const tx = pw / 2, ty = ph * 0.87
-          c2d.fillStyle = 'rgba(0,0,0,0.6)'
-          c2d.fillRect(tx - mx.width / 2 - 10, ty - fs * 1.15, mx.width + 20, fs * 1.5)
-          c2d.fillStyle = '#fff'
-          c2d.fillText(text, tx, ty)
+          c2d.fillStyle = '#555'
+          c2d.fillText(`Shot #${shot.shot_no}`, pw / 2, ph / 2 - 16)
+          const sub = effectiveSubtitle(shot)
+          if (sub) {
+            c2d.font = `${fs * 0.7}px "PingFang SC","Microsoft YaHei",sans-serif`
+            c2d.fillStyle = '#444'
+            c2d.fillText(sub.slice(0, 60), pw / 2, ph / 2 + 24)
+          }
         }
+        timelineRecordingAnimId.value = requestAnimationFrame(drawFallback)
       }
-      timelineRecordingAnimId.value = requestAnimationFrame(drawRecordingFrame)
+      const canvasStream = canvas.captureStream(30)
+      drawFallback()
+      videoTrack = canvasStream.getVideoTracks()[0] ?? null
     }
-    drawRecordingFrame()
 
-    // ── 2. 音频混音（非破坏性：captureStream → createMediaStreamSource）────
+    // ── 2. 音频混音 ────────────────────────────────────────────────────────
     let audioCtx: AudioContext | null = null
     let mixedTrack: MediaStreamTrack | null = null
     const audioEls = [timelineVoiceRef.value, timelineSfxRef.value, timelineBgmRef.value]
@@ -1663,13 +1658,12 @@ async function timelineToggleRecording() {
       mixedTrack = dest.stream.getAudioTracks()[0] ?? null
     }
 
-    // ── 3. 合并视频 + 音频轨道 ───────────────────────────────────────────
-    const canvasStream = canvas.captureStream(30)
-    const finalTracks = [...canvasStream.getVideoTracks()]
+    // ── 3. 合并轨道并启动录制 ───────────────────────────────────────────────
+    const finalTracks: MediaStreamTrack[] = []
+    if (videoTrack) finalTracks.push(videoTrack)
     if (mixedTrack) finalTracks.push(mixedTrack)
     const stream = new MediaStream(finalTracks)
 
-    // ── 4. 启动录制 ──────────────────────────────────────────────────────
     const chunks: Blob[] = []
     const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
       ? 'video/webm; codecs=vp9'
