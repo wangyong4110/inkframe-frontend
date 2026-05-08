@@ -26,7 +26,10 @@ const showUnconfigured = ref(false)
 const filteredProviders = computed(() =>
   showUnconfigured.value
     ? providers.value
-    : providers.value.filter(p => p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+    : providers.value.filter(p =>
+        p.name === 'ollama' ||  // Ollama 无需 API Key，始终显示
+        (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+      )
 )
 const listLoading = ref(false)
 const showProviderModal = ref(false)
@@ -39,13 +42,19 @@ const revealedKeys = ref<Set<number>>(new Set())
 const providerModelList = ref<string[]>([])
 const fetchingModels = ref(false)
 
+// Ollama 无需 API Key
+const isNoKeyProvider = computed(() => {
+  const name = editingProvider.value?.name ?? providerForm.value.name
+  return name === 'ollama'
+})
+
 async function doFetchProviderModels() {
   const endpoint = providerForm.value.api_endpoint
   const apiKey = providerForm.value.api_key
   const providerId = editingProvider.value?.id
 
   if (!endpoint) { toast.error('请先填写 API 端点'); return }
-  if (!apiKey && !providerId) { toast.error('请先填写 API Key'); return }
+  if (!apiKey && !providerId && !isNoKeyProvider.value) { toast.error('请先填写 API Key'); return }
 
   fetchingModels.value = true
   providerModelList.value = []
@@ -70,7 +79,7 @@ const providerForm = ref({
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
-type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; staticModels?: string[] }
+type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; noApiKey?: boolean; staticModels?: string[] }
 const PROVIDER_OPTIONS = ref<ProviderOption[]>([
   { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
 ])
@@ -85,6 +94,7 @@ async function loadProviderTemplates() {
         label:          t.display_name,
         endpoint:       t.api_endpoint,
         needsSecretKey: t.needs_secret_key,
+        noApiKey:       t.no_api_key ?? false,
         staticModels:   t.static_models,
       })),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
@@ -163,14 +173,16 @@ function onProviderSelect() {
 watch(() => providerForm.value.type, autoDisplayName)
 
 // 填完端点和 Key 后自动获取模型列表（静默，失败则回退手动输入）
+// Ollama：只需端点即可触发（无需 Key）
 let _autoFetchTimer: ReturnType<typeof setTimeout> | null = null
 watch(
-  [() => providerForm.value.api_endpoint, () => providerForm.value.api_key],
+  [() => providerForm.value.api_endpoint, () => providerForm.value.api_key, () => providerForm.value.name],
   ([endpoint, apiKey]) => {
     if (_autoFetchTimer) { clearTimeout(_autoFetchTimer); _autoFetchTimer = null }
     providerModelList.value = []
     const providerId = editingProvider.value?.id
-    if (!endpoint || (!apiKey && !providerId)) return
+    const noKey = isNoKeyProvider.value
+    if (!endpoint || (!apiKey && !providerId && !noKey)) return
     _autoFetchTimer = setTimeout(async () => {
       fetchingModels.value = true
       try {
@@ -223,6 +235,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   deepseek:           'bg-cyan-100    text-cyan-700',
   qianwen:            'bg-rose-100    text-rose-700',
   azure:              'bg-sky-100     text-sky-700',
+  ollama:             'bg-lime-100    text-lime-700',
   'volcengine-visual':'bg-amber-100   text-amber-700',
   seedance:           'bg-violet-100  text-violet-700',
   'doubao-speech':    'bg-teal-100    text-teal-700',
@@ -270,7 +283,7 @@ async function submitProviderForm() {
       await updateProvider(editingProvider.value.id, payload as any)
       toast.success('提供商更新成功')
     } else {
-      if (!providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
+      if (!isNoKeyProvider.value && !providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
       if (selectedProviderNeedsSecretKey.value && !providerForm.value.api_secret_key.trim()) {
         toast.error('该提供商需要 Secret Key（SK）'); providerLoading.value = false; return
       }
@@ -765,7 +778,15 @@ watch(activeTab, (tab) => {
               <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" :disabled="p.tenant_id === 0" @click="handleDeleteProvider(p.id)">删除</button>
             </div>
           </div>
-          <div class="px-5 py-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
+          <!-- Ollama 无需 API Key，显示本地服务提示 -->
+          <div v-if="p.name === 'ollama'" class="px-5 py-3 bg-lime-50 dark:bg-lime-900/10 border-t border-lime-100 dark:border-lime-800 flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-lime-600 dark:text-lime-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+            <span class="text-xs text-lime-700 dark:text-lime-300">本地服务 · 无需 API Key</span>
+            <code class="text-xs font-mono text-lime-600 dark:text-lime-400">{{ p.api_endpoint || 'http://localhost:11434/v1' }}</code>
+          </div>
+          <div v-else class="px-5 py-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
             <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
             </svg>
@@ -979,7 +1000,17 @@ watch(activeTab, (tab) => {
                   :placeholder="selectedProviderEndpoint || 'https://api.example.com/v1'" />
                 <p class="mt-1 text-xs text-gray-400">已预填供应商默认端点，如需使用代理或自定义地址可直接修改</p>
               </div>
-              <div>
+              <!-- Ollama 无 Key 提示 -->
+              <div v-if="isNoKeyProvider" class="rounded-lg bg-lime-50 dark:bg-lime-900/20 border border-lime-200 dark:border-lime-700 px-3 py-2.5 flex items-start gap-2">
+                <svg class="w-4 h-4 text-lime-600 dark:text-lime-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div class="text-xs text-lime-700 dark:text-lime-300">
+                  <span class="font-medium">Ollama 本地服务无需 API Key。</span>
+                  请确保已运行 <code class="font-mono bg-lime-100 dark:bg-lime-800 px-1 rounded">ollama serve</code>，端点默认为 <code class="font-mono bg-lime-100 dark:bg-lime-800 px-1 rounded">http://localhost:11434/v1</code>。
+                </div>
+              </div>
+              <div v-if="!isNoKeyProvider">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   {{ selectedProviderNeedsSecretKey ? credentialMeta.akLabel : 'API Key' }}
                   <span v-if="!editingProvider" class="text-red-500">*</span>

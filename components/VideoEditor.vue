@@ -150,6 +150,7 @@ const timelineSfxMuted = ref(false)
 const timelineBgmMuted = ref(false)
 const timelineRecording = ref(false)
 const timelineMediaRecorder = ref<MediaRecorder | null>(null)
+const timelineRecordingAnimId = ref<number | null>(null)
 const timelineCurrentBgmSegId = ref<number | null>(null)
 
 // Export
@@ -1590,18 +1591,103 @@ async function timelineToggleRecording() {
     return
   }
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 } as any, audio: true })
+    const previewEl = timelinePreviewRef.value
+    if (!previewEl) throw new Error('预览区未初始化')
+
+    // ── 1. Canvas 镜像预览区（video / 静态图 / 字幕）──────────────────────
+    const pw = previewEl.clientWidth || 1280
+    const ph = previewEl.clientHeight || 720
+    const dpr = window.devicePixelRatio || 1
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(pw * dpr)
+    canvas.height = Math.round(ph * dpr)
+    const c2d = canvas.getContext('2d')!
+    c2d.scale(dpr, dpr)
+
+    function drawRecordingFrame() {
+      c2d.fillStyle = '#000'
+      c2d.fillRect(0, 0, pw, ph)
+      const vidEl = timelineVideoRef.value
+      const shot = timelineCurrentShot.value
+      if (vidEl && vidEl.readyState >= 2 && vidEl.src) {
+        c2d.drawImage(vidEl, 0, 0, pw, ph)
+      } else {
+        // 静态图 object-cover
+        const imgEl = previewEl!.querySelector<HTMLImageElement>('img')
+        if (imgEl?.complete && imgEl.naturalWidth > 0) {
+          const ar = imgEl.naturalWidth / imgEl.naturalHeight
+          const boxAr = pw / ph
+          let sx = 0, sy = 0, sw = imgEl.naturalWidth, sh = imgEl.naturalHeight
+          if (ar > boxAr) { sw = Math.round(sh * boxAr); sx = Math.round((imgEl.naturalWidth - sw) / 2) }
+          else { sh = Math.round(sw / boxAr); sy = Math.round((imgEl.naturalHeight - sh) / 2) }
+          c2d.drawImage(imgEl, sx, sy, sw, sh, 0, 0, pw, ph)
+        }
+      }
+      // 字幕覆盖层
+      if (subtitleEnabled.value && shot) {
+        const text = effectiveSubtitle(shot)
+        if (text) {
+          const fs = Math.max(14, Math.round(ph * 0.045))
+          c2d.font = `bold ${fs}px "PingFang SC","Microsoft YaHei",sans-serif`
+          c2d.textAlign = 'center'
+          const mx = c2d.measureText(text)
+          const tx = pw / 2, ty = ph * 0.87
+          c2d.fillStyle = 'rgba(0,0,0,0.6)'
+          c2d.fillRect(tx - mx.width / 2 - 10, ty - fs * 1.15, mx.width + 20, fs * 1.5)
+          c2d.fillStyle = '#fff'
+          c2d.fillText(text, tx, ty)
+        }
+      }
+      timelineRecordingAnimId.value = requestAnimationFrame(drawRecordingFrame)
+    }
+    drawRecordingFrame()
+
+    // ── 2. 音频混音（非破坏性：captureStream → createMediaStreamSource）────
+    let audioCtx: AudioContext | null = null
+    let mixedTrack: MediaStreamTrack | null = null
+    const audioEls = [timelineVoiceRef.value, timelineSfxRef.value, timelineBgmRef.value]
+      .filter((el): el is HTMLMediaElement => el != null)
+    const capturable = audioEls.filter(el => typeof (el as any).captureStream === 'function')
+    if (capturable.length > 0) {
+      audioCtx = new AudioContext()
+      await audioCtx.resume()
+      const dest = audioCtx.createMediaStreamDestination()
+      for (const el of capturable) {
+        try {
+          const elStream: MediaStream = (el as any).captureStream()
+          if (elStream.getAudioTracks().length > 0) {
+            audioCtx.createMediaStreamSource(elStream).connect(dest)
+          }
+        } catch { /* 跳过不可捕获的元素 */ }
+      }
+      mixedTrack = dest.stream.getAudioTracks()[0] ?? null
+    }
+
+    // ── 3. 合并视频 + 音频轨道 ───────────────────────────────────────────
+    const canvasStream = canvas.captureStream(30)
+    const finalTracks = [...canvasStream.getVideoTracks()]
+    if (mixedTrack) finalTracks.push(mixedTrack)
+    const stream = new MediaStream(finalTracks)
+
+    // ── 4. 启动录制 ──────────────────────────────────────────────────────
     const chunks: Blob[] = []
-    const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9') ? 'video/webm; codecs=vp9' : 'video/webm'
-    const recorder = new MediaRecorder(stream, { mimeType })
+    const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
+      ? 'video/webm; codecs=vp9'
+      : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
     recorder.onstop = () => {
+      if (timelineRecordingAnimId.value != null) {
+        cancelAnimationFrame(timelineRecordingAnimId.value)
+        timelineRecordingAnimId.value = null
+      }
+      audioCtx?.close()
       stream.getTracks().forEach(t => t.stop())
-      const blob = new Blob(chunks, { type: recorder.mimeType })
+      const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `inkframe-preview-${props.videoId}.webm`
+      a.download = `inkframe-preview-${props.videoId}-${Date.now()}.webm`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -1609,17 +1695,16 @@ async function timelineToggleRecording() {
       timelineRecording.value = false
       timelineMediaRecorder.value = null
     }
-    recorder.start(1000)
+    recorder.start(500)
     timelineMediaRecorder.value = recorder
     timelineRecording.value = true
-    // Stop when user ends screen share
-    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-      if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
-    })
-    // Auto-start playback
     if (!timelinePlaying.value) timelinePlay()
   } catch (e: any) {
-    if (e?.name !== 'NotAllowedError') toast.error('录制失败：' + (e?.message || '不支持'))
+    if (timelineRecordingAnimId.value != null) {
+      cancelAnimationFrame(timelineRecordingAnimId.value)
+      timelineRecordingAnimId.value = null
+    }
+    toast.error('录制失败：' + ((e as Error)?.message || '浏览器不支持'))
   }
 }
 
@@ -1765,6 +1850,10 @@ onUnmounted(() => {
   timelinePause()
   bgmStopPreview()
   if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
+  if (timelineRecordingAnimId.value != null) {
+    cancelAnimationFrame(timelineRecordingAnimId.value)
+    timelineRecordingAnimId.value = null
+  }
 })
 
 defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
