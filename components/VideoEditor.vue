@@ -150,7 +150,6 @@ const timelineSfxMuted = ref(false)
 const timelineBgmMuted = ref(false)
 const timelineRecording = ref(false)
 const timelineMediaRecorder = ref<MediaRecorder | null>(null)
-const timelineRecordingAnimId = ref<number | null>(null)
 const timelineCurrentBgmSegId = ref<number | null>(null)
 
 // Export
@@ -1585,99 +1584,59 @@ watch(timelineBgmMuted, () => {
   timelineSyncBgmAudio()
 })
 
-/** 等待 video 元素真正进入播放状态（readyState≥3 且非暂停），最多等 timeoutMs 毫秒 */
-function waitForVideoPlaying(el: HTMLVideoElement, timeoutMs: number): Promise<void> {
-  if (!el.paused && el.readyState >= 3) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    const tid = setTimeout(resolve, timeoutMs)
-    el.addEventListener('playing', () => { clearTimeout(tid); resolve() }, { once: true })
-  })
-}
-
 async function timelineToggleRecording() {
   if (timelineRecording.value) {
     timelineMediaRecorder.value?.stop()
     return
   }
   try {
-    // ── 1. 先启动播放，等 video 元素有帧可捕获 ─────────────────────────────
-    // captureStream() 在 video 暂停或无 src 时会产生空帧 → 录制文件为空。
-    // 必须先 play() 再 captureStream()，确保流中有真实视频帧。
+    // ── 1. 先启动播放 ──────────────────────────────────────────────────────
     if (!timelinePlaying.value) timelinePlay()
-    const vidEl = timelineVideoRef.value
-    if (vidEl) await waitForVideoPlaying(vidEl, 800)
 
-    const shot = timelineCurrentShot.value
-
-    // ── 2. 视频轨道 ────────────────────────────────────────────────────────
-    // 直接从 <video> 元素 captureStream()，不经过 canvas：
-    // HTMLVideoElement.captureStream() 无跨域限制，不会触发 "Canvas is not origin-clean"。
-    let videoTrack: MediaStreamTrack | null = null
-
-    if (vidEl && vidEl.readyState >= 2 && !vidEl.paused &&
-        typeof (vidEl as any).captureStream === 'function') {
-      try {
-        videoTrack = ((vidEl as any).captureStream() as MediaStream).getVideoTracks()[0] ?? null
-      } catch { /* 浏览器不支持，回退到下面的 canvas */ }
+    // ── 2. 获取屏幕/标签页视频流 ──────────────────────────────────────────
+    // 使用 getDisplayMedia 捕获当前标签页画面：
+    // • 绕过跨域视频的 canvas taint 限制
+    // • 绕过 Chrome 对硬件解码帧的 captureStream() 限制（GPU 内存不可读）
+    // preferCurrentTab: Chrome 107+ 预选当前标签，减少弹窗步骤
+    // 建议录制前先点击预览区右上角全屏按钮，可获得更干净的录制画面
+    let tabStream: MediaStream
+    try {
+      tabStream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: { frameRate: 30 },
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+      })
+    } catch (err) {
+      if ((err as DOMException).name === 'NotAllowedError') return // 用户取消，静默退出
+      throw err
     }
 
-    if (!videoTrack) {
-      // 回退：纯文字 canvas（无 drawImage 跨域内容 → 不会被 taint）
-      const pw = 1280, ph = 720
-      const canvas = document.createElement('canvas')
-      canvas.width = pw; canvas.height = ph
-      const c2d = canvas.getContext('2d')!
-
-      const drawFallback = () => {
-        c2d.fillStyle = '#111'
-        c2d.fillRect(0, 0, pw, ph)
-        const cur = timelineCurrentShot.value
-        if (cur) {
-          const fs = 28
-          c2d.font = `bold ${fs}px "PingFang SC","Microsoft YaHei",sans-serif`
-          c2d.textAlign = 'center'
-          c2d.fillStyle = '#555'
-          c2d.fillText(`Shot #${cur.shot_no}`, pw / 2, ph / 2 - 16)
-          const sub = effectiveSubtitle(cur)
-          if (sub) {
-            c2d.font = `${fs * 0.7}px "PingFang SC","Microsoft YaHei",sans-serif`
-            c2d.fillStyle = '#444'
-            c2d.fillText(sub.slice(0, 60), pw / 2, ph / 2 + 24)
-          }
-        }
-        timelineRecordingAnimId.value = requestAnimationFrame(drawFallback)
-      }
-      const canvasStream = canvas.captureStream(30)
-      drawFallback()
-      videoTrack = canvasStream.getVideoTracks()[0] ?? null
-    }
-
-    // ── 3. 音频混音 ────────────────────────────────────────────────────────
+    // ── 3. 音频混音（直接从媒体元素采集，音质优于系统音频）─────────────────
     let audioCtx: AudioContext | null = null
     let mixedTrack: MediaStreamTrack | null = null
     const audioEls = [timelineVoiceRef.value, timelineSfxRef.value, timelineBgmRef.value]
       .filter((el): el is HTMLMediaElement => el != null)
     const capturable = audioEls.filter(el => typeof (el as any).captureStream === 'function')
     if (capturable.length > 0) {
-      audioCtx = new AudioContext()
-      await audioCtx.resume()
-      const dest = audioCtx.createMediaStreamDestination()
-      for (const el of capturable) {
-        try {
-          const elStream: MediaStream = (el as any).captureStream()
-          if (elStream.getAudioTracks().length > 0) {
-            audioCtx.createMediaStreamSource(elStream).connect(dest)
-          }
-        } catch { /* 跳过不可捕获的元素 */ }
-      }
-      mixedTrack = dest.stream.getAudioTracks()[0] ?? null
+      try {
+        audioCtx = new AudioContext()
+        await audioCtx.resume()
+        const dest = audioCtx.createMediaStreamDestination()
+        for (const el of capturable) {
+          try {
+            const elStream: MediaStream = (el as any).captureStream()
+            if (elStream.getAudioTracks().length > 0) {
+              audioCtx.createMediaStreamSource(elStream).connect(dest)
+            }
+          } catch { /* 跳过不可捕获的元素 */ }
+        }
+        mixedTrack = dest.stream.getAudioTracks()[0] ?? null
+      } catch { /* AudioContext 创建失败，忽略音频 */ }
     }
 
     // ── 4. 合并轨道并启动录制 ───────────────────────────────────────────────
-    const finalTracks: MediaStreamTrack[] = []
-    if (videoTrack) finalTracks.push(videoTrack)
+    const finalTracks: MediaStreamTrack[] = [...tabStream.getVideoTracks()]
     if (mixedTrack) finalTracks.push(mixedTrack)
-    if (finalTracks.length === 0) throw new Error('无可录制的媒体轨道')
     const stream = new MediaStream(finalTracks)
 
     const chunks: Blob[] = []
@@ -1686,39 +1645,30 @@ async function timelineToggleRecording() {
       : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+
+    // 用户在系统层停止屏幕共享时自动结束录制
+    tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
+    }, { once: true })
+
     recorder.onstop = () => {
-      if (timelineRecordingAnimId.value != null) {
-        cancelAnimationFrame(timelineRecordingAnimId.value)
-        timelineRecordingAnimId.value = null
-      }
       audioCtx?.close()
-      stream.getTracks().forEach(t => t.stop())
-      if (chunks.length === 0) {
-        toast.error('录制内容为空，请确认视频已正常播放后再录制')
-        timelineRecording.value = false
-        timelineMediaRecorder.value = null
-        return
-      }
+      tabStream.getTracks().forEach(t => t.stop())
+      timelineRecording.value = false
+      timelineMediaRecorder.value = null
+      if (chunks.length === 0) return
       const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `inkframe-preview-${props.videoId}-${Date.now()}.webm`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      timelineRecording.value = false
-      timelineMediaRecorder.value = null
     }
     recorder.start(500)
     timelineMediaRecorder.value = recorder
     timelineRecording.value = true
   } catch (e: any) {
-    if (timelineRecordingAnimId.value != null) {
-      cancelAnimationFrame(timelineRecordingAnimId.value)
-      timelineRecordingAnimId.value = null
-    }
     toast.error('录制失败：' + ((e as Error)?.message || '浏览器不支持'))
   }
 }
@@ -1865,10 +1815,6 @@ onUnmounted(() => {
   timelinePause()
   bgmStopPreview()
   if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
-  if (timelineRecordingAnimId.value != null) {
-    cancelAnimationFrame(timelineRecordingAnimId.value)
-    timelineRecordingAnimId.value = null
-  }
 })
 
 defineExpose({ generateStoryboard: handleGenerateStoryboard, activeTab })
