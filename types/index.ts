@@ -760,3 +760,160 @@ export interface TabItem {
   icon?: string
   count?: number
 }
+
+// ─── Asset Library ────────────────────────────────────────────────────────────
+
+export interface Asset {
+  id: number
+  scope: 'personal' | 'public'
+  tenant_id: number
+  creator_id: number
+  title: string
+  description?: string
+  type: 'image' | 'video' | 'audio' | 'text'
+  sub_type: string
+  source: 'platform' | 'crawled' | 'uploaded'
+  storage_url: string
+  thumbnail_url?: string
+  preview_url?: string
+  waveform_url?: string
+  hls_url?: string
+  source_url?: string
+  external_id?: string
+  license: string
+  license_url?: string
+  attribution?: string
+  width?: number
+  height?: number
+  duration?: number
+  file_size?: number
+  mime_type?: string
+  aspect_ratio?: string
+  quality_score?: number
+  quality_issues?: string[]
+  safety_score?: number
+  safety_checked?: boolean
+  dominant_color?: string
+  color_palette?: string[]
+  use_count: number
+  like_count: number
+  value_score?: number
+  shared_at?: string
+  shared_by?: number
+  review_note?: string
+  novel_id?: number
+  video_id?: number
+  shot_id?: number
+  status: 'active' | 'pending_review' | 'rejected' | 'trash' | 'withdrawn'
+  created_at: string
+  updated_at: string
+  tags?: Tag[]
+}
+
+export interface Tag {
+  id: number
+  name: string
+  slug: string
+  category: string
+  use_count: number
+  is_system: boolean
+}
+
+export interface AssetShareRequest {
+  id: number
+  asset_id: number
+  requested_by: number
+  status: 'pending' | 'approved' | 'rejected'
+  auto_passed: boolean
+  review_note?: string
+  reviewed_at?: string
+  created_at: string
+}
+
+export interface AssetVersion {
+  id: number
+  asset_id: number
+  version_no: number
+  storage_url: string
+  thumbnail_url?: string
+  file_size: number
+  change_note: string
+  created_by: number
+  created_at: string
+}
+
+export interface AssetCollection {
+  id: number
+  scope: 'personal' | 'public'
+  tenant_id: number
+  name: string
+  description?: string
+  cover_url?: string
+  asset_count: number
+  creator_id: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CrawlJob {
+  id: number
+  source: string
+  query: string
+  asset_type: string
+  license: string
+  limit: number
+  status: string
+  total_found: number
+  imported: number
+  skipped: number
+  failed: number
+  error_msg?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+}
+
+export interface AssetComment {
+  id: number
+  asset_id: number
+  user_id: number
+  content: string
+  parent_id?: number
+  x_ratio?: number
+  y_ratio?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ShareLink {
+  id: number
+  token: string
+  asset_id?: number
+  collection_id?: number
+  expires_at?: string
+  view_count: number
+  download_allowed: boolean
+  created_at: string
+}
+
+export interface AssetStorageQuota {
+  tenant_id: number
+  storage_used_bytes: number
+  storage_limit_bytes: number
+  crawl_used_this_month: number
+  crawl_limit_per_month: number
+}
+
+export interface AssetSearchParams {
+  scope?: 'personal' | 'public' | 'all'
+  q?: string
+  type?: string
+  sub_type?: string
+  source?: string
+  license?: string
+  tags?: string[]
+  sort?: string
+  page?: number
+  page_size?: number
+  status?: string
+}

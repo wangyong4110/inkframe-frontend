@@ -34,6 +34,7 @@ const navItems = [
   { label: '小说改写', to: '/rewrite', icon: 'edit' },
   { label: '视频', to: '/video', icon: 'video' },
   { label: '视频广场', to: '/platform', icon: 'play-circle' },
+  { label: '素材库', to: '/assets', icon: 'image' },
   { label: '模型', to: '/model', icon: 'cpu' },
 ]
 
