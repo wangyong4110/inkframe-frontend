@@ -146,19 +146,27 @@ const stats = [
       <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <!-- Logo -->
         <NuxtLink to="/" class="flex items-center gap-3">
-          <div class="w-8 h-8 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span class="text-white font-bold text-sm">I</span>
-          </div>
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0">
+            <rect width="36" height="36" rx="8" fill="url(#idxLogoGrad)"/>
+            <rect x="7" y="10" width="14" height="2" rx="1" fill="white" opacity="0.9"/>
+            <rect x="7" y="14" width="11" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="18" width="13" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="22" width="9"  height="2" rx="1" fill="white" opacity="0.5"/>
+            <path d="M23 18L29 22V14L23 18Z" fill="white"/>
+            <defs>
+              <linearGradient id="idxLogoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
           <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
         </NuxtLink>
 
         <!-- Nav links -->
         <div class="hidden md:flex items-center gap-6">
-          <NuxtLink to="/novel" class="text-gray-400 hover:text-white text-sm transition-colors">我的小说</NuxtLink>
-          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">小说广场</NuxtLink>
-          <NuxtLink to="/platform" class="text-gray-400 hover:text-white text-sm transition-colors">视频广场</NuxtLink>
-          <NuxtLink to="/rewrite" class="text-gray-400 hover:text-white text-sm transition-colors">小说改写</NuxtLink>
-          <NuxtLink to="/model" class="text-gray-400 hover:text-white text-sm transition-colors">AI 模型</NuxtLink>
+          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">小说</NuxtLink>
+          <NuxtLink to="/platform" class="text-gray-400 hover:text-white text-sm transition-colors">视频</NuxtLink>
         </div>
 
         <!-- Auth -->
@@ -205,9 +213,9 @@ const stats = [
 
         <!-- Headline -->
         <h1 class="text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-6 tracking-tight">
-          让每个故事<br>
+          让每个故事都<br>
           <span class="bg-gradient-to-r from-violet-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">
-            活成一部电影
+            鲜活起来
           </span>
         </h1>
 
@@ -516,9 +524,20 @@ const stats = [
     <footer class="border-t border-gray-800 py-10 px-6">
       <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-2 text-gray-500 text-sm">
-          <div class="w-5 h-5 bg-gradient-to-br from-violet-500 to-indigo-600 rounded flex items-center justify-center flex-shrink-0">
-            <span class="text-white font-bold text-xs">I</span>
-          </div>
+          <svg width="20" height="20" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0">
+            <rect width="36" height="36" rx="8" fill="url(#idxFooterGrad)"/>
+            <rect x="7" y="10" width="14" height="2" rx="1" fill="white" opacity="0.9"/>
+            <rect x="7" y="14" width="11" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="18" width="13" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="22" width="9"  height="2" rx="1" fill="white" opacity="0.5"/>
+            <path d="M23 18L29 22V14L23 18Z" fill="white"/>
+            <defs>
+              <linearGradient id="idxFooterGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
           <span>InkFrame &copy; 2025</span>
         </div>
         <div class="flex gap-6 text-sm text-gray-500">

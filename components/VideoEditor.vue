@@ -272,16 +272,28 @@ defineExpose({ activeTab, generateStoryboard })
       :video-id="props.videoId"
     />
 
-    <!-- ══ Timeline Tab (also renders Export content when showExport=true) ═ -->
+    <!-- ══ Timeline Tab ════════════════════════════════════════════════════ -->
     <TimelineTab
-      v-if="(activeTab === 'timeline' || activeTab === 'export') && !tabLoading"
+      v-if="activeTab === 'timeline' && !tabLoading"
       :video-id="props.videoId"
       :bgm-segments="_bgmSegments"
       :bgm-volume="_bgmVolume"
       :shot-audio-urls="_shotAudioUrls"
       :shot-segments="_shotSegments"
       :sfx-items="_sfxItems"
-      :show-export="activeTab === 'export'"
+      :show-export="false"
+    />
+
+    <!-- ══ Export Tab ═════════════════════════════════════════════════════ -->
+    <TimelineTab
+      v-if="activeTab === 'export' && !tabLoading"
+      :video-id="props.videoId"
+      :bgm-segments="_bgmSegments"
+      :bgm-volume="_bgmVolume"
+      :shot-audio-urls="_shotAudioUrls"
+      :shot-segments="_shotSegments"
+      :sfx-items="_sfxItems"
+      :show-export="true"
     />
   </div>
 </template>

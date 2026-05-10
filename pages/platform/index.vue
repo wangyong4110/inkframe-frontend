@@ -118,12 +118,12 @@ function timeAgo(s: string) {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">视频广场</h1>
+        <h1 class="text-2xl font-bold text-white">视频广场</h1>
         <p class="text-sm text-gray-400 mt-0.5">AI 小说视频作品展示与发现</p>
       </div>
       <NuxtLink
         to="/platform/accounts"
-        class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+        class="text-sm text-violet-400 hover:underline shrink-0"
       >管理平台账号</NuxtLink>
     </div>
 
@@ -138,12 +138,12 @@ function timeAgo(s: string) {
           v-model="searchInput"
           type="text"
           placeholder="搜索视频..."
-          class="w-full pl-10 pr-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-indigo-400"
+          class="w-full pl-10 pr-4 py-2.5 border border-gray-700 rounded-xl bg-gray-900 text-sm focus:outline-none focus:border-indigo-400"
         />
       </div>
 
       <!-- Sort tabs -->
-      <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1 shrink-0">
+      <div class="flex bg-gray-800 rounded-xl p-1 gap-1 shrink-0">
         <button
           v-for="tab in [{ key: 'hot', label: '🔥 最热' }, { key: 'latest', label: '🕒 最新' }]"
           :key="tab.key"
@@ -151,7 +151,7 @@ function timeAgo(s: string) {
           :class="[
             'px-4 py-1.5 rounded-lg text-sm font-medium transition-all',
             sort === tab.key
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+              ? 'bg-gray-700 text-white shadow-sm'
               : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
           ]"
         >{{ tab.label }}</button>
@@ -165,7 +165,7 @@ function timeAgo(s: string) {
 
     <!-- Skeleton (first load) -->
     <div v-if="loading && !videos.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-      <div v-for="i in 8" :key="i" class="rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 animate-pulse">
+      <div v-for="i in 8" :key="i" class="rounded-xl overflow-hidden bg-gray-800 animate-pulse">
         <div class="aspect-video bg-gray-200 dark:bg-gray-700" />
         <div class="p-3 space-y-2">
           <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5" />
@@ -191,10 +191,10 @@ function timeAgo(s: string) {
         v-for="v in videos"
         :key="v.id"
         :to="`/platform/video/${v.id}`"
-        class="group block rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow"
+        class="group block rounded-xl overflow-hidden bg-gray-900 shadow-sm hover:shadow-md transition-shadow"
       >
         <!-- Cover with lazy loading -->
-        <div class="relative aspect-video bg-gray-100 dark:bg-gray-700 overflow-hidden">
+        <div class="relative aspect-video bg-gray-800 overflow-hidden">
           <img
             v-if="v.cover_url"
             :src="v.cover_url"
@@ -231,8 +231,8 @@ function timeAgo(s: string) {
 
         <!-- Info -->
         <div class="p-3 space-y-1">
-          <p class="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2 leading-snug">{{ v.title }}</p>
-          <p v-if="v.novel?.title" class="text-xs text-indigo-500 dark:text-indigo-400 truncate">{{ v.novel.title }}</p>
+          <p class="text-sm font-semibold text-white line-clamp-2 leading-snug">{{ v.title }}</p>
+          <p v-if="v.novel?.title" class="text-xs text-violet-400 truncate">{{ v.novel.title }}</p>
           <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
             <div class="flex items-center gap-2.5">
               <span class="flex items-center gap-1">

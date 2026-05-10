@@ -119,12 +119,12 @@ const genreLabels: Record<string, string> = {
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">小说广场</h1>
+        <h1 class="text-2xl font-bold text-white">小说广场</h1>
         <p class="text-sm text-gray-400 mt-0.5">AI 创作小说展示与发现</p>
       </div>
       <NuxtLink
         to="/platform"
-        class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+        class="text-sm text-violet-400 hover:underline shrink-0"
       >视频广场</NuxtLink>
     </div>
 
@@ -138,10 +138,10 @@ const genreLabels: Record<string, string> = {
           v-model="searchInput"
           type="text"
           placeholder="搜索小说..."
-          class="w-full pl-10 pr-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-indigo-400"
+          class="w-full pl-10 pr-4 py-2.5 border border-gray-700 rounded-xl bg-gray-900 text-sm focus:outline-none focus:border-indigo-400"
         />
       </div>
-      <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1 shrink-0">
+      <div class="flex bg-gray-800 rounded-xl p-1 gap-1 shrink-0">
         <button
           v-for="tab in [{ key: 'hot', label: '🔥 最热' }, { key: 'latest', label: '🕒 最新' }]"
           :key="tab.key"
@@ -149,7 +149,7 @@ const genreLabels: Record<string, string> = {
           :class="[
             'px-4 py-1.5 rounded-lg text-sm font-medium transition-all',
             sort === tab.key
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+              ? 'bg-gray-700 text-white shadow-sm'
               : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
           ]"
         >{{ tab.label }}</button>
@@ -163,7 +163,7 @@ const genreLabels: Record<string, string> = {
 
     <!-- Skeleton -->
     <div v-if="loading && !novels.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-      <div v-for="i in 8" :key="i" class="rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 animate-pulse">
+      <div v-for="i in 8" :key="i" class="rounded-xl overflow-hidden bg-gray-800 animate-pulse">
         <div class="aspect-[3/4] bg-gray-200 dark:bg-gray-700" />
         <div class="p-3 space-y-2">
           <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5" />
@@ -189,10 +189,10 @@ const genreLabels: Record<string, string> = {
         v-for="n in novels"
         :key="n.id"
         :to="`/plaza/novel/${n.id}`"
-        class="group block rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow"
+        class="group block rounded-xl overflow-hidden bg-gray-900 shadow-sm hover:shadow-md transition-shadow"
       >
         <!-- Cover -->
-        <div class="relative aspect-[3/4] bg-gray-100 dark:bg-gray-700 overflow-hidden">
+        <div class="relative aspect-[3/4] bg-gray-800 overflow-hidden">
           <img
             v-if="n.cover_image"
             :src="n.cover_image"
@@ -201,7 +201,7 @@ const genreLabels: Record<string, string> = {
             decoding="async"
             class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
-          <div v-else class="w-full h-full flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-gray-700 dark:to-gray-600">
+          <div v-else class="w-full h-full flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-indigo-900/40 to-purple-900/40">
             <svg class="w-10 h-10 text-indigo-300 dark:text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
             </svg>
@@ -226,8 +226,8 @@ const genreLabels: Record<string, string> = {
 
         <!-- Info -->
         <div class="p-3 space-y-1">
-          <p class="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2 leading-snug">{{ n.title }}</p>
-          <p v-if="n.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ n.description }}</p>
+          <p class="text-sm font-semibold text-white line-clamp-2 leading-snug">{{ n.title }}</p>
+          <p v-if="n.description" class="text-xs text-gray-400 line-clamp-2">{{ n.description }}</p>
           <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 pt-0.5">
             <div class="flex items-center gap-2">
               <span class="flex items-center gap-1">

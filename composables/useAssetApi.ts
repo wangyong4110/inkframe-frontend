@@ -136,6 +136,9 @@ export const useAssetApi = () => {
   const removeTag = (id: number, tagId: number) =>
     request<void>(`/assets/${id}/tags/${tagId}`, { method: 'DELETE' })
 
+  const triggerAutoTag = (id: number) =>
+    request<ApiResponse<{ message: string }>>(`/assets/${id}/auto-tag`, { method: 'POST' })
+
   // ─── Public Library ─────────────────────────────────────────────────────────
 
   const toggleLike = (id: number) =>
@@ -230,7 +233,7 @@ export const useAssetApi = () => {
     searchAssets, getAsset, uploadAsset, updateAsset, softDeleteAsset, restoreAsset, purgeAsset, listTrash,
     requestShare, getShareRequest, cancelShareRequest, withdrawShare,
     listVersions, createVersion, restoreVersion,
-    listTags, suggestTags, addTags, removeTag,
+    listTags, suggestTags, addTags, removeTag, triggerAutoTag,
     toggleLike, useAsset,
     batchDelete, batchShareRequest,
     listCollections, createCollection, listCollectionItems, addToCollection, removeFromCollection,

@@ -64,13 +64,13 @@ function handleGenreChange(value: string) {
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    planning: 'bg-blue-100 text-blue-800',
-    writing: 'bg-yellow-100 text-yellow-800',
-    paused: 'bg-gray-100 text-gray-800',
-    completed: 'bg-green-100 text-green-800',
-    archived: 'bg-gray-100 text-gray-600',
+    planning: 'bg-blue-500/20 text-blue-300',
+    writing: 'bg-yellow-500/20 text-yellow-300',
+    paused: 'bg-gray-500/20 text-gray-400',
+    completed: 'bg-green-500/20 text-green-300',
+    archived: 'bg-gray-500/20 text-gray-500',
   }
-  return colors[status] || 'bg-gray-100 text-gray-800'
+  return colors[status] || 'bg-gray-500/20 text-gray-400'
 }
 
 function getStatusLabel(status: string): string {
@@ -143,8 +143,8 @@ function formatDate(dateStr: string): string {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">小说项目</h1>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <h1 class="text-2xl font-bold text-white">小说项目</h1>
+        <p class="mt-1 text-sm text-gray-400">
           管理你的所有小说创作项目
         </p>
       </div>
@@ -168,7 +168,7 @@ function formatDate(dateStr: string): string {
     <div class="card p-4">
       <div class="flex flex-wrap gap-4">
         <div class="flex items-center space-x-2">
-          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">状态:</label>
+          <label class="text-sm font-medium text-gray-400">状态:</label>
           <select
             :value="filters.status"
             @change="handleStatusChange(($event.target as HTMLSelectElement).value)"
@@ -180,7 +180,7 @@ function formatDate(dateStr: string): string {
           </select>
         </div>
         <div class="flex items-center space-x-2">
-          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">类型:</label>
+          <label class="text-sm font-medium text-gray-400">类型:</label>
           <select
             :value="filters.genre"
             @change="handleGenreChange(($event.target as HTMLSelectElement).value)"
@@ -208,8 +208,8 @@ function formatDate(dateStr: string): string {
       <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
-      <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">暂无项目</h3>
-      <p class="text-gray-500 dark:text-gray-400 mb-6">创建你的第一个小说项目，开始创作之旅</p>
+      <h3 class="text-lg font-medium text-white mb-2">暂无项目</h3>
+      <p class="text-gray-400 mb-6">创建你的第一个小说项目，开始创作之旅</p>
       <NuxtLink to="/novel/create" class="btn-primary">
         创建项目
       </NuxtLink>
@@ -231,7 +231,7 @@ function formatDate(dateStr: string): string {
         </div>
         <div class="p-4">
           <div class="flex items-start justify-between mb-2">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white line-clamp-1 flex-1 min-w-0 mr-2">
+            <h3 class="text-lg font-semibold text-white line-clamp-1 flex-1 min-w-0 mr-2">
               {{ novel.title }}
             </h3>
             <span
@@ -241,23 +241,23 @@ function formatDate(dateStr: string): string {
               {{ getStatusLabel(novel.status) }}
             </span>
           </div>
-          <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-4">
+          <p class="text-sm text-gray-400 line-clamp-2 mb-4">
             {{ novel.description || '暂无描述' }}
           </p>
           <div class="flex items-center justify-between">
-            <div class="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+            <div class="flex items-center space-x-3 text-sm text-gray-400">
               <span class="tag tag-primary">{{ getGenreLabel(novel.genre) }}</span>
             </div>
-            <span class="text-sm text-gray-400 dark:text-gray-500">
+            <span class="text-sm text-gray-500">
               {{ novel.chapter_count }} 章
             </span>
           </div>
-          <div class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <div class="mt-3 pt-3 border-t border-gray-800">
             <div class="flex items-center justify-between text-sm">
-              <span class="text-gray-500 dark:text-gray-400">
+              <span class="text-gray-400">
                 {{ formatNumber(novel.total_words) }} 字
               </span>
-              <span class="text-gray-400 dark:text-gray-500">
+              <span class="text-gray-500">
                 {{ formatDate(novel.updated_at) }}
               </span>
             </div>
@@ -276,7 +276,7 @@ function formatDate(dateStr: string): string {
         >
           上一页
         </button>
-        <span class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+        <span class="px-4 py-2 text-sm text-gray-400">
           第 {{ novelStore.pagination.page }} / {{ Math.ceil(novelStore.pagination.total / novelStore.pagination.pageSize) }} 页
         </span>
         <button

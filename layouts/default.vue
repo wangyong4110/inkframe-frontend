@@ -1,201 +1,148 @@
 <script setup lang="ts">
 const route = useRoute()
 const authStore = useAuthStore()
-const isDark = ref(false)
 const showUserMenu = ref(false)
 
-// Close dropdown on click outside + restore dark mode preference
 onMounted(() => {
-  const saved = localStorage.getItem('color-scheme')
-  if (saved === 'dark') {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
+  document.documentElement.classList.add('dark')
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement
     if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
   })
 })
 
-const toggleDark = () => {
-  isDark.value = !isDark.value
-  if (isDark.value) {
-    document.documentElement.classList.add('dark')
-    localStorage.setItem('color-scheme', 'dark')
-  } else {
-    document.documentElement.classList.remove('dark')
-    localStorage.setItem('color-scheme', 'light')
-  }
-}
-
 const navItems = [
-  { label: '首页', to: '/', icon: 'home' },
-  { label: '项目', to: '/novel', icon: 'book-open' },
-  { label: '小说改写', to: '/rewrite', icon: 'edit' },
-  { label: '视频', to: '/video', icon: 'video' },
-  { label: '小说广场', to: '/plaza', icon: 'book-open' },
-  { label: '视频广场', to: '/platform', icon: 'play-circle' },
-  { label: '素材库', to: '/assets', icon: 'image' },
-  { label: '模型', to: '/model', icon: 'cpu' },
+  { label: '首页', to: '/' },
+  { label: '改写小说', to: '/rewrite' },
+  { label: '素材库', to: '/assets' },
 ]
 
 const breadcrumbs = computed(() => {
   const items = []
   const paths = route.path.split('/').filter(Boolean)
-
   let currentPath = ''
   for (const path of paths) {
     currentPath += `/${path}`
     const item = navItems.find(i => i.to === currentPath)
-    if (item) {
-      items.push({ label: item.label, to: item.to })
-    }
+    if (item) items.push({ label: item.label, to: item.to })
   }
-
   return items
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+  <div class="min-h-screen bg-gray-950 text-white">
     <!-- Header -->
-    <header class="sticky top-0 z-50 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-16">
-          <!-- Logo -->
-          <NuxtLink to="/" class="flex items-center space-x-2">
-            <div class="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-              <span class="text-white font-bold text-lg">I</span>
-            </div>
-            <span class="text-xl font-bold text-gray-900 dark:text-white">InkFrame</span>
+    <header class="sticky top-0 z-50 border-b border-gray-800/50 bg-gray-950/80 backdrop-blur-xl">
+      <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <!-- Logo -->
+        <NuxtLink to="/" class="flex items-center gap-3">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="36" height="36" rx="8" fill="url(#layoutLogoGrad)"/>
+            <rect x="7" y="10" width="14" height="2" rx="1" fill="white" opacity="0.9"/>
+            <rect x="7" y="14" width="11" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="18" width="13" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="22" width="9"  height="2" rx="1" fill="white" opacity="0.5"/>
+            <path d="M23 18L29 22V14L23 18Z" fill="white"/>
+            <defs>
+              <linearGradient id="layoutLogoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
+        </NuxtLink>
+
+        <!-- Navigation -->
+        <nav class="hidden md:flex items-center gap-6">
+          <NuxtLink
+            v-for="item in navItems"
+            :key="item.to"
+            :to="item.to"
+            class="text-sm transition-colors"
+            :class="route.path === item.to || route.path.startsWith(item.to + '/')
+              ? 'text-white font-medium'
+              : 'text-gray-400 hover:text-white'"
+          >
+            {{ item.label }}
           </NuxtLink>
+        </nav>
 
-          <!-- Navigation -->
-          <nav class="hidden md:flex items-center space-x-1">
-            <NuxtLink
-              v-for="item in navItems"
-              :key="item.to"
-              :to="item.to"
-              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-              :class="[
-                route.path === item.to || route.path.startsWith(item.to + '/')
-                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-              ]"
-            >
-              {{ item.label }}
-            </NuxtLink>
-          </nav>
-
-          <!-- Right Side -->
-          <div class="flex items-center space-x-4">
-            <!-- Dark Mode Toggle -->
+        <!-- Right Side -->
+        <div class="flex items-center gap-3">
+          <div v-if="authStore.isLoggedIn" class="relative user-menu-wrapper">
             <button
-              @click="toggleDark"
-              class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              @click="showUserMenu = !showUserMenu"
+              class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
             >
-              <svg v-if="!isDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-              <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </button>
-
-            <!-- User Menu -->
-            <div v-if="authStore.isLoggedIn" class="relative user-menu-wrapper">
-              <button
-                @click="showUserMenu = !showUserMenu"
-                class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center overflow-hidden">
-                  <img
-                    v-if="authStore.user?.avatar"
-                    :src="authStore.user.avatar"
-                    class="w-full h-full object-cover"
-                    alt="avatar"
-                  />
-                  <span v-else class="text-white text-sm font-medium">
-                    {{ (authStore.user?.nickname || authStore.user?.username || 'U')[0].toUpperCase() }}
-                  </span>
-                </div>
-                <span class="hidden sm:block text-sm text-gray-700 dark:text-gray-300">
-                  {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
+              <div class="w-8 h-8 bg-violet-600 rounded-full flex items-center justify-center overflow-hidden">
+                <img v-if="authStore.user?.avatar" :src="authStore.user.avatar" class="w-full h-full object-cover" alt="avatar" />
+                <span v-else class="text-white text-sm font-medium">
+                  {{ (authStore.user?.nickname || authStore.user?.username || 'U')[0].toUpperCase() }}
                 </span>
-              </button>
-              <!-- Dropdown -->
-              <div
-                v-if="showUserMenu"
-                class="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50"
-              >
-                <NuxtLink
-                  to="/profile"
-                  class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  @click="showUserMenu = false"
-                >
-                  个人资料
-                </NuxtLink>
-                <button
-                  class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  @click="authStore.logout(); showUserMenu = false"
-                >
-                  退出登录
-                </button>
               </div>
-            </div>
-            <div v-else class="flex items-center space-x-2">
+              <span class="hidden sm:block text-sm text-gray-300">
+                {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
+              </span>
+            </button>
+            <!-- Dropdown -->
+            <div
+              v-if="showUserMenu"
+              class="absolute right-0 mt-1 w-40 bg-gray-900 rounded-xl shadow-xl border border-gray-700 py-1 z-50"
+            >
               <NuxtLink
-                to="/auth/login"
-                class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                to="/profile"
+                class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                @click="showUserMenu = false"
               >
-                登录
+                个人资料
               </NuxtLink>
-              <NuxtLink
-                to="/auth/register"
-                class="px-3 py-1.5 text-sm bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-800 transition-colors"
+                @click="authStore.logout(); showUserMenu = false"
               >
-                注册
-              </NuxtLink>
+                退出登录
+              </button>
             </div>
+          </div>
+          <div v-else class="flex items-center gap-3">
+            <NuxtLink to="/auth/login" class="text-sm text-gray-400 hover:text-white transition-colors">
+              登录
+            </NuxtLink>
+            <NuxtLink
+              to="/auth/register"
+              class="bg-violet-600 hover:bg-violet-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
+            >
+              免费开始
+            </NuxtLink>
           </div>
         </div>
       </div>
     </header>
 
     <!-- Breadcrumbs -->
-    <div v-if="breadcrumbs.length > 0" class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <nav class="flex" aria-label="Breadcrumb">
-          <ol class="flex items-center space-x-2">
-            <li>
-              <NuxtLink to="/" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                首页
-              </NuxtLink>
-            </li>
-            <li v-for="(crumb, index) in breadcrumbs" :key="crumb.to">
-              <div class="flex items-center">
-                <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                </svg>
-                <NuxtLink
-                  v-if="index < breadcrumbs.length - 1"
-                  :to="crumb.to"
-                  class="ml-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  {{ crumb.label }}
-                </NuxtLink>
-                <span v-else class="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ crumb.label }}
-                </span>
-              </div>
-            </li>
-          </ol>
-        </nav>
+    <div v-if="breadcrumbs.length > 0" class="border-b border-gray-800/50">
+      <div class="max-w-7xl mx-auto px-6 py-3">
+        <ol class="flex items-center gap-2 text-sm">
+          <li>
+            <NuxtLink to="/" class="text-gray-500 hover:text-gray-300 transition-colors">首页</NuxtLink>
+          </li>
+          <li v-for="(crumb, index) in breadcrumbs" :key="crumb.to" class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+            </svg>
+            <NuxtLink v-if="index < breadcrumbs.length - 1" :to="crumb.to" class="text-gray-500 hover:text-gray-300 transition-colors">
+              {{ crumb.label }}
+            </NuxtLink>
+            <span v-else class="text-gray-300 font-medium">{{ crumb.label }}</span>
+          </li>
+        </ol>
       </div>
     </div>
 
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="max-w-7xl mx-auto px-6 py-8">
       <slot />
     </main>
 
@@ -203,22 +150,29 @@ const breadcrumbs = computed(() => {
     <AppToast />
 
     <!-- Footer -->
-    <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div class="flex flex-col md:flex-row items-center justify-between">
-          <div class="flex items-center space-x-2">
-            <div class="w-6 h-6 bg-gradient-primary rounded flex items-center justify-center">
-              <span class="text-white font-bold text-xs">I</span>
-            </div>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
-              © 2024 InkFrame. All rights reserved.
-            </span>
-          </div>
-          <div class="mt-4 md:mt-0 flex items-center space-x-6 text-sm text-gray-500 dark:text-gray-400">
-            <a href="#" class="hover:text-primary-600">文档</a>
-            <a href="#" class="hover:text-primary-600">关于</a>
-            <a href="#" class="hover:text-primary-600">联系</a>
-          </div>
+    <footer class="border-t border-gray-800 mt-auto">
+      <div class="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2 text-gray-500 text-sm">
+          <svg width="20" height="20" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="36" height="36" rx="8" fill="url(#layoutFooterGrad)"/>
+            <rect x="7" y="10" width="14" height="2" rx="1" fill="white" opacity="0.9"/>
+            <rect x="7" y="14" width="11" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="18" width="13" height="2" rx="1" fill="white" opacity="0.7"/>
+            <rect x="7" y="22" width="9"  height="2" rx="1" fill="white" opacity="0.5"/>
+            <path d="M23 18L29 22V14L23 18Z" fill="white"/>
+            <defs>
+              <linearGradient id="layoutFooterGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span>InkFrame © 2025</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-gray-500">
+          <NuxtLink to="/novel" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
+          <span class="hover:text-gray-300 cursor-default transition-colors">使用条款</span>
+          <span class="hover:text-gray-300 cursor-default transition-colors">隐私政策</span>
         </div>
       </div>
     </footer>
