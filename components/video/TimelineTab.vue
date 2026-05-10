@@ -59,6 +59,19 @@ const timelineMediaRecorder = ref<MediaRecorder | null>(null)
 const timelineCurrentBgmSegId = ref<number | null>(null)
 const timelineDownloading = ref(false)
 
+// Fix 1: Track active document listeners for cleanup on unmount
+const activeDocListeners = ref<Array<{ event: string; fn: EventListenerOrEventListenerObject }>>([])
+
+function addDocListener(event: string, fn: EventListenerOrEventListenerObject) {
+  document.addEventListener(event, fn)
+  activeDocListeners.value.push({ event, fn })
+}
+
+function removeDocListener(event: string, fn: EventListenerOrEventListenerObject) {
+  document.removeEventListener(event, fn)
+  activeDocListeners.value = activeDocListeners.value.filter(l => l.fn !== fn)
+}
+
 function effectiveSubtitle(shot: StoryboardShot): string {
   return shot.subtitle || shot.dialogue || shot.narration || shot.description || ''
 }
@@ -76,16 +89,28 @@ function kenBurnsStyle(shot: StoryboardShot): string {
   return `animation: ${animName} ${dur}s ease-in-out forwards; animation-play-state: ${state}`
 }
 
+// Pre-computed duration map: shot.id → effective duration in seconds.
+// Memoizes results across all callers (template + other computeds) so the
+// segment-sum reduction runs at most once per shot per reactive update.
+const timelineEffectiveDurationMap = computed<Map<number, number>>(() => {
+  const map = new Map<number, number>()
+  for (const shot of shots.value) {
+    if (timelineResizeDraft.value[shot.id] != null) {
+      map.set(shot.id, timelineResizeDraft.value[shot.id])
+      continue
+    }
+    const segs = props.shotSegments[shot.id]
+    if (segs && segs.length > 0) {
+      const segTotal = segs.reduce((s, seg) => s + (seg.duration_secs || 0), 0)
+      if (segTotal > 0) { map.set(shot.id, Math.max(shot.duration || 5, segTotal)); continue }
+    }
+    map.set(shot.id, shot.duration || 5)
+  }
+  return map
+})
+
 function timelineEffectiveDuration(shot: StoryboardShot): number {
-  if (timelineResizeDraft.value[shot.id] != null) {
-    return timelineResizeDraft.value[shot.id]
-  }
-  const segs = props.shotSegments[shot.id]
-  if (segs && segs.length > 0) {
-    const segTotal = segs.reduce((s, seg) => s + (seg.duration_secs || 0), 0)
-    if (segTotal > 0) return Math.max(shot.duration || 5, segTotal)
-  }
-  return shot.duration || 5
+  return timelineEffectiveDurationMap.value.get(shot.id) ?? (shot.duration || 5)
 }
 
 const timelineOrderedShots = computed(() => {
@@ -184,7 +209,8 @@ const timelineSubtitleContainerStyle = computed(() => {
 })
 
 // BGM sync
-function timelineFindCurrentBgmSeg() {
+// Fix 2: Memoize BGM segment lookup as a computed instead of calling it on every tick
+const timelineCurrentBgmSeg = computed(() => {
   const shot = timelineCurrentShot.value
   if (!shot) return null
   return props.bgmSegments.find(seg =>
@@ -193,10 +219,10 @@ function timelineFindCurrentBgmSeg() {
     seg.start_shot_no <= shot.shot_no &&
     shot.shot_no <= seg.end_shot_no
   ) ?? null
-}
+})
 
 function timelineSyncBgmAudio() {
-  const seg = timelineFindCurrentBgmSeg()
+  const seg = timelineCurrentBgmSeg.value
   if (!timelineBgmRef.value) return
   if (seg?.url) {
     const el = timelineBgmRef.value
@@ -485,8 +511,8 @@ function timelineResizeStart(e: MouseEvent, shotId: number, currentDuration: num
     timelineResizeDraft.value = { ...timelineResizeDraft.value, [shotId]: newDur }
   }
   function onUp() {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
+    removeDocListener('mousemove', onMove)
+    removeDocListener('mouseup', onUp)
     const finalDur = timelineResizeDraft.value[shotId]
     timelineResizingShotId.value = null
     if (finalDur != null && finalDur !== startDur) {
@@ -498,8 +524,8 @@ function timelineResizeStart(e: MouseEvent, shotId: number, currentDuration: num
       timelineResizeDraft.value = d
     })
   }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+  addDocListener('mousemove', onMove)
+  addDocListener('mouseup', onUp)
 }
 
 async function timelineSaveShot(shotId: number) {
@@ -538,32 +564,40 @@ watch(timelineSelectedShotId, (id) => {
   }
 })
 
-watch(timelineMuted, (m) => {
-  if (timelineVideoRef.value) timelineVideoRef.value.muted = m
-  if (timelineVoiceRef.value) timelineVoiceRef.value.muted = m
-  if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineSfxMuted.value
-  timelineSyncBgmAudio()
-})
-watch(timelineSfxMuted, (m) => {
-  if (timelineSfxRef.value) timelineSfxRef.value.muted = m || timelineMuted.value
-})
-watch(timelineBgmMuted, () => { timelineSyncBgmAudio() })
-watch(timelineMasterVolume, (v) => {
-  const vol = v / 100
-  if (timelineVideoRef.value) timelineVideoRef.value.volume = vol
-  if (timelineVoiceRef.value) timelineVoiceRef.value.volume = vol
-  if (timelineSfxRef.value) timelineSfxRef.value.volume = vol
-  timelineSyncBgmAudio()
-})
-watch(timelinePlaybackSpeed, (speed) => {
-  if (timelineVideoRef.value) timelineVideoRef.value.playbackRate = speed
-  if (timelineVoiceRef.value) timelineVoiceRef.value.playbackRate = speed
-  if (timelineSfxRef.value) timelineSfxRef.value.playbackRate = speed
-})
+// Fix 3: Consolidate 5 separate media-property watchers into one
+watch(
+  [timelineMuted, timelineSfxMuted, timelineBgmMuted, timelineMasterVolume, timelinePlaybackSpeed],
+  ([muted, sfxMuted, _bgmMuted, masterVolume, speed]) => {
+    const vol = masterVolume / 100
+    if (timelineVideoRef.value) {
+      timelineVideoRef.value.muted = muted
+      timelineVideoRef.value.volume = vol
+      timelineVideoRef.value.playbackRate = speed
+    }
+    if (timelineVoiceRef.value) {
+      timelineVoiceRef.value.muted = muted
+      timelineVoiceRef.value.volume = vol
+      timelineVoiceRef.value.playbackRate = speed
+    }
+    if (timelineSfxRef.value) {
+      timelineSfxRef.value.muted = sfxMuted || muted
+      timelineSfxRef.value.volume = vol
+      timelineSfxRef.value.playbackRate = speed
+    }
+    timelineSyncBgmAudio()
+  },
+)
 
 onUnmounted(() => {
   timelinePause()
   if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
+  // Fix 1: Remove all tracked document listeners
+  for (const { event, fn } of activeDocListeners.value) {
+    document.removeEventListener(event, fn)
+  }
+  activeDocListeners.value = []
+  // Also stop any active playback timer
+  if (timelineTimer.value) { clearInterval(timelineTimer.value); timelineTimer.value = null }
 })
 
 // ──────── Export ────────

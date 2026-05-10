@@ -141,6 +141,12 @@ export const useVideoApi = () => {
       body: JSON.stringify({ disabled }),
     })
 
+  const updateBGMSegment = (videoId: number, segId: number, data: Partial<VideoBGMSegment>) =>
+    request<ApiResponse<VideoBGMSegment>>(`/videos/${videoId}/bgm/segments/${segId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
   const updateVideo = (id: number, data: Partial<Video>) =>
     request<ApiResponse<Video>>(`/videos/${id}`, {
       method: 'PUT',
@@ -290,6 +296,7 @@ export const useVideoApi = () => {
     jamendoSearchBGM,
     applyBGMTrack,
     toggleBGMSegment,
+    updateBGMSegment,
     uploadShotImage,
   }
 }

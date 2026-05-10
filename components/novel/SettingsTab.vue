@@ -150,6 +150,14 @@ async function confirmDeleteNovel() {
     toast.error('删除失败：' + (e.message || '未知错误'))
   }
 }
+
+async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration' | 'kling_pro_for_action') {
+  const currentValue = novel.value?.[field]
+  // Default for kling_pro_for_action is true, others default to false
+  const defaultValue = field === 'kling_pro_for_action' ? true : false
+  const newValue = currentValue === undefined ? !defaultValue : !currentValue
+  await novelStore.updateNovel(props.novelId, { [field]: newValue })
+}
 </script>
 
 <template>
@@ -609,6 +617,178 @@ async function confirmDeleteNovel() {
                 @click="novelStore.updateNovel(novelId, { subtitle_bg_style: bg.value as any })"
               >{{ bg.label }}</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 色彩调色 -->
+      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
+        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">色彩调色（Color Grading）</h4>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">调色预设</label>
+            <select
+              :value="novel?.color_grade ?? 'none'"
+              class="w-full border rounded px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              @change="(e) => novelStore.updateNovel(novelId, { color_grade: (e.target as HTMLSelectElement).value })"
+            >
+              <option value="none">无（原色）</option>
+              <option value="cinematic">电影感（Cinematic）</option>
+              <option value="warm">暖色调</option>
+              <option value="cool">冷色调</option>
+              <option value="teal_orange">青橙（Teal & Orange）</option>
+              <option value="vintage">复古</option>
+              <option value="noir">黑白（Noir）</option>
+            </select>
+          </div>
+          <div v-if="(novel?.color_grade ?? 'none') !== 'none' && (novel?.color_grade ?? 'none') !== 'noir'">
+            <label class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <span>对比度</span>
+              <span>{{ ((novel?.contrast_level ?? 0) >= 0 ? '+' : '') + ((novel?.contrast_level ?? 0) * 100).toFixed(0) }}%</span>
+            </label>
+            <input
+              type="range"
+              :value="novel?.contrast_level ?? 0"
+              min="-1"
+              max="1"
+              step="0.05"
+              class="w-full h-1 accent-blue-500"
+              @change="(e) => novelStore.updateNovel(novelId, { contrast_level: parseFloat((e.target as HTMLInputElement).value) })"
+            />
+          </div>
+          <div v-if="(novel?.color_grade ?? 'none') !== 'noir'">
+            <label class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <span>饱和度</span>
+              <span>{{ ((novel?.saturation ?? 1) * 100).toFixed(0) }}%</span>
+            </label>
+            <input
+              type="range"
+              :value="novel?.saturation ?? 1"
+              min="0"
+              max="2"
+              step="0.05"
+              class="w-full h-1 accent-blue-500"
+              @change="(e) => novelStore.updateNovel(novelId, { saturation: parseFloat((e.target as HTMLInputElement).value) })"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 镜头特效 -->
+      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
+          镜头特效（Lens FX）
+        </h3>
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">胶片颗粒</label>
+              <p class="text-xs text-gray-500 dark:text-gray-400">模拟35mm胶片的自然颗粒感</p>
+            </div>
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              :class="novel?.film_grain ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
+              @click="toggleFX('film_grain')"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
+                :class="novel?.film_grain ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头暗角</label>
+              <p class="text-xs text-gray-500 dark:text-gray-400">四角渐暗，增强画面聚焦感</p>
+            </div>
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              :class="novel?.vignette ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
+              @click="toggleFX('vignette')"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
+                :class="novel?.vignette ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">色差效果</label>
+              <p class="text-xs text-gray-500 dark:text-gray-400">模拟镜头边缘的色彩偏移，增加电影质感</p>
+            </div>
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              :class="novel?.chromatic_aberration ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
+              @click="toggleFX('chromatic_aberration')"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
+                :class="novel?.chromatic_aberration ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kling AI 质量模式 -->
+      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
+          AI 视频质量
+        </h3>
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">动作场景专业模式</label>
+            <p class="text-xs text-gray-500 dark:text-gray-400">战斗/史诗镜头自动使用 Kling Pro 模式（消耗更多配额）</p>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+            :class="novel?.kling_pro_for_action !== false ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
+            @click="toggleFX('kling_pro_for_action')"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
+              :class="novel?.kling_pro_for_action !== false ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+      </div>
+
+      <!-- 字幕样式 -->
+      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
+          字幕样式
+        </h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">字幕风格</label>
+            <select
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
+              :value="novel?.subtitle_style || 'none'"
+              @change="novelStore.updateNovel(novelId, { subtitle_style: ($event.target as HTMLSelectElement).value })"
+            >
+              <option value="none">无字幕</option>
+              <option value="basic">基础（白色，黑色描边）</option>
+              <option value="cinematic">电影风（居中，大字，阴影）</option>
+              <option value="anime">动漫风（黄色，粗描边）</option>
+            </select>
+          </div>
+          <div v-if="novel?.subtitle_style && novel.subtitle_style !== 'none'">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">字体</label>
+            <select
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
+              :value="novel?.subtitle_font || 'Noto Sans CJK SC'"
+              @change="novelStore.updateNovel(novelId, { subtitle_font: ($event.target as HTMLSelectElement).value })"
+            >
+              <option value="Noto Sans CJK SC">Noto Sans CJK（推荐）</option>
+              <option value="Source Han Sans CN">思源黑体</option>
+              <option value="PingFang SC">苹方（macOS）</option>
+              <option value="Microsoft YaHei">微软雅黑（Windows）</option>
+            </select>
           </div>
         </div>
       </div>

@@ -118,6 +118,31 @@ async function toggleBGMSegmentDisabled(seg: VideoBGMSegment) {
   if (idx !== -1) bgmSegments.value[idx] = { ...bgmSegments.value[idx], disabled }
 }
 
+async function updateSegmentVolume(seg: VideoBGMSegment, volume: number) {
+  try {
+    const api = useVideoApi()
+    await api.updateBGMSegment(props.videoId, seg.id, { volume })
+    const idx = bgmSegments.value.findIndex(s => s.id === seg.id)
+    if (idx !== -1) bgmSegments.value[idx] = { ...bgmSegments.value[idx], volume }
+  } catch (e: any) {
+    toast.error('保存音量失败：' + (e.message || '未知错误'))
+  }
+}
+
+async function updateSegmentDucking(seg: VideoBGMSegment, duckingEnabled: boolean, duckingLevel: number) {
+  try {
+    const api = useVideoApi()
+    await api.updateBGMSegment(props.videoId, seg.id, {
+      ducking_enabled: duckingEnabled,
+      ducking_level: duckingLevel,
+    })
+    const idx = bgmSegments.value.findIndex(s => s.id === seg.id)
+    if (idx !== -1) bgmSegments.value[idx] = { ...bgmSegments.value[idx], ducking_enabled: duckingEnabled, ducking_level: duckingLevel }
+  } catch (e: any) {
+    toast.error('保存闪避配置失败：' + (e.message || '未知错误'))
+  }
+}
+
 function openBGMSearch(seg: VideoBGMSegment) {
   bgmSearchTargetSeg.value = seg
   const queries = parseBGMSearchQueries(seg.search_queries)
@@ -314,6 +339,46 @@ defineExpose({ bgmSegments, bgmVolume, load })
             :key="q"
             class="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded"
           >{{ q }}</span>
+        </div>
+
+        <!-- Per-segment volume -->
+        <div class="flex items-center gap-3 mt-2">
+          <label class="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-12">音量 {{ Math.round(seg.volume * 100) }}%</label>
+          <input
+            type="range"
+            :value="seg.volume"
+            min="0"
+            max="1"
+            step="0.05"
+            class="flex-1 h-1 accent-purple-500"
+            @change="updateSegmentVolume(seg, parseFloat(($event.target as HTMLInputElement).value))"
+          />
+        </div>
+
+        <!-- 人声闪避配置 -->
+        <div class="flex items-center gap-3 mt-2">
+          <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+            <input
+              type="checkbox"
+              :checked="seg.ducking_enabled !== false"
+              class="rounded"
+              @change="updateSegmentDucking(seg, ($event.target as HTMLInputElement).checked, seg.ducking_level ?? 0.15)"
+            />
+            人声闪避
+          </label>
+          <template v-if="seg.ducking_enabled !== false">
+            <input
+              type="range"
+              :value="seg.ducking_level ?? 0.15"
+              min="0.05"
+              max="0.5"
+              step="0.05"
+              class="flex-1 h-1 accent-blue-500"
+              title="闪避后音量"
+              @change="updateSegmentDucking(seg, seg.ducking_enabled !== false, parseFloat(($event.target as HTMLInputElement).value))"
+            />
+            <span class="text-xs text-gray-400 w-8">{{ Math.round((seg.ducking_level ?? 0.15) * 100) }}%</span>
+          </template>
         </div>
 
         <!-- Manual search button -->

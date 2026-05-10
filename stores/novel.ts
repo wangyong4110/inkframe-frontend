@@ -33,20 +33,6 @@ export const useNovelStore = defineStore('novel', {
   }),
 
   getters: {
-    filteredNovels: (state) => {
-      let result = state.novels
-
-      if (state.filters.status) {
-        result = result.filter(n => n.status === state.filters.status)
-      }
-
-      if (state.filters.genre) {
-        result = result.filter(n => n.genre === state.filters.genre)
-      }
-
-      return result
-    },
-
     novelsByStatus: (state) => (status: NovelStatus) => {
       return state.novels.filter(n => n.status === status)
     },

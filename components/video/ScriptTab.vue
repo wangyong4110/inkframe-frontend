@@ -32,6 +32,29 @@ const savingEdit = ref(false)
 
 const anchors = computed(() => sceneAnchorStore.anchors)
 const characters = computed(() => characterStore.characters)
+// Pre-computed map for O(1) character lookups by id in the template.
+// Replaces repeated characters.find(c => c.id === charId) calls inside nested v-for loops.
+const characterById = computed(() => {
+  const map = new Map<number, (typeof characters.value)[0]>()
+  for (const c of characters.value) map.set(c.id, c)
+  return map
+})
+// Pre-computed map for O(1) unassigned-character lookups per shot.
+// Replaces the O(n*m) per-shot unassignedCharacters() function called inside v-for loops.
+const unassignedCharsMap = computed(() => {
+  const allChars = characters.value
+  const result = new Map<number, (typeof allChars)[0][]>()
+  for (const shot of shots.value) {
+    const assignedIds = new Set(shot.character_ids ?? [])
+    result.set(shot.id, allChars.filter(c => !assignedIds.has(c.id)))
+  }
+  return result
+})
+// Kept as fallback for any ad-hoc call outside the main v-for loop.
+function unassignedCharacters(shot: StoryboardShot) {
+  const assigned = new Set(shot.character_ids ?? [])
+  return characters.value.filter(c => !assigned.has(c.id))
+}
 
 // ── AI params ──
 const {
@@ -132,6 +155,18 @@ const insertingShotAfter = ref<number | null>(null)
 const insertShotForm = reactive({ narration: '', description: '', duration: 4 })
 const insertingShotLoading = ref(false)
 
+// ── Debounced storyboard refresh ──
+// Replaces redundant per-mutation fetchStoryboard calls with a single
+// debounced fetch so rapid mutations (insert/copy/delete) only trigger one request.
+let _refreshTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleRefresh() {
+  if (_refreshTimer) clearTimeout(_refreshTimer)
+  _refreshTimer = setTimeout(() => {
+    videoStore.fetchStoryboard(props.videoId)
+    _refreshTimer = null
+  }, 300)
+}
+
 function parseSfxTags(sfxTags?: string): string[] {
   if (!sfxTags) return []
   try { return JSON.parse(sfxTags) as string[] } catch { return [] }
@@ -152,6 +187,7 @@ function startEdit(shot: StoryboardShot) {
     transition: shot.transition || 'cut',
     sfx_tags: shot.sfx_tags || '',
     sfx_volume: shot.sfx_volume ?? 0,
+    motion_prompt: shot.motion_prompt || '',
   }
 }
 
@@ -422,7 +458,7 @@ async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null
   try {
     const api = useSceneAnchorApi()
     await api.setShotAnchor(props.videoId, shot.id, anchorId)
-    await videoStore.fetchStoryboard(props.videoId)
+    scheduleRefresh()
   } catch (e: any) {
     toast.error('绑定失败：' + (e.message || ''))
   }
@@ -435,7 +471,7 @@ async function handleSetShotCharacters(shot: StoryboardShot, characterIds: numbe
       method: 'PUT',
       body: JSON.stringify({ character_ids: characterIds }),
     })
-    await videoStore.fetchStoryboard(props.videoId)
+    scheduleRefresh()
   } catch (e: any) {
     toast.error('角色绑定失败：' + (e.message || ''))
   }
@@ -461,7 +497,7 @@ async function handleInsertShot(afterShotNo: number) {
     insertShotForm.narration = ''
     insertShotForm.description = ''
     insertShotForm.duration = 4
-    await videoStore.fetchStoryboard(props.videoId)
+    scheduleRefresh()
     toast.success('镜头已插入')
   } catch (e: any) {
     toast.error('插入失败：' + (e.message || ''))
@@ -474,7 +510,7 @@ async function handleCopyShot(shot: StoryboardShot) {
   try {
     const api = useVideoApi()
     await api.copyShot(props.videoId, shot.id, -1)
-    await videoStore.fetchStoryboard(props.videoId)
+    scheduleRefresh()
     toast.success('镜头已复制')
   } catch (e: any) {
     toast.error('复制失败：' + (e.message || ''))
@@ -486,10 +522,47 @@ async function handleDeleteShot(shot: StoryboardShot) {
   try {
     const api = useVideoApi()
     await api.deleteShot(props.videoId, shot.id)
-    await videoStore.fetchStoryboard(props.videoId)
+    scheduleRefresh()
     toast.success('镜头已删除')
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+function shotKlingMode(shot: StoryboardShot): 'pro' | 'std' {
+  const emotion = ((shot as any).emotional_tone || '').toLowerCase()
+  const camera = (shot.camera_type || '').toLowerCase()
+  if (
+    emotion.includes('battle') || emotion.includes('战斗') || emotion.includes('打斗') ||
+    emotion.includes('action') || emotion.includes('fight') ||
+    emotion.includes('epic') || emotion.includes('史诗') ||
+    emotion.includes('宏大') || emotion.includes('壮观') ||
+    emotion.includes('climax') || emotion.includes('高潮')
+  ) {
+    return 'pro'
+  }
+  return 'std'
+}
+
+async function exportSubtitles() {
+  try {
+    const response = await fetch(`/api/v1/videos/${props.videoId}/subtitles/export`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`,
+      },
+    })
+    if (!response.ok) throw new Error('导出失败')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `video_${props.videoId}_subtitles.ass`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('字幕已导出')
+  } catch (e: any) {
+    toast.error('字幕导出失败：' + (e.message || '未知错误'))
   }
 }
 
@@ -563,6 +636,16 @@ defineExpose({ loadVideoProviders: async () => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
           {{ batchGeneratingClips ? '视频生成中…' : '生成视频' }}
+        </button>
+        <button
+          class="btn-secondary text-sm"
+          title="导出 ASS 字幕文件"
+          @click="exportSubtitles"
+        >
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+          </svg>
+          导出字幕
         </button>
       </template>
 
@@ -739,6 +822,15 @@ defineExpose({ loadVideoProviders: async () => {
               <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="English visual prompt for image generation..." />
             </div>
             <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">运镜提示（Motion Prompt）</label>
+              <textarea
+                v-model="editForm.motion_prompt"
+                rows="2"
+                class="w-full text-xs border rounded px-2 py-1 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                placeholder="视频运镜描述，留空则自动生成"
+              />
+            </div>
+            <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">旁白文案（中文，用于TTS和字幕）</label>
               <textarea v-model="editForm.narration" rows="2" class="input text-sm resize-none" placeholder="观众听到的旁白内容，不含镜头语言..." />
             </div>
@@ -800,9 +892,25 @@ defineExpose({ loadVideoProviders: async () => {
           <!-- View mode -->
           <div v-else class="p-4">
             <div class="flex items-start justify-between gap-3 mb-2">
-              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 tabular-nums flex-shrink-0">
-                Shot {{ String(shot.shot_no).padStart(2, '0') }}
-              </span>
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 tabular-nums">
+                  Shot {{ String(shot.shot_no).padStart(2, '0') }}
+                </span>
+                <!-- Kling 模式徽标 -->
+                <span
+                  v-if="shotKlingMode(shot) === 'pro'"
+                  class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                  title="此镜头将使用 Kling Pro 模式（更高画质）"
+                >
+                  PRO
+                </span>
+                <span
+                  v-else
+                  class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                >
+                  STD
+                </span>
+              </div>
               <div class="flex items-center gap-1 flex-shrink-0">
                 <button
                   class="p-1.5 rounded-lg transition-colors"
@@ -1001,6 +1109,20 @@ defineExpose({ loadVideoProviders: async () => {
                   <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="SHOT_STATUS_COLORS[shot.status]">
                     {{ SHOT_STATUS_LABELS[shot.status] }}
                   </span>
+                  <!-- Kling 模式徽标 -->
+                  <span
+                    v-if="shotKlingMode(shot) === 'pro'"
+                    class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                    title="此镜头将使用 Kling Pro 模式（更高画质）"
+                  >
+                    PRO
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                  >
+                    STD
+                  </span>
                   <span
                     v-if="shot.status === 'failed' && shot.error_message"
                     class="text-[10px] text-red-400 dark:text-red-500 max-w-[160px] text-right leading-snug"
@@ -1066,18 +1188,18 @@ defineExpose({ loadVideoProviders: async () => {
             <template v-for="charId in (shot.character_ids || [])" :key="charId">
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                 <img
-                  v-if="characters.find(c => c.id === charId)?.portrait"
-                  :src="characters.find(c => c.id === charId)!.portrait"
+                  v-if="characterById.get(charId)?.portrait"
+                  :src="characterById.get(charId)!.portrait"
                   class="w-3 h-3 rounded-full object-cover"
                 />
-                {{ characters.find(c => c.id === charId)?.name || charId }}
+                {{ characterById.get(charId)?.name || charId }}
                 <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
               </span>
             </template>
             <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
               <option value="">+ 绑定角色</option>
               <option
-                v-for="c in characters.filter(c => !(shot.character_ids || []).includes(c.id))"
+                v-for="c in (unassignedCharsMap.get(shot.id) ?? [])"
                 :key="c.id"
                 :value="c.id"
               >{{ c.name }}</option>

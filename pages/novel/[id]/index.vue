@@ -98,9 +98,9 @@ function startAnalysisPoll() {
         if (analysisStatus.value.status === 'completed') {
           await Promise.all([
             novelStore.fetchNovel(novelId),
+            chapterStore.fetchChapters(novelId),
             characterStore.fetchCharacters(novelId),
           ])
-          window.location.reload()
         } else {
           toast.error('AI 分析失败：' + (analysisStatus.value.error || '未知错误'))
         }

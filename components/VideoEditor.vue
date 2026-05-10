@@ -60,8 +60,10 @@ function snapshotCrossTabData() {
 // ──────── Lifecycle ────────
 async function load() {
   try {
-    await videoStore.fetchVideo(props.videoId)
-    await videoStore.fetchStoryboard(props.videoId)
+    await Promise.all([
+      videoStore.fetchVideo(props.videoId),
+      videoStore.fetchStoryboard(props.videoId),
+    ])
     videoStore.resumeStoryboardTask(props.videoId)
     const novelId = videoStore.currentVideo?.novel_id
     if (novelId) sceneAnchorStore.fetchAnchors(novelId)
@@ -95,11 +97,17 @@ watch(() => videoStore.storyboardTaskStatus, (status) => {
   }
 })
 
+// Version counter used to detect stale tab-switch async operations.
+// When the user switches tabs rapidly, only the latest switch should
+// clear the loading spinner and run post-mount component calls.
+let tabSwitchVersion = 0
+
 // Tab-change handler: snapshot cross-tab data before unmounting, then refresh
 watch(activeTab, async (tab) => {
   // Capture exposed data from the departing tab before v-if destroys the instance
   snapshotCrossTabData()
 
+  const version = ++tabSwitchVersion
   tabLoading.value = true
   try {
     if (['script', 'voice', 'sfx', 'timeline'].includes(tab)) {
@@ -109,9 +117,14 @@ watch(activeTab, async (tab) => {
       await videoStore.fetchVideo(props.videoId)
     }
   } finally {
-    // Clear spinner FIRST so the incoming tab component mounts (v-if becomes true)
-    tabLoading.value = false
+    // Only clear the spinner if this is still the latest tab switch.
+    if (version === tabSwitchVersion) {
+      tabLoading.value = false
+    }
   }
+
+  // If a newer tab switch has started, skip post-mount component calls.
+  if (version !== tabSwitchVersion) return
 
   // Now the tab is mounted; wait for DOM update then call component methods
   await nextTick()
@@ -229,8 +242,10 @@ defineExpose({ activeTab, generateStoryboard })
     </div>
 
     <!-- ══ Script Tab ══════════════════════════════════════════════════════ -->
+    <!-- v-show keeps ScriptTab mounted to avoid re-initialization cost;
+         it has no onMounted data fetches (parent controls loading via tabLoading). -->
     <ScriptTab
-      v-if="activeTab === 'script' && !tabLoading"
+      v-show="activeTab === 'script' && !tabLoading"
       ref="scriptTabRef"
       :video-id="props.videoId"
       :llm-provider="props.llmProvider"

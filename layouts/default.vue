@@ -31,6 +31,7 @@ const toggleDark = () => {
 const navItems = [
   { label: '首页', to: '/', icon: 'home' },
   { label: '项目', to: '/novel', icon: 'book-open' },
+  { label: '小说改写', to: '/rewrite', icon: 'edit' },
   { label: '视频', to: '/video', icon: 'video' },
   { label: '模型', to: '/model', icon: 'cpu' },
 ]

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Video, StoryboardShot } from '~/types'
+import type { Video, StoryboardShot, VideoBGMSegment } from '~/types'
 import { useTaskStore } from '~/stores/task'
 
 interface VideoState {
@@ -216,7 +216,16 @@ export const useVideoStore = defineStore('video', {
     },
 
     async pollStoryboardTask(videoId: number, taskId: string) {
+      let retries = 0
+      const MAX_RETRIES = 300 // 10 minutes at 2s intervals
       const poll = async () => {
+        if (retries++ >= MAX_RETRIES) {
+          console.warn('[VideoStore] polling timeout for task', taskId)
+          this.generating = false
+          this.storyboardTaskStatus = 'failed'
+          localStorage.removeItem(`storyboard_task_${videoId}`)
+          return
+        }
         try {
           const res = await useTaskApi().getTask(taskId)
           const task = res.data
@@ -354,6 +363,12 @@ export const useVideoStore = defineStore('video', {
       this.currentVideo = null
       this.storyboard = []
       this.currentShot = null
+    },
+
+    async updateBGMSegment(videoId: number, segId: number, data: Partial<VideoBGMSegment>) {
+      const { updateBGMSegment } = useVideoApi()
+      const updated = await updateBGMSegment(videoId, segId, data)
+      return updated?.data
     },
 
     async reviewStoryboard(videoId: number, provider?: string, onDone?: (task: import('~/types').AsyncTask) => void) {

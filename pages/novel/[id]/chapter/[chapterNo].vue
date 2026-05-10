@@ -329,9 +329,12 @@ function countWords(text: string): number {
   return text.length
 }
 
+// Fix 5: Replace inline filter calls with computed properties
+const mainCharacters = computed(() => characters.value.filter((c: any) => c.role !== 'minor'))
+const minorCharacters = computed(() => characters.value.filter((c: any) => c.role === 'minor'))
+
 function getActiveCharacters(): any[] {
-  if (!chapter.value) return []
-  return characters.value.filter((c: any) => c.role !== 'minor')
+  return mainCharacters.value
 }
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
@@ -1079,11 +1082,11 @@ async function fetchShotsForChapter() {
               </div>
             </div>
             <!-- Minor Characters -->
-            <div v-if="characters.filter((c: any) => c.role === 'minor').length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-8">
+            <div v-if="minorCharacters.length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-8">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">次要角色</h4>
               <div class="grid gap-2">
                 <div
-                  v-for="char in characters.filter((c: any) => c.role === 'minor')"
+                  v-for="char in minorCharacters"
                   :key="char.id"
                   class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
                   @click="router.push(`/character/${char.id}`)"

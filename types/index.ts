@@ -35,6 +35,18 @@ export interface Novel {
   subtitle_font_size?: number
   subtitle_color?: string
   subtitle_bg_style?: 'none' | 'shadow' | 'box'          // 旁白音色 ID
+  color_grade?: string        // 调色预设：none/cinematic/warm/cool/teal_orange/vintage/noir
+  contrast_level?: number     // 对比度调节 -1~1，0 = 不调整
+  saturation?: number         // 饱和度倍率 0~2，1 = 原色
+  // 镜头特效
+  film_grain?: boolean
+  vignette?: boolean
+  chromatic_aberration?: boolean
+  // Kling 专业模式
+  kling_pro_for_action?: boolean
+  // 字幕
+  subtitle_style?: string      // none/basic/cinematic/anime
+  subtitle_font?: string
   created_at: string
   updated_at: string
 }
@@ -220,6 +232,8 @@ export interface StoryboardShot {
   sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
   sfx_volume?: number   // 混音音量（0=自动）
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
+  negative_prompt?: string
+  motion_prompt?: string
 }
 
 export interface ShotSFXItem {
@@ -274,6 +288,8 @@ export interface VideoBGMSegment {
   track_artist?: string
   source?: string   // jamendo/pixabay/local/none
   disabled?: boolean
+  ducking_enabled?: boolean
+  ducking_level?: number
   created_at?: string
   updated_at?: string
 }
@@ -281,7 +297,7 @@ export interface VideoBGMSegment {
 export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
 export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
 export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'
-export type ShotTransition = 'cut' | 'fade' | 'dissolve' | 'wipe'
+export type ShotTransition = 'cut' | 'j-cut' | 'l-cut' | 'fade' | 'dissolve' | 'dip-black' | 'dip-white' | 'wipe' | 'push' | 'slide' | 'zoom' | 'whip-pan' | 'spin' | 'flash' | 'glitch' | 'blur' | 'morph'
 export type ShotStatus = 'pending' | 'generating' | 'completed' | 'failed'
 
 export interface ShotCharacterConfig {
@@ -528,6 +544,9 @@ export interface SceneAnchor {
   avg_cons_score: number
   parent_anchor_id?: number
   variant?: string
+  lighting_keywords?: string
+  time_of_day?: string
+  weather?: string
   created_at: string
   updated_at: string
 }
@@ -541,6 +560,9 @@ export interface CreateSceneAnchorPayload {
   notes?: string
   variant?: string
   parent_anchor_id?: number
+  lighting_keywords?: string
+  time_of_day?: string
+  weather?: string
 }
 
 export type UpdateSceneAnchorPayload = Partial<CreateSceneAnchorPayload>
@@ -630,6 +652,64 @@ export interface VideoStylePreset {
   art_style: string
   aspect_ratio: string
   frame_rate: number
+}
+
+// Novel Rewriting Types
+export interface RewriteProject {
+  id: number
+  tenant_id: number
+  novel_id: number
+  name: string
+  level: 1 | 2 | 3
+  status: 'pending' | 'analyzing' | 'bible_ready' | 'rewriting' | 'reviewing' | 'completed' | 'failed'
+  progress: number
+  total_chapters: number
+  done_chapters: number
+  error_msg: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LiteraryAnalysis {
+  id: number
+  project_id: number
+  voice_fingerprint: string // JSON string
+  scene_architecture: string
+  char_psych: string
+  theme_core: string
+  world_logic: string
+  high_risk_markers: string
+  created_at: string
+}
+
+export interface RewriteBible {
+  id: number
+  project_id: number
+  new_world_name: string
+  new_char_names: string // JSON string: {oldName: newName}
+  plot_transform: string
+  voice_strategy: string
+  style_guide: string
+  forbidden_elems: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChapterRewriteTask {
+  id: number
+  project_id: number
+  chapter_id: number
+  chapter_no: number
+  status: 'pending' | 'rewriting' | 'reviewing' | 'completed' | 'failed'
+  original_content: string
+  rewritten_content: string
+  similarity_score: number
+  lexical_sim: number
+  passed: boolean
+  retry_count: number
+  error_msg: string
+  created_at: string
+  updated_at: string
 }
 
 // UI types

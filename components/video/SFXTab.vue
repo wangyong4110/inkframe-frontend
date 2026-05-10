@@ -30,7 +30,20 @@ function parseSfxTags(sfxTags?: string): string[] {
   try { return JSON.parse(sfxTags) as string[] } catch { return [] }
 }
 
+const sfxTagsMap = computed(() => {
+  const map = new Map<number, string[]>()
+  for (const shot of shots.value) {
+    try {
+      map.set(shot.id, shot.sfx_tags ? JSON.parse(shot.sfx_tags) : [])
+    } catch {
+      map.set(shot.id, [])
+    }
+  }
+  return map
+})
+
 async function loadSFXItems() {
+  if (sfxItemsLoading.value) return // Fix 4: guard against concurrent loads
   if (shots.value.length === 0) return
   sfxItemsLoading.value = true
   try {
@@ -227,9 +240,9 @@ defineExpose({ sfxItems, loadSFXItems })
               {{ shot.narration || shot.description || '（无描述）' }}
             </p>
             <!-- SFX tags -->
-            <div v-if="parseSfxTags(shot.sfx_tags).length > 0" class="flex flex-wrap gap-1 mt-1">
+            <div v-if="(sfxTagsMap.get(shot.id) ?? []).length > 0" class="flex flex-wrap gap-1 mt-1">
               <span
-                v-for="tag in parseSfxTags(shot.sfx_tags)"
+                v-for="tag in sfxTagsMap.get(shot.id)"
                 :key="tag"
                 class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800"
               >
@@ -307,7 +320,7 @@ defineExpose({ sfxItems, loadSFXItems })
         </div>
         <!-- Empty state -->
         <div v-else-if="!sfxItemsLoading" class="px-3 py-2 text-xs text-gray-400 italic">
-          {{ parseSfxTags(shot.sfx_tags).length > 0 ? '已分析搜索词，点击「一键生成音效」匹配音频' : '点击「AI 分析标签」或「一键生成音效」' }}
+          {{ (sfxTagsMap.get(shot.id) ?? []).length > 0 ? '已分析搜索词，点击「一键生成音效」匹配音频' : '点击「AI 分析标签」或「一键生成音效」' }}
         </div>
       </div>
       <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">

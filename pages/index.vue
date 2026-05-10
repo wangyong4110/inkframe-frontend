@@ -1,112 +1,34 @@
 <script setup lang="ts">
-const novelStore = useNovelStore()
+import { ref, onMounted } from 'vue'
+import type { Novel } from '~/types'
 
-// Fetch novels on mount
-onMounted(() => {
-  novelStore.fetchNovels()
-})
+definePageMeta({ layout: false })
 
-const stats = computed(() => [
-  {
-    label: '进行中项目',
-    value: novelStore.novelsByStatus('writing').length,
-    icon: 'writing',
-    color: 'primary',
-  },
-  {
-    label: '已完成项目',
-    value: novelStore.novelsByStatus('completed').length,
-    icon: 'completed',
-    color: 'success',
-  },
-  {
-    label: '总章节数',
-    value: novelStore.totalChapters,
-    icon: 'chapters',
-    color: 'warning',
-  },
-  {
-    label: '总字数',
-    value: formatNumber(novelStore.totalWords),
-    icon: 'words',
-    color: 'info',
-  },
-])
+const authStore = useAuthStore()
+const { getNovels } = useNovelApi()
+const recentNovels = ref<Novel[]>([])
 
-const recentNovels = computed(() => {
-  return [...novelStore.novels]
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    .slice(0, 5)
-})
-
-const features = [
-  {
-    title: '智能小说生成',
-    description: '基于AI技术，自动生成高质量的中长篇小说，支持多种题材',
-    icon: 'book-open',
-    color: 'primary',
-  },
-  {
-    title: '世界观管理',
-    description: '完整的世界观设定系统，确保作品的一致性和连贯性',
-    icon: 'globe',
-    color: 'success',
-  },
-  {
-    title: '角色追踪',
-    description: '角色全生命周期管理，跟踪角色发展和关系变化',
-    icon: 'users',
-    color: 'warning',
-  },
-  {
-    title: '视频生成',
-    description: '从小说内容自动生成配套视频，一键成片',
-    icon: 'video',
-    color: 'error',
-  },
-  {
-    title: '多模型支持',
-    description: '支持多种AI模型，灵活选择最优方案',
-    icon: 'cpu',
-    color: 'info',
-  },
-  {
-    title: '质量控制',
-    description: '全方位的一致性检查，确保作品质量',
-    icon: 'shield',
-    color: 'primary',
-  },
-]
-
-function formatNumber(num: number): string {
-  if (num >= 10000) {
-    return (num / 10000).toFixed(1) + 'w'
+onMounted(async () => {
+  if (authStore.isLoggedIn) {
+    try {
+      const response = await getNovels({ page: 1, page_size: 5 })
+      recentNovels.value = response.data.items || []
+    } catch {
+      // non-fatal
+    }
   }
-  return num.toLocaleString()
-}
+})
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   const now = new Date()
   const diff = now.getTime() - date.getTime()
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
   if (days === 0) return '今天'
   if (days === 1) return '昨天'
   if (days < 7) return `${days}天前`
   if (days < 30) return `${Math.floor(days / 7)}周前`
   return `${Math.floor(days / 30)}月前`
-}
-
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    planning: 'bg-blue-100 text-blue-800',
-    writing: 'bg-yellow-100 text-yellow-800',
-    paused: 'bg-gray-100 text-gray-800',
-    completed: 'bg-green-100 text-green-800',
-    archived: 'bg-gray-100 text-gray-600',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
 }
 
 function getStatusLabel(status: string): string {
@@ -119,163 +41,347 @@ function getStatusLabel(status: string): string {
   }
   return labels[status] || status
 }
+
+const pipeline = [
+  {
+    icon: '✍️',
+    title: '构思创作',
+    desc: '多 AI 提供商协同，生成完整世界观、角色体系和章节内容',
+    bgClass: 'bg-blue-500/20 border border-blue-500/30',
+  },
+  {
+    icon: '🎬',
+    title: '分镜策划',
+    desc: 'AI 自动将章节拆解为专业电影分镜，含镜头语言和情绪设计',
+    bgClass: 'bg-violet-500/20 border border-violet-500/30',
+  },
+  {
+    icon: '🎨',
+    title: '视觉生成',
+    desc: '基于场景锚点的一致性图像生成，Ken Burns 动态镜头效果',
+    bgClass: 'bg-purple-500/20 border border-purple-500/30',
+  },
+  {
+    icon: '🎥',
+    title: '视频合成',
+    desc: 'BGM、配音、字幕、转场的专业后期合成，EBU R128 音频标准',
+    bgClass: 'bg-indigo-500/20 border border-indigo-500/30',
+  },
+]
+
+const features = [
+  {
+    icon: '🤖',
+    title: '多 AI 提供商',
+    desc: '支持 OpenAI、Claude、Deepseek、通义千问、豆包等，自动重试和失败切换',
+    iconBg: 'bg-blue-500/20',
+    tags: ['OpenAI', 'Claude', 'Deepseek', 'Doubao'],
+  },
+  {
+    icon: '🧠',
+    title: '分层记忆系统',
+    desc: '全局摘要 + 弧线摘要 + 最近章节的层级上下文，支持 100+ 章长篇创作',
+    iconBg: 'bg-violet-500/20',
+    tags: ['长篇支持', '连贯性保障'],
+  },
+  {
+    icon: '🎬',
+    title: '电影级视频',
+    desc: 'Kling Pro 模式、Ken Burns 动效、场景锚点一致性、EBU R128 音频',
+    iconBg: 'bg-amber-500/20',
+    tags: ['Kling AI', '4K支持', 'BGM混音'],
+  },
+  {
+    icon: '✍️',
+    title: '专业小说改写',
+    desc: '三级改写策略（文学精炼/结构重构/精神蒸馏），6维相似度检测，规避版权风险',
+    iconBg: 'bg-emerald-500/20',
+    tags: ['版权安全', 'AI辅助'],
+  },
+  {
+    icon: '👤',
+    title: '角色世界管理',
+    desc: '角色状态快照、三视图生成、世界观词条体系、道具与技能系统',
+    iconBg: 'bg-rose-500/20',
+    tags: ['角色一致性', '世界观'],
+  },
+  {
+    icon: '📊',
+    title: '质量控制',
+    desc: 'AI 评分（逻辑/一致性/质量/文风）+ 规则检测，自动优化章节内容',
+    iconBg: 'bg-cyan-500/20',
+    tags: ['自动评分', '精炼润色'],
+  },
+]
+
+const stats = [
+  { value: '6+', label: 'AI 模型提供商' },
+  { value: '100+', label: '章长篇支持' },
+  { value: '4K', label: '视频输出质量' },
+  { value: '3', label: '级改写策略' },
+]
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="min-h-screen bg-gray-950 text-white">
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 border-b border-gray-800/50 bg-gray-950/80 backdrop-blur-xl">
+      <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <!-- Logo -->
+        <NuxtLink to="/" class="flex items-center gap-3">
+          <div class="w-8 h-8 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+            <span class="text-white font-bold text-sm">I</span>
+          </div>
+          <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
+        </NuxtLink>
+
+        <!-- Nav links -->
+        <div class="hidden md:flex items-center gap-6">
+          <NuxtLink to="/novel" class="text-gray-400 hover:text-white text-sm transition-colors">我的小说</NuxtLink>
+          <NuxtLink to="/rewrite" class="text-gray-400 hover:text-white text-sm transition-colors">小说改写</NuxtLink>
+          <NuxtLink to="/model" class="text-gray-400 hover:text-white text-sm transition-colors">AI 模型</NuxtLink>
+        </div>
+
+        <!-- Auth -->
+        <div class="flex items-center gap-3">
+          <template v-if="!authStore.isLoggedIn">
+            <NuxtLink to="/auth/login" class="text-gray-400 hover:text-white text-sm transition-colors">登录</NuxtLink>
+            <NuxtLink
+              to="/auth/register"
+              class="bg-violet-600 hover:bg-violet-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
+            >
+              免费开始
+            </NuxtLink>
+          </template>
+          <template v-else>
+            <span class="hidden sm:block text-sm text-gray-400">
+              {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
+            </span>
+            <NuxtLink
+              to="/novel"
+              class="bg-violet-600 hover:bg-violet-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
+            >
+              进入创作台
+            </NuxtLink>
+          </template>
+        </div>
+      </div>
+    </nav>
+
     <!-- Hero Section -->
-    <section class="relative overflow-hidden rounded-2xl bg-gradient-primary p-8 md:p-12">
-      <div class="relative z-10">
-        <h1 class="text-3xl md:text-4xl font-bold text-white mb-4">
-          欢迎使用 InkFrame
+    <section class="relative pt-32 pb-24 px-6 overflow-hidden">
+      <!-- Background gradient orbs -->
+      <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -right-40 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-20 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-900/10 rounded-full blur-3xl"></div>
+      </div>
+
+      <div class="relative max-w-5xl mx-auto text-center">
+        <!-- Badge -->
+        <div class="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/30 rounded-full px-4 py-1.5 mb-6">
+          <span class="w-2 h-2 bg-violet-400 rounded-full animate-pulse"></span>
+          <span class="text-violet-300 text-xs font-medium">AI 驱动 · 小说到视频全链路创作</span>
+        </div>
+
+        <!-- Headline -->
+        <h1 class="text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-6 tracking-tight">
+          让每个故事<br>
+          <span class="bg-gradient-to-r from-violet-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">
+            活成一部电影
+          </span>
         </h1>
-        <p class="text-lg text-primary-100 mb-6 max-w-2xl">
-          基于AI的智能小说创作平台，帮助你从零开始创作高质量的中长篇小说，
-          并自动生成配套的视频内容。
+
+        <!-- Subtext -->
+        <p class="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+          InkFrame 将 AI 创作、专业分镜、电影级视频生成融为一体。
+          从一个想法出发，全自动生成完整小说，一键转化为视觉盛宴。
         </p>
-        <div class="flex flex-wrap gap-4">
-          <NuxtLink to="/novel/create" class="btn bg-white text-primary-600 hover:bg-primary-50">
-            创建新项目
+
+        <!-- CTA Buttons -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <NuxtLink
+            to="/novel/create"
+            class="w-full sm:w-auto bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg shadow-violet-900/40 text-center"
+          >
+            立即创作 →
+          </NuxtLink>
+          <NuxtLink
+            to="/novel"
+            class="w-full sm:w-auto bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-8 py-3.5 rounded-xl transition-colors border border-gray-700 text-center"
+          >
+            我的作品
+          </NuxtLink>
+        </div>
+
+        <!-- Mini stats -->
+        <div class="flex flex-wrap items-center justify-center gap-6 mt-12 text-sm text-gray-500">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-400">✓</span>
+            <span>6+ AI 提供商</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-400">✓</span>
+            <span>电影级视频输出</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-400">✓</span>
+            <span>专业版权改写</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pipeline Visualization -->
+    <section class="py-20 px-6 border-t border-gray-800/50">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-12">
+          <h2 class="text-2xl md:text-3xl font-bold text-white mb-3">从想象到银幕，四步完成</h2>
+          <p class="text-gray-400">完整的 AI 创作流水线，每一步都有专业工具支持</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-0 relative">
+          <!-- Connecting line (desktop only) -->
+          <div class="hidden md:block absolute top-8 left-[12.5%] right-[12.5%] h-px bg-gradient-to-r from-violet-500/0 via-violet-500/40 to-violet-500/0"></div>
+
+          <div v-for="(step, i) in pipeline" :key="i" class="flex flex-col items-center text-center px-4">
+            <div :class="['w-16 h-16 rounded-2xl flex items-center justify-center text-2xl mb-4 relative z-10', step.bgClass]">
+              {{ step.icon }}
+            </div>
+            <div class="text-xs font-semibold text-violet-400 mb-1 tracking-wider">STEP {{ i + 1 }}</div>
+            <h3 class="font-bold text-white mb-2">{{ step.title }}</h3>
+            <p class="text-xs text-gray-400 leading-relaxed">{{ step.desc }}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature Cards -->
+    <section class="py-20 px-6" style="background: rgba(17, 24, 39, 0.3);">
+      <div class="max-w-7xl mx-auto">
+        <div class="text-center mb-12">
+          <h2 class="text-2xl md:text-3xl font-bold text-white mb-3">专业功能，开箱即用</h2>
+          <p class="text-gray-400">每个功能都经过专业创作者打磨</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="feature in features"
+            :key="feature.title"
+            class="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-gray-700 transition-colors group"
+          >
+            <div :class="['w-10 h-10 rounded-xl flex items-center justify-center text-lg mb-4', feature.iconBg]">
+              {{ feature.icon }}
+            </div>
+            <h3 class="font-semibold text-white mb-2 group-hover:text-violet-300 transition-colors">{{ feature.title }}</h3>
+            <p class="text-sm text-gray-400 leading-relaxed">{{ feature.desc }}</p>
+            <div v-if="feature.tags" class="flex flex-wrap gap-1.5 mt-3">
+              <span
+                v-for="tag in feature.tags"
+                :key="tag"
+                class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded"
+              >{{ tag }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Bar -->
+    <section class="py-16 px-6 border-t border-b border-gray-800/50">
+      <div class="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div v-for="stat in stats" :key="stat.label" class="text-center">
+          <div class="text-3xl font-black text-white mb-1">{{ stat.value }}</div>
+          <div class="text-sm text-gray-500">{{ stat.label }}</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dashboard Section (logged-in users only) -->
+    <section v-if="authStore.isLoggedIn" class="py-16 px-6">
+      <div class="max-w-7xl mx-auto">
+        <div class="flex items-center justify-between mb-8">
+          <h2 class="text-xl font-bold text-white">最近创作</h2>
+          <NuxtLink to="/novel" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+            查看全部 →
+          </NuxtLink>
+        </div>
+
+        <!-- Empty state -->
+        <div
+          v-if="recentNovels.length === 0"
+          class="text-center py-16 bg-gray-900 rounded-2xl border border-gray-800"
+        >
+          <div class="text-4xl mb-4">✍️</div>
+          <h3 class="text-lg font-semibold text-white mb-2">还没有作品</h3>
+          <p class="text-gray-400 text-sm mb-6">开始你的第一部 AI 小说创作</p>
+          <NuxtLink
+            to="/novel/create"
+            class="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors inline-block"
+          >
+            创作第一部
+          </NuxtLink>
+        </div>
+
+        <!-- Novel grid -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <!-- Create new card -->
+          <NuxtLink
+            to="/novel/create"
+            class="bg-gray-900 border-2 border-dashed border-gray-700 hover:border-violet-500/50 rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-colors group min-h-40"
+          >
+            <div class="w-10 h-10 bg-gray-800 group-hover:bg-violet-500/20 rounded-xl flex items-center justify-center text-2xl transition-colors text-gray-400 group-hover:text-violet-400">
+              +
+            </div>
+            <span class="text-sm text-gray-500 group-hover:text-violet-400 transition-colors font-medium">新建小说</span>
+          </NuxtLink>
+
+          <!-- Recent novel cards -->
+          <NuxtLink
+            v-for="novel in recentNovels"
+            :key="novel.id"
+            :to="`/novel/${novel.id}`"
+            class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors group"
+          >
+            <div class="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center text-sm mb-3">📖</div>
+            <h3 class="font-semibold text-white text-sm mb-1 group-hover:text-violet-300 transition-colors line-clamp-1">
+              {{ novel.title }}
+            </h3>
+            <p class="text-xs text-gray-500 mb-3 line-clamp-2">
+              {{ novel.description || novel.genre || '无简介' }}
+            </p>
+            <div class="flex items-center justify-between text-xs text-gray-500">
+              <div class="flex items-center gap-2">
+                <span>{{ novel.chapter_count || 0 }} 章</span>
+                <span>·</span>
+                <span :class="novel.status === 'completed' ? 'text-emerald-400' : 'text-blue-400'">
+                  {{ getStatusLabel(novel.status) }}
+                </span>
+              </div>
+              <span>{{ formatDate(novel.updated_at) }}</span>
+            </div>
           </NuxtLink>
         </div>
       </div>
-      <div class="absolute right-0 bottom-0 opacity-10">
-        <svg class="w-64 h-64" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
-        </svg>
-      </div>
     </section>
 
-    <!-- Stats Section -->
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div
-        v-for="stat in stats"
-        :key="stat.label"
-        class="card p-6"
-      >
-        <div class="flex items-center space-x-4">
-          <div
-            class="w-12 h-12 rounded-lg flex items-center justify-center"
-            :class="{
-              'bg-primary-100 text-primary-600': stat.color === 'primary',
-              'bg-success-100 text-success-600': stat.color === 'success',
-              'bg-warning-100 text-warning-600': stat.color === 'warning',
-              'bg-blue-100 text-blue-600': stat.color === 'info',
-            }"
-          >
-            <svg v-if="stat.icon === 'writing'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            <svg v-else-if="stat.icon === 'completed'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <svg v-else-if="stat.icon === 'chapters'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
-            <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+    <!-- Footer -->
+    <footer class="border-t border-gray-800 py-10 px-6">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2 text-gray-500 text-sm">
+          <div class="w-5 h-5 bg-gradient-to-br from-violet-500 to-indigo-600 rounded flex items-center justify-center flex-shrink-0">
+            <span class="text-white font-bold text-xs">I</span>
           </div>
-          <div>
-            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stat.value }}</p>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ stat.label }}</p>
-          </div>
+          <span>InkFrame &copy; 2025</span>
+        </div>
+        <div class="flex gap-6 text-sm text-gray-500">
+          <NuxtLink to="/novel" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
+          <span class="hover:text-gray-300 cursor-default transition-colors">使用条款</span>
+          <span class="hover:text-gray-300 cursor-default transition-colors">隐私政策</span>
         </div>
       </div>
-    </section>
+    </footer>
 
-    <!-- Recent Novels -->
-    <section>
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">最近项目</h2>
-        <NuxtLink to="/novel" class="text-primary-600 hover:text-primary-700 text-sm font-medium">
-          查看全部
-        </NuxtLink>
-      </div>
-
-      <div v-if="novelStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <div v-for="i in 3" :key="i" class="card p-6">
-          <div class="skeleton h-6 w-3/4 mb-4"></div>
-          <div class="skeleton h-4 w-full mb-2"></div>
-          <div class="skeleton h-4 w-2/3"></div>
-        </div>
-      </div>
-
-      <div v-else-if="recentNovels.length === 0" class="card p-8 text-center">
-        <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">暂无项目</h3>
-        <p class="text-gray-500 dark:text-gray-400 mb-4">创建你的第一个小说项目，开始创作之旅</p>
-        <NuxtLink to="/novel/create" class="btn-primary">
-          创建项目
-        </NuxtLink>
-      </div>
-
-      <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <NuxtLink
-          v-for="novel in recentNovels"
-          :key="novel.id"
-          :to="`/novel/${novel.id}`"
-          class="card p-6 hover:shadow-medium transition-shadow"
-        >
-          <div class="flex items-start justify-between mb-3">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white line-clamp-1">
-              {{ novel.title }}
-            </h3>
-            <span
-              class="px-2 py-1 text-xs font-medium rounded-full"
-              :class="getStatusColor(novel.status)"
-            >
-              {{ getStatusLabel(novel.status) }}
-            </span>
-          </div>
-          <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-4">
-            {{ novel.description || '暂无描述' }}
-          </p>
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">
-              {{ novel.chapter_count }} 章 · {{ formatNumber(novel.total_words) }} 字
-            </span>
-            <span class="text-gray-400 dark:text-gray-500">
-              {{ formatDate(novel.updated_at) }}
-            </span>
-          </div>
-        </NuxtLink>
-      </div>
-    </section>
-
-    <!-- Features -->
-    <section>
-      <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">核心功能</h2>
-      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <div
-          v-for="feature in features"
-          :key="feature.title"
-          class="card p-6"
-        >
-          <div
-            class="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-            :class="{
-              'bg-primary-100 text-primary-600': feature.color === 'primary',
-              'bg-success-100 text-success-600': feature.color === 'success',
-              'bg-warning-100 text-warning-600': feature.color === 'warning',
-              'bg-error-100 text-error-600': feature.color === 'error',
-              'bg-blue-100 text-blue-600': feature.color === 'info',
-            }"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
-          </div>
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            {{ feature.title }}
-          </h3>
-          <p class="text-sm text-gray-500 dark:text-gray-400">
-            {{ feature.description }}
-          </p>
-        </div>
-      </div>
-    </section>
   </div>
 </template>
