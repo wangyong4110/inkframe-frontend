@@ -371,11 +371,20 @@ export const useVideoStore = defineStore('video', {
       return updated?.data
     },
 
-    async reviewStoryboard(videoId: number, provider?: string, onDone?: (task: import('~/types').AsyncTask) => void) {
+    async reviewStoryboard(videoId: number, provider?: string, previousScore?: number, onDone?: (task: import('~/types').AsyncTask) => void) {
       const api = useVideoApi()
-      const response = await api.reviewStoryboard(videoId, provider)
+      const response = await api.reviewStoryboard(videoId, provider, previousScore)
       const taskId = response.data?.task_id
       if (!taskId) throw new Error('未获取到审查任务 ID')
+      useTaskStore().trackTask(taskId, onDone)
+      return taskId
+    },
+
+    async optimizeStoryboardFromReview(videoId: number, review: object, provider?: string, onDone?: (task: import('~/types').AsyncTask) => void) {
+      const api = useVideoApi()
+      const response = await api.optimizeStoryboardFromReview(videoId, review, provider)
+      const taskId = response.data?.task_id
+      if (!taskId) throw new Error('未获取到优化任务 ID')
       useTaskStore().trackTask(taskId, onDone)
       return taskId
     },

@@ -30,11 +30,25 @@ function parseSfxTags(sfxTags?: string): string[] {
   try { return JSON.parse(sfxTags) as string[] } catch { return [] }
 }
 
+// sfxTagsMap: 兼容旧版 string[] 和新版 {tag,type}[] 两种格式，统一转为 {tag, type} 列表
+type SFXTagDisplay = { tag: string; type: 'action' | 'ambient' | 'emotion' }
 const sfxTagsMap = computed(() => {
-  const map = new Map<number, string[]>()
+  const map = new Map<number, SFXTagDisplay[]>()
   for (const shot of shots.value) {
     try {
-      map.set(shot.id, shot.sfx_tags ? JSON.parse(shot.sfx_tags) : [])
+      if (!shot.sfx_tags) { map.set(shot.id, []); continue }
+      const parsed = JSON.parse(shot.sfx_tags)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (typeof parsed[0] === 'string') {
+          // 旧格式：string[]
+          map.set(shot.id, (parsed as string[]).map(t => ({ tag: t, type: 'action' as const })))
+        } else {
+          // 新格式：{tag, type}[]
+          map.set(shot.id, parsed as SFXTagDisplay[])
+        }
+      } else {
+        map.set(shot.id, [])
+      }
     } catch {
       map.set(shot.id, [])
     }
@@ -239,14 +253,21 @@ defineExpose({ sfxItems, loadSFXItems })
             <p class="text-sm text-gray-700 dark:text-gray-300 line-clamp-1">
               {{ shot.narration || shot.description || '（无描述）' }}
             </p>
-            <!-- SFX tags -->
+            <!-- SFX tags（新格式带类型色标，旧格式兼容显示） -->
             <div v-if="(sfxTagsMap.get(shot.id) ?? []).length > 0" class="flex flex-wrap gap-1 mt-1">
               <span
-                v-for="tag in sfxTagsMap.get(shot.id)"
-                :key="tag"
-                class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-800"
+                v-for="t in sfxTagsMap.get(shot.id)"
+                :key="t.tag"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border"
+                :class="{
+                  'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800': t.type === 'action',
+                  'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-800': t.type === 'ambient',
+                  'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800': t.type === 'emotion',
+                  'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-800': !t.type,
+                }"
               >
-                {{ tag }}
+                <span v-if="t.type" class="opacity-60 text-[9px] font-mono uppercase">{{ t.type[0] }}</span>
+                {{ t.tag }}
               </span>
             </div>
           </div>
@@ -273,13 +294,24 @@ defineExpose({ sfxItems, loadSFXItems })
             <span class="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
               :class="{
                 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300': item.source === 'freesound',
-                'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300': item.source === 'pixabay',
-                'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300': item.source === 'jamendo',
                 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300': item.source === 'elevenlabs',
                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': item.source === 'local',
               }">
               {{ item.source }}
             </span>
+            <!-- SFX type badge -->
+            <span
+              v-if="item.sfx_type"
+              class="text-[9px] px-1 py-0.5 rounded font-mono uppercase flex-shrink-0"
+              :class="{
+                'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.sfx_type === 'action',
+                'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': item.sfx_type === 'ambient',
+                'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400': item.sfx_type === 'emotion',
+              }"
+              :title="{ action: '动作音（单次触发）', ambient: '环境底层音（循环）', emotion: '情绪点缀音' }[item.sfx_type]"
+            >{{ item.sfx_type }}</span>
+            <!-- Loop indicator -->
+            <span v-if="item.loop_enabled" class="text-[10px] text-green-500 flex-shrink-0" title="循环播放">⟳</span>
             <!-- Tag -->
             <span class="text-xs text-orange-600 dark:text-orange-400 flex-1 truncate font-medium">
               {{ item.tag || '—' }}

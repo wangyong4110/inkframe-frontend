@@ -165,7 +165,7 @@ const stats = [
 
         <!-- Nav links -->
         <div class="hidden md:flex items-center gap-6">
-          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">小说</NuxtLink>
+          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">作品集</NuxtLink>
           <NuxtLink to="/platform" class="text-gray-400 hover:text-white text-sm transition-colors">视频</NuxtLink>
         </div>
 

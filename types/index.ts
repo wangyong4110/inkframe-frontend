@@ -313,6 +313,11 @@ export interface ShotSFXItem {
   disabled?: boolean
   start_offset?: number  // 在分镜中的开始时间（秒，0=分镜起始）
   duration_secs?: number // 音效时长（秒，0=未知）
+  // v2 字段
+  sfx_type?: 'action' | 'ambient' | 'emotion'  // 音效分类
+  loop_enabled?: boolean  // 是否循环播放（ambient 默认 true）
+  fade_in_ms?: number     // 淡入时长（毫秒）
+  fade_out_ms?: number    // 淡出时长（毫秒）
   created_at?: string
 }
 
@@ -952,4 +957,27 @@ export interface AssetSearchParams {
   page?: number
   page_size?: number
   status?: string
+}
+
+export interface ShotReviewFeedback {
+  shot_no: number
+  issues: string[]
+  suggestion: string
+  severity: 'info' | 'warning' | 'error'
+  suggested_narration?: string
+  suggested_description?: string
+}
+
+export interface StoryboardReview {
+  overall_score: number
+  narrative_score: number
+  visual_score: number
+  pacing_score: number
+  narration_score: number
+  summary: string
+  strengths: string[]
+  weaknesses: string[]
+  global_suggestions: string[]
+  shot_feedback: ShotReviewFeedback[]
+  record_id?: number
 }

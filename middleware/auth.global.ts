@@ -10,6 +10,9 @@ export default defineNuxtRouteMiddleware((to) => {
     '/auth/oauth-callback',
   ]
 
+  // Pages with definePageMeta({ auth: false }) are public
+  if (to.meta.auth === false) return
+
   if (!auth.isLoggedIn && !publicPaths.includes(to.path)) {
     return navigateTo('/auth/login')
   }

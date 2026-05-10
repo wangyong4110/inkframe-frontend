@@ -21,14 +21,23 @@ export const usePublicNovelApi = () => {
   }
 
   const getNovelFeed = (params?: {
-    sort?: 'latest' | 'hot'
+    sort?: 'hot' | 'latest' | 'words' | 'favorites'
     q?: string
     page?: number
     page_size?: number
+    channel?: string
+    genre?: string
+    word_min?: number
+    word_max?: number
+    updated_days?: number
+    is_completed?: string
   }) => {
     const q = buildQ({ sort: 'hot', page: 1, page_size: 12, ...params })
     return request<ApiResponse<PaginatedResponse<Novel>>>(`/platform/novels?${q}`)
   }
+
+  const getNovelRanking = (type: string, gender: string) =>
+    request<ApiResponse<{ items: Novel[]; total: number }>>(`/platform/novels/ranking?type=${type}&gender=${gender}`)
 
   const getNovel = (id: number) =>
     request<ApiResponse<{ novel: Novel; is_liked: boolean }>>(`/platform/novels/${id}`)
@@ -55,6 +64,7 @@ export const usePublicNovelApi = () => {
 
   return {
     getNovelFeed,
+    getNovelRanking,
     getNovel,
     recordView,
     toggleLike,

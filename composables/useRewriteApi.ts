@@ -19,10 +19,10 @@ export const useRewriteApi = () => {
     request<void>(`/rewrite/projects/${id}`, { method: 'DELETE' })
 
   const startAnalysis = (id: number) =>
-    request<ApiResponse<{ message: string }>>(`/rewrite/projects/${id}/analyze`, { method: 'POST' })
+    request<ApiResponse<{ task_id: string; message: string }>>(`/rewrite/projects/${id}/analyze`, { method: 'POST' })
 
   const startRewriting = (id: number) =>
-    request<ApiResponse<{ message: string }>>(`/rewrite/projects/${id}/rewrite`, { method: 'POST' })
+    request<ApiResponse<{ task_id: string; message: string }>>(`/rewrite/projects/${id}/rewrite`, { method: 'POST' })
 
   const getAnalysis = (id: number) =>
     request<ApiResponse<LiteraryAnalysis>>(`/rewrite/projects/${id}/analysis`)

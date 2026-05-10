@@ -50,6 +50,15 @@ export const useNovelApi = () => {
       body: JSON.stringify(data),
     })
 
+  const publishNovel = (id: number, visibility?: 'private' | 'unlisted' | 'public') =>
+    request<ApiResponse<Novel>>(`/novels/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ visibility: visibility || 'public' }),
+    })
+
+  const unpublishNovel = (id: number) =>
+    request<ApiResponse<{ unpublished: boolean }>>(`/novels/${id}/unpublish`, { method: 'POST' })
+
   return {
     getNovels,
     getNovel,
@@ -57,5 +66,7 @@ export const useNovelApi = () => {
     updateNovel,
     deleteNovel,
     generateOutline,
+    publishNovel,
+    unpublishNovel,
   }
 }

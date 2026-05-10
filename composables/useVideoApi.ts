@@ -181,10 +181,42 @@ export const useVideoApi = () => {
   const exportVideo = (id: number, format: string) =>
     requestBlob(`/videos/${id}/export/${format}`)
 
-  const reviewStoryboard = (id: number, provider?: string) =>
+  const reviewStoryboard = (id: number, provider?: string, previousScore?: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/review`, {
       method: 'POST',
-      body: provider ? JSON.stringify({ provider }) : undefined,
+      body: JSON.stringify({
+        ...(provider ? { provider } : {}),
+        ...(previousScore ? { previous_score: previousScore } : {}),
+      }),
+    })
+
+  const optimizeStoryboardFromReview = (id: number, review: object, provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/optimize-from-review`, {
+      method: 'POST',
+      body: JSON.stringify({ ...review, ...(provider ? { provider } : {}) }),
+    })
+
+  const applyStoryboardDiffs = (id: number, diffs: Array<{ shot_id?: number; shot_no: number; narration?: string; description?: string }>, recordId?: number) =>
+    request<ApiResponse<{ updated_shots: number }>>(`/videos/${id}/storyboard/optimize/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ diffs, ...(recordId ? { record_id: recordId } : {}) }),
+    })
+
+  type ReviewRecord = {
+    id: number
+    created_at: string
+    overall_score: number
+    status: 'pending' | 'applied' | 'rolled_back'
+    applied_at?: string
+    review?: import('~/types').StoryboardReview
+  }
+
+  const listReviewRecords = (id: number) =>
+    request<ApiResponse<ReviewRecord[]>>(`/videos/${id}/storyboard/reviews`)
+
+  const rollbackReview = (id: number, recordId: number) =>
+    request<ApiResponse<{ restored_shots: number }>>(`/videos/${id}/storyboard/reviews/${recordId}/rollback`, {
+      method: 'POST',
     })
 
   const generateVoice = (
@@ -302,6 +334,10 @@ export const useVideoApi = () => {
     getVideoProviders,
     generateVoice,
     reviewStoryboard,
+    optimizeStoryboardFromReview,
+    applyStoryboardDiffs,
+    listReviewRecords,
+    rollbackReview,
     insertShot,
     copyShot,
     deleteShot,

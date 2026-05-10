@@ -15,6 +15,7 @@ const navItems = [
   { label: '首页', to: '/' },
   { label: '改写小说', to: '/rewrite' },
   { label: '素材库', to: '/assets' },
+  { label: '模型', to: '/model' },
 ]
 
 const breadcrumbs = computed(() => {

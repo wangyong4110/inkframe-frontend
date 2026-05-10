@@ -12,15 +12,21 @@
           </span>
         </div>
 
-        <!-- Progress bar for rewriting -->
-        <div v-if="project?.status === 'rewriting'" class="mt-2">
+        <!-- Progress bar: analyzing or rewriting -->
+        <div v-if="isRunning" class="mt-2">
           <div class="flex justify-between text-xs text-gray-400 mb-1">
-            <span>改写进度</span>
-            <span>{{ project.done_chapters }}/{{ project.total_chapters }} 章 ({{ project.progress }}%)</span>
+            <span class="flex items-center gap-1.5">
+              <span class="inline-block w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
+              {{ project?.status === 'analyzing' ? '文学分析 & 圣经生成中' : '章节改写中' }}
+            </span>
+            <span v-if="project?.status === 'rewriting'">
+              {{ project.done_chapters }}/{{ project.total_chapters }} 章
+            </span>
+            <span>{{ displayProgress }}%</span>
           </div>
           <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
             <div class="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full transition-all duration-500"
-              :style="{ width: (project?.progress || 0) + '%' }"></div>
+              :style="{ width: displayProgress + '%' }"></div>
           </div>
         </div>
 
@@ -60,20 +66,51 @@
         </div>
 
         <!-- Action buttons -->
-        <div class="flex gap-3">
+        <div class="flex gap-3 flex-wrap">
+          <!-- pending: start analysis -->
           <button v-if="project?.status === 'pending'" @click="doStartAnalysis" :disabled="actionLoading"
             class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-            {{ actionLoading ? '启动中...' : '▶ 开始文学分析' }}
+            {{ actionLoading ? '提交中...' : '▶ 开始文学分析' }}
           </button>
+
+          <!-- analyzing: in-progress indicator -->
+          <div v-if="project?.status === 'analyzing'"
+            class="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 text-blue-300 px-5 py-2.5 rounded-lg text-sm">
+            <span class="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></span>
+            文学分析进行中...
+          </div>
+
+          <!-- bible_ready: start rewriting -->
           <button v-if="project?.status === 'bible_ready'" @click="doStartRewriting" :disabled="actionLoading"
             class="bg-violet-600 hover:bg-violet-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-            {{ actionLoading ? '启动中...' : '▶ 开始章节改写' }}
+            {{ actionLoading ? '提交中...' : '▶ 开始章节改写' }}
           </button>
-          <button v-if="['analyzing', 'rewriting'].includes(project?.status || '')" @click="refreshProject"
-            class="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-            <span class="animate-spin inline-block">&#8635;</span>
-            刷新状态
-          </button>
+
+          <!-- rewriting: in-progress indicator -->
+          <div v-if="project?.status === 'rewriting'"
+            class="flex items-center gap-2 bg-violet-500/10 border border-violet-500/30 text-violet-300 px-5 py-2.5 rounded-lg text-sm">
+            <span class="w-3 h-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin"></span>
+            章节改写进行中...
+          </div>
+
+          <!-- failed: retry buttons -->
+          <template v-if="project?.status === 'failed'">
+            <button v-if="(project.total_chapters || 0) > 0" @click="doStartRewriting" :disabled="actionLoading"
+              class="bg-violet-700 hover:bg-violet-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+              {{ actionLoading ? '提交中...' : '↺ 重新章节改写' }}
+            </button>
+            <button v-else @click="doStartAnalysis" :disabled="actionLoading"
+              class="bg-blue-700 hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+              {{ actionLoading ? '提交中...' : '↺ 重新文学分析' }}
+            </button>
+          </template>
+
+          <!-- Task info badge when polling -->
+          <div v-if="activeTaskId && isRunning"
+            class="flex items-center gap-1.5 text-xs text-gray-500 self-center">
+            <span>任务 {{ activeTaskId }}</span>
+            <button @click="cancelActiveTask" class="text-red-400 hover:text-red-300 transition-colors">取消</button>
+          </div>
         </div>
 
         <div v-if="project?.error_msg" class="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-300">
@@ -201,8 +238,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import type { RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask } from '~/types'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import type { RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask, AsyncTask } from '~/types'
 
 const route = useRoute()
 const {
@@ -213,6 +250,7 @@ const {
   getBible,
   listChapterTasks,
 } = useRewriteApi()
+const { getTask, cancelTask } = useTaskApi()
 
 const projectId = Number(route.params.id)
 const project = ref<RewriteProject | null>(null)
@@ -224,6 +262,63 @@ const activeTab = ref('overview')
 const actionLoading = ref(false)
 const comparisonTask = ref<ChapterRewriteTask | null>(null)
 
+// ── Async task polling ────────────────────────────────────────────────────────
+const activeTaskId = ref<string | null>(null)
+const activeTask = ref<AsyncTask | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
+
+const isRunning = computed(() =>
+  ['analyzing', 'rewriting'].includes(project.value?.status ?? ''),
+)
+
+// Progress: prefer live task progress, fall back to project.progress
+const displayProgress = computed(() => {
+  if (activeTask.value && !TERMINAL.has(activeTask.value.status)) {
+    return activeTask.value.progress ?? 0
+  }
+  return project.value?.progress ?? 0
+})
+
+function startPolling(taskId: string) {
+  activeTaskId.value = taskId
+  stopPolling()
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await getTask(taskId)
+      activeTask.value = res.data
+      if (TERMINAL.has(res.data.status)) {
+        stopPolling()
+        await refreshProject()
+        // Reload chapter tasks if rewriting just finished
+        if (['completed', 'failed'].includes(res.data.status) && project.value?.status !== 'analyzing') {
+          await reloadChapterTasks()
+        }
+      }
+    } catch { /* network blip — keep polling */ }
+  }, 2500)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function cancelActiveTask() {
+  if (!activeTaskId.value) return
+  try {
+    await cancelTask(activeTaskId.value)
+    stopPolling()
+    await refreshProject()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────────
 const tabs = [
   { key: 'overview', label: '概览' },
   { key: 'analysis', label: '文学分析' },
@@ -234,7 +329,35 @@ const tabs = [
 onMounted(async () => {
   await refreshProject()
   loading.value = false
+  // If already running on page load, start project-level auto-refresh
+  // (we don't have task_id from a previous session, so poll the project)
+  if (isRunning.value) {
+    startProjectPoll()
+  }
 })
+
+onUnmounted(() => {
+  stopPolling()
+  stopProjectPoll()
+})
+
+// Project-level poll: used when page loads mid-run (no task_id available)
+let projectPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startProjectPoll() {
+  stopProjectPoll()
+  projectPollTimer = setInterval(async () => {
+    await refreshProject()
+    if (!isRunning.value) stopProjectPoll()
+  }, 3000)
+}
+
+function stopProjectPoll() {
+  if (projectPollTimer) {
+    clearInterval(projectPollTimer)
+    projectPollTimer = null
+  }
+}
 
 async function refreshProject() {
   try {
@@ -252,21 +375,33 @@ async function refreshProject() {
         const bRes = await getBible(projectId)
         bible.value = bRes.data
       } catch {}
-      try {
-        const cRes = await listChapterTasks(projectId)
-        chapterTasks.value = cRes.data?.items || []
-      } catch {}
+      await reloadChapterTasks()
     }
   } catch (e) {
     console.error(e)
   }
 }
 
+async function reloadChapterTasks() {
+  try {
+    const cRes = await listChapterTasks(projectId)
+    chapterTasks.value = cRes.data?.items || []
+  } catch {}
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
 async function doStartAnalysis() {
   actionLoading.value = true
   try {
-    await apiStartAnalysis(projectId)
+    const res = await apiStartAnalysis(projectId)
+    const taskId = res.data?.task_id
+    if (taskId) {
+      stopProjectPoll() // task polling takes over
+      startPolling(taskId)
+    }
     await refreshProject()
+  } catch (e) {
+    console.error(e)
   } finally {
     actionLoading.value = false
   }
@@ -275,8 +410,15 @@ async function doStartAnalysis() {
 async function doStartRewriting() {
   actionLoading.value = true
   try {
-    await apiStartRewriting(projectId)
+    const res = await apiStartRewriting(projectId)
+    const taskId = res.data?.task_id
+    if (taskId) {
+      stopProjectPoll()
+      startPolling(taskId)
+    }
     await refreshProject()
+  } catch (e) {
+    console.error(e)
   } finally {
     actionLoading.value = false
   }
@@ -286,6 +428,7 @@ function openComparison(task: ChapterRewriteTask) {
   comparisonTask.value = task
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function parseJSON(str: string): Record<string, unknown> {
   try { return JSON.parse(str) || {} } catch { return {} }
 }
@@ -301,13 +444,8 @@ function levelColor(level: number) {
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: '待开始',
-    analyzing: '分析中',
-    bible_ready: '待改写',
-    rewriting: '改写中',
-    reviewing: '审核中',
-    completed: '已完成',
-    failed: '失败',
+    pending: '待开始', analyzing: '分析中', bible_ready: '待改写',
+    rewriting: '改写中', reviewing: '审核中', completed: '已完成', failed: '失败',
   }
   return map[status] || status
 }
@@ -327,11 +465,7 @@ function statusBadgeClass(status: string) {
 
 function chapterStatusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: '待改写',
-    rewriting: '改写中',
-    reviewing: '审核中',
-    completed: '完成',
-    failed: '失败',
+    pending: '待改写', rewriting: '改写中', reviewing: '审核中', completed: '完成', failed: '失败',
   }
   return map[status] || status
 }

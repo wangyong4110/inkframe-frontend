@@ -37,6 +37,12 @@ export const useChapterApi = () => {
       body: JSON.stringify(data),
     })
 
+  const publishChapter = (novelId: number, chapterNo: number) =>
+    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/${chapterNo}/publish`, { method: 'POST' })
+
+  const unpublishChapter = (novelId: number, chapterNo: number) =>
+    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/${chapterNo}/unpublish`, { method: 'POST' })
+
   return {
     getChapters,
     getChapter,
@@ -44,5 +50,7 @@ export const useChapterApi = () => {
     updateChapter,
     deleteChapter,
     generateChapter,
+    publishChapter,
+    unpublishChapter,
   }
 }

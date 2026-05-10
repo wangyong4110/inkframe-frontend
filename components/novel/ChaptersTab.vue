@@ -13,6 +13,9 @@ const chapterPage = ref(1)
 const CHAPTER_PAGE_SIZE = 20
 const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
+const publishingChapterId = ref<number | null>(null)
+
+const { publishChapter, unpublishChapter } = useChapterApi()
 
 const chapters = computed(() => chapterStore.chapters)
 const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
@@ -55,6 +58,27 @@ async function handleGenerateOutline() {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
   } finally {
     generatingOutline.value = false
+  }
+}
+
+async function handlePublishChapter(chapter: Chapter, event: Event) {
+  event.stopPropagation()
+  if (publishingChapterId.value !== null) return
+  publishingChapterId.value = chapter.id
+  try {
+    if (chapter.status === 'published') {
+      const res = await unpublishChapter(props.novelId, chapter.chapter_no)
+      chapter.status = (res as any).data?.status ?? 'completed'
+      toast.success(`第${chapter.chapter_no}章已取消发布`)
+    } else {
+      const res = await publishChapter(props.novelId, chapter.chapter_no)
+      chapter.status = (res as any).data?.status ?? 'published'
+      toast.success(`第${chapter.chapter_no}章已发布`)
+    }
+  } catch (e: any) {
+    toast.error('操作失败：' + (e.message || '未知错误'))
+  } finally {
+    publishingChapterId.value = null
   }
 }
 
@@ -146,6 +170,27 @@ async function confirmDeleteChapter() {
             >
               {{ getStatusLabel(chapter.status) }}
             </span>
+            <!-- 发布/取消发布按钮（仅 completed/published 状态可用） -->
+            <button
+              v-if="chapter.status === 'completed' || chapter.status === 'published'"
+              class="p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              :class="chapter.status === 'published' ? 'text-blue-400 hover:text-gray-400' : 'text-gray-300 hover:text-blue-500'"
+              :disabled="publishingChapterId === chapter.id"
+              :title="chapter.status === 'published' ? '取消发布' : '发布到广场'"
+              @click="handlePublishChapter(chapter, $event)"
+            >
+              <svg v-if="publishingChapterId === chapter.id" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              <svg v-else-if="chapter.status === 'published'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+              </svg>
+            </button>
             <button
               class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
               title="删除章节"
