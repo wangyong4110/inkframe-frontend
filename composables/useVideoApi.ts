@@ -6,6 +6,7 @@ import type {
   JamendoTrack,
   ShotSFXItem,
   ShotVoiceSegment,
+  VideoPublishRecord,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -254,6 +255,27 @@ export const useVideoApi = () => {
     })
   }
 
+  const synthesizeVideo = (id: number) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/synthesize`, { method: 'POST' })
+
+  const publishVideo = (id: number, body: { visibility?: 'private' | 'unlisted' | 'public' }) =>
+    request<ApiResponse<Video>>(`/videos/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+
+  const unpublishVideo = (id: number) =>
+    request<ApiResponse<{ unpublished: boolean }>>(`/videos/${id}/unpublish`, { method: 'POST' })
+
+  const listPublishRecords = (id: number) =>
+    request<ApiResponse<VideoPublishRecord[]>>(`/videos/${id}/publish-records`)
+
+  const publishExternal = (id: number, body: { account_ids: number[]; title?: string; description?: string; tags?: string[]; is_public?: boolean }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/publish-external`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+
   return {
     getVideos,
     getVideo,
@@ -298,5 +320,10 @@ export const useVideoApi = () => {
     toggleBGMSegment,
     updateBGMSegment,
     uploadShotImage,
+    synthesizeVideo,
+    publishVideo,
+    unpublishVideo,
+    listPublishRecords,
+    publishExternal,
   }
 }

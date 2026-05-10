@@ -195,8 +195,38 @@ export interface Video {
   target_duration?: number               // 秒，0 或 undefined = 自动
   total_shots: number
   url?: string
+  // 合成与发布
+  final_video_url?: string
+  cover_url?: string
+  is_published?: boolean
+  published_at?: string
+  view_count?: number
+  visibility?: 'private' | 'unlisted' | 'public'
   created_at: string
   updated_at: string
+}
+
+export interface PlatformAccount {
+  id: number
+  platform: string
+  account_name: string
+  uid: string
+  status: 'active' | 'expired' | 'revoked'
+  expires_at?: string
+  created_at: string
+}
+
+export interface VideoPublishRecord {
+  id: number
+  video_id: number
+  platform: string
+  account_id: number
+  external_id?: string
+  external_url?: string
+  status: string
+  error_msg?: string
+  published_at?: string
+  created_at: string
 }
 
 export type VideoStatus = 'planning' | 'generating' | 'completed' | 'failed'
