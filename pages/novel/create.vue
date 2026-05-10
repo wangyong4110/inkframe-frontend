@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { CrawlProgress } from '~/composables/useApi'
+import type { CrawlProgress } from '~/composables/useCrawlApi'
+import { getAuthToken } from '~/utils/auth'
 
 const router = useRouter()
 const config = useRuntimeConfig()
@@ -127,7 +128,7 @@ const fileProgress = ref(0)
 const fileError = ref('')
 
 function getAuthHeader(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+  const token = getAuthToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 

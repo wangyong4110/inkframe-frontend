@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Character, AIModel } from '~/types'
-import { useCharacterApi, useModelApi } from '~/composables/useApi'
+import { useCharacterApi } from '~/composables/useCharacterApi'
+import { useModelApi } from '~/composables/useModelApi'
 
 const props = defineProps<{ character: Character }>()
 const emit = defineEmits<{ update: [data: Partial<Character>] }>()

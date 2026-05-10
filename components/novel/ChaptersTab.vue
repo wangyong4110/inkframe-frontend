@@ -1,0 +1,215 @@
+<script setup lang="ts">
+import type { Chapter } from '~/types'
+
+const props = defineProps<{ novelId: number }>()
+
+const router = useRouter()
+const toast = useToast()
+const novelStore = useNovelStore()
+const chapterStore = useChapterStore()
+
+const generatingOutline = ref(false)
+const chapterPage = ref(1)
+const CHAPTER_PAGE_SIZE = 20
+const showDeleteChapterConfirm = ref(false)
+const chapterToDelete = ref<Chapter | null>(null)
+
+const chapters = computed(() => chapterStore.chapters)
+const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
+const pagedChapters = computed(() => {
+  const start = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
+  return chapters.value.slice(start, start + CHAPTER_PAGE_SIZE)
+})
+
+function getStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    draft: 'bg-gray-100 text-gray-800',
+    generating: 'bg-yellow-100 text-yellow-800',
+    completed: 'bg-green-100 text-green-800',
+    published: 'bg-blue-100 text-blue-800',
+  }
+  return colors[status] || 'bg-gray-100 text-gray-800'
+}
+
+function getStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    draft: '草稿',
+    generating: '生成中',
+    completed: '已完成',
+    published: '已发布',
+  }
+  return labels[status] || status
+}
+
+function goToChapter(chapter: Chapter) {
+  router.push(`/novel/${props.novelId}/chapter/${chapter.chapter_no}`)
+}
+
+async function handleGenerateOutline() {
+  if (!novelStore.currentNovel) return
+  generatingOutline.value = true
+  try {
+    await novelStore.generateOutline(props.novelId, 10)
+    toast.success('大纲生成完成')
+  } catch (e: any) {
+    toast.error('大纲生成失败：' + (e.message || '未知错误'))
+  } finally {
+    generatingOutline.value = false
+  }
+}
+
+function requestDeleteChapter(chapter: Chapter, event: Event) {
+  event.stopPropagation()
+  chapterToDelete.value = chapter
+  showDeleteChapterConfirm.value = true
+}
+
+async function confirmDeleteChapter() {
+  if (!chapterToDelete.value) return
+  try {
+    await chapterStore.deleteChapter(props.novelId, chapterToDelete.value.chapter_no)
+    toast.success('章节已删除')
+    chapterToDelete.value = null
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || '未知错误'))
+  }
+}
+</script>
+
+<template>
+  <div class="space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
+      <div class="flex items-center gap-2">
+        <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
+          <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
+        </button>
+        <NuxtLink
+          :to="`/novel/${novelId}/chapter/new`"
+          class="btn-primary"
+        >
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          新建章节
+        </NuxtLink>
+      </div>
+    </div>
+
+    <div v-if="chapterStore.loading" class="space-y-3">
+      <div v-for="i in 5" :key="i" class="card p-4">
+        <div class="skeleton h-5 w-1/3 mb-2"></div>
+        <div class="skeleton h-4 w-2/3"></div>
+      </div>
+    </div>
+
+    <div v-else-if="chapters.length === 0" class="card p-8 text-center">
+      <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      </svg>
+      <p class="text-gray-500 dark:text-gray-400">还没有章节，创建你的第一章</p>
+    </div>
+
+    <div v-else class="space-y-3">
+      <div
+        v-for="chapter in pagedChapters"
+        :key="chapter.id"
+        class="card p-4 hover:shadow-soft transition-shadow cursor-pointer group"
+        @click="goToChapter(chapter)"
+      >
+        <div class="flex items-center justify-between">
+          <div class="flex-1">
+            <div class="flex items-center space-x-3">
+              <span class="text-lg font-medium text-gray-900 dark:text-white">
+                第{{ chapter.chapter_no }}章
+              </span>
+              <span class="text-gray-500 dark:text-gray-400">{{ chapter.title }}</span>
+            </div>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-1">
+              {{ chapter.summary || '暂无摘要' }}
+            </p>
+          </div>
+          <div class="flex items-center space-x-4">
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+              {{ (chapter.word_count ?? 0).toLocaleString() }} 字
+            </span>
+            <span
+              class="px-2 py-0.5 text-xs font-medium rounded"
+              :class="getStatusColor(chapter.status)"
+            >
+              {{ getStatusLabel(chapter.status) }}
+            </span>
+            <button
+              class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="删除章节"
+              @click="requestDeleteChapter(chapter, $event)"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分页控件 -->
+      <div v-if="chapterTotalPages > 1" class="flex items-center justify-between pt-2">
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          第 {{ chapterPage }} / {{ chapterTotalPages }} 页，共 {{ chapters.length }} 章
+        </span>
+        <div class="flex items-center gap-1">
+          <button
+            class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            :disabled="chapterPage === 1"
+            @click="chapterPage = 1"
+          >«</button>
+          <button
+            class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            :disabled="chapterPage === 1"
+            @click="chapterPage--"
+          >‹</button>
+          <template v-for="p in chapterTotalPages" :key="p">
+            <button
+              v-if="Math.abs(p - chapterPage) <= 2"
+              class="px-2.5 py-1 rounded text-sm border"
+              :class="p === chapterPage
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'"
+              @click="chapterPage = p"
+            >{{ p }}</button>
+          </template>
+          <button
+            class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            :disabled="chapterPage === chapterTotalPages"
+            @click="chapterPage++"
+          >›</button>
+          <button
+            class="px-2 py-1 rounded text-sm border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            :disabled="chapterPage === chapterTotalPages"
+            @click="chapterPage = chapterTotalPages"
+          >»</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete chapter confirm -->
+    <ConfirmDialog
+      v-model="showDeleteChapterConfirm"
+      title="删除章节"
+      :description="`确认删除第${chapterToDelete?.chapter_no}章「${chapterToDelete?.title || ''}」？此操作不可撤销。`"
+      variant="danger"
+      confirm-text="确认删除"
+      @confirm="confirmDeleteChapter"
+    />
+  </div>
+</template>

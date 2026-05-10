@@ -2,27 +2,30 @@
 // Enhancement API - 增强功能 API 调用封装
 // ============================================
 
-import type {
-  ApiResponse,
-} from '~/types'
+import type { ApiResponse } from '~/types'
+import { getAuthToken } from '~/utils/auth'
 
-const config = useRuntimeConfig()
+function makeRequest() {
+  const config = useRuntimeConfig()
+  const apiBase = config.public.apiBase
 
-const request = async <T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> => {
-  const url = `${config.public.apiBase}${endpoint}`
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`)
+  return async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+    const token = getAuthToken()
+    const url = `${apiBase}${endpoint}`
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...((options.headers as Record<string, string>) || {}),
+      },
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Request failed' }))
+      throw new Error(error.message || `HTTP error ${response.status}`)
+    }
+    return response.json()
   }
-  return response.json()
 }
 
 // ============================================
@@ -30,6 +33,8 @@ const request = async <T>(
 // ============================================
 
 export const useForeshadowApi = () => {
+  const request = makeRequest()
+
   const getForeshadows = (novelId: number, chapterNo?: number) => {
     const params = new URLSearchParams()
     if (chapterNo) params.set('chapter_no', String(chapterNo))
@@ -55,6 +60,8 @@ export const useForeshadowApi = () => {
 // ============================================
 
 export const useTimelineApi = () => {
+  const request = makeRequest()
+
   const getTimeline = (novelId: number) => {
     return request<ApiResponse<Timeline>>(`/novels/${novelId}/timeline`)
   }
@@ -67,6 +74,8 @@ export const useTimelineApi = () => {
 // ============================================
 
 export const useCharacterArcApi = () => {
+  const request = makeRequest()
+
   const getCharacterArc = (novelId: number, characterId: number) => {
     return request<ApiResponse<CharacterArc>>(`/novels/${novelId}/character-arcs/${characterId}`)
   }
@@ -83,6 +92,8 @@ export const useCharacterArcApi = () => {
 // ============================================
 
 export const useStyleEndpointApi = () => {
+  const request = makeRequest()
+
   const getDefaultStyle = () => {
     return request<ApiResponse<StyleConfig>>('/styles/default')
   }
@@ -102,6 +113,8 @@ export const useStyleEndpointApi = () => {
 // ============================================
 
 export const useGenerationContextApi = () => {
+  const request = makeRequest()
+
   const getContext = (novelId: number, chapterNo: number) => {
     return request<ApiResponse<GenerationContext>>(`/novels/${novelId}/context?chapter_no=${chapterNo}`)
   }
@@ -125,13 +138,15 @@ export const useGenerationContextApi = () => {
 // ============================================
 
 export const useStoryboardApi = () => {
+  const request = makeRequest()
+
   const generateShots = (data: {
     content: string
     characters: string[]
     scene?: string
   }) => {
     return request<ApiResponse<{
-      shots: StoryboardShot[]
+      shots: EnhancementStoryboardShot[]
       total: number
       total_duration: number
     }>>('/storyboard/generate', {
@@ -155,6 +170,8 @@ export const useStoryboardApi = () => {
 // ============================================
 
 export const useVideoEnhancementApi = () => {
+  const request = makeRequest()
+
   const enhanceVideo = (data: {
     video_url: string
     enhancements: Enhancement[]
@@ -185,6 +202,8 @@ export const useVideoEnhancementApi = () => {
 // ============================================
 
 export const useConsistencyApi = () => {
+  const request = makeRequest()
+
   const getDefaultConfig = () => {
     return request<ApiResponse<ConsistencyLevel>>('/consistency/default')
   }
@@ -268,16 +287,17 @@ export interface StyleConfig {
 }
 
 export interface GenerationContext {
-  novel: any
-  characters: any[]
-  recent_chapters: any[]
+  novel: import('~/types').Novel
+  characters: import('~/types').Character[]
+  recent_chapters: import('~/types').Chapter[]
   foreshadows: ForeshadowItem[]
   timeline: Timeline
   character_arcs: Record<number, CharacterArc>
   global_summary: string
 }
 
-export interface StoryboardShot {
+// Renamed to avoid collision with types/index.ts StoryboardShot
+export interface EnhancementStoryboardShot {
   shot_no: number
   description: string
   emotion: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { url, visible, refineCallback, closeLightbox, updateLightboxUrl } = useImageLightbox()
+const { url, visible, pendingUrl, refineCallback, closeLightbox, updateLightboxUrl, discardPending, savePending } = useImageLightbox()
 
 const suggestion = ref('')
 const refining = ref(false)
@@ -71,6 +71,27 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           @click.stop
         >
           <div class="bg-white/10 backdrop-blur rounded-xl p-3 flex flex-col gap-2">
+
+            <!-- Save / Discard row — shown after regeneration -->
+            <div v-if="pendingUrl" class="flex items-center gap-2 pb-2 border-b border-white/20">
+              <span class="text-white/60 text-xs flex-1">已生成新图片，确认替换？</span>
+              <button
+                class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white/70 hover:text-white text-sm transition-colors"
+                @click="discardPending"
+              >
+                放弃
+              </button>
+              <button
+                class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-green-500 hover:bg-green-400 text-white text-sm font-medium transition-colors"
+                @click="savePending"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                保存
+              </button>
+            </div>
+
             <textarea
               v-model="suggestion"
               rows="2"

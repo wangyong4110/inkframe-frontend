@@ -508,17 +508,60 @@ export interface EffectiveItem extends Item {
   effective_owner: string
 }
 
+// Scene anchor types (mirrors useSceneAnchorApi.ts)
+export type SceneAnchorType = 'interior' | 'exterior' | 'imaginary' | string
+
+export interface SceneAnchor {
+  id: number
+  tenant_id: number
+  novel_id: number
+  name: string
+  type: SceneAnchorType
+  description: string
+  prompt_lock: string
+  style_tokens: string
+  ref_image_url: string
+  notes: string
+  ref_image_locked_at?: string
+  ref_image_shot_id?: number
+  usage_count: number
+  avg_cons_score: number
+  parent_anchor_id?: number
+  variant?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateSceneAnchorPayload {
+  name: string
+  type?: SceneAnchorType
+  description?: string
+  prompt_lock?: string
+  style_tokens?: string
+  notes?: string
+  variant?: string
+  parent_anchor_id?: number
+}
+
+export type UpdateSceneAnchorPayload = Partial<CreateSceneAnchorPayload>
+
+export interface ConsistencyLog {
+  id: number
+  shot_id: number
+  anchor_id: number
+  overall_score: number
+  arch_score: number
+  light_score: number
+  atmo_score: number
+  passed: boolean
+  attempt: number
+  created_at: string
+}
+
 export interface ApiResponse<T> {
   data: T
   message?: string
   code: number
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  size: number
 }
 
 export interface ApiError {

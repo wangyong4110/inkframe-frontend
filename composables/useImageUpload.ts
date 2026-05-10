@@ -2,6 +2,8 @@
  * 通用图片上传 composable
  * 调用 POST /api/v1/upload/image，返回存储后的公开 URL
  */
+import { getAuthToken } from '~/utils/auth'
+
 export function useImageUpload() {
   const config = useRuntimeConfig()
   const apiBase = config.public.apiBase
@@ -16,7 +18,7 @@ export function useImageUpload() {
 
     uploading.value = true
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+      const token = getAuthToken()
       const form = new FormData()
       form.append('file', file)
       const res = await fetch(`${apiBase}/upload/image`, {

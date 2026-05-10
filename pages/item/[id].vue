@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Item } from '~/types'
-import { useItemApi } from '~/composables/useApi'
+import { useItemApi } from '~/composables/useItemApi'
 
-const { openLightbox } = useImageLightbox()
+const { openLightbox, previewLightbox } = useImageLightbox()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -42,8 +42,16 @@ async function pollImageTask() {
       clearImageTaskTimer()
       generatingImage.value = false
       const item = task.data ?? task.item
-      if (item?.image_url) imageUrl.value = item.image_url
-      toast.success('图片生成成功')
+      const newUrl = item?.image_url
+      if (newUrl && newUrl !== imageUrl.value) {
+        previewLightbox(newUrl, imageUrl.value, (confirmed) => {
+          imageUrl.value = confirmed
+        })
+        toast.success('图片生成完成，请确认后保存')
+      } else if (newUrl) {
+        imageUrl.value = newUrl
+        toast.success('图片生成成功')
+      }
     } else if (task.status === 'failed') {
       clearImageTaskTimer()
       generatingImage.value = false
@@ -597,7 +605,7 @@ function goBack() {
         <!-- Image preview -->
         <div class="flex gap-6 items-start">
           <div class="w-48 h-48 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-200 dark:border-gray-700">
-            <img v-if="imageUrl" :src="imageUrl" class="w-full h-full object-cover cursor-zoom-in" alt="物品图片" @click="openLightbox(imageUrl)" />
+            <img v-if="imageUrl" :src="imageUrl" class="w-full h-full object-cover cursor-zoom-in" alt="物品图片" @click="openLightbox(imageUrl, undefined, (url) => { imageUrl = url })" />
             <div v-else class="flex flex-col items-center gap-2 text-gray-300">
               <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />

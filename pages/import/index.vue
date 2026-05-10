@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import type { CrawlProgress } from '~/composables/useApi'
+import type { CrawlProgress } from '~/composables/useCrawlApi'
+import { getAuthToken } from '~/utils/auth'
 
 const router = useRouter()
 const route = useRoute()
+const config = useRuntimeConfig()
+const apiBase = config.public.apiBase
 const { getCrawlStatus } = useCrawlApi()
 const { getNovels, getNovel } = useNovelApi()
 
@@ -136,7 +139,7 @@ function handleDragOver(event: DragEvent) {
 
 // 获取 auth header
 function getAuthHeader(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : ''
+  const token = getAuthToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -160,7 +163,7 @@ async function handleImport() {
       formData.append('format', importForm.value.format)
       if (novelId) formData.append('novel_id', String(novelId))
 
-      const response = await fetch('/api/v1/import/novel/file', {
+      const response = await fetch(`${apiBase}/import/novel/file`, {
         method: 'POST',
         headers: getAuthHeader(),
         body: formData,
@@ -169,7 +172,7 @@ async function handleImport() {
     } else if (importForm.value.source === 'url') {
       const body: Record<string, unknown> = { url: importForm.value.url }
       if (novelId) body.novel_id = novelId
-      const response = await fetch('/api/v1/import/novel/url', {
+      const response = await fetch(`${apiBase}/import/novel/url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
         body: JSON.stringify(body),
@@ -178,7 +181,7 @@ async function handleImport() {
     } else {
       const body: Record<string, unknown> = { url: importForm.value.url, site_name: importForm.value.siteName }
       if (novelId) body.novel_id = novelId
-      const response = await fetch('/api/v1/import/novel/crawl', {
+      const response = await fetch(`${apiBase}/import/novel/crawl`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
         body: JSON.stringify(body),

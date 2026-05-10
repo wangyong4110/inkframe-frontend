@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { VideoQualityTier } from '~/types'
+import { QUALITY_LABELS, QUALITY_COLORS, VIDEO_STATUS_LABELS, VIDEO_STATUS_COLORS } from '~/constants/status'
 
 const route = useRoute()
 const router = useRouter()
@@ -7,21 +7,8 @@ const videoStore = useVideoStore()
 
 const videoId = parseInt(route.params.id as string)
 
-const QUALITY_LABELS: Record<VideoQualityTier, string> = { draft: '草稿', preview: '预览', final: '正式' }
-const QUALITY_COLORS: Record<VideoQualityTier, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  preview: 'bg-blue-100 text-blue-700',
-  final: 'bg-amber-100 text-amber-700',
-}
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-600',
-  generating: 'bg-yellow-100 text-yellow-700',
-  completed: 'bg-green-100 text-green-700',
-  failed: 'bg-red-100 text-red-700',
-}
-const STATUS_LABELS: Record<string, string> = {
-  pending: '待生成', generating: '生成中', completed: '已完成', failed: '失败',
-}
+const STATUS_COLORS = VIDEO_STATUS_COLORS
+const STATUS_LABELS = VIDEO_STATUS_LABELS
 
 const video = computed(() => videoStore.currentVideo)
 const shots = computed(() => videoStore.storyboard)
@@ -29,6 +16,13 @@ const completedShots = computed(() => shots.value.filter(s => s.status === 'comp
 const completionPercent = computed(() => {
   if (shots.value.length === 0) return 0
   return Math.round((completedShots.value.length / shots.value.length) * 100)
+})
+
+onMounted(() => {
+  if (!isNaN(videoId)) {
+    videoStore.fetchVideo(videoId)
+    videoStore.fetchStoryboard(videoId)
+  }
 })
 </script>
 

@@ -8,6 +8,7 @@
  *   placeholder 无图时的提示文字
  *   aspectRatio CSS aspect-ratio，如 "1/1"、"16/9"，默认 "1/1"
  *   disabled    禁用上传
+ *   onSave      点击放大 → 用户保存新 URL 时的回调（用于 previewLightbox 场景）
  *
  * Emits:
  *   update:modelValue(url: string)
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   aspectRatio?: string
   disabled?: boolean
+  onSave?: (newUrl: string) => void
 }>(), {
   modelValue: '',
   accept: 'image/jpeg,image/png,image/webp',
@@ -49,6 +51,10 @@ async function handleFileChange(event: Event) {
   }
 }
 
+function triggerUpload() {
+  fileInput.value?.click()
+}
+
 function remove() {
   emit('update:modelValue', '')
 }
@@ -56,46 +62,54 @@ function remove() {
 
 <template>
   <div class="space-y-2">
-    <!-- Upload box -->
+    <!-- Image box -->
     <div
-      class="relative rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 overflow-hidden flex items-center justify-center cursor-pointer hover:border-primary-400 transition-colors"
+      class="group/imgbox relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 flex items-center justify-center"
       :style="{ aspectRatio: props.aspectRatio }"
       :class="{ 'opacity-60 pointer-events-none': props.disabled }"
-      @click="fileInput?.click()"
     >
-      <!-- Preview -->
-      <img
-        v-if="props.modelValue"
-        :src="props.modelValue"
-        alt="preview"
-        class="w-full h-full object-cover"
-      />
-      <!-- Zoom button -->
+      <!-- Has image -->
+      <template v-if="props.modelValue">
+        <!-- Click image → zoom -->
+        <img
+          :src="props.modelValue"
+          alt="preview"
+          class="w-full h-full object-cover cursor-zoom-in"
+          @click="openLightbox(props.modelValue, undefined, props.onSave)"
+        />
+        <!-- Corner upload button (hover) -->
+        <button
+          v-if="!uploading"
+          type="button"
+          class="absolute bottom-1.5 right-1.5 p-1.5 rounded bg-black/40 text-white opacity-0 group-hover/imgbox:opacity-100 hover:bg-black/70 transition-all z-10"
+          title="重新上传"
+          @click.stop="triggerUpload"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+        </button>
+      </template>
+
+      <!-- No image: click to upload -->
       <button
-        v-if="props.modelValue && !uploading"
+        v-else
         type="button"
-        class="absolute bottom-1 right-1 bg-black/50 hover:bg-black/75 text-white rounded p-0.5 transition-colors z-10"
-        title="放大查看"
-        @click.stop="openLightbox(props.modelValue!)"
+        class="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        @click="triggerUpload"
       >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
         </svg>
+        <span class="text-xs select-none">{{ props.placeholder }}</span>
       </button>
-      <!-- Empty state -->
-      <div v-else class="text-center p-3 select-none">
-        <svg class="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-        </svg>
-        <span class="text-xs text-gray-400">{{ props.placeholder }}</span>
-      </div>
+
       <!-- Uploading overlay -->
       <div
         v-if="uploading"
-        class="absolute inset-0 bg-black/50 flex items-center justify-center"
+        class="absolute inset-0 bg-black/50 flex items-center justify-center z-20"
       >
-        <div class="w-7 h-7 border-3 border-white border-t-transparent rounded-full animate-spin" />
+        <div class="w-7 h-7 border-[3px] border-white border-t-transparent rounded-full animate-spin" />
       </div>
     </div>
 
@@ -105,7 +119,7 @@ function remove() {
         type="button"
         class="text-primary-600 hover:text-primary-800 disabled:opacity-40"
         :disabled="props.disabled || uploading"
-        @click="fileInput?.click()"
+        @click="triggerUpload"
       >
         {{ uploading ? '上传中...' : (props.modelValue ? '重新上传' : '选择图片') }}
       </button>

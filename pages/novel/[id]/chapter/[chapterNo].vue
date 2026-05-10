@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { PlotPoint } from '~/types'
+
 const route = useRoute()
 const router = useRouter()
 const novelId = parseInt(route.params.id as string)
@@ -628,7 +630,6 @@ async function fetchChapterVideos() {
 }
 
 // ── 剧情点 ────────────────────────────────────────────────────────────────────
-import type { PlotPoint } from '~/types'
 const plotPoints = ref<PlotPoint[]>([])
 const loadingPlotPoints = ref(false)
 const extractingPlotPoints = ref(false)
@@ -1250,7 +1251,7 @@ async function fetchShotsForChapter() {
         <div v-else-if="pageMode === 'script'" class="h-full overflow-auto">
           <!-- Video editor -->
           <div v-if="currentVideoId" class="px-8 py-6">
-            <VideoEditor ref="videoEditorRef" :video-id="currentVideoId" :llm-provider="novel?.ai_model || ''" />
+            <VideoEditor ref="videoEditorRef" :video-id="(currentVideoId as number)" :llm-provider="novel?.ai_model || ''" />
           </div>
 
           <!-- Empty state -->

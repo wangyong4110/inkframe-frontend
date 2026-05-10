@@ -3,7 +3,7 @@ import type { CharacterAbility } from '~/types'
 import { useCharacterArcApi } from '~/composables/useEnhancementApi'
 import type { CharacterArcStage } from '~/composables/useEnhancementApi'
 
-const { openLightbox } = useImageLightbox()
+const { openLightbox, previewLightbox } = useImageLightbox()
 const characterStore = useCharacterStore()
 const novelStore = useNovelStore()
 const route = useRoute()
@@ -220,12 +220,28 @@ async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'al
           generatingThreeView.value[viewType] = false
           const updatedChar = (task.data?.character ?? task.character) as any
           if (updatedChar) {
-            character.value.three_view_front = updatedChar.three_view_front ?? character.value.three_view_front
-            character.value.three_view_side = updatedChar.three_view_side ?? character.value.three_view_side
-            character.value.three_view_back = updatedChar.three_view_back ?? character.value.three_view_back
+            const keyMap: Record<string, 'three_view_front' | 'three_view_side' | 'three_view_back'> = {
+              front: 'three_view_front', side: 'three_view_side', back: 'three_view_back',
+            }
+            const keys = viewType === 'all'
+              ? (['front', 'side', 'back'] as const)
+              : [viewType as 'front' | 'side' | 'back']
+            for (const vt of keys) {
+              const key = keyMap[vt]
+              const newUrl = updatedChar[key]
+              if (newUrl && newUrl !== character.value[key]) {
+                const oldUrl = character.value[key]
+                previewLightbox(newUrl, oldUrl, (confirmed) => {
+                  character.value[key] = confirmed
+                  isDirty.value = true
+                })
+              } else if (newUrl) {
+                character.value[key] = newUrl
+              }
+            }
           }
           isDirty.value = false
-          toast.success(viewType === 'all' ? '三视图生成完成' : '视图生成完成')
+          toast.success(viewType === 'all' ? '三视图生成完成，请确认后保存' : '视图生成完成，请确认后保存')
         } else if (task.status === 'failed') {
           clearThreeViewTimer()
           generatingThreeView.value[viewType] = false
@@ -419,6 +435,7 @@ function getRoleLabel(role: string): string {
                   v-model="character[view.key]"
                   aspect-ratio="3/4"
                   :placeholder="view.label"
+                  :on-save="(url) => { character[view.key] = url; isDirty = true }"
                   @error="toast.error"
                 />
                 <div v-if="generatingThreeView[view.vt] || generatingThreeView.all" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
