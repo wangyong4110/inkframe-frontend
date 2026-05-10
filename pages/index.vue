@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import type { Novel } from '~/types'
+import type { Novel, Video } from '~/types'
 
 definePageMeta({ layout: false })
 
 const authStore = useAuthStore()
 const { getNovels } = useNovelApi()
+const platformApi = usePlatformApi()
+const publicNovelApi = usePublicNovelApi()
 const recentNovels = ref<Novel[]>([])
+const hotVideos = ref<Video[]>([])
+const hotNovels = ref<Novel[]>([])
 
 onMounted(async () => {
+  // 加载精选视频 + 精选小说（公开接口）
+  try {
+    const [videoRes, novelRes] = await Promise.allSettled([
+      platformApi.getPlatformFeed({ sort: 'hot', page: 1, page_size: 6 }),
+      publicNovelApi.getNovelFeed({ sort: 'hot', page: 1, page_size: 6 }),
+    ])
+    if (videoRes.status === 'fulfilled') hotVideos.value = videoRes.value?.data?.items ?? []
+    if (novelRes.status === 'fulfilled') hotNovels.value = novelRes.value?.data?.items ?? []
+  } catch {
+    // non-fatal
+  }
+
   if (authStore.isLoggedIn) {
     try {
       const response = await getNovels({ page: 1, page_size: 5 })
@@ -139,6 +155,8 @@ const stats = [
         <!-- Nav links -->
         <div class="hidden md:flex items-center gap-6">
           <NuxtLink to="/novel" class="text-gray-400 hover:text-white text-sm transition-colors">我的小说</NuxtLink>
+          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">小说广场</NuxtLink>
+          <NuxtLink to="/platform" class="text-gray-400 hover:text-white text-sm transition-colors">视频广场</NuxtLink>
           <NuxtLink to="/rewrite" class="text-gray-400 hover:text-white text-sm transition-colors">小说改写</NuxtLink>
           <NuxtLink to="/model" class="text-gray-400 hover:text-white text-sm transition-colors">AI 模型</NuxtLink>
         </div>
@@ -294,6 +312,134 @@ const stats = [
         <div v-for="stat in stats" :key="stat.label" class="text-center">
           <div class="text-3xl font-black text-white mb-1">{{ stat.value }}</div>
           <div class="text-sm text-gray-500">{{ stat.label }}</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hot Videos Section -->
+    <section v-if="hotVideos.length > 0" class="py-16 px-6" style="background: rgba(17, 24, 39, 0.5);">
+      <div class="max-w-7xl mx-auto">
+        <div class="flex items-center justify-between mb-8">
+          <div>
+            <h2 class="text-xl font-bold text-white">精选视频</h2>
+            <p class="text-sm text-gray-500 mt-0.5">AI 小说改编视频作品</p>
+          </div>
+          <NuxtLink to="/platform" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+            查看全部 →
+          </NuxtLink>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <NuxtLink
+            v-for="v in hotVideos"
+            :key="v.id"
+            :to="`/platform/video/${v.id}`"
+            class="group block rounded-xl overflow-hidden bg-gray-900 border border-gray-800 hover:border-gray-700 transition-all hover:shadow-lg hover:shadow-violet-900/10"
+          >
+            <!-- Cover -->
+            <div class="relative aspect-video bg-gray-800 overflow-hidden">
+              <img
+                v-if="v.cover_url"
+                :src="v.cover_url"
+                :alt="v.title"
+                loading="lazy"
+                decoding="async"
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.876V15.5a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+                </svg>
+              </div>
+
+              <!-- Play overlay -->
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                <div class="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center shadow">
+                  <svg class="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Duration badge -->
+              <div v-if="v.duration" class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded font-mono">
+                {{ Math.floor(v.duration / 60) }}:{{ String(Math.floor(v.duration % 60)).padStart(2, '0') }}
+              </div>
+            </div>
+
+            <!-- Info -->
+            <div class="p-2.5">
+              <p class="text-xs font-medium text-gray-200 line-clamp-2 leading-snug mb-1">{{ v.title }}</p>
+              <div class="flex items-center justify-between text-xs text-gray-500">
+                <span class="flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                  {{ (v.view_count ?? 0) >= 10000 ? `${((v.view_count ?? 0) / 10000).toFixed(1)}w` : (v.view_count ?? 0) }}
+                </span>
+              </div>
+            </div>
+          </NuxtLink>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hot Novels Section -->
+    <section v-if="hotNovels.length > 0" class="py-16 px-6 border-t border-gray-800/50">
+      <div class="max-w-7xl mx-auto">
+        <div class="flex items-center justify-between mb-8">
+          <div>
+            <h2 class="text-xl font-bold text-white">精选小说</h2>
+            <p class="text-sm text-gray-500 mt-0.5">AI 创作小说精品推荐</p>
+          </div>
+          <NuxtLink to="/plaza" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+            查看全部 →
+          </NuxtLink>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <NuxtLink
+            v-for="n in hotNovels"
+            :key="n.id"
+            :to="`/plaza/novel/${n.id}`"
+            class="group block rounded-xl overflow-hidden bg-gray-900 border border-gray-800 hover:border-gray-700 transition-all hover:shadow-lg hover:shadow-violet-900/10"
+          >
+            <!-- Cover -->
+            <div class="relative aspect-[3/4] bg-gray-800 overflow-hidden">
+              <img
+                v-if="n.cover_image"
+                :src="n.cover_image"
+                :alt="n.title"
+                loading="lazy"
+                decoding="async"
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+              <div v-else class="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-indigo-900/40 to-purple-900/40">
+                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
+              </div>
+
+              <!-- Words badge -->
+              <div v-if="n.total_words" class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                {{ n.total_words >= 10000 ? `${(n.total_words / 10000).toFixed(0)}万字` : `${n.total_words}字` }}
+              </div>
+            </div>
+
+            <!-- Info -->
+            <div class="p-2.5">
+              <p class="text-xs font-medium text-gray-200 line-clamp-2 leading-snug mb-1">{{ n.title }}</p>
+              <div class="flex items-center justify-between text-xs text-gray-500">
+                <span class="flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                  {{ (n.view_count ?? 0) >= 10000 ? `${((n.view_count ?? 0) / 10000).toFixed(1)}w` : (n.view_count ?? 0) }}
+                </span>
+                <span v-if="n.genre" class="text-indigo-500">{{ ({ fantasy:'奇幻', xianxia:'仙侠', urban:'都市', scifi:'科幻', romance:'言情', mystery:'悬疑', historical:'历史' } as Record<string,string>)[n.genre] ?? n.genre }}</span>
+              </div>
+            </div>
+          </NuxtLink>
         </div>
       </div>
     </section>

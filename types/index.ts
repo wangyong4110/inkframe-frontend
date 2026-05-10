@@ -47,8 +47,27 @@ export interface Novel {
   // 字幕
   subtitle_style?: string      // none/basic/cinematic/anime
   subtitle_font?: string
+  // 广场社交字段
+  is_published?: boolean
+  published_at?: string
+  visibility?: 'private' | 'unlisted' | 'public'
+  view_count?: number
+  like_count?: number
+  comment_count?: number
+  hot_score?: number
+  plaza_tags?: string[]
   created_at: string
   updated_at: string
+}
+
+export interface NovelComment {
+  id: number
+  novel_id: number
+  user_id: number
+  nickname?: string
+  content: string
+  parent_id?: number
+  created_at: string
 }
 
 export type NovelGenre = 'fantasy' | 'xianxia' | 'urban' | 'scifi' | 'romance' | 'mystery' | 'historical'
@@ -202,8 +221,25 @@ export interface Video {
   published_at?: string
   view_count?: number
   visibility?: 'private' | 'unlisted' | 'public'
+  // 广场社交字段
+  like_count?: number
+  comment_count?: number
+  hot_score?: number
+  tags?: string[]       // JSON 解析后的标签数组，如 ["玄幻","古风"]
+  duration?: number     // 视频总时长（秒）
+  novel?: { id: number; title: string; genre?: string }
   created_at: string
   updated_at: string
+}
+
+export interface VideoComment {
+  id: number
+  video_id: number
+  user_id: number
+  nickname?: string
+  content: string
+  parent_id?: number
+  created_at: string
 }
 
 export interface PlatformAccount {
