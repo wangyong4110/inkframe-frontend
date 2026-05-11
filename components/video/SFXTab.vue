@@ -107,8 +107,13 @@ async function handleGenerateSFX() {
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       useTaskStore().trackTask(taskId, async (task) => {
+        generatingSFX.value = false
         await videoStore.fetchStoryboard(props.videoId)
         await loadSFXItems()
+        if (task.status === 'failed') {
+          toast.error('音效生成失败：' + ((task as any).error || '未知错误'))
+          return
+        }
         const { success = 0, fail = 0 } = (task.data as any) ?? {}
         if (fail > 0) {
           toast.warning(`音效生成完成：${success} 成功，${fail} 失败`)
@@ -117,10 +122,11 @@ async function handleGenerateSFX() {
         }
       })
       toast.success('音效生成任务已提交（含 AI 标签分析），请在右下角任务面板查看进度')
+    } else {
+      generatingSFX.value = false
     }
   } catch (e: any) {
     toast.error('音效生成失败：' + (e.message || ''))
-  } finally {
     generatingSFX.value = false
   }
 }
@@ -134,8 +140,12 @@ function toggleSfxPreview(item: ShotSFXItem) {
     return
   }
   audio.src = item.url
-  audio.currentTime = 0
-  audio.play().catch(() => { sfxPlayingId.value = null })
+  audio.load()
+  audio.play().catch((e) => {
+    console.warn('[SFX Preview] play failed', item.url, e)
+    toast.error('音效预览失败，请检查音频链接')
+    sfxPlayingId.value = null
+  })
   sfxPlayingId.value = item.id
 }
 
