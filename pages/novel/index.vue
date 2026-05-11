@@ -116,7 +116,14 @@ const iconGradients: Record<string, string> = {
   cyan:   'linear-gradient(135deg,#06B6D4,#10B981)',
 }
 
+function isImageUrl(v?: string): boolean {
+  return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
+}
+
 function novelIconStyle(coverImage?: string): string {
+  if (isImageUrl(coverImage)) {
+    return `background-image:url(${coverImage});background-size:cover;background-position:center`
+  }
   if (coverImage && iconGradients[coverImage]) {
     return `background:${iconGradients[coverImage]}`
   }
@@ -221,7 +228,7 @@ function formatDate(dateStr: string): string {
           class="h-32 flex items-center justify-center"
           :style="novelIconStyle(novel.cover_image)"
         >
-          <span class="text-4xl font-bold text-white opacity-60">{{ novel.title.charAt(0) }}</span>
+          <span v-if="!isImageUrl(novel.cover_image)" class="text-4xl font-bold text-white opacity-60">{{ novel.title.charAt(0) }}</span>
         </div>
         <div class="p-4">
           <div class="flex items-start justify-between mb-2">

@@ -89,13 +89,18 @@ export interface Chapter {
   outline?: string
   scene_outline?: string   // JSON: [{scene_no, pov, goals, beats, tension}]
   plot_points?: PlotPoint[]
+  /** 内容状态：draft=草稿 | generating=生成中 | completed=已完成 */
   status: ChapterStatus
+  /** 是否已发布到作品集（与内容状态独立） */
+  is_published?: boolean
+  published_at?: string
   quality_score?: number
   created_at: string
   updated_at: string
 }
 
-export type ChapterStatus = 'draft' | 'generating' | 'completed' | 'published'
+/** 章节内容状态（不含发布状态） */
+export type ChapterStatus = 'draft' | 'generating' | 'completed'
 
 export interface PlotPoint {
   id: number

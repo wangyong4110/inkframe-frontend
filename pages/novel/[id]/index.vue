@@ -44,7 +44,7 @@ const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
 const novelChapterCount = computed(() => chapters.value.length)
 const novelTotalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count ?? 0), 0))
-const completedChapterCount = computed(() => chapters.value.filter(c => c.status === 'completed' || c.status === 'published').length)
+const completedChapterCount = computed(() => chapters.value.filter(c => c.status === 'completed').length)
 const chapterProgress = computed(() => {
   const target = novel.value?.target_chapters ?? 0
   if (!target) return completedChapterCount.value > 0 ? 100 : 0
@@ -56,6 +56,64 @@ const videoProgress = computed(() => {
   if (!total) return 0
   return Math.min(100, Math.round((completedVideoCount.value / total) * 100))
 })
+
+// ── Cover Image ──────────────────────────────────────────────────────────────
+const coverFileInput = ref<HTMLInputElement | null>(null)
+const coverGenerating = ref(false)
+const { uploadImage, uploading: coverUploading } = useImageUpload()
+const { updateNovel, generateCoverImage } = useNovelApi()
+
+function isCoverUrl(v?: string): boolean {
+  return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
+}
+
+function coverStyle(coverImage?: string): string {
+  if (isCoverUrl(coverImage)) {
+    return `background-image:url(${coverImage});background-size:cover;background-position:center`
+  }
+  const gradients: Record<string, string> = {
+    purple: 'linear-gradient(135deg,#8B5CF6,#3B82F6)',
+    blue:   'linear-gradient(135deg,#3B82F6,#06B6D4)',
+    green:  'linear-gradient(135deg,#10B981,#84CC16)',
+    orange: 'linear-gradient(135deg,#F59E0B,#EF4444)',
+    red:    'linear-gradient(135deg,#EF4444,#EC4899)',
+    pink:   'linear-gradient(135deg,#EC4899,#8B5CF6)',
+    teal:   'linear-gradient(135deg,#14B8A6,#3B82F6)',
+    indigo: 'linear-gradient(135deg,#6366F1,#8B5CF6)',
+    amber:  'linear-gradient(135deg,#F59E0B,#84CC16)',
+    cyan:   'linear-gradient(135deg,#06B6D4,#10B981)',
+  }
+  if (coverImage && gradients[coverImage]) return `background:${gradients[coverImage]}`
+  return 'background:linear-gradient(135deg,#8B5CF6,#3B82F6)'
+}
+
+async function onCoverFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const url = await uploadImage(file)
+    await updateNovel(novelId, { cover_image: url } as any)
+    await novelStore.fetchNovel(novelId)
+    toast.add({ title: '封面已更新' })
+  } catch (err: any) {
+    toast.add({ title: '封面上传失败：' + (err.message || ''), color: 'red' })
+  } finally {
+    if (coverFileInput.value) coverFileInput.value.value = ''
+  }
+}
+
+async function doGenerateCover() {
+  coverGenerating.value = true
+  try {
+    await generateCoverImage(novelId)
+    await novelStore.fetchNovel(novelId)
+    toast.add({ title: 'AI 封面生成成功' })
+  } catch (err: any) {
+    toast.add({ title: 'AI 封面生成失败：' + (err.message || ''), color: 'red' })
+  } finally {
+    coverGenerating.value = false
+  }
+}
 
 // ── Publish ──────────────────────────────────────────────────────────────────
 const publishLoading = ref(false)
@@ -191,8 +249,37 @@ onMounted(async () => {
     <!-- Novel Header -->
     <div v-if="novel" class="card">
       <div class="p-6">
-        <div class="flex items-start justify-between">
-          <div class="flex-1">
+        <div class="flex items-start gap-4 justify-between">
+          <!-- 封面缩略图 -->
+          <div class="shrink-0 group relative">
+            <div
+              class="w-20 h-24 rounded-xl overflow-hidden shadow-sm cursor-pointer flex items-center justify-center"
+              :style="coverStyle(novel.cover_image)"
+              @click="coverFileInput?.click()"
+            >
+              <span v-if="!isCoverUrl(novel.cover_image)" class="text-3xl font-bold text-white opacity-60 select-none">
+                {{ novel.title.charAt(0) }}
+              </span>
+              <!-- hover overlay -->
+              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition rounded-xl flex items-center justify-center">
+                <svg v-if="!coverUploading && !coverGenerating" class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                <div v-else class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            </div>
+            <input ref="coverFileInput" type="file" accept="image/*" class="hidden" @change="onCoverFileChange" />
+            <!-- AI 生成封面按钮 -->
+            <button
+              type="button"
+              :disabled="coverGenerating || coverUploading"
+              class="mt-1 w-full text-xs text-center text-purple-500 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 disabled:opacity-50"
+              @click="doGenerateCover"
+            >
+              {{ coverGenerating ? '生成中...' : 'AI 封面' }}
+            </button>
+          </div>
+          <div class="flex-1 min-w-0">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
               {{ novel.title }}
             </h1>

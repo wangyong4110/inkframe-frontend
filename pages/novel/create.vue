@@ -2,6 +2,26 @@
 import type { CrawlProgress } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
 
+const { uploadImage, uploading: coverUploading } = useImageUpload()
+const coverFileInput = ref<HTMLInputElement | null>(null)
+
+async function onCoverFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const url = await uploadImage(file)
+    aiForm.cover_image = url
+  } catch (err: any) {
+    aiError.value = err.message || '封面上传失败'
+  } finally {
+    if (coverFileInput.value) coverFileInput.value.value = ''
+  }
+}
+
+function isCoverUrl(v: string) {
+  return v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/')
+}
+
 const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
@@ -459,13 +479,26 @@ const crawlPercent = computed(() => {
 
         <!-- 图标 + 名称 同行 -->
         <div class="flex items-start gap-4">
-          <div
-            class="w-16 h-16 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-            :style="{ background: iconGradient(aiForm.cover_image) }"
-          >
-            <span class="text-2xl font-bold text-white opacity-80 select-none">
-              {{ aiForm.title.charAt(0) || 'I' }}
-            </span>
+          <!-- 封面预览 + 上传触发 -->
+          <div class="shrink-0">
+            <div
+              class="w-16 h-16 rounded-xl flex items-center justify-center shadow-sm overflow-hidden cursor-pointer group relative"
+              :style="isCoverUrl(aiForm.cover_image)
+                ? `background-image:url(${aiForm.cover_image});background-size:cover;background-position:center`
+                : `background:${iconGradient(aiForm.cover_image)}`"
+              @click="coverFileInput?.click()"
+            >
+              <span v-if="!isCoverUrl(aiForm.cover_image)" class="text-2xl font-bold text-white opacity-80 select-none">
+                {{ aiForm.title.charAt(0) || 'I' }}
+              </span>
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded-xl">
+                <svg v-if="!coverUploading" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <div v-else class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            </div>
+            <input ref="coverFileInput" type="file" accept="image/*" class="hidden" @change="onCoverFileChange" />
           </div>
           <div class="flex-1 min-w-0">
             <input
@@ -475,7 +508,7 @@ const crawlPercent = computed(() => {
               placeholder="给小说起个名字"
               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white dark:bg-gray-700 dark:text-white mb-2"
             />
-            <div class="flex gap-1.5 flex-wrap">
+            <div class="flex gap-1.5 flex-wrap items-center">
               <button
                 v-for="opt in iconOptions"
                 :key="opt.value"
@@ -487,6 +520,10 @@ const crawlPercent = computed(() => {
                 :style="{ background: opt.gradient }"
                 @click="aiForm.cover_image = opt.value"
               />
+              <span class="text-xs text-gray-400 ml-1">或</span>
+              <button type="button" class="text-xs text-purple-500 hover:text-purple-700 underline" @click="coverFileInput?.click()">
+                上传封面
+              </button>
             </div>
           </div>
         </div>
