@@ -443,12 +443,12 @@ async function switchToScenes() {
 const anchors = computed(() => sceneAnchorStore.anchors)
 const showAnchorForm = ref(false)
 const editingAnchorId = ref<number | null>(null)
-const anchorForm = ref({ name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' })
+const anchorForm = ref({ name: '', type: 'interior', description: '', prompt_lock: '' })
 const savingAnchor = ref(false)
 
 function startAnchorCreate() {
   editingAnchorId.value = null
-  anchorForm.value = { name: '', type: 'interior', description: '', prompt_lock: '', style_tokens: '', notes: '' }
+  anchorForm.value = { name: '', type: 'interior', description: '', prompt_lock: '' }
   showAnchorForm.value = true
 }
 
@@ -457,7 +457,6 @@ function startAnchorEdit(anchor: any) {
   anchorForm.value = {
     name: anchor.name, type: anchor.type || 'interior',
     description: anchor.description || '', prompt_lock: anchor.prompt_lock || '',
-    style_tokens: anchor.style_tokens || '', notes: anchor.notes || '',
   }
   showAnchorForm.value = true
 }
@@ -1068,12 +1067,12 @@ async function fetchShotsForChapter() {
                   @click="router.push(`/character/${char.id}`)"
                 >
                   <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-                    <img v-if="char.three_view_front || char.portrait" :src="char.three_view_front || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+                    <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
                     <span v-else class="text-base font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
                   </div>
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ char.name }}</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_front ? '有三视图' : '无三视图' }} · {{ char.role }}</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ char.role }}</p>
                   </div>
                   <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -1180,10 +1179,6 @@ async function fetchShotsForChapter() {
                 <div>
                   <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词（逗号分隔，生成时强制注入）</label>
                   <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
-                </div>
-                <div>
-                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">风格标签</label>
-                  <input v-model="anchorForm.style_tokens" type="text" placeholder="warm lighting, soft focus" class="input w-full text-sm" />
                 </div>
                 <div class="flex gap-2 pt-1">
                   <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">

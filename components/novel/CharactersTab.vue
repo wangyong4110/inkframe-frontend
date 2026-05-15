@@ -176,11 +176,11 @@ async function confirmDeleteCharacter() {
         <div class="flex items-start space-x-4">
           <div class="w-16 h-16 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 flex items-center justify-center">
             <img
-              v-if="character.three_view_front || character.portrait"
-              :src="character.three_view_front || character.portrait"
+              v-if="character.three_view_sheet || character.portrait"
+              :src="character.three_view_sheet || character.portrait"
               class="w-full h-full object-cover cursor-zoom-in"
               :alt="character.name"
-              @click.stop="openLightbox(character.three_view_front || character.portrait)"
+              @click.stop="openLightbox(character.three_view_sheet || character.portrait)"
             />
             <span v-else class="text-2xl font-bold text-primary-600">{{ character.name.charAt(0) }}</span>
           </div>

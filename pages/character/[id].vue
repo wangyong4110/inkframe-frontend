@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { CharacterAbility } from '~/types'
 import { useCharacterArcApi } from '~/composables/useEnhancementApi'
 import type { CharacterArcStage } from '~/composables/useEnhancementApi'
 
@@ -17,17 +16,26 @@ const characterId = parseInt(route.params.id as string)
 const activeTab = ref('profile')
 const saving = ref(false)
 const isDirty = ref(false)
-const generatingThreeView = ref<Record<string, boolean>>({ front: false, side: false, back: false, all: false })
+const generatingThreeView = ref(false)
+const generatingFaceCloseup = ref(false)
 
 // 三视图任务状态
 const threeViewTaskId = ref('')
 const threeViewTaskStatus = ref<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
 let threeViewTaskTimer: ReturnType<typeof setInterval> | null = null
 
+// 面部特写任务状态
+const faceCloseupTaskId = ref('')
+const faceCloseupTaskStatus = ref<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
+let faceCloseupTaskTimer: ReturnType<typeof setInterval> | null = null
+
 function clearThreeViewTimer() {
   if (threeViewTaskTimer) { clearInterval(threeViewTaskTimer); threeViewTaskTimer = null }
 }
-onUnmounted(clearThreeViewTimer)
+function clearFaceCloseupTimer() {
+  if (faceCloseupTaskTimer) { clearInterval(faceCloseupTaskTimer); faceCloseupTaskTimer = null }
+}
+onUnmounted(() => { clearThreeViewTimer(); clearFaceCloseupTimer() })
 const novelImageStyle = computed(() => novelStore.currentNovel?.image_style || 'anime')
 
 // 使用小说配置的图像生成模型
@@ -44,20 +52,10 @@ const character = ref({
   personality: '',
   character_arc: '',
   portrait: '',
-  three_view_front: '',
-  three_view_side: '',
-  three_view_back: '',
+  three_view_sheet: '',
+  face_closeup: '',
   cover_image: '',
 })
-
-// Reactive personality tags array
-const personalityTags = ref<string[]>([])
-const newTag = ref('')
-
-// Reactive abilities array
-const abilities = ref<CharacterAbility[]>([])
-const showAddAbility = ref(false)
-const newAbility = ref({ name: '', level: '', description: '' })
 
 const tabs = [
   { key: 'profile', label: '角色档案' },
@@ -71,6 +69,7 @@ const tabs = [
 useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
 
 // Arc chart data
+
 const arcStages = ref<CharacterArcStage[]>([])
 const arcLoading = ref(false)
 
@@ -85,8 +84,6 @@ const arcBars = computed(() => {
 })
 
 watch(character, () => { isDirty.value = true }, { deep: true })
-watch(personalityTags, () => { isDirty.value = true }, { deep: true })
-watch(abilities, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
   if (characterId) {
@@ -108,13 +105,10 @@ onMounted(async () => {
         personality: c.personality ?? '',
         character_arc: c.character_arc ?? '',
         portrait: c.portrait ?? '',
-        three_view_front: c.three_view_front ?? '',
-        three_view_side: c.three_view_side ?? '',
-        three_view_back: c.three_view_back ?? '',
+        three_view_sheet: c.three_view_sheet ?? '',
+        face_closeup: c.face_closeup ?? '',
         cover_image: c.cover_image ?? '',
       }
-      personalityTags.value = c.personality_tags ? [...c.personality_tags] : []
-      abilities.value = c.abilities ? [...c.abilities] : []
     }
     // Reset dirty after loading
     await nextTick()
@@ -139,11 +133,7 @@ onMounted(async () => {
 async function handleSave() {
   saving.value = true
   try {
-    await characterStore.updateCharacter(characterId, {
-      ...character.value,
-      personality_tags: personalityTags.value,
-      abilities: abilities.value,
-    } as any)
+    await characterStore.updateCharacter(characterId, { ...character.value })
     isDirty.value = false
     toast.success('角色信息已保存')
   } catch (e: any) {
@@ -158,54 +148,27 @@ function goBack() {
   nid ? router.push(`/novel/${nid}?tab=characters`) : router.back()
 }
 
-// Personality tags
-function addTag() {
-  const tag = newTag.value.trim()
-  if (tag && !personalityTags.value.includes(tag)) {
-    personalityTags.value.push(tag)
-  }
-  newTag.value = ''
-}
-function removeTag(idx: number) {
-  personalityTags.value.splice(idx, 1)
+async function autoSaveIfDirty() {
+  if (!isDirty.value) return
+  await characterStore.updateCharacter(characterId, { ...character.value })
+  isDirty.value = false
 }
 
-// Abilities
-function addAbility() {
-  if (!newAbility.value.name.trim()) return
-  abilities.value.push({ ...newAbility.value })
-  newAbility.value = { name: '', level: '', description: '' }
-  showAddAbility.value = false
-}
-function removeAbility(idx: number) {
-  abilities.value.splice(idx, 1)
-}
-
-async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'all') {
+async function handleGenerateThreeView() {
   if (!character.value.appearance) {
     toast.error('请先填写外貌描述，再生成三视图')
     return
   }
-  // 若有未保存的修改（包括外貌描述），先保存再生成，确保后端读取到最新外貌
-  if (isDirty.value) {
-    try {
-      await characterStore.updateCharacter(characterId, {
-        ...character.value,
-        personality_tags: personalityTags.value,
-        abilities: abilities.value,
-      } as any)
-      isDirty.value = false
-    } catch (e: any) {
-      toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
-      return
-    }
+  try { await autoSaveIfDirty() } catch (e: any) {
+    toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
+    return
   }
-  generatingThreeView.value[viewType] = true
+  generatingThreeView.value = true
   threeViewTaskStatus.value = 'pending'
   clearThreeViewTimer()
   try {
     const api = useCharacterApi()
-    const res = await api.generateThreeView(characterId, viewType, novelImageStyle.value, selectedImageProvider.value || undefined)
+    const res = await api.generateThreeView(characterId, novelImageStyle.value, selectedImageProvider.value || undefined)
     const taskId = (res as any).data?.task_id ?? ''
     if (!taskId) throw new Error('未获取到任务 ID')
     threeViewTaskId.value = taskId
@@ -217,42 +180,84 @@ async function handleGenerateThreeView(viewType: 'front' | 'side' | 'back' | 'al
         threeViewTaskStatus.value = task.status as any
         if (task.status === 'completed') {
           clearThreeViewTimer()
-          generatingThreeView.value[viewType] = false
+          generatingThreeView.value = false
           const updatedChar = (task.data?.character ?? task.character) as any
-          if (updatedChar) {
-            const keyMap: Record<string, 'three_view_front' | 'three_view_side' | 'three_view_back'> = {
-              front: 'three_view_front', side: 'three_view_side', back: 'three_view_back',
-            }
-            const keys = viewType === 'all'
-              ? (['front', 'side', 'back'] as const)
-              : [viewType as 'front' | 'side' | 'back']
-            for (const vt of keys) {
-              const key = keyMap[vt]
-              const newUrl = updatedChar[key]
-              if (newUrl && newUrl !== character.value[key]) {
-                const oldUrl = character.value[key]
-                previewLightbox(newUrl, oldUrl, (confirmed) => {
-                  character.value[key] = confirmed
-                  isDirty.value = true
-                })
-              } else if (newUrl) {
-                character.value[key] = newUrl
-              }
-            }
+          const newUrl = updatedChar?.three_view_sheet
+          if (newUrl && newUrl !== character.value.three_view_sheet) {
+            previewLightbox(newUrl, character.value.three_view_sheet, (confirmed) => {
+              character.value.three_view_sheet = confirmed
+              isDirty.value = true
+            })
+          } else if (newUrl) {
+            character.value.three_view_sheet = newUrl
           }
           isDirty.value = false
-          toast.success(viewType === 'all' ? '三视图生成完成，请确认后保存' : '视图生成完成，请确认后保存')
+          toast.success('三视图生成完成，请确认后保存')
         } else if (task.status === 'failed') {
           clearThreeViewTimer()
-          generatingThreeView.value[viewType] = false
+          generatingThreeView.value = false
           toast.error('生成失败：' + (task.error || '未知错误'))
         }
       } catch { /* ignore */ }
     }, 3000)
   } catch (e: any) {
     clearThreeViewTimer()
-    generatingThreeView.value[viewType] = false
+    generatingThreeView.value = false
     threeViewTaskStatus.value = 'failed'
+    toast.error('生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleGenerateFaceCloseup() {
+  if (!character.value.appearance) {
+    toast.error('请先填写外貌描述，再生成面部特写')
+    return
+  }
+  try { await autoSaveIfDirty() } catch (e: any) {
+    toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
+    return
+  }
+  generatingFaceCloseup.value = true
+  faceCloseupTaskStatus.value = 'pending'
+  clearFaceCloseupTimer()
+  try {
+    const api = useCharacterApi()
+    const res = await api.generateFaceCloseup(characterId, novelImageStyle.value, selectedImageProvider.value || undefined)
+    const taskId = (res as any).data?.task_id ?? ''
+    if (!taskId) throw new Error('未获取到任务 ID')
+    faceCloseupTaskId.value = taskId
+    toast.info('面部特写生成任务已提交，AI 正在生成中…')
+    faceCloseupTaskTimer = setInterval(async () => {
+      try {
+        const pollRes = await useTaskApi().getTask(faceCloseupTaskId.value)
+        const task = pollRes.data
+        faceCloseupTaskStatus.value = task.status as any
+        if (task.status === 'completed') {
+          clearFaceCloseupTimer()
+          generatingFaceCloseup.value = false
+          const updatedChar = (task.data?.character ?? task.character) as any
+          const newUrl = updatedChar?.face_closeup
+          if (newUrl && newUrl !== character.value.face_closeup) {
+            previewLightbox(newUrl, character.value.face_closeup, (confirmed) => {
+              character.value.face_closeup = confirmed
+              isDirty.value = true
+            })
+          } else if (newUrl) {
+            character.value.face_closeup = newUrl
+          }
+          isDirty.value = false
+          toast.success('面部特写生成完成，请确认后保存')
+        } else if (task.status === 'failed') {
+          clearFaceCloseupTimer()
+          generatingFaceCloseup.value = false
+          toast.error('生成失败：' + (task.error || '未知错误'))
+        }
+      } catch { /* ignore */ }
+    }, 3000)
+  } catch (e: any) {
+    clearFaceCloseupTimer()
+    generatingFaceCloseup.value = false
+    faceCloseupTaskStatus.value = 'failed'
     toast.error('生成失败：' + (e.message || ''))
   }
 }
@@ -390,61 +395,36 @@ function getRoleLabel(role: string): string {
           </div>
         </div>
 
-        <!-- Three-view images -->
+        <!-- Three-view combined sheet -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-          <div class="flex items-center justify-between mb-4">
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图（正视图 / 侧视图 / 背视图）</h4>
-            <div class="flex items-center gap-2">
-              <button
-                class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-                :disabled="generatingThreeView.all || !character.appearance"
-                @click="handleGenerateThreeView('all')"
-              >
-                <svg v-if="generatingThreeView.all" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {{ generatingThreeView.all ? '生成中...' : 'AI 一键生成' }}
-              </button>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图参考图</h4>
+              <p class="text-xs text-gray-500 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
+            </div>
+            <button
+              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+              :disabled="generatingThreeView || !character.appearance"
+              @click="handleGenerateThreeView"
+            >
+              <svg v-if="generatingThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingThreeView ? '生成中...' : 'AI 一键生成' }}
+            </button>
+          </div>
+          <div class="relative">
+            <ImageUploadBox
+              v-model="character.three_view_sheet"
+              aspect-ratio="1/1"
+              placeholder="三视图参考图（正面+侧面+背面合图）"
+              :on-save="(url: string) => { character.three_view_sheet = url; isDirty = true }"
+              @error="toast.error"
+            />
+            <div v-if="generatingThreeView" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
           </div>
-          <div class="grid gap-4 md:grid-cols-3">
-            <div v-for="view in [
-              { key: 'three_view_front' as const, label: '正视图', vt: 'front' as const },
-              { key: 'three_view_side'  as const, label: '侧视图', vt: 'side'  as const },
-              { key: 'three_view_back'  as const, label: '背视图', vt: 'back'  as const },
-            ]" :key="view.key" class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ view.label }}</label>
-                <button
-                  class="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 disabled:opacity-40"
-                  :disabled="generatingThreeView[view.vt] || generatingThreeView.all || !character.appearance"
-                  @click="handleGenerateThreeView(view.vt)"
-                >
-                  <svg v-if="generatingThreeView[view.vt]" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l14 9-14 9V3z" />
-                  </svg>
-                  {{ generatingThreeView[view.vt] ? '生成中' : 'AI 生成' }}
-                </button>
-              </div>
-              <!-- Generating overlay when AI is running -->
-              <div class="relative">
-                <ImageUploadBox
-                  v-model="character[view.key]"
-                  aspect-ratio="3/4"
-                  :placeholder="view.label"
-                  :on-save="(url) => { character[view.key] = url; isDirty = true }"
-                  @error="toast.error"
-                />
-                <div v-if="generatingThreeView[view.vt] || generatingThreeView.all" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-                  <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <p class="mt-2 text-xs text-gray-500">需先填写「外貌描述」，AI 才能生成准确的三视图。填入或生成后点击「保存」即可保留。</p>
           <!-- 任务状态 -->
           <div v-if="threeViewTaskStatus !== 'idle'" class="mt-2 text-xs">
             <span v-if="threeViewTaskStatus === 'pending' || threeViewTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
@@ -455,6 +435,48 @@ function getRoleLabel(role: string): string {
             <span v-else-if="threeViewTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
           </div>
         </div>
+
+        <!-- Face closeup -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-white">面部特写</h4>
+              <p class="text-xs text-gray-500 mt-0.5">头部特写，展示五官细节</p>
+            </div>
+            <button
+              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+              :disabled="generatingFaceCloseup || !character.appearance"
+              @click="handleGenerateFaceCloseup"
+            >
+              <svg v-if="generatingFaceCloseup" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingFaceCloseup ? '生成中...' : 'AI 生成' }}
+            </button>
+          </div>
+          <div class="relative max-w-xs">
+            <ImageUploadBox
+              v-model="character.face_closeup"
+              aspect-ratio="3/4"
+              placeholder="面部特写图"
+              :on-save="(url: string) => { character.face_closeup = url; isDirty = true }"
+              @error="toast.error"
+            />
+            <div v-if="generatingFaceCloseup" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          </div>
+          <!-- 任务状态 -->
+          <div v-if="faceCloseupTaskStatus !== 'idle'" class="mt-2 text-xs">
+            <span v-if="faceCloseupTaskStatus === 'pending' || faceCloseupTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
+              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              AI 正在生成面部特写，请稍候…
+            </span>
+            <span v-else-if="faceCloseupTaskStatus === 'completed'" class="text-green-500">面部特写生成完成</span>
+            <span v-else-if="faceCloseupTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500">需先填写「外貌描述」，AI 才能生成准确的图像。生成后点击「保存」即可保留。</p>
       </div>
     </div>
 
@@ -467,85 +489,6 @@ function getRoleLabel(role: string): string {
         <textarea v-model="character.personality" rows="6" class="input" placeholder="详细描述角色的性格特点..."></textarea>
       </div>
 
-      <!-- Personality tags -->
-      <div class="mt-6">
-        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">性格标签</h4>
-        <div class="flex flex-wrap gap-2 mb-2">
-          <span
-            v-for="(tag, idx) in personalityTags"
-            :key="idx"
-            class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-primary-100 text-primary-800"
-          >
-            {{ tag }}
-            <button class="ml-1 text-primary-500 hover:text-primary-700" @click="removeTag(idx)">×</button>
-          </span>
-        </div>
-        <div class="flex gap-2">
-          <input
-            v-model="newTag"
-            type="text"
-            class="input flex-1"
-            placeholder="输入标签，回车添加"
-            @keyup.enter="addTag"
-          />
-          <button class="btn-outline" @click="addTag">添加</button>
-        </div>
-      </div>
-
-      <!-- Abilities -->
-      <div class="mt-6">
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="text-sm font-medium text-gray-900 dark:text-white">能力设定</h4>
-          <button class="btn-outline text-sm" @click="showAddAbility = true">
-            <svg class="w-4 h-4 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            添加能力
-          </button>
-        </div>
-
-        <div class="space-y-2">
-          <div
-            v-for="(ab, idx) in abilities"
-            :key="idx"
-            class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-          >
-            <div>
-              <span class="font-medium text-gray-900 dark:text-white">{{ ab.name }}</span>
-              <span v-if="ab.level" class="ml-2 text-sm text-gray-500">{{ ab.level }}</span>
-              <p v-if="ab.description" class="text-xs text-gray-400 mt-0.5">{{ ab.description }}</p>
-            </div>
-            <button class="text-red-400 hover:text-red-600" @click="removeAbility(idx)">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          </div>
-          <p v-if="abilities.length === 0" class="text-sm text-gray-400">暂无能力设定</p>
-        </div>
-
-        <!-- Add ability form -->
-        <div v-if="showAddAbility" class="mt-3 p-4 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">能力名称 *</label>
-              <input v-model="newAbility.name" type="text" class="input" placeholder="如：雷电诀" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">等级/阶段</label>
-              <input v-model="newAbility.level" type="text" class="input" placeholder="如：3阶" />
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
-            <input v-model="newAbility.description" type="text" class="input" placeholder="简要描述能力效果" />
-          </div>
-          <div class="flex gap-2">
-            <button class="btn-primary text-sm" @click="addAbility">确认添加</button>
-            <button class="btn-outline text-sm" @click="showAddAbility = false; newAbility = { name: '', level: '', description: '' }">取消</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Character Arc Tab -->

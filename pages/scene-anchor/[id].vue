@@ -26,8 +26,6 @@ const form = ref({
   variant: '',
   description: '',
   prompt_lock: '',
-  style_tokens: '',
-  notes: '',
   parent_anchor_id: undefined as number | undefined,
 })
 
@@ -90,8 +88,6 @@ onMounted(async () => {
       variant: a.variant ?? '',
       description: a.description ?? '',
       prompt_lock: a.prompt_lock ?? '',
-      style_tokens: a.style_tokens ?? '',
-      notes: a.notes ?? '',
       parent_anchor_id: a.parent_anchor_id,
     }
 
@@ -122,8 +118,6 @@ async function handleSave() {
       variant: form.value.variant || undefined,
       description: form.value.description,
       prompt_lock: form.value.prompt_lock,
-      style_tokens: form.value.style_tokens,
-      notes: form.value.notes,
       parent_anchor_id: form.value.parent_anchor_id || undefined,
     }
     const updated = await api.updateSceneAnchor(anchorId, payload)
@@ -314,21 +308,9 @@ function goBack() {
           <p class="mt-1 text-xs text-gray-400">逗号分隔的核心视觉关键词，每次生成都会强制注入</p>
         </div>
 
-        <!-- Style Tokens -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Style Tokens</label>
-          <input
-            v-model="form.style_tokens"
-            type="text"
-            class="input font-mono text-sm"
-            placeholder="ancient_chinese, warmly_lit, early_morning, intimate"
-          />
-          <p class="mt-1 text-xs text-gray-400">风格标记，影响画面的整体艺术风格</p>
-        </div>
-
         <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300 space-y-1">
           <p class="font-medium">生成提示词组合顺序：</p>
-          <p class="font-mono">Prompt Lock + Description + Style Tokens + Shot Prompt</p>
+          <p class="font-mono">Prompt Lock + Description + Shot Prompt</p>
         </div>
       </div>
 

@@ -61,19 +61,6 @@ function getItemCategoryColor(cat: string): string {
   return colors[cat] || 'bg-gray-100 text-gray-600'
 }
 
-function getItemRarity(item: Item): { label: string; color: string } | null {
-  try {
-    const data = JSON.parse(item.abilities || '{}')
-    const map: Record<string, { label: string; color: string }> = {
-      common:    { label: '普通', color: 'bg-gray-100 text-gray-600' },
-      uncommon:  { label: '优良', color: 'bg-green-100 text-green-700' },
-      rare:      { label: '稀有', color: 'bg-blue-100 text-blue-700' },
-      epic:      { label: '史诗', color: 'bg-purple-100 text-purple-700' },
-      legendary: { label: '传说', color: 'bg-yellow-100 text-yellow-700' },
-    }
-    return data.rarity ? (map[data.rarity] ?? null) : null
-  } catch { return null }
-}
 
 function getItemStatusDot(status: string): string {
   const dots: Record<string, string> = {
@@ -227,12 +214,6 @@ async function deleteItem(id: number, event: Event) {
           <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
             <span class="text-3xl">{{ getItemCategoryIcon(item.category) }}</span>
           </div>
-          <!-- Rarity badge top-left -->
-          <span
-            v-if="getItemRarity(item)"
-            class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
-            :class="getItemRarity(item)!.color"
-          >{{ getItemRarity(item)!.label }}</span>
           <!-- Status dot top-right -->
           <span class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
             <span class="w-1.5 h-1.5 rounded-full" :class="getItemStatusDot(item.status)" />

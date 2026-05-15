@@ -30,10 +30,16 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ description }),
     })
 
-  const generateThreeView = (id: number, viewType: 'front' | 'side' | 'back' | 'all', style?: string, provider?: string) =>
+  const generateThreeView = (id: number, style?: string, provider?: string) =>
     request<ApiResponse<{ task_id: string }>>(`/characters/${id}/three-view`, {
       method: 'POST',
-      body: JSON.stringify({ view_type: viewType, style: style ?? '', provider: provider ?? '' }),
+      body: JSON.stringify({ style: style ?? '', provider: provider ?? '' }),
+    })
+
+  const generateFaceCloseup = (id: number, style?: string, provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/characters/${id}/face-closeup`, {
+      method: 'POST',
+      body: JSON.stringify({ style: style ?? '', provider: provider ?? '' }),
     })
 
   const uploadPortrait = (id: number, file: File) =>
@@ -74,6 +80,7 @@ export const useCharacterApi = () => {
     deleteCharacter,
     generateCharacterProfile,
     generateThreeView,
+    generateFaceCloseup,
     uploadPortrait,
     previewVoice,
     aiBatchGenerate,

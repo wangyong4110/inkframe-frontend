@@ -136,14 +136,10 @@ export interface Character {
   archetype?: string
   appearance?: string
   personality?: string
-  personality_tags?: string[]
   background?: string
-  abilities?: CharacterAbility[]
   character_arc?: string
-  // three-view reference images
-  three_view_front?: string
-  three_view_side?: string
-  three_view_back?: string
+  three_view_sheet?: string  // 三合一参考图（combined sheet）
+  face_closeup?: string      // 面部特写图
   portrait?: string
   cover_image?: string
   // 配音设置
@@ -370,7 +366,7 @@ export interface VideoBGMSegment {
   updated_at?: string
 }
 
-export type CameraType = 'static' | 'pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
+export type CameraType = 'static' | 'push' | 'pull' | 'pan' | 'track' | 'crane_up' | 'crane_down' | 'follow' | 'arc' | 'tilt' | 'whip_pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
 export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
 export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'
 export type ShotTransition = 'cut' | 'j-cut' | 'l-cut' | 'fade' | 'dissolve' | 'dip-black' | 'dip-white' | 'wipe' | 'push' | 'slide' | 'zoom' | 'whip-pan' | 'spin' | 'flash' | 'glitch' | 'blur' | 'morph'
@@ -571,8 +567,6 @@ export interface Item {
   appearance?: string
   location?: string
   owner?: string
-  significance?: string
-  abilities?: string // JSON
   image_url?: string
   visual_prompt?: string
   reference_image_url?: string
@@ -611,18 +605,13 @@ export interface SceneAnchor {
   type: SceneAnchorType
   description: string
   prompt_lock: string
-  style_tokens: string
   ref_image_url: string
-  notes: string
   ref_image_locked_at?: string
   ref_image_shot_id?: number
   usage_count: number
   avg_cons_score: number
   parent_anchor_id?: number
   variant?: string
-  lighting_keywords?: string
-  time_of_day?: string
-  weather?: string
   created_at: string
   updated_at: string
 }
@@ -632,13 +621,8 @@ export interface CreateSceneAnchorPayload {
   type?: SceneAnchorType
   description?: string
   prompt_lock?: string
-  style_tokens?: string
-  notes?: string
   variant?: string
   parent_anchor_id?: number
-  lighting_keywords?: string
-  time_of_day?: string
-  weather?: string
 }
 
 export type UpdateSceneAnchorPayload = Partial<CreateSceneAnchorPayload>

@@ -14,13 +14,8 @@ const anchorForm = ref({
   type: 'exterior' as string,
   description: '',
   prompt_lock: '',
-  style_tokens: '',
-  notes: '',
   variant: '',
   parent_anchor_id: undefined as number | undefined,
-  lighting_keywords: '',
-  time_of_day: '',
-  weather: '',
 })
 const savingAnchor = ref(false)
 const extractingAnchors = ref(false)
@@ -30,7 +25,7 @@ const batchGeneratingAnchorImages = ref(false)
 const generatingRefImage = ref<Record<number, boolean>>({})
 
 function startAnchorCreate() {
-  anchorForm.value = { name: '', type: 'exterior', description: '', prompt_lock: '', style_tokens: '', notes: '', variant: '', parent_anchor_id: undefined, lighting_keywords: '', time_of_day: '', weather: '' }
+  anchorForm.value = { name: '', type: 'exterior', description: '', prompt_lock: '', variant: '', parent_anchor_id: undefined }
   showAnchorModal.value = true
 }
 
@@ -289,40 +284,8 @@ async function generateRefImage(anchor: any) {
             <label class="label">视觉描述（英文）</label>
             <textarea v-model="anchorForm.description" class="input w-full resize-none" rows="2" placeholder="Brief English description..."></textarea>
           </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">光照关键词</label>
-            <input
-              v-model="anchorForm.lighting_keywords"
-              type="text"
-              class="w-full border rounded px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              placeholder="如：golden hour, warm backlight, soft shadows"
-            />
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">时间段</label>
-              <select v-model="anchorForm.time_of_day" class="w-full border rounded px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                <option value="">不限</option>
-                <option value="morning">清晨</option>
-                <option value="afternoon">白天</option>
-                <option value="evening">黄昏</option>
-                <option value="night">夜晚</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">天气</label>
-              <select v-model="anchorForm.weather" class="w-full border rounded px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                <option value="">不限</option>
-                <option value="clear">晴天</option>
-                <option value="cloudy">阴天</option>
-                <option value="rainy">雨天</option>
-                <option value="foggy">雾天</option>
-                <option value="snowy">雪天</option>
-              </select>
-            </div>
-          </div>
         </div>
-        <p class="text-xs text-gray-400">创建后可在详情页完善 Prompt Lock、Style Tokens 等高级设置。</p>
+        <p class="text-xs text-gray-400">创建后可在详情页完善 Prompt Lock 等高级设置。</p>
         <div class="flex gap-3 justify-end pt-2">
           <button class="btn btn-secondary" @click="showAnchorModal = false">取消</button>
           <button class="btn btn-primary" :disabled="savingAnchor" @click="saveAnchor">

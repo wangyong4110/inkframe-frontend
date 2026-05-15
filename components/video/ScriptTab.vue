@@ -119,12 +119,18 @@ const CAMERA_ANGLE_OPTIONS = [
   { value: 'POV', label: '主观' },
 ]
 const CAMERA_TYPE_OPTIONS = [
-  { value: 'static', label: '固定' },
-  { value: 'pan', label: '摇镜' },
-  { value: 'zoom', label: '推拉' },
-  { value: 'tracking', label: '跟拍' },
-  { value: 'dolly', label: '移镜' },
-  { value: 'crane', label: '升降' },
+  { value: 'static',     label: '固定' },
+  { value: 'push',       label: '推镜' },
+  { value: 'pull',       label: '拉镜' },
+  { value: 'pan',        label: '摇镜' },
+  { value: 'track',      label: '移镜' },
+  { value: 'crane_up',   label: '升镜' },
+  { value: 'crane_down', label: '降镜' },
+  { value: 'follow',     label: '跟镜' },
+  { value: 'arc',        label: '环绕' },
+  { value: 'tilt',       label: '俯仰' },
+  { value: 'whip_pan',   label: '甩镜' },
+  { value: 'zoom',       label: '变焦' },
 ]
 const SHOT_SIZE_LABEL: Record<string, string> = Object.fromEntries(SHOT_SIZE_OPTIONS.map(o => [o.value, o.label]))
 const CAMERA_ANGLE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_ANGLE_OPTIONS.map(o => [o.value, o.label]))
