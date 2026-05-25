@@ -29,10 +29,10 @@ const STORAGE_KEY = () => `synthesize_task_${props.videoId}`
 const { request } = useApi()
 
 function updateStepFromProgress(p: number) {
-  if (p < 10) synthesizeStep.value = '正在拼接视频...'
-  else if (p < 40) synthesizeStep.value = '字幕处理中...'
-  else if (p < 60) synthesizeStep.value = '提取封面...'
-  else if (p < 90) synthesizeStep.value = '上传至云端...'
+  if (p <= 10) synthesizeStep.value = '正在拼接视频...'
+  else if (p <= 40) synthesizeStep.value = '字幕处理中...'
+  else if (p <= 60) synthesizeStep.value = '提取封面...'
+  else if (p <= 70) synthesizeStep.value = '上传至云端...'
   else synthesizeStep.value = '即将完成...'
 }
 
