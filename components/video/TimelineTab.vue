@@ -545,7 +545,7 @@ function timelineResizeStart(e: MouseEvent, shotId: number, currentDuration: num
   addDocListener('mouseup', onUp)
 }
 
-async function timelineSaveShot(shotId: number) {
+const debouncedSaveShot = useDebounceFn(async (shotId: number) => {
   const draft = timelineEditDraft.value[shotId]
   if (!draft) return
   timelineSaving.value[shotId] = true
@@ -560,7 +560,13 @@ async function timelineSaveShot(shotId: number) {
   } finally {
     timelineSaving.value[shotId] = false
   }
-}
+}, 600)
+
+watch(timelineEditDraft, (drafts) => {
+  for (const id of Object.keys(drafts)) {
+    debouncedSaveShot(Number(id))
+  }
+}, { deep: true })
 
 watch(() => shots.value, (newShots) => {
   if (timelineShotsOrder.value.length === 0 && newShots.length > 0) {
@@ -861,14 +867,8 @@ const publishDrawerOpen = ref(false)
             />
           </div>
         </div>
-        <div class="mt-3 flex justify-end">
-          <button
-            class="btn-primary text-xs py-1.5 px-3"
-            :disabled="timelineSaving[timelineSelectedShotId]"
-            @click="timelineSaveShot(timelineSelectedShotId)"
-          >
-            {{ timelineSaving[timelineSelectedShotId] ? '保存中...' : '保存' }}
-          </button>
+        <div v-if="timelineSaving[timelineSelectedShotId]" class="mt-2 flex justify-end">
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">保存中…</span>
         </div>
       </template>
     </div>
@@ -1012,7 +1012,7 @@ const publishDrawerOpen = ref(false)
         </div>
 
         <!-- ── Synthesize block ── -->
-        <SynthesizePanel :video-id="videoId" @open-publish="publishDrawerOpen = true" />
+        <VideoSynthesizePanel :video-id="videoId" @open-publish="publishDrawerOpen = true" />
 
         <!-- Speed + Volume -->
         <div class="flex items-center gap-3 flex-wrap">
@@ -1064,7 +1064,7 @@ const publishDrawerOpen = ref(false)
             @click="timelineBgmMuted = !timelineBgmMuted"
           >
             <div class="w-2 h-2 rounded-full flex-shrink-0 transition-colors" :class="bgmSegments.some(s => s.url) && !timelineBgmMuted ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'" />
-            <span class="w-10 flex-shrink-0 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600 line-through' : 'text-gray-500 dark:text-gray-400'">背景音乐</span>
+            <span class="flex-shrink-0 transition-colors whitespace-nowrap" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600 line-through' : 'text-gray-500 dark:text-gray-400'">背景音乐</span>
             <span class="truncate flex-1 transition-colors" :class="timelineBgmMuted ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'">{{ bgmSegments.length > 0 ? (timelineBgmMuted ? '已静音' : `${bgmSegments.filter(s => s.url).length}/${bgmSegments.length} 段`) : '—' }}</span>
           </div>
         </div>
@@ -1085,7 +1085,7 @@ const publishDrawerOpen = ref(false)
         </button>
 
         <!-- ── Publish drawer ── -->
-        <PublishDrawer :video-id="videoId" :open="publishDrawerOpen" @update:open="publishDrawerOpen = $event" />
+        <VideoPublishDrawer :video-id="videoId" :open="publishDrawerOpen" @update:open="publishDrawerOpen = $event" />
 
         <p class="text-[10px] text-gray-400 dark:text-gray-600">{{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序</p>
       </div>
