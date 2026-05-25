@@ -131,17 +131,11 @@ export interface Character {
   novel_id: number
   uuid: string
   name: string
-  gender?: string          // "male" | "female" | "neutral"
   role: CharacterRole
-  archetype?: string
-  appearance?: string
-  personality?: string
-  background?: string
-  character_arc?: string
+  description?: string       // 统一描述（外貌、性格、背景、说话风格等）
   three_view_sheet?: string  // 三合一参考图（combined sheet）
   face_closeup?: string      // 面部特写图
   portrait?: string
-  cover_image?: string
   // 配音设置
   voice_id?: string
   voice_speed?: number
@@ -213,6 +207,8 @@ export interface Video {
   art_style?: string
   pacing?: 'slow' | 'normal' | 'fast'
   target_duration?: number               // 秒，0 或 undefined = 自动
+  visual_mode?: 'standard' | 'hd' | '3d' | 'hd_3d'   // 视觉模式
+  three_d_style?: 'cg' | 'pixar' | 'anime3d' | 'realistic3d' // 3D 风格
   total_shots: number
   url?: string
   // 合成与发布
@@ -562,9 +558,7 @@ export interface Item {
   novel_id: number
   uuid: string
   name: string
-  category: ItemCategory
-  description?: string
-  appearance?: string
+  description?: string       // 统一描述（含类别、外观等）
   location?: string
   owner?: string
   image_url?: string
@@ -607,7 +601,6 @@ export interface SceneAnchor {
   prompt_lock: string
   ref_image_url: string
   ref_image_locked_at?: string
-  ref_image_shot_id?: number
   usage_count: number
   avg_cons_score: number
   parent_anchor_id?: number

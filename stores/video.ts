@@ -91,7 +91,7 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string, mode?: string) {
+    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string, mode?: string, visualMode?: string, threeDStyle?: string) {
       this.loading = true
       this.error = null
 
@@ -106,6 +106,8 @@ export const useVideoStore = defineStore('video', {
           frame_rate: frameRate,
           quality_tier: qualityTier,
           mode,
+          visual_mode: visualMode || undefined,
+          three_d_style: threeDStyle || undefined,
         })
         this.videos.unshift(response.data)
         return response.data

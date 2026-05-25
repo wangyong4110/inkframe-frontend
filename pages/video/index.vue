@@ -90,6 +90,8 @@ const createForm = ref({
   frame_rate: 24,
   quality_tier: 'draft' as 'draft' | 'preview' | 'final',
   mode: 'slideshow' as 'slideshow' | 'video',
+  visual_mode: 'standard' as 'standard' | 'hd' | '3d' | 'hd_3d',
+  three_d_style: 'cg' as 'cg' | 'pixar' | 'anime3d' | 'realistic3d',
 })
 
 // Estimated shots: roughly 6 per chapter (conservative)
@@ -158,6 +160,8 @@ async function createVideo() {
     createForm.value.frame_rate,
     createForm.value.quality_tier,
     createForm.value.mode,
+    createForm.value.visual_mode !== 'standard' ? createForm.value.visual_mode : undefined,
+    createForm.value.three_d_style !== 'cg' ? createForm.value.three_d_style : undefined,
   )
   showCreateModal.value = false
   router.push(`/video/${video.id}`)
@@ -415,6 +419,51 @@ async function createVideo() {
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">画面风格</label>
               <StylePicker type="image" v-model="createForm.art_style" compact />
+            </div>
+
+            <!-- Visual Mode (HD / 3D) -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">视觉模式</label>
+              <div class="grid grid-cols-4 gap-2 mb-2">
+                <button
+                  v-for="vm in [
+                    { id: 'standard', name: '标准', desc: '默认画质' },
+                    { id: 'hd',       name: '高清HD', desc: '1080p+' },
+                    { id: '3d',       name: '3D',     desc: '3D动画' },
+                    { id: 'hd_3d',   name: 'HD+3D',  desc: '旗舰级' },
+                  ]"
+                  :key="vm.id"
+                  type="button"
+                  class="rounded-xl border-2 p-2 text-center transition-all"
+                  :class="createForm.visual_mode === vm.id
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
+                  @click="createForm.visual_mode = vm.id as typeof createForm.visual_mode"
+                >
+                  <p class="text-xs font-semibold">{{ vm.name }}</p>
+                  <p class="text-xs opacity-60">{{ vm.desc }}</p>
+                </button>
+              </div>
+              <!-- 3D 风格细选（仅 3d / hd_3d 时显示） -->
+              <div v-if="createForm.visual_mode === '3d' || createForm.visual_mode === 'hd_3d'" class="grid grid-cols-4 gap-2 mt-1">
+                <button
+                  v-for="s in [
+                    { id: 'cg',          name: 'CG写实' },
+                    { id: 'pixar',       name: 'Pixar' },
+                    { id: 'anime3d',     name: '3D动漫' },
+                    { id: 'realistic3d', name: '超写实' },
+                  ]"
+                  :key="s.id"
+                  type="button"
+                  class="rounded-lg border-2 p-1.5 text-center text-xs transition-all"
+                  :class="createForm.three_d_style === s.id
+                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'"
+                  @click="createForm.three_d_style = s.id as typeof createForm.three_d_style"
+                >
+                  {{ s.name }}
+                </button>
+              </div>
             </div>
 
             <!-- Generation Mode -->

@@ -16,7 +16,7 @@ const showItemModal = ref(false)
 const deletingItemId = ref<number | null>(null)
 const extractingItems = ref(false)
 const batchGeneratingItemImages = ref(false)
-const newItemForm = ref({ name: '', category: 'other' as Item['category'], description: '' })
+const newItemForm = ref({ name: '', description: '' })
 const savingItem = ref(false)
 
 async function fetchItems() {
@@ -117,11 +117,10 @@ async function createItem() {
   try {
     const resp = await itemApi.createItem(props.novelId, {
       name: newItemForm.value.name.trim(),
-      category: newItemForm.value.category,
       description: newItemForm.value.description.trim(),
     })
     items.value.push((resp as any).data)
-    newItemForm.value = { name: '', category: 'other', description: '' }
+    newItemForm.value = { name: '', description: '' }
     showItemModal.value = false
     toast.success('物品已创建')
   } catch (e: any) {
@@ -212,7 +211,7 @@ async function deleteItem(id: number, event: Event) {
         <div class="relative w-full h-36 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
           <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover cursor-zoom-in" :alt="item.name" @click.stop="openLightbox(item.image_url)" />
           <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
-            <span class="text-3xl">{{ getItemCategoryIcon(item.category) }}</span>
+            <span class="text-3xl">📦</span>
           </div>
           <!-- Status dot top-right -->
           <span class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
@@ -235,9 +234,6 @@ async function deleteItem(id: number, event: Event) {
         <div class="p-3">
           <div class="flex items-start justify-between gap-2 mb-1.5">
             <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1">{{ item.name }}</h3>
-            <span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0" :class="getItemCategoryColor(item.category)">
-              {{ getItemCategoryLabel(item.category) }}
-            </span>
           </div>
           <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ item.description }}</p>
           <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
@@ -270,17 +266,6 @@ async function deleteItem(id: number, event: Event) {
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
                 <input v-model="newItemForm.name" type="text" class="input" placeholder="物品名称" maxlength="100" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类别</label>
-                <select v-model="newItemForm.category" class="input">
-                  <option value="weapon">武器</option>
-                  <option value="treasure">宝物</option>
-                  <option value="tool">工具</option>
-                  <option value="document">文书</option>
-                  <option value="artifact">法器</option>
-                  <option value="other">其他</option>
-                </select>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>

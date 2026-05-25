@@ -25,7 +25,7 @@ export const useVideoApi = () => {
   const getVideo = (id: number) =>
     request<ApiResponse<Video>>(`/videos/${id}`)
 
-  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string; mode?: string }) =>
+  const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string; mode?: string; visual_mode?: string; three_d_style?: string }) =>
     request<ApiResponse<Video>>(`/novels/${data.novel_id}/videos`, {
       method: 'POST',
       body: JSON.stringify(data),
