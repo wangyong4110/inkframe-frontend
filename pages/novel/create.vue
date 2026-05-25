@@ -249,7 +249,7 @@ async function chunkedUpload(file: File): Promise<string> {
 }
 
 async function pollImportTask(taskId: string) {
-  const maxWait = 5 * 60 * 1000 // 5 分钟超时
+  const maxWait = 15 * 60 * 1000 // 15 分钟超时（大文件导入）
   const interval = 1500
   const start = Date.now()
 

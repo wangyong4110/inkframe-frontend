@@ -12,6 +12,7 @@ if (isNaN(novelId)) {
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
 const characterStore = useCharacterStore()
+const skillStore = useSkillStore()
 const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
@@ -172,6 +173,8 @@ const analysisPoll = usePollWithBackoff({
         novelStore.fetchNovel(novelId),
         chapterStore.fetchChapters(novelId),
         characterStore.fetchCharacters(novelId),
+        skillStore.fetchSkills(novelId),
+        sceneAnchorStore.fetchAnchors(novelId),
       ])
     } else if (task.status === 'failed' || task.status === 'cancelled') {
       localStorage.removeItem(`analysis_task_${novelId}`)
