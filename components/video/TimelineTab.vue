@@ -686,11 +686,18 @@ function pollSynthesizeTask(taskId: string) {
   const { request } = useApi()
   synthesizeTimer = setInterval(async () => {
     try {
-      const res = await request<{ status: string; progress: number; message: string; result: any }>(`/tasks/${taskId}`)
-      if (!res) return
-      synthesizeProgress.value = res.progress ?? 0
-      synthesizeStep.value = res.message ?? ''
-      if (res.status === 'completed') {
+      const res = await request<ApiResponse<{ status: string; progress: number; error?: string }>>(`/tasks/${taskId}`)
+      const task = res?.data
+      if (!task) return
+      synthesizeProgress.value = task.progress ?? 0
+      // 根据进度推断当前步骤描述
+      const p = task.progress ?? 0
+      if (p < 10) synthesizeStep.value = '正在拼接视频...'
+      else if (p < 40) synthesizeStep.value = '字幕处理中...'
+      else if (p < 60) synthesizeStep.value = '提取封面...'
+      else if (p < 90) synthesizeStep.value = '上传至云端...'
+      else synthesizeStep.value = '即将完成...'
+      if (task.status === 'completed') {
         clearInterval(synthesizeTimer!)
         synthesizeTimer = null
         synthesizing.value = false
@@ -698,11 +705,11 @@ function pollSynthesizeTask(taskId: string) {
         synthesizeStep.value = '合成完成'
         toast.success('视频合成成功！')
         await videoStore.fetchVideo(props.videoId)
-      } else if (res.status === 'failed') {
+      } else if (task.status === 'failed') {
         clearInterval(synthesizeTimer!)
         synthesizeTimer = null
         synthesizing.value = false
-        toast.error('合成失败：' + (res.message || ''))
+        toast.error('合成失败：' + (task.error || ''))
       }
     } catch {
       // ignore transient errors
