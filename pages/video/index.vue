@@ -81,6 +81,16 @@ const VIDEO_MODES = [
   },
 ]
 
+// 视频比例选项：iconW/iconH 为 SVG 内矩形尺寸（viewBox 32×24）
+const ASPECT_RATIOS = [
+  { value: '21:9', label: '21:9', iconW: 28, iconH: 12 },
+  { value: '16:9', label: '16:9', iconW: 28, iconH: 16 },
+  { value: '4:3',  label: '4:3',  iconW: 24, iconH: 18 },
+  { value: '1:1',  label: '1:1',  iconW: 20, iconH: 20 },
+  { value: '3:4',  label: '3:4',  iconW: 15, iconH: 20 },
+  { value: '9:16', label: '9:16', iconW: 11, iconH: 20 },
+]
+
 const createForm = ref({
   title: '',
   chapter_id: 0,
@@ -412,7 +422,35 @@ async function createVideo() {
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">视频格式</label>
               <StylePicker type="video" v-model="createForm.video_preset" compact />
-              <p class="mt-1 text-xs text-gray-400">选择后自动设置宽高比和帧率</p>
+            </div>
+
+            <!-- Aspect Ratio -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">视频比例</label>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="r in ASPECT_RATIOS"
+                  :key="r.value"
+                  type="button"
+                  class="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all min-w-[52px]"
+                  :class="createForm.aspect_ratio === r.value
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-300'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500 text-gray-500 dark:text-gray-400'"
+                  @click="createForm.aspect_ratio = r.value"
+                >
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none" class="flex-shrink-0">
+                    <rect
+                      :x="(32 - r.iconW) / 2"
+                      :y="(24 - r.iconH) / 2"
+                      :width="r.iconW"
+                      :height="r.iconH"
+                      rx="1.5"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <span class="text-xs font-medium leading-none">{{ r.label }}</span>
+                </button>
+              </div>
             </div>
 
             <!-- Image / Art Style -->
