@@ -117,7 +117,7 @@ watch(activeTab, async (tab) => {
   const version = ++tabSwitchVersion
   tabLoading.value = true
   try {
-    if (['script', 'voice', 'sfx', 'timeline'].includes(tab)) {
+    if (['script', 'voice', 'sfx', 'timeline', 'export'].includes(tab)) {
       await videoStore.fetchStoryboard(props.videoId)
     }
     if (['bgm', 'export'].includes(tab)) {

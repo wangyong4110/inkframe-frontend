@@ -1247,8 +1247,11 @@ async function fetchShotsForChapter() {
         </div>
       </main>
 
-      <!-- Right: tools panel -->
-      <aside class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700">
+      <!-- Right: tools panel (hidden on export tab) -->
+      <aside
+        v-if="!(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
+        class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
+      >
 
         <!-- Panel header -->
         <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">

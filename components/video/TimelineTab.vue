@@ -635,7 +635,7 @@ const publishDrawerOpen = ref(false)
     <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
 
     <!-- ══ Export Tab ══════════════════════════════════════════════════════ -->
-    <ExportPanel v-if="showExport" :video-id="videoId" :shots="shots" />
+    <VideoExportPanel v-if="showExport" :video-id="videoId" :shots="shots" />
 
     <!-- ══ Timeline Grid (shown when showExport is false) ════════════════════ -->
     <!-- Vertical timeline grid (full width) -->
