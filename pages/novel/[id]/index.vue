@@ -12,12 +12,11 @@ if (isNaN(novelId)) {
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
 const characterStore = useCharacterStore()
-const skillStore = useSkillStore()
 const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 
-const validTabKeys = new Set(['chapters', 'characters', 'items', 'skills', 'worldview', 'plot_points', 'scene_anchors', 'settings'])
+const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'plot_points', 'scene_anchors', 'settings'])
 const initialTab = route.query.tab as string
 const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
@@ -35,7 +34,6 @@ const tabs = [
   { key: 'chapters', label: '章节', icon: 'book-open' },
   { key: 'characters', label: '角色', icon: 'users' },
   { key: 'items', label: '物品', icon: 'archive' },
-  { key: 'skills', label: '技能', icon: 'zap' },
   { key: 'worldview', label: '世界观', icon: 'globe' },
   { key: 'plot_points', label: '剧情点', icon: 'flag' },
   { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
@@ -173,7 +171,6 @@ const analysisPoll = usePollWithBackoff({
         novelStore.fetchNovel(novelId),
         chapterStore.fetchChapters(novelId),
         characterStore.fetchCharacters(novelId),
-        skillStore.fetchSkills(novelId),
         sceneAnchorStore.fetchAnchors(novelId),
       ])
     } else if (task.status === 'failed' || task.status === 'cancelled') {
@@ -405,7 +402,7 @@ onMounted(async () => {
         </button>
       </div>
       <p class="text-sm text-blue-700 dark:text-blue-300 mb-4">
-        从导入的章节中自动提取角色、物品、技能、世界观、剧情点、场景锚点，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
+        从导入的章节中自动提取角色、物品、世界观、剧情点、场景锚点，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
       </p>
 
       <!-- 空闲状态：显示启动按钮 -->
@@ -433,9 +430,6 @@ onMounted(async () => {
           </span>
           <span :class="analysisStatus.progress >= 30 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
             {{ analysisStatus.progress >= 30 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 角色
-          </span>
-          <span :class="analysisStatus.progress >= 78 ? 'text-green-600' : (analysisStatus.progress >= 70 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 78 ? '✓' : (analysisStatus.progress >= 70 ? '⟳' : '○') }} 技能
           </span>
           <span :class="analysisStatus.progress >= 40 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
             {{ analysisStatus.progress >= 40 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 物品
@@ -467,7 +461,7 @@ onMounted(async () => {
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          分析完成！角色、物品、技能、世界观、剧情点、场景锚点、故事大纲、项目设置和章节大纲已全部更新。
+          分析完成！角色、物品、世界观、剧情点、场景锚点、故事大纲、项目设置和章节大纲已全部更新。
         </div>
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}
@@ -505,7 +499,6 @@ onMounted(async () => {
     <NovelChaptersTab v-if="activeTab === 'chapters'" :novel-id="novelId" />
     <NovelCharactersTab v-else-if="activeTab === 'characters'" :novel-id="novelId" />
     <NovelItemsTab v-else-if="activeTab === 'items'" :novel-id="novelId" />
-    <NovelSkillsTab v-else-if="activeTab === 'skills'" :novel-id="novelId" />
     <NovelWorldviewTab v-else-if="activeTab === 'worldview'" :novel-id="novelId" />
     <NovelPlotPointsTab v-else-if="activeTab === 'plot_points'" :novel-id="novelId" />
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />

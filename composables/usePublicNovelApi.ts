@@ -1,4 +1,4 @@
-import type { ApiResponse, Novel, NovelComment } from '~/types'
+import type { ApiResponse, Novel, NovelComment, Chapter } from '~/types'
 
 interface PaginatedResponse<T> {
   items: T[]
@@ -59,6 +59,9 @@ export const usePublicNovelApi = () => {
       body: JSON.stringify(data),
     })
 
+  const listChapters = (id: number) =>
+    request<ApiResponse<{ items: Chapter[]; total: number }>>(`/platform/novels/${id}/chapters`)
+
   const deleteComment = (id: number, cid: number) =>
     request<void>(`/platform/novels/${id}/comments/${cid}`, { method: 'DELETE' })
 
@@ -68,6 +71,7 @@ export const usePublicNovelApi = () => {
     getNovel,
     recordView,
     toggleLike,
+    listChapters,
     listComments,
     addComment,
     deleteComment,

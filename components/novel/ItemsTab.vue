@@ -235,17 +235,7 @@ async function deleteItem(id: number, event: Event) {
           <div class="flex items-start justify-between gap-2 mb-1.5">
             <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1">{{ item.name }}</h3>
           </div>
-          <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ item.description }}</p>
-          <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
-            <span v-if="item.location" class="truncate flex items-center gap-0.5">
-              <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              {{ item.location }}
-            </span>
-            <span v-if="item.owner" class="truncate flex items-center gap-0.5">
-              <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-              {{ item.owner }}
-            </span>
-          </div>
+          <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-3">{{ item.description }}</p>
         </div>
       </div>
     </div>

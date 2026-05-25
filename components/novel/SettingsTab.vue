@@ -420,6 +420,22 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
             @change="(e) => novelStore.updateNovel(novelId, { timeout_seconds: parseInt((e.target as HTMLInputElement).value) })" />
           <p class="mt-1 text-xs text-gray-400">0 = 系统默认（300秒）</p>
         </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">提示词语言</label>
+          <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            <button
+              v-for="lang in [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]"
+              :key="lang.value"
+              type="button"
+              class="flex-1 py-1.5 text-xs transition-colors"
+              :class="(novel?.prompt_language ?? 'zh') === lang.value
+                ? 'bg-primary-500 text-white'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+              @click="novelStore.updateNovel(novelId, { prompt_language: lang.value })"
+            >{{ lang.label }}</button>
+          </div>
+          <p class="mt-1 text-xs text-gray-400">角色/物品/场景锚点描述的生成语言</p>
+        </div>
       </div>
     </div>
 
@@ -676,6 +692,21 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
               >{{ bg.label }}</button>
             </div>
           </div>
+
+          <!-- 字体 -->
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">字体</label>
+            <select
+              class="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs"
+              :value="novel?.subtitle_font || 'Noto Sans CJK SC'"
+              @change="(e) => novelStore.updateNovel(novelId, { subtitle_font: (e.target as HTMLSelectElement).value })"
+            >
+              <option value="Noto Sans CJK SC">Noto Sans CJK（推荐）</option>
+              <option value="Source Han Sans CN">思源黑体</option>
+              <option value="PingFang SC">苹方（macOS）</option>
+              <option value="Microsoft YaHei">微软雅黑（Windows）</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -816,40 +847,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
         </div>
       </div>
 
-      <!-- 字幕样式 -->
-      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
-          字幕样式
-        </h3>
-        <div class="space-y-3">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">字幕风格</label>
-            <select
-              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
-              :value="novel?.subtitle_style || 'none'"
-              @change="novelStore.updateNovel(novelId, { subtitle_style: ($event.target as HTMLSelectElement).value })"
-            >
-              <option value="none">无字幕</option>
-              <option value="basic">基础（白色，黑色描边）</option>
-              <option value="cinematic">电影风（居中，大字，阴影）</option>
-              <option value="anime">动漫风（黄色，粗描边）</option>
-            </select>
-          </div>
-          <div v-if="novel?.subtitle_style && novel.subtitle_style !== 'none'">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">字体</label>
-            <select
-              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
-              :value="novel?.subtitle_font || 'Noto Sans CJK SC'"
-              @change="novelStore.updateNovel(novelId, { subtitle_font: ($event.target as HTMLSelectElement).value })"
-            >
-              <option value="Noto Sans CJK SC">Noto Sans CJK（推荐）</option>
-              <option value="Source Han Sans CN">思源黑体</option>
-              <option value="PingFang SC">苹方（macOS）</option>
-              <option value="Microsoft YaHei">微软雅黑（Windows）</option>
-            </select>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ⑤ 危险区 -->

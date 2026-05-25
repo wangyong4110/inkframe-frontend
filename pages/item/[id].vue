@@ -148,9 +148,6 @@ const form = ref({
   category: 'other' as Item['category'],
   status: 'active' as Item['status'],
   description: '',
-  appearance: '',
-  location: '',
-  owner: '',
   visual_prompt: '',
 })
 
@@ -197,9 +194,6 @@ onMounted(async () => {
       category: (item.category as any) ?? 'other',
       status: item.status ?? 'active',
       description: item.description ?? '',
-      appearance: item.appearance ?? '',
-      location: item.location ?? '',
-      owner: item.owner ?? '',
       visual_prompt: item.visual_prompt ?? '',
     }
     imageUrl.value = item.image_url ?? ''
@@ -331,24 +325,11 @@ function goBack() {
       </div>
 
       <div class="card p-6 space-y-5">
-        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">外观与描述</h3>
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">物品描述</h3>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">外观描述</label>
-          <textarea v-model="form.appearance" rows="3" class="input resize-none" placeholder="外形、颜色、纹路、雕刻、散发的气息等视觉细节…" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">功能描述</label>
-          <textarea v-model="form.description" rows="3" class="input resize-none" placeholder="用途、使用方式、特殊能力、象征意义、故事背景…" />
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">所在位置</label>
-            <input v-model="form.location" type="text" class="input" placeholder="当前位置或存放地点" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">持有者</label>
-            <input v-model="form.owner" type="text" class="input" placeholder="当前持有人或归属" />
-          </div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
+          <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">包含外观（材质、颜色、形态、纹路等）、功能、特殊能力及故事背景</p>
+          <textarea v-model="form.description" rows="8" class="input resize-none" placeholder="【外观】材质、颜色、形态、纹路、散发气息等视觉细节…&#10;功能、使用方式、特殊能力、象征意义、故事背景…" />
         </div>
       </div>
     </div>

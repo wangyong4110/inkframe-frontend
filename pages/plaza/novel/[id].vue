@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Novel, NovelComment } from '~/types'
+import type { Novel, NovelComment, Chapter } from '~/types'
 
 definePageMeta({ auth: false })
 
@@ -15,9 +15,15 @@ const commentTotal = ref(0)
 const commentPage = ref(1)
 const loadingNovel = ref(true)
 const loadingComments = ref(false)
+const loadingChapters = ref(false)
 const commentText = ref('')
 const postingComment = ref(false)
 const liking = ref(false)
+
+// Chapter reader state
+const chapters = ref<Chapter[]>([])
+const selectedChapter = ref<Chapter | null>(null)
+const readerOpen = ref(false)
 
 useHead(() => ({
   title: novel.value ? `${novel.value.title} - InkFrame 小说广场` : 'InkFrame 小说广场',
@@ -42,6 +48,18 @@ async function loadNovel() {
   }
 }
 
+async function loadChapters() {
+  loadingChapters.value = true
+  try {
+    const res = await novelApi.listChapters(novelId.value)
+    chapters.value = res.data.items ?? []
+  } catch {
+    // ignore
+  } finally {
+    loadingChapters.value = false
+  }
+}
+
 async function loadComments(append = false) {
   loadingComments.value = true
   try {
@@ -61,6 +79,31 @@ async function loadMoreComments() {
   commentPage.value++
   await loadComments(true)
 }
+
+function openChapter(ch: Chapter) {
+  selectedChapter.value = ch
+  readerOpen.value = true
+}
+
+function closeReader() {
+  readerOpen.value = false
+}
+
+function prevChapter() {
+  if (!selectedChapter.value) return
+  const idx = chapters.value.findIndex(c => c.id === selectedChapter.value!.id)
+  if (idx > 0) selectedChapter.value = chapters.value[idx - 1]
+}
+
+function nextChapter() {
+  if (!selectedChapter.value) return
+  const idx = chapters.value.findIndex(c => c.id === selectedChapter.value!.id)
+  if (idx < chapters.value.length - 1) selectedChapter.value = chapters.value[idx + 1]
+}
+
+const selectedIdx = computed(() =>
+  selectedChapter.value ? chapters.value.findIndex(c => c.id === selectedChapter.value!.id) : -1,
+)
 
 async function toggleLike() {
   if (!authStore.isLoggedIn) { navigateTo('/auth/login'); return }
@@ -115,6 +158,12 @@ function copyLink() {
   navigator.clipboard.writeText(window.location.href)
 }
 
+// Format chapter content: split by newline, render paragraphs
+function formatContent(text?: string): string[] {
+  if (!text) return []
+  return text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+}
+
 const genreLabels: Record<string, string> = {
   fantasy: '奇幻', xianxia: '仙侠', urban: '都市', scifi: '科幻',
   romance: '言情', mystery: '悬疑', historical: '历史',
@@ -122,7 +171,7 @@ const genreLabels: Record<string, string> = {
 
 onMounted(async () => {
   await loadNovel()
-  await loadComments()
+  await Promise.all([loadChapters(), loadComments()])
 })
 </script>
 
@@ -209,6 +258,40 @@ onMounted(async () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Chapter list -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-800 dark:text-gray-200">
+              章节目录
+              <span class="ml-1.5 text-sm font-normal text-gray-400">({{ chapters.length }} 章)</span>
+            </h2>
+          </div>
+
+          <div v-if="loadingChapters" class="py-8 text-center text-gray-400 text-sm">加载中...</div>
+
+          <div v-else-if="chapters.length === 0" class="py-8 text-center text-gray-400 text-sm">
+            暂无公开章节
+          </div>
+
+          <div v-else class="divide-y divide-gray-50 dark:divide-gray-700/50 max-h-80 overflow-y-auto">
+            <button
+              v-for="ch in chapters"
+              :key="ch.id"
+              class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+              @click="openChapter(ch)"
+            >
+              <span class="text-xs text-gray-400 w-8 shrink-0 text-right">{{ ch.chapter_no }}</span>
+              <span class="flex-1 text-sm text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                {{ ch.title || `第${ch.chapter_no}章` }}
+              </span>
+              <span v-if="ch.word_count" class="text-xs text-gray-400 shrink-0">{{ ch.word_count >= 1000 ? `${(ch.word_count / 1000).toFixed(1)}k` : ch.word_count }}字</span>
+              <svg class="w-4 h-4 text-gray-300 group-hover:text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -342,7 +425,126 @@ onMounted(async () => {
             >{{ tag }}</span>
           </div>
         </div>
+
+        <!-- Start reading button -->
+        <button
+          v-if="chapters.length > 0"
+          @click="openChapter(chapters[0])"
+          class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm transition-colors"
+        >
+          开始阅读
+        </button>
       </div>
     </div>
+
+    <!-- Chapter reader drawer -->
+    <Teleport to="body">
+      <Transition name="reader">
+        <div v-if="readerOpen" class="fixed inset-0 z-50 flex">
+          <!-- Backdrop -->
+          <div class="absolute inset-0 bg-black/50" @click="closeReader" />
+
+          <!-- Panel -->
+          <div class="relative ml-auto w-full max-w-2xl bg-white dark:bg-gray-900 h-full flex flex-col shadow-2xl">
+            <!-- Reader header -->
+            <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+              <button @click="closeReader" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs text-gray-400 truncate">{{ novel?.title }}</p>
+                <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
+                  第{{ selectedChapter?.chapter_no }}章 {{ selectedChapter?.title || '' }}
+                </h3>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  :disabled="selectedIdx <= 0"
+                  @click="prevChapter"
+                  class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors"
+                  title="上一章"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                  </svg>
+                </button>
+                <button
+                  :disabled="selectedIdx >= chapters.length - 1"
+                  @click="nextChapter"
+                  class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors"
+                  title="下一章"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 overflow-y-auto px-8 py-6">
+              <div v-if="selectedChapter?.content" class="prose prose-gray dark:prose-invert max-w-none">
+                <p
+                  v-for="(para, i) in formatContent(selectedChapter.content)"
+                  :key="i"
+                  class="text-base leading-8 text-gray-800 dark:text-gray-200 mb-4 indent-8"
+                >{{ para }}</p>
+              </div>
+              <p v-else class="text-center text-gray-400 py-16 text-sm">暂无内容</p>
+            </div>
+
+            <!-- Reader footer -->
+            <div class="border-t border-gray-100 dark:border-gray-700 px-5 py-3 flex items-center justify-between shrink-0">
+              <button
+                :disabled="selectedIdx <= 0"
+                @click="prevChapter"
+                class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 disabled:opacity-30 transition-colors"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+                上一章
+              </button>
+              <span class="text-xs text-gray-400">{{ selectedIdx + 1 }} / {{ chapters.length }}</span>
+              <button
+                :disabled="selectedIdx >= chapters.length - 1"
+                @click="nextChapter"
+                class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 disabled:opacity-30 transition-colors"
+              >
+                下一章
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.reader-enter-active,
+.reader-leave-active {
+  transition: opacity 0.2s ease;
+}
+.reader-enter-active .relative,
+.reader-leave-active .relative {
+  transition: transform 0.25s ease;
+}
+.reader-enter-from {
+  opacity: 0;
+}
+.reader-enter-from .relative {
+  transform: translateX(100%);
+}
+.reader-leave-to {
+  opacity: 0;
+}
+.reader-leave-to .relative {
+  transform: translateX(100%);
+}
+</style>

@@ -19,6 +19,7 @@ export interface Novel {
   timeout_seconds?: number  // 默认超时（秒），0=使用系统默认(180s)
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
+  prompt_language?: string  // AI提示词语言：zh（中文，默认）/ en（英文）
   reference_style?: string  // 参考作品
   channel?: string
   target_word_count?: number
@@ -44,8 +45,6 @@ export interface Novel {
   chromatic_aberration?: boolean
   // Kling 专业模式
   kling_pro_for_action?: boolean
-  // 字幕
-  subtitle_style?: string      // none/basic/cinematic/anime
   subtitle_font?: string
   // 广场社交字段
   is_published?: boolean
@@ -133,6 +132,7 @@ export interface Character {
   name: string
   role: CharacterRole
   description?: string       // 统一描述（外貌、性格、背景、说话风格等）
+  visual_prompt?: string     // 英文图像生成提示词
   three_view_sheet?: string  // 三合一参考图（combined sheet）
   face_closeup?: string      // 面部特写图
   portrait?: string
@@ -577,9 +577,7 @@ export interface Item {
   novel_id: number
   uuid: string
   name: string
-  description?: string       // 统一描述（含类别、外观等）
-  location?: string
-  owner?: string
+  description?: string       // 统一描述（含外观、功能等）
   image_url?: string
   visual_prompt?: string
   reference_image_url?: string

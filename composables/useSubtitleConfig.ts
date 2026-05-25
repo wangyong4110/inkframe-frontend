@@ -9,6 +9,7 @@ export function useSubtitleConfig() {
     font_size: novelStore.currentNovel?.subtitle_font_size ?? 48,
     color: novelStore.currentNovel?.subtitle_color ?? '#FFFFFF',
     bg_style: novelStore.currentNovel?.subtitle_bg_style ?? 'shadow',
+    font: novelStore.currentNovel?.subtitle_font ?? 'Noto Sans CJK SC',
   }))
   return { subtitleEnabled, subtitleConfig }
 }
