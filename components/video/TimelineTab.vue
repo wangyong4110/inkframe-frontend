@@ -1011,6 +1011,9 @@ const publishDrawerOpen = ref(false)
           <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}</span>
         </div>
 
+        <!-- ── Synthesize block ── -->
+        <SynthesizePanel :video-id="videoId" @open-publish="publishDrawerOpen = true" />
+
         <!-- Speed + Volume -->
         <div class="flex items-center gap-3 flex-wrap">
           <div class="flex items-center gap-1">
@@ -1080,9 +1083,6 @@ const publishDrawerOpen = ref(false)
           </svg>
           {{ timelineRecording ? '停止录制 (保存 WebM)' : '录制屏幕' }}
         </button>
-
-        <!-- ── Synthesize block ── -->
-        <SynthesizePanel :video-id="videoId" @open-publish="publishDrawerOpen = true" />
 
         <!-- ── Publish drawer ── -->
         <PublishDrawer :video-id="videoId" :open="publishDrawerOpen" @update:open="publishDrawerOpen = $event" />
