@@ -10,14 +10,7 @@ const { openLightbox } = useImageLightbox()
 
 const shots = computed(() => videoStore.storyboard)
 const narrationVoice = computed(() => novelStore.currentNovel?.narration_voice ?? '')
-const subtitleEnabled = ref(true)
-watchEffect(() => { subtitleEnabled.value = novelStore.currentNovel?.subtitle_enabled ?? true })
-const subtitleConfig = computed(() => ({
-  position: novelStore.currentNovel?.subtitle_position ?? 'bottom',
-  font_size: novelStore.currentNovel?.subtitle_font_size ?? 48,
-  color: novelStore.currentNovel?.subtitle_color ?? '#FFFFFF',
-  bg_style: novelStore.currentNovel?.subtitle_bg_style ?? 'shadow',
-}))
+const { subtitleEnabled, subtitleConfig } = useSubtitleConfig()
 
 const generatingVoice = ref<Record<number, boolean>>({})
 const shotAudioUrls = ref<Record<number, string>>({})
@@ -243,7 +236,8 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         <div>
           <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">配音模式</p>
           <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            <button class="flex-1 px-2.5 py-1.5 text-xs transition-colors bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50" @click="">对白+旁白</button>
+            <!-- TODO: 对白+旁白 mode not yet implemented; button disabled until feature is ready -->
+            <button class="flex-1 px-2.5 py-1.5 text-xs transition-colors bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 opacity-50 cursor-not-allowed" disabled>对白+旁白</button>
           </div>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">影响重新生成脚本时的旁白/台词分配</p>
         </div>

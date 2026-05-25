@@ -52,7 +52,7 @@ async function load() {
   const api = useVideoApi()
   try {
     const res = await api.listBGMSegments(props.videoId)
-    bgmSegments.value = (res as any)?.data ?? []
+    bgmSegments.value = res?.data ?? []
   } catch (e) {
     console.error('[BGM] load failed:', e)
   }
@@ -66,7 +66,7 @@ async function handleAnalyzeBGM() {
   try {
     const api = useVideoApi()
     const res = await api.analyzeBGMSegments(props.videoId, bgmAiContext.value ? { user_prompt: bgmAiContext.value } : undefined)
-    const taskId = (res as any)?.data?.task_id
+    const taskId = res?.data?.task_id
     if (!taskId) { analyzingBgm.value = false; return }
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
@@ -90,7 +90,7 @@ async function handleGenerateBgm() {
   try {
     const api = useVideoApi()
     const res = await api.generateBGM(props.videoId, bgmAiContext.value ? { user_prompt: bgmAiContext.value } : undefined)
-    const taskId = (res as any)?.data?.task_id
+    const taskId = res?.data?.task_id
     if (!taskId) { generatingBgm.value = false; return }
     toast.info('BGM生成任务已提交（AI分析 + Jamendo搜索）…')
     const taskStore = useTaskStore()
@@ -171,7 +171,7 @@ async function handleJamendoSearch() {
       bpm_max: bgmSearchBpmMax.value || undefined,
       limit: 15,
     })
-    bgmSearchResults.value = (res as any)?.data ?? []
+    bgmSearchResults.value = res?.data ?? []
   } catch (e: any) {
     toast.error('搜索失败：' + (e.message || ''))
   } finally {

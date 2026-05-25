@@ -161,18 +161,18 @@ function goToVideo(id: number) {
 
 async function createVideo() {
   if (!novelId.value) return
-  const video = await videoStore.createVideo(
-    novelId.value,
-    createForm.value.chapter_id || undefined,
-    createForm.value.title || undefined,
-    createForm.value.art_style,
-    createForm.value.aspect_ratio,
-    createForm.value.frame_rate,
-    createForm.value.quality_tier,
-    createForm.value.mode,
-    createForm.value.visual_mode !== 'standard' ? createForm.value.visual_mode : undefined,
-    createForm.value.three_d_style !== 'cg' ? createForm.value.three_d_style : undefined,
-  )
+  const video = await videoStore.createVideo({
+    novelId: novelId.value,
+    chapterId: createForm.value.chapter_id || undefined,
+    title: createForm.value.title || undefined,
+    artStyle: createForm.value.art_style,
+    aspectRatio: createForm.value.aspect_ratio,
+    frameRate: createForm.value.frame_rate,
+    qualityTier: createForm.value.quality_tier,
+    mode: createForm.value.mode,
+    visualMode: createForm.value.visual_mode !== 'standard' ? createForm.value.visual_mode : undefined,
+    threeDStyle: createForm.value.three_d_style !== 'cg' ? createForm.value.three_d_style : undefined,
+  })
   showCreateModal.value = false
   router.push(`/video/${video.id}`)
 }

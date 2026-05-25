@@ -383,7 +383,7 @@ export interface ShotSceneConfig {
 }
 
 // Async Task types
-export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type AsyncTaskType = 'storyboard_gen' | 'chapter_gen' | 'voice_gen' | 'image_gen' | 'three_view'
 
 export interface AsyncTask {
@@ -962,4 +962,13 @@ export interface StoryboardReview {
   global_suggestions: string[]
   shot_feedback: ShotReviewFeedback[]
   record_id?: number
+}
+
+export interface ReviewRecord {
+  id: number
+  created_at: string
+  overall_score: number
+  status: 'pending' | 'applied' | 'rolled_back'
+  applied_at?: string
+  review?: StoryboardReview
 }

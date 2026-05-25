@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier } from '~/types'
+import type { StoryboardShot, VideoQualityTier, StoryboardReview, ShotReviewFeedback, ReviewRecord } from '~/types'
 import { SHOT_STATUS_LABELS, SHOT_STATUS_COLORS, QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
+import { parseSfxTags } from '~/utils/video'
+import { getAuthToken } from '~/utils/auth'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 
@@ -10,6 +12,7 @@ const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const video = computed(() => videoStore.currentVideo)
 const shots = computed(() => videoStore.storyboard)
@@ -138,16 +141,6 @@ const CAMERA_TYPE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_TYPE
 const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_OPTIONS.map(o => [o.value, o.label]))
 
 // ── Review ──
-type ShotFeedback = {
-  shot_no: number; issues: string[]; suggestion: string; severity: 'info' | 'warning' | 'error'
-  suggested_narration?: string; suggested_description?: string
-}
-type StoryboardReview = {
-  overall_score: number; narrative_score: number; visual_score: number
-  pacing_score: number; narration_score: number
-  summary: string; strengths: string[]; weaknesses: string[]
-  global_suggestions: string[]; shot_feedback: ShotFeedback[]
-}
 type DiffItem = {
   shot_no: number
   orig_narration: string; suggested_narration: string; has_narration_diff: boolean
@@ -168,14 +161,6 @@ const applyingDiffs = ref(false)
 const applyResult = ref<{ count: number } | null>(null)
 
 // ── Review history ──
-type ReviewRecord = {
-  id: number
-  created_at: string
-  overall_score: number
-  status: 'pending' | 'applied' | 'rolled_back'
-  applied_at?: string
-  review?: StoryboardReview
-}
 const reviewHistory = ref<ReviewRecord[]>([])
 const loadingHistory = ref(false)
 const rollingBackId = ref<number | null>(null)
@@ -292,11 +277,6 @@ function scheduleRefresh() {
   }, 300)
 }
 
-function parseSfxTags(sfxTags?: string): string[] {
-  if (!sfxTags) return []
-  try { return JSON.parse(sfxTags) as string[] } catch { return [] }
-}
-
 function startEdit(shot: StoryboardShot) {
   editingId.value = shot.id
   editForm.value = {
@@ -381,30 +361,24 @@ async function handleUnconfirmScript() {
   }
 }
 
+const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
+
 async function handleGenerateStoryboard(userPrompt?: string) {
-  if (isScriptConfirmed.value) {
-    if (!confirm('重新生成将清空当前脚本，是否继续？')) return
-  }
   const novel = novelStore.currentNovel
   const effectiveMaxTokens = advMaxTokens.value || novel?.max_tokens || undefined
   const effectiveTemperature = advTemperature.value || novel?.temperature || undefined
   const effectiveTimeout = advTimeoutSeconds.value || novel?.timeout_seconds || undefined
-  try {
-    await videoStore.generateStoryboard(
-      props.videoId,
-      props.llmProvider || undefined,
-      userPrompt,
-      pacing.value !== 'normal' ? pacing.value : undefined,
-      targetDuration.value || undefined,
-      effectiveMaxTokens || undefined,
-      effectiveTemperature || undefined,
-      effectiveTimeout || undefined,
-      voiceMode.value !== 'both' ? voiceMode.value : undefined,
-    )
-    toast.success('脚本生成任务已提交，请稍候...')
-  } catch (e: any) {
-    toast.error('生成失败：' + (e.message || ''))
-  }
+  await _generateStoryboard({
+    videoId: props.videoId,
+    provider: props.llmProvider || undefined,
+    userPrompt,
+    pacing: pacing.value,
+    targetDuration: targetDuration.value,
+    maxTokens: effectiveMaxTokens,
+    temperature: effectiveTemperature,
+    timeoutSeconds: effectiveTimeout,
+    voiceMode: voiceMode.value,
+  })
 }
 
 async function handleReviewStoryboard() {
@@ -739,7 +713,7 @@ async function exportSubtitles() {
     const response = await fetch(`/api/v1/videos/${props.videoId}/subtitles/export`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`,
+        'Authorization': `Bearer ${getAuthToken() || ''}`,
       },
     })
     if (!response.ok) throw new Error('导出失败')

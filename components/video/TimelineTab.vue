@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, ShotVoiceSegment, VideoBGMSegment, ShotSFXItem, PlatformAccount } from '~/types'
+import type { StoryboardShot, ShotVoiceSegment, VideoBGMSegment, ShotSFXItem } from '~/types'
 import { getAuthToken } from '~/utils/auth'
 import { TRANSITION_OPTIONS } from '~/constants/status'
 
@@ -19,17 +19,11 @@ const novelStore = useNovelStore()
 const toast = useToast()
 
 const shots = computed(() => videoStore.storyboard)
-const subtitleEnabled = ref(true)
-watchEffect(() => { subtitleEnabled.value = novelStore.currentNovel?.subtitle_enabled ?? true })
-const subtitleConfig = computed(() => ({
-  position: novelStore.currentNovel?.subtitle_position ?? 'bottom',
-  font_size: novelStore.currentNovel?.subtitle_font_size ?? 48,
-  color: novelStore.currentNovel?.subtitle_color ?? '#FFFFFF',
-  bg_style: novelStore.currentNovel?.subtitle_bg_style ?? 'shadow',
-}))
+const { subtitleEnabled, subtitleConfig } = useSubtitleConfig()
 
 const TL_PX_PER_SEC = 16
-
+const DEFAULT_SHOT_DURATION_S = 5
+const TIMELINE_TICK_INTERVAL_MS = 100
 
 // Timeline state
 const timelinePlaying = ref(false)
@@ -84,7 +78,7 @@ const KB_ANIMATIONS = [
 
 function kenBurnsStyle(shot: StoryboardShot): string {
   const animName = KB_ANIMATIONS[shot.id % KB_ANIMATIONS.length]
-  const dur = shot.duration || 5
+  const dur = shot.duration || DEFAULT_SHOT_DURATION_S
   const state = timelinePlaying.value ? 'running' : 'paused'
   return `animation: ${animName} ${dur}s ease-in-out forwards; animation-play-state: ${state}`
 }
@@ -102,15 +96,15 @@ const timelineEffectiveDurationMap = computed<Map<number, number>>(() => {
     const segs = props.shotSegments[shot.id]
     if (segs && segs.length > 0) {
       const segTotal = segs.reduce((s, seg) => s + (seg.duration_secs || 0), 0)
-      if (segTotal > 0) { map.set(shot.id, Math.max(shot.duration || 5, segTotal)); continue }
+      if (segTotal > 0) { map.set(shot.id, Math.max(shot.duration || DEFAULT_SHOT_DURATION_S, segTotal)); continue }
     }
-    map.set(shot.id, shot.duration || 5)
+    map.set(shot.id, shot.duration || DEFAULT_SHOT_DURATION_S)
   }
   return map
 })
 
 function timelineEffectiveDuration(shot: StoryboardShot): number {
-  return timelineEffectiveDurationMap.value.get(shot.id) ?? (shot.duration || 5)
+  return timelineEffectiveDurationMap.value.get(shot.id) ?? (shot.duration || DEFAULT_SHOT_DURATION_S)
 }
 
 const timelineOrderedShots = computed(() => {
@@ -150,19 +144,27 @@ const timelineBgmBlocks = computed(() => {
   })
 })
 
-function timelineSfxBlocks(shotId: number, shotDuration: number) {
-  const items = (props.sfxItems[shotId] ?? []).filter(i => !i.disabled && i.url)
-  if (items.length === 0) return []
-  const n = items.length
-  const slotW = 100 / n
-  return items.map((item, idx) => ({
-    item,
-    top: (item.start_offset || 0) * TL_PX_PER_SEC,
-    height: Math.max(4, ((item.duration_secs || shotDuration) * TL_PX_PER_SEC)),
-    left: idx * slotW,
-    width: slotW,
-  }))
-}
+// Computed map of SFX layout blocks keyed by shot ID.
+// Replaces the per-render `timelineSfxBlocks(shotId, duration)` function call
+// which was invoked twice per shot in the template (once for v-if, once for v-for).
+const timelineSfxBlocksMap = computed(() => {
+  const map = new Map<number, { item: (typeof props.sfxItems)[number][number]; top: number; height: number; left: number; width: number }[]>()
+  for (const shot of shots.value) {
+    const duration = timelineEffectiveDurationMap.value.get(shot.id) ?? DEFAULT_SHOT_DURATION_S
+    const items = (props.sfxItems[shot.id] ?? []).filter(i => !i.disabled && i.url)
+    if (items.length === 0) { map.set(shot.id, []); continue }
+    const n = items.length
+    const slotW = 100 / n
+    map.set(shot.id, items.map((item, idx) => ({
+      item,
+      top: (item.start_offset || 0) * TL_PX_PER_SEC,
+      height: Math.max(4, ((item.duration_secs || duration) * TL_PX_PER_SEC)),
+      left: idx * slotW,
+      width: slotW,
+    })))
+  }
+  return map
+})
 
 function tlFmtTime(secs: number): string {
   const m = Math.floor(secs / 60)
@@ -322,7 +324,7 @@ function timelinePlay() {
   if (timelinePlaying.value) return
   timelinePlaying.value = true
   timelineSyncMedia()
-  timelineTimer.value = setInterval(timelineTick, 100)
+  timelineTimer.value = setInterval(timelineTick, TIMELINE_TICK_INTERVAL_MS)
 }
 
 function timelinePause() {
@@ -373,9 +375,12 @@ function timelineSeekByClick(e: MouseEvent) {
   }
 }
 
+let _lastDragTarget = -1
 function timelineDragStart(shotId: number) { timelineDragShotId.value = shotId }
 function timelineDragOver(e: DragEvent, targetId: number) {
   e.preventDefault()
+  if (targetId === _lastDragTarget) return  // skip if same target — avoids redundant reorder work
+  _lastDragTarget = targetId
   if (timelineDragShotId.value == null || timelineDragShotId.value === targetId) return
   const order = [...timelineShotsOrder.value]
   const from = order.indexOf(timelineDragShotId.value)
@@ -385,7 +390,17 @@ function timelineDragOver(e: DragEvent, targetId: number) {
   order.splice(to, 0, timelineDragShotId.value)
   timelineShotsOrder.value = order
 }
-function timelineDragEnd() { timelineDragShotId.value = null }
+async function timelineDragEnd() {
+  _lastDragTarget = -1
+  timelineDragShotId.value = null
+  // Persist the new shot order to the backend
+  const reorderPromises = timelineShotsOrder.value.map((shotId, index) =>
+    videoStore.updateShot(props.videoId, shotId, { shot_no: index + 1 }).catch((e: unknown) => {
+      console.warn('[Timeline] reorder shot failed:', e)
+    }),
+  )
+  await Promise.all(reorderPromises)
+}
 
 function timelineCycleSpeed() {
   const speeds = [0.5, 1.0, 1.5, 2.0]
@@ -557,7 +572,7 @@ watch(timelineSelectedShotId, (id) => {
   if (!shot) return
   if (!timelineEditDraft.value[id]) {
     timelineEditDraft.value[id] = {
-      duration: shot.duration || 5,
+      duration: shot.duration || DEFAULT_SHOT_DURATION_S,
       transition: shot.transition || 'cut',
       sfx_volume: shot.sfx_volume ?? 0,
     }
@@ -600,207 +615,8 @@ onUnmounted(() => {
   if (timelineTimer.value) { clearInterval(timelineTimer.value); timelineTimer.value = null }
 })
 
-// ──────── Export ────────
-const video = computed(() => videoStore.currentVideo)
-const completedShots = computed(() => shots.value.filter(s => s.status === 'completed'))
-const stitching = ref(false)
-const exporting = ref<Record<string, boolean>>({})
-const exportUrl = ref('')
-
-const exportFormats = [
-  { key: 'capcut', label: '剪映草稿',       desc: '.zip · 剪映 / CapCut',              ext: '.zip'  },
-  { key: 'fcpxml', label: 'FCPXML',         desc: '.zip · DaVinci / Final Cut Pro',    ext: '.zip'  },
-  { key: 'zip',    label: '素材包',         desc: '.zip · 任意剪辑软件',               ext: '.zip'  },
-  { key: 'edl',    label: 'EDL',            desc: '.edl · Avid / Premiere / Vegas',    ext: '.edl'  },
-  { key: 'otio',   label: 'OpenTimelineIO', desc: '.otio · Premiere / FCP / DaVinci',  ext: '.otio' },
-  { key: 'srt',    label: 'SRT 字幕',       desc: '.srt · 通用字幕',                   ext: '.srt'  },
-  { key: 'vtt',    label: 'WebVTT',         desc: '.vtt · 浏览器 / 网络视频',          ext: '.vtt'  },
-  { key: 'csv',    label: '分镜表',         desc: '.csv · Excel / Notion',             ext: '.csv'  },
-] as const
-
-async function handleStitch() {
-  stitching.value = true
-  try {
-    const { request } = useApi()
-    await request(`/videos/${props.videoId}/stitch`, { method: 'POST' })
-    toast.success('视频合成任务已提交')
-  } catch (e: any) {
-    toast.error('合成失败：' + (e.message || ''))
-  } finally {
-    stitching.value = false
-  }
-}
-
-async function handleExport(format: string) {
-  exporting.value = { ...exporting.value, [format]: true }
-  try {
-    const api = useVideoApi()
-    const blob = await api.exportVideo(props.videoId, format)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const fmtInfo = exportFormats.find(f => f.key === format)
-    const ext = fmtInfo?.ext ?? '.zip'
-    a.download = `${video.value?.title || 'video_' + props.videoId}_${format}${ext}`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success('导出成功')
-  } catch (e: any) {
-    toast.error('导出失败：' + (e.message || ''))
-  } finally {
-    exporting.value = { ...exporting.value, [format]: false }
-  }
-}
-
-// ──────── Synthesize ────────
-const synthesizing = ref(false)
-const synthesizeProgress = ref(0)
-const synthesizeStep = ref('')
-const synthesizeTaskId = ref('')
-let synthesizeTimer: ReturnType<typeof setInterval> | null = null
-
-const finalVideoUrl = computed(() => video.value?.final_video_url ?? '')
-const coverUrl = computed(() => video.value?.cover_url ?? '')
-const isSynthesized = computed(() => !!finalVideoUrl.value)
-
-async function handleSynthesize() {
-  synthesizing.value = true
-  synthesizeProgress.value = 0
-  synthesizeStep.value = '提交任务...'
-  try {
-    const api = useVideoApi()
-    const res = await api.synthesizeVideo(props.videoId)
-    const taskId = res?.data?.task_id || (res as any)?.task_id
-    if (!taskId) throw new Error('未获取到任务 ID')
-    synthesizeTaskId.value = taskId
-    pollSynthesizeTask(taskId)
-  } catch (e: any) {
-    toast.error('合成失败：' + (e.message || ''))
-    synthesizing.value = false
-  }
-}
-
-function pollSynthesizeTask(taskId: string) {
-  const { request } = useApi()
-  synthesizeTimer = setInterval(async () => {
-    try {
-      const res = await request<ApiResponse<{ status: string; progress: number; error?: string }>>(`/tasks/${taskId}`)
-      const task = res?.data
-      if (!task) return
-      synthesizeProgress.value = task.progress ?? 0
-      // 根据进度推断当前步骤描述
-      const p = task.progress ?? 0
-      if (p < 10) synthesizeStep.value = '正在拼接视频...'
-      else if (p < 40) synthesizeStep.value = '字幕处理中...'
-      else if (p < 60) synthesizeStep.value = '提取封面...'
-      else if (p < 90) synthesizeStep.value = '上传至云端...'
-      else synthesizeStep.value = '即将完成...'
-      if (task.status === 'completed') {
-        clearInterval(synthesizeTimer!)
-        synthesizeTimer = null
-        synthesizing.value = false
-        synthesizeProgress.value = 100
-        synthesizeStep.value = '合成完成'
-        toast.success('视频合成成功！')
-        await videoStore.fetchVideo(props.videoId)
-      } else if (task.status === 'failed') {
-        clearInterval(synthesizeTimer!)
-        synthesizeTimer = null
-        synthesizing.value = false
-        toast.error('合成失败：' + (task.error || ''))
-      }
-    } catch {
-      // ignore transient errors
-    }
-  }, 2000)
-}
-
-onUnmounted(() => {
-  if (synthesizeTimer) { clearInterval(synthesizeTimer); synthesizeTimer = null }
-})
-
-// ──────── Publish ────────
+// ──────── Publish drawer open state (managed here, drawer rendered by PublishDrawer child) ────────
 const publishDrawerOpen = ref(false)
-const publishVisibility = ref<'private' | 'unlisted' | 'public'>('public')
-const publishing = ref(false)
-const publishingExternal = ref(false)
-const selectedAccountIds = ref<number[]>([])
-const publishExtTitle = ref('')
-const publishExtDesc = ref('')
-const publishExtTags = ref('')
-const platformAccounts = ref<PlatformAccount[]>([])
-const loadingAccounts = ref(false)
-
-async function openPublishDrawer() {
-  publishDrawerOpen.value = true
-  publishExtTitle.value = video.value?.title ?? ''
-  if (platformAccounts.value.length === 0) {
-    loadingAccounts.value = true
-    try {
-      const platformApi = usePlatformApi()
-      const res = await platformApi.listAccounts()
-      platformAccounts.value = res?.data ?? []
-    } catch {
-      // ignore
-    } finally {
-      loadingAccounts.value = false
-    }
-  }
-}
-
-async function handlePublish() {
-  publishing.value = true
-  try {
-    const api = useVideoApi()
-    await api.publishVideo(props.videoId, { visibility: publishVisibility.value })
-    toast.success('发布成功')
-    await videoStore.fetchVideo(props.videoId)
-  } catch (e: any) {
-    toast.error('发布失败：' + (e.message || ''))
-  } finally {
-    publishing.value = false
-  }
-}
-
-async function handleUnpublish() {
-  publishing.value = true
-  try {
-    const api = useVideoApi()
-    await api.unpublishVideo(props.videoId)
-    toast.success('已取消发布')
-    await videoStore.fetchVideo(props.videoId)
-  } catch (e: any) {
-    toast.error('操作失败：' + (e.message || ''))
-  } finally {
-    publishing.value = false
-  }
-}
-
-async function handlePublishExternal() {
-  if (!selectedAccountIds.value.length) {
-    toast.error('请选择至少一个平台账号')
-    return
-  }
-  publishingExternal.value = true
-  try {
-    const api = useVideoApi()
-    const tags = publishExtTags.value.split(/[,，\s]+/).filter(Boolean)
-    await api.publishExternal(props.videoId, {
-      account_ids: selectedAccountIds.value,
-      title: publishExtTitle.value || video.value?.title,
-      description: publishExtDesc.value,
-      tags,
-      is_public: true,
-    })
-    toast.success('外部平台发布任务已提交')
-  } catch (e: any) {
-    toast.error('发布失败：' + (e.message || ''))
-  } finally {
-    publishingExternal.value = false
-  }
-}
 </script>
 
 <template>
@@ -811,90 +627,7 @@ async function handlePublishExternal() {
     <audio ref="timelineBgmRef" class="hidden" preload="auto" loop />
 
     <!-- ══ Export Tab ══════════════════════════════════════════════════════ -->
-    <template v-if="showExport">
-      <!-- Progress summary -->
-      <div class="card p-4">
-        <h3 class="font-semibold text-gray-900 dark:text-white mb-3">制作进度</h3>
-        <div class="space-y-2.5">
-          <div class="flex items-center gap-3">
-            <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-green-100 text-green-600">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <span class="text-sm text-gray-900 dark:text-white">
-              分镜脚本已确认
-              <span class="text-xs text-gray-400 ml-1">（{{ shots.length }} 个镜头）</span>
-            </span>
-          </div>
-          <div class="flex items-center gap-3">
-            <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-              :class="completedShots.length > 0 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <span class="text-sm" :class="completedShots.length > 0 ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-              视频/图片素材
-              <span class="text-xs text-gray-400 ml-1">（{{ completedShots.length }}/{{ shots.length }} 已生成）</span>
-            </span>
-          </div>
-          <div class="flex items-center gap-3">
-            <div class="w-6 h-6 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center flex-shrink-0">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <span class="text-sm text-gray-400">配音字幕（可选）</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <div class="w-6 h-6 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center flex-shrink-0">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <span class="text-sm text-gray-400">背景音乐（可选）</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Export formats -->
-      <div class="card p-5">
-        <h3 class="font-semibold text-gray-900 dark:text-white mb-4">导出格式</h3>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <template v-for="fmt in exportFormats" :key="fmt.key">
-            <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex flex-col gap-2">
-              <div class="text-sm font-medium text-gray-900 dark:text-white">{{ fmt.label }}</div>
-              <div class="text-xs text-gray-400">{{ fmt.desc }}</div>
-              <button
-                class="btn-primary mt-auto text-xs py-1.5"
-                :disabled="completedShots.length === 0 || exporting[fmt.key]"
-                @click="handleExport(fmt.key)"
-              >
-                <svg v-if="exporting[fmt.key]" class="w-3 h-3 mr-1 animate-spin inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {{ exporting[fmt.key] ? '导出中...' : '导出' }}
-              </button>
-            </div>
-          </template>
-        </div>
-        <p v-if="completedShots.length === 0" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-          请先在「分镜脚本」Tab 生成视频/图片素材
-        </p>
-        <!-- 合成 MP4 -->
-        <div class="mt-3 flex gap-3">
-          <button
-            class="btn-outline"
-            :disabled="completedShots.length === 0 || stitching"
-            @click="handleStitch"
-          >
-            {{ stitching ? '合成中...' : '合成 MP4' }}
-          </button>
-          <a v-if="exportUrl" :href="exportUrl" target="_blank" class="btn-outline">下载文件</a>
-        </div>
-      </div>
-    </template>
+    <ExportPanel v-if="showExport" :video-id="videoId" :shots="shots" />
 
     <!-- ══ Timeline Grid (shown when showExport is false) ════════════════════ -->
     <!-- Vertical timeline grid (full width) -->
@@ -996,9 +729,9 @@ async function handlePublishExternal() {
 
           <!-- SFX track cell -->
           <div class="w-24 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 relative overflow-hidden">
-            <template v-if="timelineSfxBlocks(shot.id, timelineEffectiveDuration(shot)).length > 0">
+            <template v-if="(timelineSfxBlocksMap.get(shot.id) ?? []).length > 0">
               <div
-                v-for="{ item, top, height, left, width } in timelineSfxBlocks(shot.id, timelineEffectiveDuration(shot))"
+                v-for="{ item, top, height, left, width } in timelineSfxBlocksMap.get(shot.id)"
                 :key="item.id"
                 class="absolute rounded-sm transition-opacity"
                 :class="item.disabled ? 'opacity-20 bg-gray-400' : 'bg-orange-400 dark:bg-orange-500'"
@@ -1346,174 +1079,10 @@ async function handlePublishExternal() {
         </button>
 
         <!-- ── Synthesize block ── -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-2">
-          <!-- Not synthesized -->
-          <template v-if="!isSynthesized && !synthesizing">
-            <button
-              class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              @click="handleSynthesize"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.876V15.5a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>
-              合成视频
-            </button>
-          </template>
-
-          <!-- Synthesizing -->
-          <template v-else-if="synthesizing">
-            <div class="space-y-1">
-              <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <span>{{ synthesizeStep || '合成中...' }}</span>
-                <span>{{ synthesizeProgress }}%</span>
-              </div>
-              <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                <div
-                  class="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
-                  :style="{ width: synthesizeProgress + '%' }"
-                />
-              </div>
-            </div>
-          </template>
-
-          <!-- Synthesized -->
-          <template v-else>
-            <video
-              :src="finalVideoUrl"
-              :poster="coverUrl || undefined"
-              controls
-              class="w-full rounded-lg max-h-40 object-contain bg-black"
-            />
-            <div class="flex gap-2">
-              <a
-                :href="finalVideoUrl"
-                target="_blank"
-                download
-                class="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                下载
-              </a>
-              <button
-                class="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
-                @click="openPublishDrawer"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                发布
-              </button>
-              <button
-                class="flex items-center justify-center p-1.5 rounded-lg text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
-                title="重新合成"
-                @click="handleSynthesize"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              </button>
-            </div>
-          </template>
-        </div>
+        <SynthesizePanel :video-id="videoId" @open-publish="publishDrawerOpen = true" />
 
         <!-- ── Publish drawer ── -->
-        <div
-          v-if="publishDrawerOpen"
-          class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
-          @click.self="publishDrawerOpen = false"
-        >
-          <div class="bg-white dark:bg-gray-900 w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto">
-            <div class="flex items-center justify-between">
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">发布视频</h3>
-              <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="publishDrawerOpen = false">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-
-            <!-- Station publish -->
-            <div class="space-y-2">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">站内发布</p>
-              <div class="flex gap-2">
-                <button
-                  v-for="opt in [{ value: 'public', label: '公开' }, { value: 'unlisted', label: '不公开' }, { value: 'private', label: '私密' }]"
-                  :key="opt.value"
-                  class="flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors"
-                  :class="publishVisibility === opt.value
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'"
-                  @click="publishVisibility = opt.value as typeof publishVisibility"
-                >
-                  {{ opt.label }}
-                </button>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  v-if="!video?.is_published"
-                  :disabled="publishing"
-                  class="flex-1 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors"
-                  @click="handlePublish"
-                >
-                  {{ publishing ? '发布中...' : '确认发布' }}
-                </button>
-                <button
-                  v-else
-                  :disabled="publishing"
-                  class="flex-1 py-2 rounded-lg text-sm font-medium bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 transition-colors"
-                  @click="handleUnpublish"
-                >
-                  {{ publishing ? '处理中...' : '取消发布' }}
-                </button>
-              </div>
-              <p v-if="video?.is_published" class="text-xs text-green-600 dark:text-green-400">已发布（{{ video.visibility }}）</p>
-            </div>
-
-            <!-- External platforms -->
-            <div class="space-y-2 border-t border-gray-100 dark:border-gray-800 pt-3">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">外部平台</p>
-              <div v-if="loadingAccounts" class="text-xs text-gray-400 text-center py-2">加载中...</div>
-              <div v-else-if="platformAccounts.length === 0" class="text-xs text-gray-400 text-center py-3">
-                暂无绑定账号，<NuxtLink to="/platform/accounts" class="text-blue-500 hover:underline" @click="publishDrawerOpen=false">前往绑定</NuxtLink>
-              </div>
-              <div v-else class="space-y-1">
-                <label
-                  v-for="acc in platformAccounts"
-                  :key="acc.id"
-                  class="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    class="rounded text-blue-600"
-                    :value="acc.id"
-                    v-model="selectedAccountIds"
-                  />
-                  <span class="flex-1 text-sm text-gray-700 dark:text-gray-300">{{ acc.platform }} · {{ acc.account_name }}</span>
-                  <span
-                    class="text-xs px-1.5 py-0.5 rounded"
-                    :class="acc.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'"
-                  >{{ acc.status === 'active' ? '有效' : acc.status }}</span>
-                </label>
-              </div>
-              <div v-if="platformAccounts.length > 0" class="space-y-1.5">
-                <input
-                  v-model="publishExtTitle"
-                  placeholder="标题（留空使用视频标题）"
-                  class="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400"
-                />
-                <input
-                  v-model="publishExtDesc"
-                  placeholder="简介（可选）"
-                  class="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400"
-                />
-                <input
-                  v-model="publishExtTags"
-                  placeholder="标签（逗号分隔，可选）"
-                  class="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400"
-                />
-                <button
-                  :disabled="publishingExternal || !selectedAccountIds.length"
-                  class="w-full py-2 rounded-lg text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white transition-colors"
-                  @click="handlePublishExternal"
-                >
-                  {{ publishingExternal ? '提交中...' : '一键发布到选中平台' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PublishDrawer :video-id="videoId" :open="publishDrawerOpen" @update:open="publishDrawerOpen = $event" />
 
         <p class="text-[10px] text-gray-400 dark:text-gray-600">{{ timelineOrderedShots.length }} 个镜头 · 拖拽行调整顺序</p>
       </div>

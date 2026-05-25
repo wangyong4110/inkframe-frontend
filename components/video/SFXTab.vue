@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { StoryboardShot, ShotSFXItem } from '~/types'
+import { parseSfxTags } from '~/utils/video'
 
 const props = defineProps<{ videoId: number }>()
 
@@ -24,11 +25,6 @@ const sfxScenePresets = [
   { label: '科幻未来', value: '科幻未来场景，机械、能量、空间感等音效' },
   { label: '自然野外', value: '自然野外场景，风雨、鸟鸣、虫声、水流等' },
 ]
-
-function parseSfxTags(sfxTags?: string): string[] {
-  if (!sfxTags) return []
-  try { return JSON.parse(sfxTags) as string[] } catch { return [] }
-}
 
 // sfxTagsMap: 兼容旧版 string[] 和新版 {tag,type}[] 两种格式，统一转为 {tag, type} 列表
 type SFXTagDisplay = { tag: string; type: 'action' | 'ambient' | 'emotion' }

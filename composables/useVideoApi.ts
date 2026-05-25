@@ -7,6 +7,8 @@ import type {
   ShotSFXItem,
   ShotVoiceSegment,
   VideoPublishRecord,
+  StoryboardReview,
+  ReviewRecord,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -38,7 +40,7 @@ export const useVideoApi = () => {
     })
 
   const batchGenerateShots = (videoId: number, shotIds: number[], qualityTier?: string, provider?: string) =>
-    request<ApiResponse<StoryboardShot[]>>(`/videos/${videoId}/shots/batch-generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/batch-generate`, {
       method: 'POST',
       body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier, provider }),
     })
@@ -158,7 +160,7 @@ export const useVideoApi = () => {
     request<void>(`/videos/${id}`, { method: 'DELETE' })
 
   const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number; voice_mode?: string }) =>
-    request<{ task_id: string; message: string; data: { task_id: string } }>(`/videos/${id}/storyboard/generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     })
@@ -201,15 +203,6 @@ export const useVideoApi = () => {
       method: 'POST',
       body: JSON.stringify({ diffs, ...(recordId ? { record_id: recordId } : {}) }),
     })
-
-  type ReviewRecord = {
-    id: number
-    created_at: string
-    overall_score: number
-    status: 'pending' | 'applied' | 'rolled_back'
-    applied_at?: string
-    review?: import('~/types').StoryboardReview
-  }
 
   const listReviewRecords = (id: number) =>
     request<ApiResponse<ReviewRecord[]>>(`/videos/${id}/storyboard/reviews`)

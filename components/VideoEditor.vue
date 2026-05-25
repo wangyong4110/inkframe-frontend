@@ -11,6 +11,7 @@ const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // ──────── Tabs ────────
 const activeTab = ref('script')
@@ -80,6 +81,10 @@ watch(scriptTabRef, (ref) => {
 
 onMounted(load)
 
+onUnmounted(() => {
+  videoStore.stopStoryboardPoll()
+})
+
 watch(() => props.videoId, () => {
   activeTab.value = 'script'
   load()
@@ -128,34 +133,40 @@ watch(activeTab, async (tab) => {
 
   // Now the tab is mounted; wait for DOM update then call component methods
   await nextTick()
+  if (version !== tabSwitchVersion) return
 
   if (tab === 'bgm') {
     await bgmTabRef.value?.load()
+    if (version !== tabSwitchVersion) return
     snapshotCrossTabData()
   }
   if (tab === 'sfx') {
     await sfxTabRef.value?.loadSFXItems()
+    if (version !== tabSwitchVersion) return
     snapshotCrossTabData()
   }
   if (tab === 'voice' && voiceTabRef.value?.expandedSegmentShotId != null) {
     const shot = shots.value.find(s => s.id === voiceTabRef.value!.expandedSegmentShotId)
     if (shot) await voiceTabRef.value?.loadSegments(shot)
+    if (version !== tabSwitchVersion) return
     snapshotCrossTabData()
   }
   // Timeline: load all cross-tab data directly via API (source tabs are unmounted)
   if (tab === 'timeline') {
     const { listBGMSegments, listVoiceSegments, listShotSFXItems } = useVideoApi()
     const [bgmRes] = await Promise.allSettled([listBGMSegments(props.videoId)])
-    if (bgmRes.status === 'fulfilled') _bgmSegments.value = (bgmRes.value as any)?.data ?? []
+    if (version !== tabSwitchVersion) return
+    if (bgmRes.status === 'fulfilled') _bgmSegments.value = bgmRes.value?.data ?? []
 
     // Voice segments + audio URL map
     const segMap: Record<number, ShotVoiceSegment[]> = { ..._shotSegments.value }
     const audioMap: Record<number, string> = { ..._shotAudioUrls.value }
     await Promise.all(shots.value.map(async (shot) => {
       const res = await listVoiceSegments(props.videoId, shot.id).catch(() => null)
-      if (res) segMap[shot.id] = (res as any)?.data ?? []
+      if (res) segMap[shot.id] = res?.data ?? []
       if (shot.audio_url && !audioMap[shot.id]) audioMap[shot.id] = shot.audio_url
     }))
+    if (version !== tabSwitchVersion) return
     _shotSegments.value  = segMap
     _shotAudioUrls.value = audioMap
 
@@ -163,14 +174,17 @@ watch(activeTab, async (tab) => {
     const sfxMap: Record<number, ShotSFXItem[]> = { ..._sfxItems.value }
     await Promise.all(shots.value.map(async (shot) => {
       const res = await listShotSFXItems(props.videoId, shot.id).catch(() => null)
-      if (res) sfxMap[shot.id] = (res as any)?.data ?? []
+      if (res) sfxMap[shot.id] = res?.data ?? []
     }))
+    if (version !== tabSwitchVersion) return
     _sfxItems.value = sfxMap
   }
 })
 
 // ──────── generateStoryboard (delegated from chapter page) ────────
 // All parameters are supplied by the caller; shell forwards them to the store.
+const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
+
 async function generateStoryboard(
   userPrompt?: string,
   pacing?: string,
@@ -180,26 +194,17 @@ async function generateStoryboard(
   timeoutSeconds?: number,
   voiceMode?: string,
 ) {
-  const isConfirmed = videoStore.currentVideo?.script_status === 'confirmed'
-  if (isConfirmed) {
-    if (!confirm('重新生成将清空当前脚本，是否继续？')) return
-  }
-  try {
-    await videoStore.generateStoryboard(
-      props.videoId,
-      props.llmProvider || undefined,
-      userPrompt,
-      pacing !== 'normal' ? pacing : undefined,
-      targetDuration || undefined,
-      maxTokens || undefined,
-      temperature || undefined,
-      timeoutSeconds || undefined,
-      voiceMode !== 'both' ? voiceMode : undefined,
-    )
-    toast.success('脚本生成任务已提交，请稍候...')
-  } catch (e: any) {
-    toast.error('生成失败：' + (e.message || ''))
-  }
+  await _generateStoryboard({
+    videoId: props.videoId,
+    provider: props.llmProvider || undefined,
+    userPrompt,
+    pacing,
+    targetDuration,
+    maxTokens,
+    temperature,
+    timeoutSeconds,
+    voiceMode,
+  })
 }
 
 // Expose for parent pages (e.g. chapter page's AI panel)

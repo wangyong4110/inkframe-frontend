@@ -2,6 +2,19 @@ import { defineStore } from 'pinia'
 import type { Video, StoryboardShot, VideoBGMSegment } from '~/types'
 import { useTaskStore } from '~/stores/task'
 
+export interface CreateVideoOptions {
+  novelId: number
+  chapterId?: number
+  title?: string
+  artStyle?: string
+  aspectRatio?: string
+  frameRate?: number
+  qualityTier?: string
+  mode?: string
+  visualMode?: string
+  threeDStyle?: string
+}
+
 interface VideoState {
   videos: Video[]
   currentVideo: Video | null
@@ -14,6 +27,10 @@ interface VideoState {
   error: string | null
   storyboardTaskId: string | null
   storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
+  /** Cancel function for the active storyboard poll loop; null when not polling */
+  _storyboardPollStop: (() => void) | null
+  synthesizeTaskId: string | null
+  synthesizeStatus: string | null
   generationProgress: {
     currentShot: number
     totalShots: number
@@ -34,6 +51,9 @@ export const useVideoStore = defineStore('video', {
     error: null,
     storyboardTaskId: null,
     storyboardTaskStatus: null,
+    _storyboardPollStop: null,
+    synthesizeTaskId: null,
+    synthesizeStatus: null,
     generationProgress: {
       currentShot: 0,
       totalShots: 0,
@@ -91,7 +111,8 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async createVideo(novelId: number, chapterId?: number, title?: string, artStyle?: string, aspectRatio?: string, frameRate?: number, qualityTier?: string, mode?: string, visualMode?: string, threeDStyle?: string) {
+    async createVideo(opts: CreateVideoOptions) {
+      const { novelId, chapterId, title, artStyle, aspectRatio, frameRate, qualityTier, mode, visualMode, threeDStyle } = opts
       this.loading = true
       this.error = null
 
@@ -218,10 +239,22 @@ export const useVideoStore = defineStore('video', {
     },
 
     async pollStoryboardTask(videoId: number, taskId: string) {
-      let retries = 0
-      const MAX_RETRIES = 300 // 10 minutes at 2s intervals
+      // Cancel any previous poll loop before starting a new one
+      if (this._storyboardPollStop) {
+        this._storyboardPollStop()
+      }
+
+      // 指数退避：初始 1s，最大 8s，最长轮询 10 分钟
+      const MAX_ELAPSED_MS = 10 * 60 * 1000
+      const startTime = Date.now()
+      let delay = 1000
+      let stopped = false
+      const stopFn = () => { stopped = true }
+      this._storyboardPollStop = stopFn
+
       const poll = async () => {
-        if (retries++ >= MAX_RETRIES) {
+        if (stopped) return
+        if (Date.now() - startTime > MAX_ELAPSED_MS) {
           console.warn('[VideoStore] polling timeout for task', taskId)
           this.generating = false
           this.storyboardTaskStatus = 'failed'
@@ -230,10 +263,13 @@ export const useVideoStore = defineStore('video', {
         }
         try {
           const res = await useTaskApi().getTask(taskId)
+          if (stopped) return
           const task = res.data
+          if (!task) return
           this.storyboardTaskStatus = task.status
           if (task.status === 'completed') {
             this.generating = false
+            this._storyboardPollStop = null
             localStorage.removeItem(`storyboard_task_${videoId}`)
             const shots = task.data?.shots
             if (shots) this.storyboard = shots
@@ -241,24 +277,35 @@ export const useVideoStore = defineStore('video', {
           }
           if (task.status === 'failed') {
             this.generating = false
+            this._storyboardPollStop = null
             localStorage.removeItem(`storyboard_task_${videoId}`)
             this.error = task.error || '分镜生成失败'
             return
           }
           if (task.status === 'cancelled') {
             this.generating = false
+            this._storyboardPollStop = null
             localStorage.removeItem(`storyboard_task_${videoId}`)
             return
           }
-          // still running/pending — poll again
-          setTimeout(poll, 1000)
+          // still running/pending — poll again with backoff (cap at 8s)
+          delay = Math.min(delay * 1.5, 8000)
+          setTimeout(poll, delay)
         } catch {
-          this.generating = false
-          this.storyboardTaskStatus = 'failed'
-          localStorage.removeItem(`storyboard_task_${videoId}`)
+          if (stopped) return
+          // 网络抖动不中断轮询，继续重试
+          delay = Math.min(delay * 2, 8000)
+          setTimeout(poll, delay)
         }
       }
-      setTimeout(poll, 1000)
+      setTimeout(poll, delay)
+    },
+
+    stopStoryboardPoll() {
+      if (this._storyboardPollStop) {
+        this._storyboardPollStop()
+        this._storyboardPollStop = null
+      }
     },
 
     // Resume polling for a task that survived a page refresh
@@ -319,8 +366,8 @@ export const useVideoStore = defineStore('video', {
       try {
         const api = useVideoApi()
         const response = await api.batchGenerateShots(videoId, shotIds, qualityTier, provider)
-        // Backend now returns {task_id} instead of shot array
-        return (response.data as any)?.task_id as string
+        // Backend returns {task_id}
+        return response.data?.task_id as string
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate shots'
         throw e
@@ -334,7 +381,7 @@ export const useVideoStore = defineStore('video', {
       try {
         const api = useVideoApi()
         const response = await api.batchGenerateShotImages(videoId, shotIds)
-        return (response.data as any)?.task_id as string
+        return response.data?.task_id as string
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate images'
         throw e
@@ -346,7 +393,7 @@ export const useVideoStore = defineStore('video', {
       try {
         const api = useVideoApi()
         const response = await api.batchGenerateShotClips(videoId, shotIds)
-        return (response.data as any)?.task_id as string
+        return response.data?.task_id as string
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate clips'
         throw e

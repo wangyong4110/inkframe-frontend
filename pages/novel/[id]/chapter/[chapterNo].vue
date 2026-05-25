@@ -96,16 +96,16 @@ async function handleCreateStoryboard() {
   creatingStoryboard.value = true
   try {
     const title = `${novel.value?.title || '小说'} 第${chapterNo}章`
-    const video = await videoStore.createVideo(
+    const video = await videoStore.createVideo({
       novelId,
-      chapter.value.id,
+      chapterId: chapter.value.id,
       title,
-      storyboardForm.value.art_style,
-      storyboardForm.value.aspect_ratio,
-      24,
-      storyboardForm.value.quality_tier,
-      storyboardForm.value.mode,
-    )
+      artStyle: storyboardForm.value.art_style,
+      aspectRatio: storyboardForm.value.aspect_ratio,
+      frameRate: 24,
+      qualityTier: storyboardForm.value.quality_tier,
+      mode: storyboardForm.value.mode,
+    })
     chapterVideos.value.unshift(video)
     showStoryboardModal.value = false
     pageMode.value = 'script'
@@ -563,7 +563,7 @@ async function handleGenerateScript() {
     generatingScript.value = true
     try {
       const title = `${novel.value?.title || '小说'} 第${chapterNo}章`
-      const video = await videoStore.createVideo(novelId, chapter.value.id, title, 'anime', '16:9', 24, 'draft', 'slideshow')
+      const video = await videoStore.createVideo({ novelId, chapterId: chapter.value.id, title, artStyle: 'anime', aspectRatio: '16:9', frameRate: 24, qualityTier: 'draft', mode: 'slideshow' })
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
