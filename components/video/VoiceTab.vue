@@ -230,7 +230,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
 <template>
   <div class="space-y-4">
     <!-- AI assistant sidebar teleport slot -->
-    <Teleport to="#voice-ai-slot" defer>
+    <Teleport to="#voice-ai-slot">
       <div class="p-4 space-y-4">
         <!-- 配音模式 -->
         <div>

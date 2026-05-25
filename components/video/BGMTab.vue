@@ -207,7 +207,7 @@ defineExpose({ bgmSegments, bgmVolume, load })
 <template>
   <div class="space-y-4">
     <!-- AI Panel — teleported into the aside panel via #bgm-ai-slot -->
-    <Teleport to="#bgm-ai-slot" defer>
+    <Teleport to="#bgm-ai-slot">
     <div class="card overflow-hidden">
       <button
         class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors"

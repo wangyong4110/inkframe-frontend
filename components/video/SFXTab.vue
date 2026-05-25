@@ -182,7 +182,7 @@ defineExpose({ sfxItems, loadSFXItems })
     <audio ref="sfxAudioRef" class="hidden" @ended="sfxPlayingId = null" />
 
     <!-- AI Panel — teleported into the aside panel via #sfx-ai-slot -->
-    <Teleport to="#sfx-ai-slot" defer>
+    <Teleport to="#sfx-ai-slot">
     <div class="card overflow-hidden">
       <button
         class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors"

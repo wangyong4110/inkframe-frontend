@@ -296,6 +296,7 @@ defineExpose({ activeTab, generateStoryboard })
           :shot-segments="_shotSegments"
           :sfx-items="_sfxItems"
           :show-export="false"
+          :inline-sidebar="standalone"
         />
 
         <!-- ── Export Tab ── -->
@@ -308,16 +309,16 @@ defineExpose({ activeTab, generateStoryboard })
           :shot-segments="_shotSegments"
           :sfx-items="_sfxItems"
           :show-export="true"
+          :inline-sidebar="standalone"
         />
       </div>
 
-      <!-- ── Standalone sidebar: receives Teleport content from tab components ── -->
+      <!-- Standalone mode: slot divs for non-timeline tabs (voice/bgm/sfx use Teleport to these) -->
       <aside
-        v-if="standalone"
+        v-if="standalone && activeTab !== 'timeline' && activeTab !== 'export'"
         class="w-80 flex-shrink-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto"
       >
-        <div v-if="activeTab === 'timeline' || activeTab === 'export'" id="timeline-player-slot" />
-        <div v-else-if="activeTab === 'sfx'" id="sfx-ai-slot" />
+        <div v-if="activeTab === 'sfx'" id="sfx-ai-slot" />
         <div v-else-if="activeTab === 'bgm'" id="bgm-ai-slot" />
         <div v-else-if="activeTab === 'voice'" id="voice-ai-slot" />
       </aside>

@@ -12,6 +12,8 @@ const props = defineProps<{
   sfxItems: Record<number, ShotSFXItem[]>
   /** When true, renders the Export tab content instead of the Timeline grid */
   showExport?: boolean
+  /** When true, disables Teleport and renders the sidebar panel inline (standalone page) */
+  inlineSidebar?: boolean
 }>()
 
 const videoStore = useVideoStore()
@@ -871,9 +873,10 @@ const publishDrawerOpen = ref(false)
       </template>
     </div>
 
-    <!-- Preview player — teleported into the aside panel via #timeline-player-slot -->
-    <Teleport to="#timeline-player-slot" defer>
-      <div class="p-4 space-y-3">
+    <!-- Preview player — teleported into the aside panel, or rendered inline when inlineSidebar=true.
+         Disabled when showExport=true because #timeline-player-slot is not available in that mode. -->
+    <Teleport to="#timeline-player-slot" :disabled="inlineSidebar || showExport">
+      <div v-if="!showExport" class="p-4 space-y-3">
         <!-- Video / Image preview -->
         <div
           ref="timelinePreviewRef"
