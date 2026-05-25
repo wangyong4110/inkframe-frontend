@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
 import type { AsyncTask } from '~/types'
 
-const POLL_INTERVAL_MS = 2000
+const POLL_INITIAL_MS = 2000
+const POLL_MAX_MS = 15000
+const POLL_BACKOFF_FACTOR = 1.5
 const AUTO_DISMISS_MS = 5000 // auto-remove completed/failed tasks after 5s
 
 export const useTaskStore = defineStore('task', {
@@ -113,6 +115,8 @@ export const useTaskStore = defineStore('task', {
     _startPolling(taskId: string, onDone?: (task: AsyncTask) => void) {
       if (this._timers[taskId]) return // already polling
 
+      let delay = POLL_INITIAL_MS
+
       const poll = async () => {
         // Stop if dismissed while poll was in flight
         if (this._dismissed[taskId]) return
@@ -120,7 +124,8 @@ export const useTaskStore = defineStore('task', {
         const task = await this.refreshTask(taskId)
         if (!task) {
           // 网络或服务端瞬时错误，继续轮询，不永久停止
-          this._timers[taskId] = setTimeout(poll, POLL_INTERVAL_MS)
+          delay = Math.min(delay * POLL_BACKOFF_FACTOR, POLL_MAX_MS)
+          this._timers[taskId] = setTimeout(poll, delay)
           return
         }
 
@@ -137,11 +142,12 @@ export const useTaskStore = defineStore('task', {
           return
         }
 
-        // Still running — schedule next poll
-        this._timers[taskId] = setTimeout(poll, POLL_INTERVAL_MS)
+        // Still running — schedule next poll with backoff
+        delay = Math.min(delay * POLL_BACKOFF_FACTOR, POLL_MAX_MS)
+        this._timers[taskId] = setTimeout(poll, delay)
       }
 
-      this._timers[taskId] = setTimeout(poll, POLL_INTERVAL_MS)
+      this._timers[taskId] = setTimeout(poll, delay)
     },
 
     stopPolling(taskId: string) {

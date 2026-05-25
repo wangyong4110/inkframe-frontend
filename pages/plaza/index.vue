@@ -4,10 +4,10 @@ import type { Novel, Video } from '~/types'
 definePageMeta({ auth: false })
 
 useHead({
-  title: 'InkFrame 作品集',
+  title: '作品广场 - InkFrame',
   meta: [
-    { name: 'description', content: 'InkFrame 作品集 — 发现精彩 AI 创作小说与视频' },
-    { property: 'og:title', content: 'InkFrame 作品集' },
+    { name: 'description', content: '探索 AI 生成的精彩视频内容' },
+    { property: 'og:title', content: '作品广场 - InkFrame' },
   ],
 })
 

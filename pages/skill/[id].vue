@@ -9,6 +9,9 @@ const toast = useToast()
 const skillApi = useSkillApi()
 
 const skillId = parseInt(route.params.id as string)
+if (isNaN(skillId)) {
+  await navigateTo('/novel')
+}
 const novelId = parseInt(route.query.novelId as string)
 
 const activeTab = ref('profile')

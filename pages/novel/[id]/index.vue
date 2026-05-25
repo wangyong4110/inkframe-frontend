@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AnalysisStatus } from '~/composables/useAnalysisApi'
+import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +41,7 @@ const tabs = [
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
+const loading = ref(true)
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
 const novelChapterCount = computed(() => chapters.value.length)
@@ -94,9 +96,9 @@ async function onCoverFileChange(e: Event) {
     const url = await uploadImage(file)
     await updateNovel(novelId, { cover_image: url } as any)
     await novelStore.fetchNovel(novelId)
-    toast.add({ title: '封面已更新' })
+    toast.success('封面已更新')
   } catch (err: any) {
-    toast.add({ title: '封面上传失败：' + (err.message || ''), color: 'red' })
+    toast.error('封面上传失败：' + (err.message || ''))
   } finally {
     if (coverFileInput.value) coverFileInput.value.value = ''
   }
@@ -107,9 +109,9 @@ async function doGenerateCover() {
   try {
     await generateCoverImage(novelId)
     await novelStore.fetchNovel(novelId)
-    toast.add({ title: 'AI 封面生成成功' })
+    toast.success('AI 封面生成成功')
   } catch (err: any) {
-    toast.add({ title: 'AI 封面生成失败：' + (err.message || ''), color: 'red' })
+    toast.error('AI 封面生成失败：' + (err.message || ''))
   } finally {
     coverGenerating.value = false
   }
@@ -125,14 +127,14 @@ async function togglePublish() {
   try {
     if (novel.value.is_published) {
       await unpublishNovel(novel.value.id)
-      toast.add({ title: '已取消发布' })
+      toast.success('已取消发布')
     } else {
       await publishNovel(novel.value.id, 'public')
-      toast.add({ title: '已发布到小说广场' })
+      toast.success('已发布到小说广场')
     }
     await novelStore.fetchNovel(novelId)
   } catch {
-    toast.add({ title: '操作失败', color: 'red' })
+    toast.error('操作失败')
   } finally {
     publishLoading.value = false
   }
@@ -142,12 +144,42 @@ async function togglePublish() {
 const analysisApi = useAnalysisApi()
 const analysisTaskId = ref('')
 const analysisStatus = ref<AnalysisStatus | null>(null)
-let analysisPollTimer: ReturnType<typeof setInterval> | null = null
 
 const showAnalysisPanel = computed(() => {
   if (analysisStatus.value) return true
   const n = novel.value
   return !!(n && !n.worldview_id && n.chapter_count > 0)
+})
+
+const analysisPoll = usePollWithBackoff({
+  fn: async () => {
+    const resp = await useTaskApi().getTask(analysisTaskId.value)
+    return (resp as any).data
+  },
+  isDone: (task) => !task || task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled',
+  onResult: async (task) => {
+    if (!task) return
+    analysisStatus.value = {
+      status: task.status,
+      progress: task.progress,
+      step: task.data?.step || '',
+      error: task.error || '',
+      warnings: task.data?.warnings || [],
+    }
+    if (task.status === 'completed') {
+      localStorage.removeItem(`analysis_task_${novelId}`)
+      await Promise.all([
+        novelStore.fetchNovel(novelId),
+        chapterStore.fetchChapters(novelId),
+        characterStore.fetchCharacters(novelId),
+      ])
+    } else if (task.status === 'failed' || task.status === 'cancelled') {
+      localStorage.removeItem(`analysis_task_${novelId}`)
+      toast.error('AI 分析失败：' + (task.error || '未知错误'))
+    }
+  },
+  initialDelay: 2000,
+  maxDelay: 15000,
 })
 
 async function triggerAnalysis(source?: string) {
@@ -157,56 +189,28 @@ async function triggerAnalysis(source?: string) {
     analysisTaskId.value = (resp as any).data?.task_id ?? ''
     if (analysisTaskId.value) {
       localStorage.setItem(`analysis_task_${novelId}`, analysisTaskId.value)
+      useTaskStore().trackTask(analysisTaskId.value)
     }
     analysisStatus.value = { status: 'running', progress: 0, step: '准备中...' }
-    startAnalysisPoll()
+    analysisPoll.start()
   } catch (e: any) {
     toast.error('启动分析失败：' + (e.message || ''))
   }
 }
 
-function startAnalysisPoll() {
-  if (analysisPollTimer) return
-  analysisPollTimer = setInterval(async () => {
-    if (!analysisTaskId.value) return
-    try {
-      const resp = await useTaskApi().getTask(analysisTaskId.value)
-      const task = (resp as any).data
-      analysisStatus.value = { status: task.status, progress: task.progress, step: task.data?.step || '', error: task.error || '', warnings: task.data?.warnings || [] }
-      if (analysisStatus.value.status === 'completed' || analysisStatus.value.status === 'failed') {
-        stopAnalysisPoll()
-        localStorage.removeItem(`analysis_task_${novelId}`)
-        if (analysisStatus.value.status === 'completed') {
-          await Promise.all([
-            novelStore.fetchNovel(novelId),
-            chapterStore.fetchChapters(novelId),
-            characterStore.fetchCharacters(novelId),
-          ])
-        } else {
-          toast.error('AI 分析失败：' + (analysisStatus.value.error || '未知错误'))
-        }
-      }
-    } catch { /* ignore transient errors */ }
-  }, 2000)
-}
-
-function stopAnalysisPoll() {
-  if (analysisPollTimer) {
-    clearInterval(analysisPollTimer)
-    analysisPollTimer = null
-  }
-}
-
-onUnmounted(() => stopAnalysisPoll())
-
 onMounted(async () => {
-  await Promise.all([
-    novelStore.fetchNovel(novelId),
-    chapterStore.fetchChapters(novelId),
-    characterStore.fetchCharacters(novelId),
-    videoStore.fetchVideos({ novel_id: novelId }),
-    sceneAnchorStore.fetchAnchors(novelId),
-  ])
+  loading.value = true
+  try {
+    await Promise.all([
+      novelStore.fetchNovel(novelId),
+      chapterStore.fetchChapters(novelId),
+      characterStore.fetchCharacters(novelId),
+      videoStore.fetchVideos({ novel_id: novelId }),
+      sceneAnchorStore.fetchAnchors(novelId),
+    ])
+  } finally {
+    loading.value = false
+  }
   // Auto-trigger analysis when coming from the import/create page.
   if (route.query.analysis_task_id) {
     const existingTaskId = route.query.analysis_task_id as string
@@ -215,7 +219,8 @@ onMounted(async () => {
     analysisTaskId.value = existingTaskId
     localStorage.setItem(`analysis_task_${novelId}`, existingTaskId)
     analysisStatus.value = { status: 'running', progress: 0, step: '分析中...' }
-    startAnalysisPoll()
+    useTaskStore().trackTask(existingTaskId)
+    analysisPoll.start()
   } else if (route.query.analyze === '1') {
     const sourceVal = route.query.source as string | undefined
     const { analyze: _a, source: _s, ...restQuery } = route.query
@@ -232,7 +237,8 @@ onMounted(async () => {
         if (status.status === 'running' || status.status === 'pending') {
           analysisTaskId.value = storedTaskId
           analysisStatus.value = status
-          startAnalysisPoll()
+          useTaskStore().trackTask(storedTaskId)
+          analysisPoll.start()
         } else {
           localStorage.removeItem(`analysis_task_${novelId}`)
         }
@@ -246,8 +252,16 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
+    <!-- Loading skeleton -->
+    <div v-if="loading && !novel" class="space-y-4 p-6">
+      <div class="h-8 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-1/3"></div>
+      <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-2/3"></div>
+      <div class="grid grid-cols-4 gap-4 mt-6">
+        <div v-for="i in 4" :key="i" class="h-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+      </div>
+    </div>
     <!-- Novel Header -->
-    <div v-if="novel" class="card">
+    <div v-else-if="novel" class="card">
       <div class="p-6">
         <div class="flex items-start gap-4 justify-between">
           <!-- 封面缩略图 -->

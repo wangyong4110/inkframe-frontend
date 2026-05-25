@@ -39,6 +39,10 @@ onMounted(() => loadSystemSettings())
 
 const activeTab = ref('list')
 const showCreateModal = ref(false)
+const aspectRatioDropdownOpen = ref(false)
+const aspectRatioDropdownRef = ref<HTMLElement | null>(null)
+onClickOutside(aspectRatioDropdownRef, () => { aspectRatioDropdownOpen.value = false })
+const selectedAspectRatio = computed(() => ASPECT_RATIOS.find(r => r.value === createForm.value.aspect_ratio) ?? ASPECT_RATIOS[1])
 const QUALITY_TIERS = [
   {
     id: 'draft' as const,
@@ -427,29 +431,56 @@ async function createVideo() {
             <!-- Aspect Ratio -->
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">视频比例</label>
-              <div class="flex flex-wrap gap-2">
+              <div ref="aspectRatioDropdownRef" class="relative">
+                <!-- Trigger -->
                 <button
-                  v-for="r in ASPECT_RATIOS"
-                  :key="r.value"
                   type="button"
-                  class="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all min-w-[52px]"
-                  :class="createForm.aspect_ratio === r.value
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-300'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500 text-gray-500 dark:text-gray-400'"
-                  @click="createForm.aspect_ratio = r.value"
+                  class="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-sm"
+                  @click="aspectRatioDropdownOpen = !aspectRatioDropdownOpen"
                 >
-                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none" class="flex-shrink-0">
+                  <svg width="28" height="20" viewBox="0 0 32 24" fill="none" class="flex-shrink-0 text-primary-500">
                     <rect
-                      :x="(32 - r.iconW) / 2"
-                      :y="(24 - r.iconH) / 2"
-                      :width="r.iconW"
-                      :height="r.iconH"
+                      :x="(32 - selectedAspectRatio.iconW) / 2"
+                      :y="(24 - selectedAspectRatio.iconH) / 2"
+                      :width="selectedAspectRatio.iconW"
+                      :height="selectedAspectRatio.iconH"
                       rx="1.5"
                       fill="currentColor"
                     />
                   </svg>
-                  <span class="text-xs font-medium leading-none">{{ r.label }}</span>
+                  <span class="flex-1 text-left font-medium">{{ selectedAspectRatio.label }}</span>
+                  <svg class="w-4 h-4 text-gray-400 transition-transform" :class="aspectRatioDropdownOpen ? 'rotate-180' : ''" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                  </svg>
                 </button>
+                <!-- Dropdown list -->
+                <div
+                  v-show="aspectRatioDropdownOpen"
+                  class="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
+                >
+                  <button
+                    v-for="r in ASPECT_RATIOS"
+                    :key="r.value"
+                    type="button"
+                    class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors"
+                    :class="createForm.aspect_ratio === r.value
+                      ? 'bg-primary-50 dark:bg-primary-900/40 text-primary-600 dark:text-primary-300'
+                      : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    @click="createForm.aspect_ratio = r.value; aspectRatioDropdownOpen = false"
+                  >
+                    <svg width="28" height="20" viewBox="0 0 32 24" fill="none" class="flex-shrink-0">
+                      <rect
+                        :x="(32 - r.iconW) / 2"
+                        :y="(24 - r.iconH) / 2"
+                        :width="r.iconW"
+                        :height="r.iconH"
+                        rx="1.5"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <span class="font-medium">{{ r.label }}</span>
+                  </button>
+                </div>
               </div>
             </div>
 

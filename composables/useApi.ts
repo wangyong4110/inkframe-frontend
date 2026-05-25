@@ -78,11 +78,19 @@ export const useApi = () => {
   const requestMultipart = async <T>(endpoint: string, file: File): Promise<T> => {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`${apiBase}${endpoint}`, {
-      method: 'POST',
-      headers: getAuthHeader(),
-      body: form,
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120_000) // 120s for uploads
+    let res: Response
+    try {
+      res = await fetch(`${apiBase}${endpoint}`, {
+        method: 'POST',
+        headers: getAuthHeader(),
+        body: form,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
     const json = await res.json().catch(() => ({ message: 'Upload failed' }))
     if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)
     return json.data

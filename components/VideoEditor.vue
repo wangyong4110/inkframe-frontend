@@ -6,7 +6,7 @@ import BGMTab from '~/components/video/BGMTab.vue'
 import SFXTab from '~/components/video/SFXTab.vue'
 import TimelineTab from '~/components/video/TimelineTab.vue'
 
-const props = defineProps<{ videoId: number; llmProvider?: string }>()
+const props = defineProps<{ videoId: number; llmProvider?: string; standalone?: boolean }>()
 const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
@@ -16,6 +16,8 @@ const { confirm } = useConfirm()
 // ──────── Tabs ────────
 const activeTab = ref('script')
 const tabLoading = ref(false)
+const PRODUCTION_TABS = ['voice', 'bgm', 'sfx', 'timeline', 'export']
+const isProductionTab = computed(() => PRODUCTION_TABS.includes(activeTab.value))
 
 const isScriptConfirmed = computed(() => videoStore.currentVideo?.script_status === 'confirmed')
 const shots = computed(() => videoStore.storyboard)
@@ -256,49 +258,69 @@ defineExpose({ activeTab, generateStoryboard })
       :llm-provider="props.llmProvider"
     />
 
-    <!-- ══ Voice Tab ══════════════════════════════════════════════════════ -->
-    <VoiceTab
-      v-if="activeTab === 'voice' && !tabLoading"
-      ref="voiceTabRef"
-      :video-id="props.videoId"
-    />
+    <!-- ══ Production Tabs (with optional sidebar in standalone mode) ══════ -->
+    <div
+      v-if="isProductionTab && !tabLoading"
+      :class="standalone ? 'flex min-h-0 -mt-4' : ''"
+    >
+      <!-- Main content -->
+      <div :class="standalone ? 'flex-1 min-w-0 overflow-x-hidden' : ''">
+        <!-- ── Voice Tab ── -->
+        <VoiceTab
+          v-if="activeTab === 'voice'"
+          ref="voiceTabRef"
+          :video-id="props.videoId"
+        />
 
-    <!-- ══ BGM Tab ════════════════════════════════════════════════════════ -->
-    <BGMTab
-      v-if="activeTab === 'bgm' && !tabLoading"
-      ref="bgmTabRef"
-      :video-id="props.videoId"
-    />
+        <!-- ── BGM Tab ── -->
+        <BGMTab
+          v-if="activeTab === 'bgm'"
+          ref="bgmTabRef"
+          :video-id="props.videoId"
+        />
 
-    <!-- ══ SFX Tab ════════════════════════════════════════════════════════ -->
-    <SFXTab
-      v-if="activeTab === 'sfx' && !tabLoading"
-      ref="sfxTabRef"
-      :video-id="props.videoId"
-    />
+        <!-- ── SFX Tab ── -->
+        <SFXTab
+          v-if="activeTab === 'sfx'"
+          ref="sfxTabRef"
+          :video-id="props.videoId"
+        />
 
-    <!-- ══ Timeline Tab ════════════════════════════════════════════════════ -->
-    <TimelineTab
-      v-if="activeTab === 'timeline' && !tabLoading"
-      :video-id="props.videoId"
-      :bgm-segments="_bgmSegments"
-      :bgm-volume="_bgmVolume"
-      :shot-audio-urls="_shotAudioUrls"
-      :shot-segments="_shotSegments"
-      :sfx-items="_sfxItems"
-      :show-export="false"
-    />
+        <!-- ── Timeline Tab ── -->
+        <TimelineTab
+          v-if="activeTab === 'timeline'"
+          :video-id="props.videoId"
+          :bgm-segments="_bgmSegments"
+          :bgm-volume="_bgmVolume"
+          :shot-audio-urls="_shotAudioUrls"
+          :shot-segments="_shotSegments"
+          :sfx-items="_sfxItems"
+          :show-export="false"
+        />
 
-    <!-- ══ Export Tab ═════════════════════════════════════════════════════ -->
-    <TimelineTab
-      v-if="activeTab === 'export' && !tabLoading"
-      :video-id="props.videoId"
-      :bgm-segments="_bgmSegments"
-      :bgm-volume="_bgmVolume"
-      :shot-audio-urls="_shotAudioUrls"
-      :shot-segments="_shotSegments"
-      :sfx-items="_sfxItems"
-      :show-export="true"
-    />
+        <!-- ── Export Tab ── -->
+        <TimelineTab
+          v-if="activeTab === 'export'"
+          :video-id="props.videoId"
+          :bgm-segments="_bgmSegments"
+          :bgm-volume="_bgmVolume"
+          :shot-audio-urls="_shotAudioUrls"
+          :shot-segments="_shotSegments"
+          :sfx-items="_sfxItems"
+          :show-export="true"
+        />
+      </div>
+
+      <!-- ── Standalone sidebar: receives Teleport content from tab components ── -->
+      <aside
+        v-if="standalone"
+        class="w-80 flex-shrink-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto"
+      >
+        <div v-if="activeTab === 'timeline' || activeTab === 'export'" id="timeline-player-slot" />
+        <div v-else-if="activeTab === 'sfx'" id="sfx-ai-slot" />
+        <div v-else-if="activeTab === 'bgm'" id="bgm-ai-slot" />
+        <div v-else-if="activeTab === 'voice'" id="voice-ai-slot" />
+      </aside>
+    </div>
   </div>
 </template>

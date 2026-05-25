@@ -2,6 +2,17 @@ import { defineStore } from 'pinia'
 import type { Video, StoryboardShot, VideoBGMSegment } from '~/types'
 import { useTaskStore } from '~/stores/task'
 
+export interface GenerateStoryboardOptions {
+  provider?: string
+  userPrompt?: string
+  pacing?: string
+  targetDuration?: number
+  maxTokens?: number
+  temperature?: number
+  timeoutSeconds?: number
+  voiceMode?: string
+}
+
 export interface CreateVideoOptions {
   novelId: number
   chapterId?: number
@@ -203,7 +214,8 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async generateStoryboard(videoId: number, provider?: string, userPrompt?: string, pacing?: string, targetDuration?: number, maxTokens?: number, temperature?: number, timeoutSeconds?: number, voiceMode?: string) {
+    async generateStoryboard(videoId: number, opts: GenerateStoryboardOptions = {}) {
+      const { provider, userPrompt, pacing, targetDuration, maxTokens, temperature, timeoutSeconds, voiceMode } = opts
       this.generating = true
       this.storyboardTaskIsNew = true
       this.error = null

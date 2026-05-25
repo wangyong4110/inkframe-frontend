@@ -1,4 +1,7 @@
 import { defineStore } from 'pinia'
+import { useVideoStore } from '~/stores/video'
+import { useNovelStore } from '~/stores/novel'
+import { useTaskStore } from '~/stores/task'
 
 interface AuthUser {
   id: number
@@ -98,6 +101,16 @@ export const useAuthStore = defineStore('auth', {
     },
 
     logout() {
+      // Reset other stores first to clear tenant-scoped data
+      const videoStore = useVideoStore()
+      const novelStore = useNovelStore()
+      const taskStore = useTaskStore()
+
+      videoStore.$reset()
+      novelStore.$reset()
+      taskStore.$reset()
+
+      // Then clear auth state
       this.token = null
       this.expiresAt = null
       this.user = null
@@ -110,6 +123,10 @@ export const useAuthStore = defineStore('auth', {
     },
 
     mockLogin() {
+      if (!import.meta.dev) {
+        console.warn('mockLogin is only available in development')
+        return
+      }
       // 仅用于开发调试，绕过后端直接设置假用户状态
       const fakeExp = Math.floor(Date.now() / 1000) + 86400 * 7 // 7天
       this.token = 'dev-mock-token'

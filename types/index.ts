@@ -384,13 +384,32 @@ export interface ShotSceneConfig {
 
 // Async Task types
 export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-export type AsyncTaskType = 'storyboard_gen' | 'chapter_gen' | 'voice_gen' | 'image_gen' | 'three_view'
+export type AsyncTaskType =
+  | 'storyboard_gen'
+  | 'chapter_gen'
+  | 'voice_gen'
+  | 'image_gen'
+  | 'three_view'
+  | 'face_closeup'
+  | 'char_gen'
+  | 'item_extract'
+  | 'plot_extract'
+  | 'asset_gen'
+  | 'scene_anchor_extract'
+  | 'chapter_summary_batch'
+  | 'sfx_gen'
+  | 'storyboard_review'
+  | 'storyboard_optimize'
+  | 'import'
+  | 'novel_analysis'
+  | 'rewrite_analysis'
+  | 'rewrite_chapters'
 
 export interface AsyncTask {
   id: number
   task_id: string
   tenant_id: number
-  type: AsyncTaskType | string
+  type: AsyncTaskType
   status: AsyncTaskStatus
   title: string
   entity_type: string
@@ -589,7 +608,7 @@ export interface EffectiveItem extends Item {
 }
 
 // Scene anchor types (mirrors useSceneAnchorApi.ts)
-export type SceneAnchorType = 'interior' | 'exterior' | 'imaginary' | string
+export type SceneAnchorType = 'interior' | 'exterior' | 'imaginary'
 
 export interface SceneAnchor {
   id: number

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: false })
+definePageMeta({ layout: false, auth: false })
 
 const route = useRoute()
 const authStore = useAuthStore()

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+useHead({ title: '我的小说 - InkFrame' })
+
 const novelStore = useNovelStore()
 
 const filters = ref({

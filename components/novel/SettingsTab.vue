@@ -73,6 +73,22 @@ const videoTypes = [
   },
 ]
 
+const ASPECT_RATIOS = [
+  { value: '21:9', label: '21:9', iconW: 28, iconH: 12 },
+  { value: '16:9', label: '16:9', iconW: 28, iconH: 16 },
+  { value: '4:3',  label: '4:3',  iconW: 24, iconH: 18 },
+  { value: '1:1',  label: '1:1',  iconW: 20, iconH: 20 },
+  { value: '3:4',  label: '3:4',  iconW: 15, iconH: 20 },
+  { value: '9:16', label: '9:16', iconW: 11, iconH: 20 },
+]
+
+const aspectRatioDropdownOpen = ref(false)
+const aspectRatioDropdownRef = ref<HTMLElement | null>(null)
+onClickOutside(aspectRatioDropdownRef, () => { aspectRatioDropdownOpen.value = false })
+const selectedAspectRatio = computed(() =>
+  ASPECT_RATIOS.find(r => r.value === (novel.value?.video_aspect_ratio ?? '16:9')) ?? ASPECT_RATIOS[1]
+)
+
 const NARRATION_FALLBACK_VOICES = [
   { id: 'nova',    label: 'Nova — 女声·活泼' },
   { id: 'shimmer', label: 'Shimmer — 女声·温柔' },
@@ -486,13 +502,55 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">默认宽高比</label>
-          <select :value="novel?.video_aspect_ratio ?? '16:9'" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { video_aspect_ratio: (e.target as HTMLSelectElement).value })">
-            <option value="16:9">16:9（宽屏）</option>
-            <option value="9:16">9:16（竖屏）</option>
-            <option value="1:1">1:1（方形）</option>
-            <option value="4:3">4:3（传统）</option>
-          </select>
+          <div ref="aspectRatioDropdownRef" class="relative">
+            <button
+              type="button"
+              class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-sm"
+              @click="aspectRatioDropdownOpen = !aspectRatioDropdownOpen"
+            >
+              <svg width="26" height="18" viewBox="0 0 32 24" fill="none" class="flex-shrink-0 text-primary-500">
+                <rect
+                  :x="(32 - selectedAspectRatio.iconW) / 2"
+                  :y="(24 - selectedAspectRatio.iconH) / 2"
+                  :width="selectedAspectRatio.iconW"
+                  :height="selectedAspectRatio.iconH"
+                  rx="1.5"
+                  fill="currentColor"
+                />
+              </svg>
+              <span class="flex-1 text-left font-medium">{{ selectedAspectRatio.label }}</span>
+              <svg class="w-4 h-4 text-gray-400 transition-transform" :class="aspectRatioDropdownOpen ? 'rotate-180' : ''" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+            <div
+              v-show="aspectRatioDropdownOpen"
+              class="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
+            >
+              <button
+                v-for="r in ASPECT_RATIOS"
+                :key="r.value"
+                type="button"
+                class="w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors"
+                :class="(novel?.video_aspect_ratio ?? '16:9') === r.value
+                  ? 'bg-primary-50 dark:bg-primary-900/40 text-primary-600 dark:text-primary-300'
+                  : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                @click="novelStore.updateNovel(novelId, { video_aspect_ratio: r.value }); aspectRatioDropdownOpen = false"
+              >
+                <svg width="26" height="18" viewBox="0 0 32 24" fill="none" class="flex-shrink-0">
+                  <rect
+                    :x="(32 - r.iconW) / 2"
+                    :y="(24 - r.iconH) / 2"
+                    :width="r.iconW"
+                    :height="r.iconH"
+                    rx="1.5"
+                    fill="currentColor"
+                  />
+                </svg>
+                <span class="font-medium">{{ r.label }}</span>
+              </button>
+            </div>
+          </div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-1.5">

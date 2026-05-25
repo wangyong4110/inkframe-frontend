@@ -34,7 +34,7 @@ export const useVideoApi = () => {
     })
 
   const generateShot = (videoId: number, shotId: number, provider?: string) =>
-    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/generate`, {
       method: 'POST',
       body: JSON.stringify(provider ? { provider } : {}),
     })
@@ -103,8 +103,8 @@ export const useVideoApi = () => {
     if (params.q) qs.set('q', params.q)
     if (params.tags) qs.set('tags', params.tags)
     if (params.speed) qs.set('speed', params.speed)
-    if (params.bpm_min) qs.set('bpm_min', String(params.bpm_min))
-    if (params.bpm_max) qs.set('bpm_max', String(params.bpm_max))
+    if (params.bpm_min !== undefined) qs.set('bpm_min', String(params.bpm_min))
+    if (params.bpm_max !== undefined) qs.set('bpm_max', String(params.bpm_max))
     if (params.limit) qs.set('limit', String(params.limit))
     return request<ApiResponse<JamendoTrack[]>>(`/videos/${videoId}/bgm/search?${qs}`)
   }
@@ -243,6 +243,12 @@ export const useVideoApi = () => {
   const deleteShot = (videoId: number, shotId: number) =>
     request<void>(`/videos/${videoId}/shots/${shotId}`, { method: 'DELETE' })
 
+  const setShotCharacters = (videoId: number, shotId: number, characterIds: number[]) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/characters`, {
+      method: 'PUT',
+      body: JSON.stringify({ character_ids: characterIds }),
+    })
+
   const listVoiceSegments = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
 
@@ -334,6 +340,7 @@ export const useVideoApi = () => {
     insertShot,
     copyShot,
     deleteShot,
+    setShotCharacters,
     listVoiceSegments,
     appendVoiceSegment,
     insertVoiceSegment,

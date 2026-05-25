@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier, StoryboardReview, ShotReviewFeedback, ReviewRecord } from '~/types'
+import type { StoryboardShot, VideoQualityTier } from '~/types'
 import { SHOT_STATUS_LABELS, SHOT_STATUS_COLORS, QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
 import { getAuthToken } from '~/utils/auth'
@@ -13,6 +13,7 @@ const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
 const { confirm } = useConfirm()
+const videoApi = useVideoApi()
 
 const video = computed(() => videoStore.currentVideo)
 const shots = computed(() => videoStore.storyboard)
@@ -40,6 +41,13 @@ const characters = computed(() => characterStore.characters)
 const characterById = computed(() => {
   const map = new Map<number, (typeof characters.value)[0]>()
   for (const c of characters.value) map.set(c.id, c)
+  return map
+})
+// Pre-computed map for O(1) anchor lookups by id in the template.
+// Replaces repeated anchors.find(a => a.id === ...) calls in the production shot cards.
+const anchorById = computed(() => {
+  const map = new Map<number, (typeof anchors.value)[0]>()
+  for (const a of anchors.value) map.set(a.id, a)
   return map
 })
 // Pre-computed map for O(1) unassigned-character lookups per shot.
@@ -140,119 +148,9 @@ const CAMERA_ANGLE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_ANG
 const CAMERA_TYPE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_TYPE_OPTIONS.map(o => [o.value, o.label]))
 const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_OPTIONS.map(o => [o.value, o.label]))
 
-// ── Review ──
-type DiffItem = {
-  shot_no: number
-  orig_narration: string; suggested_narration: string; has_narration_diff: boolean
-  orig_description: string; suggested_description: string; has_description_diff: boolean
-  issues: string[]; severity: 'info' | 'warning' | 'error'
-  selected: boolean
-  record_id?: number  // 关联的审查记录 ID，用于更新回滚快照
-}
+// ── Review panel ref ──
+const reviewPanelRef = ref<{ startReview: () => void } | null>(null)
 const showReviewPanel = ref(false)
-const reviewPanelTab = ref<'current' | 'history'>('current')
-const reviewing = ref(false)
-const reviewResult = ref<StoryboardReview | null>(null)
-const reviewError = ref('')
-// Diff modal (P0: preview before apply)
-const showDiffModal = ref(false)
-const diffItems = ref<DiffItem[]>([])
-const applyingDiffs = ref(false)
-const applyResult = ref<{ count: number } | null>(null)
-
-// ── Review history ──
-const reviewHistory = ref<ReviewRecord[]>([])
-const loadingHistory = ref(false)
-const rollingBackId = ref<number | null>(null)
-
-async function loadReviewHistory() {
-  loadingHistory.value = true
-  try {
-    const api = useVideoApi()
-    const res = await api.listReviewRecords(props.videoId)
-    reviewHistory.value = (res.data ?? []) as ReviewRecord[]
-  } catch (e: any) {
-    toast.error('加载审查历史失败：' + (e.message || ''))
-  } finally {
-    loadingHistory.value = false
-  }
-}
-
-async function handleRollback(record: ReviewRecord) {
-  if (!confirm(`确认将脚本回滚到本次审查（${record.created_at}）应用前的状态？此操作不可撤销。`)) return
-  rollingBackId.value = record.id
-  try {
-    const api = useVideoApi()
-    const res = await api.rollbackReview(props.videoId, record.id)
-    const n = res.data?.restored_shots ?? 0
-    toast.success(`已回滚 ${n} 个镜头`)
-    await loadReviewHistory()
-    await videoStore.fetchStoryboard(props.videoId)
-  } catch (e: any) {
-    toast.error(e.message || '回滚失败，请稍后重试')
-  } finally {
-    rollingBackId.value = null
-  }
-}
-
-function openHistoryDiffModal(record: ReviewRecord) {
-  if (!record.review) return
-  // 构建 diff items from history record's review data (same logic as current review)
-  const shotMap = new Map(shots.value.map(s => [s.shot_no, s]))
-  const items: DiffItem[] = []
-  for (const fb of (record.review.shot_feedback ?? [])) {
-    const shot = shotMap.get(fb.shot_no)
-    const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
-    const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
-    if (!hasNarr && !hasDesc) continue
-    items.push({
-      shot_no: fb.shot_no,
-      orig_narration: shot?.narration ?? '',
-      suggested_narration: fb.suggested_narration ?? '',
-      has_narration_diff: hasNarr,
-      orig_description: shot?.description ?? '',
-      suggested_description: fb.suggested_description ?? '',
-      has_description_diff: hasDesc,
-      issues: fb.issues,
-      severity: fb.severity,
-      selected: true,
-      record_id: record.id,
-    })
-  }
-  if (items.length === 0) { toast.info('该审查记录无可应用的建议'); return }
-  diffItems.value = items
-  showDiffModal.value = true
-}
-
-// P1: Shot statistics (computed from storyboard, no AI)
-const shotSizeStats = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const s of shots.value) {
-    const k = s.shot_size || 'unknown'
-    counts[k] = (counts[k] ?? 0) + 1
-  }
-  const total = shots.value.length || 1
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([key, count]) => ({ key, label: SHOT_SIZE_LABEL[key] || key, count, pct: Math.round(count / total * 100) }))
-})
-const durationBuckets = computed(() => {
-  const bs = [
-    { label: '<3s', count: 0 },
-    { label: '3–6s', count: 0 },
-    { label: '6–10s', count: 0 },
-    { label: '>10s', count: 0 },
-  ]
-  for (const s of shots.value) {
-    const d = s.duration ?? 0
-    if (d < 3) bs[0].count++
-    else if (d < 6) bs[1].count++
-    else if (d < 10) bs[2].count++
-    else bs[3].count++
-  }
-  const total = shots.value.length || 1
-  return bs.map(b => ({ ...b, pct: Math.round(b.count / total * 100) }))
-})
 
 // ── Voice text inline edit (shared with voice tab context) ──
 const editingVoiceTextId = ref<number | null>(null)
@@ -361,6 +259,19 @@ async function handleUnconfirmScript() {
   }
 }
 
+const modeUpdating = ref(false)
+async function handleToggleMode(newMode: string) {
+  modeUpdating.value = true
+  try {
+    await videoStore.updateVideo(props.videoId, { mode: newMode })
+    await videoStore.fetchVideo(props.videoId)
+  } catch (e: any) {
+    toast.error(e.message || '切换模式失败')
+  } finally {
+    modeUpdating.value = false
+  }
+}
+
 const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
 
 async function handleGenerateStoryboard(userPrompt?: string) {
@@ -381,107 +292,15 @@ async function handleGenerateStoryboard(userPrompt?: string) {
   })
 }
 
-async function handleReviewStoryboard() {
-  const prevScore = reviewResult.value?.overall_score ?? 0
-  reviewing.value = true
-  reviewError.value = ''
-  reviewResult.value = null
-  applyResult.value = null
-  reviewPanelTab.value = 'current'
+function handleReviewStoryboard() {
   showReviewPanel.value = true
-  loadReviewHistory()
-  try {
-    await videoStore.reviewStoryboard(props.videoId, props.llmProvider || undefined, prevScore || undefined, (task) => {
-      reviewing.value = false
-      if (task.status === 'completed') {
-        reviewResult.value = task.data as StoryboardReview
-        loadReviewHistory()
-      } else {
-        reviewError.value = (task as any).error || '审查失败，请稍后重试'
-      }
-    })
-  } catch (e: any) {
-    reviewError.value = e.message || '审查失败，请稍后重试'
-    reviewing.value = false
-  }
-}
-
-function openDiffModal() {
-  if (!reviewResult.value) return
-  // Build shotNo → original text map from current storyboard
-  const shotMap = new Map(shots.value.map(s => [s.shot_no, s]))
-  const items: DiffItem[] = []
-  for (const fb of reviewResult.value.shot_feedback) {
-    const shot = shotMap.get(fb.shot_no)
-    const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
-    const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
-    if (!hasNarr && !hasDesc) continue
-    items.push({
-      shot_no: fb.shot_no,
-      orig_narration: shot?.narration ?? '',
-      suggested_narration: fb.suggested_narration ?? '',
-      has_narration_diff: hasNarr,
-      orig_description: shot?.description ?? '',
-      suggested_description: fb.suggested_description ?? '',
-      has_description_diff: hasDesc,
-      issues: fb.issues,
-      severity: fb.severity,
-      selected: true,
-      record_id: reviewResult.value.record_id,
-    })
-  }
-  if (items.length === 0) {
-    toast.info('审查报告中没有可应用的文本修改建议')
-    return
-  }
-  diffItems.value = items
-  showDiffModal.value = true
-}
-
-async function handleApplyDiffs() {
-  const selected = diffItems.value.filter(d => d.selected)
-  if (selected.length === 0) {
-    toast.info('请先选择要应用的修改')
-    return
-  }
-  applyingDiffs.value = true
-  try {
-    const api = useVideoApi()
-    const recordId = selected[0]?.record_id
-    const res = await api.applyStoryboardDiffs(props.videoId, selected.map(d => ({
-      shot_no: d.shot_no,
-      ...(d.has_narration_diff ? { narration: d.suggested_narration } : {}),
-      ...(d.has_description_diff ? { description: d.suggested_description } : {}),
-    })), recordId)
-    const count = res.data?.updated_shots ?? 0
-    applyResult.value = { count }
-    toast.success(`已应用 ${count} 处修改`)
-    showDiffModal.value = false
-    await videoStore.fetchStoryboard(props.videoId)
-    if (recordId) loadReviewHistory()
-  } catch (e: any) {
-    toast.error(e.message || '应用失败，请稍后重试')
-  } finally {
-    applyingDiffs.value = false
-  }
-}
-
-function scoreColor(score: number) {
-  if (score >= 8) return 'text-green-600 dark:text-green-400'
-  if (score >= 6) return 'text-yellow-600 dark:text-yellow-400'
-  return 'text-red-600 dark:text-red-400'
-}
-
-function severityClass(severity: string) {
-  if (severity === 'error') return 'border-red-400 bg-red-50 dark:bg-red-900/20'
-  if (severity === 'warning') return 'border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
-  return 'border-blue-300 bg-blue-50 dark:bg-blue-900/20'
+  reviewPanelRef.value?.startReview()
 }
 
 async function handleGenerateShot(shot: StoryboardShot) {
   try {
     const res = await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
-    const taskId = (res as any)?.task_id as string | undefined
+    const taskId = res?.task_id
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
     toast.info(`镜头 #${shot.shot_no} 素材生成中…`)
     const taskStore = useTaskStore()
@@ -537,9 +356,8 @@ async function onShotImageFileSelected(e: Event) {
   const idx = videoStore.storyboard.findIndex(s => s.id === shotId)
   if (idx >= 0) videoStore.storyboard[idx] = { ...videoStore.storyboard[idx], image_url: localUrl }
   try {
-    const api = useVideoApi()
-    const res = await api.uploadShotImage(props.videoId, shotId, file)
-    const ossUrl = (res as any)?.data?.image_url || localUrl
+    const res = await videoApi.uploadShotImage(props.videoId, shotId, file)
+    const ossUrl = res?.data?.image_url || localUrl
     if (idx >= 0) videoStore.storyboard[idx] = { ...videoStore.storyboard[idx], image_url: ossUrl, status: 'completed' }
     toast.success('图片上传成功')
   } catch (e: any) {
@@ -552,8 +370,7 @@ async function onShotImageFileSelected(e: Event) {
 }
 
 async function refineShotImage(shot: StoryboardShot, suggestion: string): Promise<string> {
-  const api = useVideoApi()
-  const res = await api.refineShotImage(props.videoId, shot.id, suggestion)
+  const res = await videoApi.refineShotImage(props.videoId, shot.id, suggestion)
   return res.data?.image_url || ''
 }
 
@@ -630,11 +447,7 @@ async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null
 
 async function handleSetShotCharacters(shot: StoryboardShot, characterIds: number[]) {
   try {
-    const { request } = useApi()
-    await request(`/videos/${props.videoId}/shots/${shot.id}/characters`, {
-      method: 'PUT',
-      body: JSON.stringify({ character_ids: characterIds }),
-    })
+    await videoApi.setShotCharacters(props.videoId, shot.id, characterIds)
     scheduleRefresh()
   } catch (e: any) {
     toast.error('角色绑定失败：' + (e.message || ''))
@@ -655,8 +468,7 @@ function removeCharFromShot(shot: StoryboardShot, charId: number) {
 async function handleInsertShot(afterShotNo: number) {
   insertingShotLoading.value = true
   try {
-    const api = useVideoApi()
-    await api.insertShot(props.videoId, afterShotNo, insertShotForm.narration, insertShotForm.description, insertShotForm.duration)
+    await videoApi.insertShot(props.videoId, afterShotNo, insertShotForm.narration, insertShotForm.description, insertShotForm.duration)
     insertingShotAfter.value = null
     insertShotForm.narration = ''
     insertShotForm.description = ''
@@ -672,8 +484,7 @@ async function handleInsertShot(afterShotNo: number) {
 
 async function handleCopyShot(shot: StoryboardShot) {
   try {
-    const api = useVideoApi()
-    await api.copyShot(props.videoId, shot.id, -1)
+    await videoApi.copyShot(props.videoId, shot.id, -1)
     scheduleRefresh()
     toast.success('镜头已复制')
   } catch (e: any) {
@@ -684,8 +495,7 @@ async function handleCopyShot(shot: StoryboardShot) {
 async function handleDeleteShot(shot: StoryboardShot) {
   if (!confirm(`确认删除镜头 #${shot.shot_no}？此操作不可撤销。`)) return
   try {
-    const api = useVideoApi()
-    await api.deleteShot(props.videoId, shot.id)
+    await videoApi.deleteShot(props.videoId, shot.id)
     scheduleRefresh()
     toast.success('镜头已删除')
   } catch (e: any) {
@@ -730,11 +540,17 @@ async function exportSubtitles() {
   }
 }
 
+onBeforeUnmount(() => {
+  if (_refreshTimer) {
+    clearTimeout(_refreshTimer)
+    _refreshTimer = null
+  }
+})
+
 // Expose for parent
 defineExpose({ loadVideoProviders: async () => {
-  const { getVideoProviders } = useVideoApi()
-  const res = await getVideoProviders()
-  videoProviders.value = (res as any)?.data ?? []
+  const res = await videoApi.getVideoProviders()
+  videoProviders.value = res?.data ?? []
 } })
 </script>
 
@@ -763,7 +579,8 @@ defineExpose({ loadVideoProviders: async () => {
           ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700'
           : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-700'"
         :title="video?.mode === 'slideshow' ? '点击切换为 AI 视频模式' : '点击切换为图片解说模式'"
-        @click="videoStore.updateVideo(props.videoId, { mode: video?.mode === 'slideshow' ? 'video' : 'slideshow' }).then(() => videoStore.fetchVideo(props.videoId))"
+        :disabled="modeUpdating"
+        @click="handleToggleMode(video?.mode === 'slideshow' ? 'video' : 'slideshow')"
       >
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path v-if="video?.mode === 'slideshow'" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1322,24 +1139,24 @@ defineExpose({ loadVideoProviders: async () => {
                   <div
                     class="h-full rounded-full transition-all"
                     :class="{
-                      'bg-green-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.85,
-                      'bg-amber-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.70 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.85,
-                      'bg-red-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.70,
-                      'bg-gray-300': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) === 0,
+                      'bg-green-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                      'bg-amber-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                      'bg-red-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                      'bg-gray-300': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
                     }"
-                    :style="{ width: `${Math.min(100, ((anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) * 100))}%` }"
+                    :style="{ width: `${Math.min(100, ((anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) * 100))}%` }"
                   />
                 </div>
                 <span class="text-xs flex-shrink-0"
                   :class="{
-                    'text-green-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.85,
-                    'text-amber-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) >= 0.70 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.85,
-                    'text-red-500': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0 && (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) < 0.70,
-                    'text-gray-400': (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) === 0,
+                    'text-green-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                    'text-amber-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                    'text-red-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                    'text-gray-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
                   }"
                 >
-                  {{ (anchors.find(a => a.id === shot.scene_anchor_id)?.avg_cons_score ?? 0) > 0
-                    ? (anchors.find(a => a.id === shot.scene_anchor_id)!.avg_cons_score).toFixed(2)
+                  {{ (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0
+                    ? (anchorById.get(shot.scene_anchor_id!)!.avg_cons_score).toFixed(2)
                     : '待评分'
                   }}
                 </span>
@@ -1373,346 +1190,15 @@ defineExpose({ loadVideoProviders: async () => {
       </template>
     </div>
 
-    <!-- AI Review Panel -->
-    <Teleport to="body">
-      <Transition name="slide-right">
-        <div v-if="showReviewPanel" class="fixed inset-0 z-50 flex justify-end">
-          <div class="absolute inset-0 bg-black/30" @click="showReviewPanel = false" />
-          <div class="relative w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-primary-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <!-- Tab switcher -->
-                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                  <button
-                    class="px-3 py-1 text-xs font-medium transition-colors"
-                    :class="reviewPanelTab === 'current'
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="reviewPanelTab = 'current'"
-                  >当前审查</button>
-                  <button
-                    class="px-3 py-1 text-xs font-medium transition-colors relative"
-                    :class="reviewPanelTab === 'history'
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="reviewPanelTab = 'history'; loadReviewHistory()"
-                  >
-                    历史记录
-                    <span v-if="reviewHistory.length > 0" class="ml-1 text-xs opacity-75">({{ reviewHistory.length }})</span>
-                  </button>
-                </div>
-              </div>
-              <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showReviewPanel = false">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <!-- History tab content -->
-            <div v-if="reviewPanelTab === 'history'" class="flex-1 overflow-y-auto px-5 py-4">
-              <div v-if="loadingHistory" class="flex items-center justify-center py-12 text-gray-400 gap-2 text-sm">
-                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                加载中…
-              </div>
-              <div v-else-if="reviewHistory.length === 0" class="py-12 text-center text-sm text-gray-400 dark:text-gray-600">
-                暂无审查历史
-              </div>
-              <div v-else class="space-y-3">
-                <div
-                  v-for="rec in reviewHistory"
-                  :key="rec.id"
-                  class="rounded-xl border border-gray-200 dark:border-gray-700 p-4"
-                >
-                  <div class="flex items-center gap-2 mb-2">
-                    <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ rec.overall_score.toFixed(1) }}</span>
-                    <span class="text-xs text-gray-400">/ 10</span>
-                    <span
-                      class="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
-                      :class="{
-                        'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400': rec.status === 'pending',
-                        'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400': rec.status === 'applied',
-                        'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400': rec.status === 'rolled_back',
-                      }"
-                    >{{ rec.status === 'pending' ? '未应用' : rec.status === 'applied' ? '已应用' : '已回滚' }}</span>
-                  </div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">{{ rec.created_at }}</div>
-                  <div v-if="rec.review?.summary" class="text-xs text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">{{ rec.review.summary }}</div>
-                  <div class="flex items-center gap-2">
-                    <button
-                      v-if="rec.status === 'pending' && rec.review?.shot_feedback?.length"
-                      class="text-xs px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium"
-                      @click="openHistoryDiffModal(rec)"
-                    >预览并应用</button>
-                    <button
-                      v-if="rec.status === 'applied'"
-                      class="text-xs px-2.5 py-1 rounded-lg border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 font-medium flex items-center gap-1"
-                      :disabled="rollingBackId === rec.id"
-                      @click="handleRollback(rec)"
-                    >
-                      <svg v-if="rollingBackId === rec.id" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                      </svg>
-                      {{ rollingBackId === rec.id ? '回滚中…' : '回滚' }}
-                    </button>
-                    <span v-if="rec.status === 'rolled_back'" class="text-xs text-gray-400">已回滚，可重新审查</span>
-                    <span v-if="rec.applied_at" class="text-xs text-gray-400 ml-auto">应用于 {{ rec.applied_at }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Current review tab content -->
-            <div v-else class="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-              <!-- P1: Shot statistics (always visible when shots exist) -->
-              <div v-if="shots.length > 0" class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">镜头统计分析</h4>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">景别分布</div>
-                  <div class="space-y-1">
-                    <div v-for="item in shotSizeStats" :key="item.key" class="flex items-center gap-2 text-xs">
-                      <span class="text-gray-600 dark:text-gray-400 w-12 shrink-0 text-right">{{ item.label }}</span>
-                      <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
-                        <div class="h-full rounded-full bg-primary-400 transition-all" :style="`width:${item.pct}%`" />
-                      </div>
-                      <span class="text-gray-500 dark:text-gray-400 w-8 text-right">{{ item.pct }}%</span>
-                      <span class="text-gray-400 dark:text-gray-600 w-5 text-right">({{ item.count }})</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">时长分布（秒）</div>
-                  <div class="grid grid-cols-4 gap-2">
-                    <div v-for="b in durationBuckets" :key="b.label" class="flex flex-col items-center gap-1">
-                      <div class="w-full bg-gray-100 dark:bg-gray-800 rounded h-8 relative overflow-hidden">
-                        <div class="absolute bottom-0 left-0 right-0 bg-blue-400 dark:bg-blue-500 transition-all rounded" :style="`height:${Math.max(b.pct, b.count > 0 ? 8 : 0)}%`" />
-                      </div>
-                      <span class="text-xs text-gray-500 dark:text-gray-400">{{ b.label }}</span>
-                      <span class="text-xs font-medium text-gray-600 dark:text-gray-300">{{ b.count }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="reviewing" class="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
-                <svg class="w-8 h-8 animate-spin text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span class="text-sm">AI 正在审查分镜脚本，请稍候…</span>
-              </div>
-              <div v-else-if="reviewError" class="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
-                {{ reviewError }}
-              </div>
-              <template v-else-if="reviewResult">
-                <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                  <div class="flex items-end gap-3 mb-4">
-                    <div class="text-4xl font-bold" :class="scoreColor(reviewResult.overall_score)">
-                      {{ reviewResult.overall_score.toFixed(1) }}
-                    </div>
-                    <div class="text-sm text-gray-500 pb-1">/ 10</div>
-                    <div class="flex-1" />
-                    <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="reviewing" @click="handleReviewStoryboard">重新审查</button>
-                    <button
-                      class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-violet-600 hover:bg-violet-700 text-white"
-                      @click="openDiffModal"
-                    >
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      预览改动方案
-                    </button>
-                  </div>
-                  <div v-if="applyResult" class="mt-2 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
-                    已应用 {{ applyResult.count }} 处修改
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 text-xs">
-                    <div v-for="item in [
-                      { label: '叙事连贯性', score: reviewResult.narrative_score },
-                      { label: '视觉多样性', score: reviewResult.visual_score },
-                      { label: '节奏控制',   score: reviewResult.pacing_score },
-                      { label: '旁白质量',   score: reviewResult.narration_score },
-                    ]" :key="item.label" class="flex items-center gap-2">
-                      <span class="text-gray-500 w-16 shrink-0">{{ item.label }}</span>
-                      <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                        <div class="h-full rounded-full transition-all"
-                          :class="item.score >= 8 ? 'bg-green-500' : item.score >= 6 ? 'bg-yellow-500' : 'bg-red-500'"
-                          :style="`width:${item.score * 10}%`" />
-                      </div>
-                      <span class="font-medium" :class="scoreColor(item.score)">{{ item.score.toFixed(1) }}</span>
-                    </div>
-                  </div>
-                  <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±1.5 属正常范围 · 每次审查独立采样</div>
-                </div>
-                <div class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ reviewResult.summary }}</div>
-                <div v-if="reviewResult.strengths?.length">
-                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">亮点</h4>
-                  <ul class="space-y-1">
-                    <li v-for="s in reviewResult.strengths" :key="s" class="flex items-start gap-2 text-sm text-green-700 dark:text-green-400">
-                      <svg class="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                      </svg>
-                      {{ s }}
-                    </li>
-                  </ul>
-                </div>
-                <div v-if="reviewResult.weaknesses?.length">
-                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">主要问题</h4>
-                  <ul class="space-y-1">
-                    <li v-for="w in reviewResult.weaknesses" :key="w" class="flex items-start gap-2 text-sm text-red-700 dark:text-red-400">
-                      <svg class="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                      </svg>
-                      {{ w }}
-                    </li>
-                  </ul>
-                </div>
-                <div v-if="reviewResult.global_suggestions?.length">
-                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">整体改进建议</h4>
-                  <ol class="space-y-1.5">
-                    <li v-for="(sg, i) in reviewResult.global_suggestions" :key="i" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <span class="shrink-0 w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 text-xs flex items-center justify-center font-medium">{{ i + 1 }}</span>
-                      {{ sg }}
-                    </li>
-                  </ol>
-                </div>
-                <div v-if="reviewResult.shot_feedback?.length">
-                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                    逐镜反馈 <span class="normal-case font-normal text-gray-400">（共 {{ reviewResult.shot_feedback.length }} 条）</span>
-                  </h4>
-                  <div class="space-y-2">
-                    <div
-                      v-for="fb in reviewResult.shot_feedback"
-                      :key="fb.shot_no"
-                      class="rounded-lg border-l-4 p-3 text-sm"
-                      :class="severityClass(fb.severity)"
-                    >
-                      <div class="font-medium text-gray-800 dark:text-gray-200 mb-1">镜 {{ fb.shot_no }}</div>
-                      <ul class="mb-1.5 space-y-0.5">
-                        <li v-for="issue in fb.issues" :key="issue" class="text-gray-600 dark:text-gray-400">· {{ issue }}</li>
-                      </ul>
-                      <div v-if="fb.suggestion" class="text-gray-500 dark:text-gray-500 text-xs italic">💡 {{ fb.suggestion }}</div>
-                      <div v-if="fb.suggested_narration" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-                        <div class="text-xs font-medium text-green-600 dark:text-green-400 mb-0.5">建议旁白改为</div>
-                        <div class="text-xs text-gray-700 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded p-1.5">{{ fb.suggested_narration }}</div>
-                      </div>
-                      <div v-if="fb.suggested_description" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-                        <div class="text-xs font-medium text-green-600 dark:text-green-400 mb-0.5">建议画面描述改为</div>
-                        <div class="text-xs text-gray-700 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded p-1.5 font-mono">{{ fb.suggested_description }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
-    <!-- Diff preview modal (P0) -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="showDiffModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div class="absolute inset-0 bg-black/50" @click="showDiffModal = false" />
-          <div class="relative w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            <!-- Header -->
-            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div class="flex items-center gap-2">
-                <svg class="w-5 h-5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <h3 class="font-semibold text-gray-900 dark:text-gray-100">预览改动方案</h3>
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.length }} 处建议，已选 {{ diffItems.filter(d => d.selected).length }} 处</span>
-              </div>
-              <div class="flex items-center gap-3">
-                <button
-                  class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
-                  @click="diffItems.forEach(d => d.selected = !diffItems.every(x => x.selected))"
-                >
-                  {{ diffItems.every(d => d.selected) ? '全不选' : '全选' }}
-                </button>
-                <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showDiffModal = false">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <!-- Diff list -->
-            <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-              <div
-                v-for="item in diffItems"
-                :key="item.shot_no"
-                class="rounded-xl border transition-colors"
-                :class="item.selected
-                  ? 'border-violet-300 dark:border-violet-700 bg-violet-50/50 dark:bg-violet-900/10'
-                  : 'border-gray-200 dark:border-gray-700'"
-              >
-                <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
-                  <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-violet-600 shrink-0" />
-                  <span class="font-medium text-sm text-gray-800 dark:text-gray-200">镜头 #{{ item.shot_no }}</span>
-                  <span
-                    class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
-                    :class="{
-                      'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.severity === 'error',
-                      'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400': item.severity === 'warning',
-                      'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': item.severity === 'info',
-                    }"
-                  >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
-                </label>
-                <div class="px-4 pb-3 space-y-3 text-xs">
-                  <div v-if="item.has_narration_diff" class="space-y-1">
-                    <div class="font-medium text-gray-600 dark:text-gray-400">旁白修改</div>
-                    <div class="grid grid-cols-2 gap-2">
-                      <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed">{{ item.orig_narration || '（空）' }}</div>
-                      <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed">{{ item.suggested_narration }}</div>
-                    </div>
-                  </div>
-                  <div v-if="item.has_description_diff" class="space-y-1">
-                    <div class="font-medium text-gray-600 dark:text-gray-400">画面描述修改</div>
-                    <div class="grid grid-cols-2 gap-2">
-                      <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 font-mono leading-relaxed">{{ item.orig_description || '（空）' }}</div>
-                      <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ item.suggested_description }}</div>
-                    </div>
-                  </div>
-                  <div v-if="item.issues.length" class="text-gray-500 dark:text-gray-500 pt-1">
-                    <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Footer -->
-            <div class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <span class="text-sm text-gray-500 dark:text-gray-400">
-                将修改 {{ diffItems.filter(d => d.selected).length }} 处内容，直接写入脚本
-              </span>
-              <div class="flex items-center gap-2">
-                <button class="btn-outline text-sm" @click="showDiffModal = false">取消</button>
-                <button
-                  class="btn-primary text-sm bg-violet-600 hover:bg-violet-700 border-violet-600"
-                  :disabled="applyingDiffs || diffItems.filter(d => d.selected).length === 0"
-                  @click="handleApplyDiffs"
-                >
-                  <svg v-if="applyingDiffs" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {{ applyingDiffs ? '应用中…' : `确认应用选中 (${diffItems.filter(d => d.selected).length} 处)` }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- AI Review Panel (extracted component) -->
+    <StoryboardReviewPanel
+      v-if="showReviewPanel"
+      ref="reviewPanelRef"
+      :video-id="props.videoId"
+      :llm-provider="props.llmProvider"
+      @close="showReviewPanel = false"
+    />
   </div>
 </template>
 

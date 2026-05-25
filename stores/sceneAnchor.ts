@@ -118,7 +118,6 @@ export const useSceneAnchorStore = defineStore('sceneAnchor', {
         if (idx !== -1) {
           this.anchors[idx].ref_image_url = imageUrl
           this.anchors[idx].ref_image_locked_at = new Date().toISOString()
-          if (shotId !== undefined) this.anchors[idx].ref_image_shot_id = shotId
         }
       } catch (e: any) {
         this.error = e.message || 'Failed to lock ref image'

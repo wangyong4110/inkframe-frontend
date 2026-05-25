@@ -10,6 +10,9 @@ const itemApi = useItemApi()
 const novelStore = useNovelStore()
 
 const itemId = parseInt(route.params.id as string)
+if (isNaN(itemId)) {
+  await navigateTo('/novel')
+}
 const novelId = parseInt(route.query.novelId as string)
 
 const activeTab = ref('profile')

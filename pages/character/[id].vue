@@ -12,6 +12,9 @@ const { getCharacterArc } = useCharacterArcApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
+if (isNaN(characterId)) {
+  await navigateTo('/novel')
+}
 
 const activeTab = ref('profile')
 const saving = ref(false)

@@ -6,6 +6,9 @@ const router = useRouter()
 const videoStore = useVideoStore()
 
 const videoId = parseInt(route.params.id as string)
+if (isNaN(videoId)) {
+  await navigateTo('/video')
+}
 
 const STATUS_COLORS = VIDEO_STATUS_COLORS
 const STATUS_LABELS = VIDEO_STATUS_LABELS
@@ -63,6 +66,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <VideoEditor :video-id="videoId" />
+    <VideoEditor :video-id="videoId" :standalone="true" />
   </div>
 </template>

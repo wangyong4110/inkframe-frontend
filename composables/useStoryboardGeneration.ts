@@ -26,17 +26,16 @@ export function useStoryboardGeneration() {
       if (!confirm('重新生成将清空当前脚本，是否继续？')) return
     }
     try {
-      await videoStore.generateStoryboard(
-        params.videoId,
-        params.provider,
-        params.userPrompt,
-        params.pacing !== 'normal' ? params.pacing : undefined,
-        params.targetDuration || undefined,
-        params.maxTokens || undefined,
-        params.temperature || undefined,
-        params.timeoutSeconds || undefined,
-        params.voiceMode !== 'both' ? params.voiceMode : undefined,
-      )
+      await videoStore.generateStoryboard(params.videoId, {
+        provider: params.provider,
+        userPrompt: params.userPrompt,
+        pacing: params.pacing !== 'normal' ? params.pacing : undefined,
+        targetDuration: params.targetDuration || undefined,
+        maxTokens: params.maxTokens || undefined,
+        temperature: params.temperature || undefined,
+        timeoutSeconds: params.timeoutSeconds || undefined,
+        voiceMode: params.voiceMode !== 'both' ? params.voiceMode : undefined,
+      })
       toast.success('脚本生成任务已提交，请稍候...')
     } catch (e: any) {
       toast.error('生成失败：' + (e.message || ''))

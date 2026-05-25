@@ -4,6 +4,8 @@ import type { Novel, Video } from '~/types'
 
 definePageMeta({ layout: false })
 
+useHead({ title: 'InkFrame - AI 小说转视频平台' })
+
 const authStore = useAuthStore()
 const { getNovels } = useNovelApi()
 const platformApi = usePlatformApi()

@@ -9,6 +9,9 @@ const toast = useToast()
 const api = useSceneAnchorApi()
 
 const anchorId = parseInt(route.params.id as string)
+if (isNaN(anchorId)) {
+  await navigateTo('/novel')
+}
 const novelId = parseInt(route.query.novelId as string)
 
 const activeTab = ref('basic')
