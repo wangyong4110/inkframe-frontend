@@ -318,6 +318,10 @@ function timelineTick() {
       timelineSyncMedia()
     } else {
       timelineStop()
+      // Auto-stop recording when playback reaches natural end
+      if (timelineRecording.value && timelineMediaRecorder.value?.state === 'recording') {
+        setTimeout(() => timelineMediaRecorder.value?.stop(), 800)
+      }
     }
   }
 }
@@ -445,7 +449,8 @@ async function timelineToggleRecording() {
     return
   }
   try {
-    if (!timelinePlaying.value) timelinePlay()
+    // Request screen sharing FIRST — before starting playback so the dialog doesn't
+    // cause us to miss the beginning of the recording.
     let tabStream: MediaStream
     try {
       tabStream = await (navigator.mediaDevices as any).getDisplayMedia({
@@ -457,12 +462,19 @@ async function timelineToggleRecording() {
       if ((err as DOMException).name === 'NotAllowedError') return
       throw err
     }
+    // Reset to the beginning and start playback only after screen sharing is confirmed.
+    timelineStop()
+    await nextTick()
+    timelinePlay()
+
     let audioCtx: AudioContext | null = null
     let mixedTrack: MediaStreamTrack | null = null
     const audioEls = [timelineVoiceRef.value, timelineSfxRef.value, timelineBgmRef.value]
       .filter((el): el is HTMLMediaElement => el != null)
     const capturable = audioEls.filter(el => typeof (el as any).captureStream === 'function')
-    if (capturable.length > 0) {
+    // Also pick up any system audio the user chose to share (e.g. "Share tab audio")
+    const tabAudioTracks = tabStream.getAudioTracks()
+    if (capturable.length > 0 || tabAudioTracks.length > 0) {
       try {
         audioCtx = new AudioContext()
         await audioCtx.resume()
@@ -473,7 +485,10 @@ async function timelineToggleRecording() {
             if (elStream.getAudioTracks().length > 0) {
               audioCtx.createMediaStreamSource(elStream).connect(dest)
             }
-          } catch { /* skip */ }
+          } catch { /* skip — cross-origin elements can't be captured */ }
+        }
+        for (const track of tabAudioTracks) {
+          try { audioCtx.createMediaStreamSource(new MediaStream([track])).connect(dest) } catch { /* skip */ }
         }
         mixedTrack = dest.stream.getAudioTracks()[0] ?? null
       } catch { /* ignore */ }

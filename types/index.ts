@@ -803,6 +803,9 @@ export interface ChapterRewriteTask {
   passed: boolean
   retry_count: number
   error_msg: string
+  quality_score: number
+  deai_applied: boolean
+  consistency_issues: string   // JSON array string, e.g. '["原著角色名残留：「xxx」"]'
   created_at: string
   updated_at: string
 }

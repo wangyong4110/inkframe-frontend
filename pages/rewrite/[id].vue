@@ -221,6 +221,7 @@
                   <th class="text-left text-xs text-gray-500 font-medium px-4 py-3">章节</th>
                   <th class="text-left text-xs text-gray-500 font-medium px-4 py-3">状态</th>
                   <th class="text-left text-xs text-gray-500 font-medium px-4 py-3">相似度</th>
+                  <th class="text-left text-xs text-gray-500 font-medium px-4 py-3">质量分</th>
                   <th class="text-left text-xs text-gray-500 font-medium px-4 py-3">操作</th>
                 </tr>
               </thead>
@@ -228,9 +229,12 @@
                 <tr v-for="task in chapterTasks" :key="task.id" class="border-b border-gray-800/50 hover:bg-gray-800/30">
                   <td class="px-4 py-3 text-sm text-white">第 {{ task.chapter_no }} 章</td>
                   <td class="px-4 py-3">
-                    <span :class="chapterStatusBadge(task.status)" class="text-xs px-2 py-0.5 rounded-full">
-                      {{ chapterStatusLabel(task.status) }}
-                    </span>
+                    <div class="flex items-center gap-1.5">
+                      <span :class="chapterStatusBadge(task.status)" class="text-xs px-2 py-0.5 rounded-full">
+                        {{ chapterStatusLabel(task.status) }}
+                      </span>
+                      <span v-if="task.deai_applied" class="text-xs px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-medium" title="已去AI味润色">去AI</span>
+                    </div>
                   </td>
                   <td class="px-4 py-3">
                     <div v-if="task.status === 'completed'" class="flex items-center gap-2">
@@ -241,6 +245,14 @@
                       <span :class="task.similarity_score < 0.3 ? 'text-emerald-400' : task.similarity_score < 0.5 ? 'text-yellow-400' : 'text-red-400'"
                         class="text-xs">{{ Math.round(task.similarity_score * 100) }}%</span>
                     </div>
+                    <span v-else class="text-xs text-gray-500">—</span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span v-if="task.status === 'completed'"
+                      :class="task.quality_score >= 75 ? 'bg-emerald-500/20 text-emerald-300' : task.quality_score >= 50 ? 'bg-yellow-500/20 text-yellow-300' : 'bg-red-500/20 text-red-300'"
+                      class="text-xs px-2 py-0.5 rounded-full font-medium">
+                      {{ task.quality_score.toFixed(1) }}
+                    </span>
                     <span v-else class="text-xs text-gray-500">—</span>
                   </td>
                   <td class="px-4 py-3">
@@ -264,19 +276,45 @@
           <h3 class="font-semibold text-white">第 {{ comparisonTask.chapter_no }} 章 对比</h3>
           <button @click="comparisonTask = null" class="text-gray-400 hover:text-white text-xl transition-colors">&times;</button>
         </div>
+        <!-- Metadata bar -->
+        <div class="px-6 py-3 border-b border-gray-800 flex flex-wrap gap-4 text-xs">
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500">词法相似度</span>
+            <span :class="comparisonTask.lexical_sim < 0.3 ? 'text-emerald-400' : comparisonTask.lexical_sim < 0.5 ? 'text-yellow-400' : 'text-red-400'" class="font-medium">
+              {{ Math.round(comparisonTask.lexical_sim * 100) }}%
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500">结构相似度</span>
+            <span :class="comparisonTask.structural_sim < 0.3 ? 'text-emerald-400' : comparisonTask.structural_sim < 0.5 ? 'text-yellow-400' : 'text-red-400'" class="font-medium">
+              {{ Math.round(comparisonTask.structural_sim * 100) }}%
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500">质量分</span>
+            <span :class="comparisonTask.quality_score >= 75 ? 'text-emerald-400' : comparisonTask.quality_score >= 50 ? 'text-yellow-400' : 'text-red-400'" class="font-medium">
+              {{ comparisonTask.quality_score.toFixed(1) }}
+            </span>
+          </div>
+          <span v-if="comparisonTask.passed" class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">&#10003; 通过</span>
+          <span v-if="comparisonTask.deai_applied" class="text-violet-300 bg-violet-500/20 px-2 py-0.5 rounded-full">去AI润色</span>
+        </div>
+        <!-- Consistency issues warning -->
+        <div v-if="comparisonConsistencyIssues.length > 0" class="px-6 py-3 border-b border-gray-800 bg-yellow-500/5">
+          <div class="flex items-start gap-2">
+            <span class="text-yellow-400 text-xs font-semibold mt-0.5">⚠ 一致性问题</span>
+            <ul class="flex flex-col gap-0.5">
+              <li v-for="issue in comparisonConsistencyIssues" :key="issue" class="text-xs text-yellow-300">{{ issue }}</li>
+            </ul>
+          </div>
+        </div>
         <div class="grid grid-cols-2 gap-0 divide-x divide-gray-800">
           <div class="p-6">
             <div class="text-xs text-gray-500 mb-3 font-medium">原文</div>
             <div class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">{{ comparisonTask.original_content }}</div>
           </div>
           <div class="p-6">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-xs text-gray-500 font-medium">改写版</span>
-              <span :class="comparisonTask.similarity_score < 0.3 ? 'text-emerald-400' : 'text-yellow-400'" class="text-xs">
-                相似度 {{ Math.round(comparisonTask.similarity_score * 100) }}%
-              </span>
-              <span v-if="comparisonTask.passed" class="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">&#10003; 通过</span>
-            </div>
+            <div class="text-xs text-gray-500 mb-3 font-medium">改写版</div>
             <div class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">{{ comparisonTask.rewritten_content }}</div>
           </div>
         </div>
@@ -310,6 +348,17 @@ const loading = ref(true)
 const activeTab = ref('overview')
 const actionLoading = ref(false)
 const comparisonTask = ref<ChapterRewriteTask | null>(null)
+
+// Parse consistency issues from JSON string for the comparison modal
+const comparisonConsistencyIssues = computed<string[]>(() => {
+  if (!comparisonTask.value?.consistency_issues) return []
+  try {
+    const parsed = JSON.parse(comparisonTask.value.consistency_issues)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+})
 
 // ── Bible editing ─────────────────────────────────────────────────────────────
 const bibleEditMode = ref(false)
