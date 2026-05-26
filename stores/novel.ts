@@ -61,8 +61,8 @@ export const useNovelStore = defineStore('novel', {
 
         this.novels = response.data.items
         this.pagination.total = response.data.total
-      } catch (e: any) {
-        this.error = e.message || 'Failed to fetch novels'
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
       } finally {
         this.loading = false
       }
@@ -77,8 +77,8 @@ export const useNovelStore = defineStore('novel', {
         const response = await api.getNovel(id)
         this.currentNovel = response.data
         return response.data
-      } catch (e: any) {
-        this.error = e.message || 'Failed to fetch novel'
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
         throw e
       } finally {
         this.loading = false
@@ -99,8 +99,8 @@ export const useNovelStore = defineStore('novel', {
         const response = await api.createNovel(data)
         this.novels.unshift(response.data)
         return response.data
-      } catch (e: any) {
-        this.error = e.message || 'Failed to create novel'
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
         throw e
       } finally {
         this.loading = false
@@ -110,6 +110,9 @@ export const useNovelStore = defineStore('novel', {
     async updateNovel(id: number, data: Partial<Novel>) {
       this.loading = true
       this.error = null
+
+      // Save original for rollback on failure.
+      const original = this.currentNovel?.id === id ? { ...this.currentNovel } : null
 
       // Optimistic update: apply changes immediately so the UI reflects the new
       // value before the API round-trip completes (avoids visible empty flash).
@@ -131,8 +134,12 @@ export const useNovelStore = defineStore('novel', {
         }
 
         return response.data
-      } catch (e: any) {
-        this.error = e.message || 'Failed to update novel'
+      } catch (e) {
+        // Rollback optimistic update so UI doesn't show unsaved state.
+        if (original && this.currentNovel?.id === id) {
+          this.currentNovel = original
+        }
+        this.error = e instanceof Error ? e.message : String(e)
         throw e
       } finally {
         this.loading = false
@@ -151,8 +158,8 @@ export const useNovelStore = defineStore('novel', {
         if (this.currentNovel?.id === id) {
           this.currentNovel = null
         }
-      } catch (e: any) {
-        this.error = e.message || 'Failed to delete novel'
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
         throw e
       } finally {
         this.loading = false
@@ -171,8 +178,8 @@ export const useNovelStore = defineStore('novel', {
           ...overrides,
         })
         return response.data
-      } catch (e: any) {
-        this.error = e.message || 'Failed to generate outline'
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e)
         throw e
       } finally {
         this.loading = false

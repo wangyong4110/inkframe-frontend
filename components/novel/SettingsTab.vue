@@ -148,6 +148,19 @@ async function handleWritingPresetSelect(presetId: string) {
   }
 }
 
+type ModelField = 'ai_model' | 'image_model' | 'video_model' | 'tts_model'
+
+const modelConfigs = computed(() => [
+  { label: 'LLM 模型',  field: 'ai_model'    as ModelField, models: availableModels.value },
+  { label: '图片模型', field: 'image_model'  as ModelField, models: imageModels.value },
+  { label: '视频模型', field: 'video_model'  as ModelField, models: videoModels.value },
+  { label: '语音模型', field: 'tts_model'    as ModelField, models: ttsModels.value },
+])
+
+function handleModelChange(field: ModelField, value: string) {
+  novelStore.updateNovel(props.novelId, { [field]: value || undefined })
+}
+
 function handleImageStyleSelect(styleId: string) {
   novelStore.updateNovel(props.novelId, { image_style: styleId }).then(() => {
     const preset = IMAGE_PRESETS.find(p => p.id === styleId)
@@ -347,47 +360,14 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
     <div class="card p-6 space-y-4">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">模型配置</h3>
       <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">LLM 模型</label>
-          <select :value="novel?.ai_model ?? ''" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { ai_model: (e.target as HTMLSelectElement).value || undefined })">
+        <div v-for="mc in modelConfigs" :key="mc.field">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">{{ mc.label }}</label>
+          <select :value="novel?.[mc.field] ?? ''" class="input"
+            @change="handleModelChange(mc.field, ($event.target as HTMLSelectElement).value)">
             <option value="">使用默认</option>
-            <option v-for="m in availableModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
+            <option v-for="m in mc.models" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
           </select>
-          <p v-if="availableModels.length === 0" class="mt-1 text-xs text-gray-400">
-            可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
-          </p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">图片模型</label>
-          <select :value="novel?.image_model ?? ''" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { image_model: (e.target as HTMLSelectElement).value || undefined })">
-            <option value="">使用默认</option>
-            <option v-for="m in imageModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
-          </select>
-          <p v-if="imageModels.length === 0" class="mt-1 text-xs text-gray-400">
-            可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
-          </p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">视频模型</label>
-          <select :value="novel?.video_model ?? ''" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { video_model: (e.target as HTMLSelectElement).value || undefined })">
-            <option value="">使用默认</option>
-            <option v-for="m in videoModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
-          </select>
-          <p v-if="videoModels.length === 0" class="mt-1 text-xs text-gray-400">
-            可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
-          </p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">语音模型</label>
-          <select :value="novel?.tts_model ?? ''" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { tts_model: (e.target as HTMLSelectElement).value || undefined })">
-            <option value="">使用默认</option>
-            <option v-for="m in ttsModels" :key="m.id" :value="m.name">{{ m.display_name || m.name }}</option>
-          </select>
-          <p v-if="ttsModels.length === 0" class="mt-1 text-xs text-gray-400">
+          <p v-if="mc.models.length === 0" class="mt-1 text-xs text-gray-400">
             可在 <NuxtLink to="/model" class="text-primary-600 hover:underline">模型管理</NuxtLink> 中添加
           </p>
         </div>

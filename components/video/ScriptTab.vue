@@ -128,7 +128,7 @@ const durationIsCustom = computed(() =>
 // When user types in custom input, apply immediately
 watch(customDurationMins, applyCustomDuration)
 
-const avgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[pacing.value]))
+const avgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[pacing.value] ?? 5))
 const estimatedShots = computed(() =>
   targetDuration.value > 0
     ? Math.max(3, Math.round(targetDuration.value / avgShotDur.value))
