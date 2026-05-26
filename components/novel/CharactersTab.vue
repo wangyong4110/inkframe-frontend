@@ -14,7 +14,7 @@ const characterApi = useCharacterApi()
 
 const generatingCharacters = ref(false)
 const batchGeneratingCharImages = ref(false)
-const showDeleteCharacterConfirm = ref(false)
+const showDeleteConfirm = ref(false)
 const characterToDelete = ref<Character | null>(null)
 
 const characters = computed(() => characterStore.characters)
@@ -25,20 +25,20 @@ function goToCharacter(character: Character) {
 
 function getRoleColor(role: string): string {
   const colors: Record<string, string> = {
-    protagonist: 'bg-red-100 text-red-800',
-    antagonist: 'bg-purple-100 text-purple-800',
-    supporting: 'bg-blue-100 text-blue-800',
-    minor: 'bg-gray-100 text-gray-800',
+    protagonist: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    antagonist:  'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    supporting:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    minor:       'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
   }
-  return colors[role] || 'bg-gray-100 text-gray-800'
+  return colors[role] || 'bg-gray-100 text-gray-600'
 }
 
 function getRoleLabel(role: string): string {
   const labels: Record<string, string> = {
     protagonist: '主角',
-    antagonist: '反派',
-    supporting: '配角',
-    minor: '路人',
+    antagonist:  '反派',
+    supporting:  '配角',
+    minor:       '路人',
   }
   return labels[role] || role
 }
@@ -87,7 +87,7 @@ async function handleBatchCharacterImages() {
 function handleDeleteCharacter(event: MouseEvent, character: Character) {
   event.stopPropagation()
   characterToDelete.value = character
-  showDeleteCharacterConfirm.value = true
+  showDeleteConfirm.value = true
 }
 
 async function confirmDeleteCharacter() {
@@ -104,9 +104,10 @@ async function confirmDeleteCharacter() {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
+    <!-- 工具栏 -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">角色列表</h2>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button class="btn-secondary text-sm" :disabled="generatingCharacters" @click="handleAICharacters">
           <svg v-if="generatingCharacters" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -120,7 +121,7 @@ async function confirmDeleteCharacter() {
         <button
           class="btn-secondary text-sm"
           :disabled="batchGeneratingCharImages || characters.length === 0"
-          title="批量为所有角色生成正面图（跳过已有图片的角色）"
+          title="批量为所有角色生成图片（跳过已有图片的角色）"
           @click="handleBatchCharacterImages"
         >
           <svg v-if="batchGeneratingCharImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -132,8 +133,8 @@ async function confirmDeleteCharacter() {
           </svg>
           {{ batchGeneratingCharImages ? '生成中...' : '批量生成图片' }}
         </button>
-        <NuxtLink to="/character/create" class="btn-primary">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <NuxtLink :to="`/character/create?novelId=${novelId}`" class="btn-primary text-sm">
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           新建角色
@@ -141,72 +142,78 @@ async function confirmDeleteCharacter() {
       </div>
     </div>
 
+    <!-- 骨架屏 -->
     <div v-if="characterStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div v-for="i in 4" :key="i" class="card p-4">
-        <div class="skeleton h-20 w-20 rounded-full mb-3"></div>
-        <div class="skeleton h-5 w-1/2 mb-2"></div>
-        <div class="skeleton h-4 w-3/4"></div>
-      </div>
-    </div>
-
-    <div v-else-if="characters.length === 0" class="card p-8 text-center">
-      <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-      </svg>
-      <p class="text-gray-500 dark:text-gray-400">还没有角色，创建你的第一个角色</p>
-    </div>
-
-    <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div
-        v-for="character in characters"
-        :key="character.id"
-        class="card p-4 hover:shadow-soft transition-shadow cursor-pointer group relative"
-        @click="goToCharacter(character)"
-      >
-        <!-- 删除按钮：hover 时出现 -->
-        <button
-          class="absolute top-2 right-2 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-          title="删除角色"
-          @click="handleDeleteCharacter($event, character)"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-        <div class="flex items-start space-x-4">
-          <div class="w-16 h-16 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 flex items-center justify-center">
-            <img
-              v-if="character.three_view_sheet || character.portrait"
-              :src="character.three_view_sheet || character.portrait"
-              class="w-full h-full object-cover cursor-zoom-in"
-              :alt="character.name"
-              @click.stop="openLightbox(character.three_view_sheet || character.portrait)"
-            />
-            <span v-else class="text-2xl font-bold text-primary-600">{{ character.name.charAt(0) }}</span>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center space-x-2">
-              <h3 class="text-lg font-medium text-gray-900 dark:text-white truncate">
-                {{ character.name }}
-              </h3>
-              <span
-                class="px-2 py-0.5 text-xs font-medium rounded"
-                :class="getRoleColor(character.role)"
-              >
-                {{ getRoleLabel(character.role) }}
-              </span>
-            </div>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-              {{ character.personality || '暂无性格描述' }}
-            </p>
-          </div>
+      <div v-for="i in 4" :key="i" class="card overflow-hidden">
+        <div class="skeleton h-32 w-full"></div>
+        <div class="p-3 space-y-2">
+          <div class="skeleton h-4 w-1/2"></div>
+          <div class="skeleton h-3 w-3/4"></div>
         </div>
       </div>
     </div>
 
-    <!-- Delete character confirm -->
+    <!-- 空状态 -->
+    <div v-else-if="characters.length === 0" class="card p-8 text-center">
+      <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+      </svg>
+      <p class="text-gray-500 dark:text-gray-400 mb-1">暂无角色</p>
+      <p class="text-xs text-gray-400 dark:text-gray-500">可手动创建，或通过「AI 生成角色」自动从章节内容中提取</p>
+    </div>
+
+    <!-- 角色网格 -->
+    <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div
+        v-for="character in characters"
+        :key="character.id"
+        class="card overflow-hidden group cursor-pointer hover:shadow-medium transition-shadow"
+        @click="goToCharacter(character)"
+      >
+        <!-- 图片区域 -->
+        <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+          <img
+            v-if="character.three_view_sheet || character.portrait"
+            :src="character.three_view_sheet || character.portrait"
+            class="w-full h-full object-cover cursor-zoom-in"
+            :alt="character.name"
+            @click.stop="openLightbox(character.three_view_sheet || character.portrait)"
+          />
+          <span v-else class="text-4xl font-bold text-gray-300 dark:text-gray-600 select-none">
+            {{ character.name.charAt(0) }}
+          </span>
+          <!-- 角色类型徽章 -->
+          <span
+            class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
+            :class="getRoleColor(character.role)"
+          >
+            {{ getRoleLabel(character.role) }}
+          </span>
+          <!-- 删除按钮 -->
+          <button
+            class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            title="删除角色"
+            @click.stop="handleDeleteCharacter($event, character)"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 信息区 -->
+        <div class="p-3">
+          <h3 class="font-medium text-gray-900 dark:text-white truncate mb-1">{{ character.name }}</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+            {{ character.description || '暂无描述' }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认弹窗 -->
     <ConfirmDialog
-      v-model="showDeleteCharacterConfirm"
+      v-model="showDeleteConfirm"
       title="删除角色"
       :description="`确认删除角色「${characterToDelete?.name || ''}」？此操作不可撤销。`"
       variant="danger"

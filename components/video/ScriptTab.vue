@@ -96,22 +96,53 @@ watch(() => novelStore.currentNovel, (n) => {
 }, { immediate: true })
 
 const pacingOptions = [
-  { value: 'slow' as const,   label: '慢' },
-  { value: 'normal' as const, label: '标准' },
-  { value: 'fast' as const,   label: '快' },
+  { value: 'slow' as const,   label: '慢',   hint: '≈8s/镜' },
+  { value: 'normal' as const, label: '标准', hint: '≈5s/镜' },
+  { value: 'fast' as const,   label: '快',   hint: '≈3s/镜' },
 ]
-const durationOptions = [
+const durationPresets = [
   { value: 0,   label: '自动' },
-  { value: 60,  label: '1分钟' },
-  { value: 180, label: '3分钟' },
-  { value: 300, label: '5分钟' },
+  { value: 30,  label: '30秒' },
+  { value: 60,  label: '1分' },
+  { value: 120, label: '2分' },
+  { value: 180, label: '3分' },
+  { value: 300, label: '5分' },
+  { value: 600, label: '10分' },
+  { value: 900, label: '15分' },
 ]
+const showCustomDuration = ref(false)
+const customDurationMins = ref(5)
+
+function selectDurationPreset(val: number) {
+  targetDuration.value = val
+  showCustomDuration.value = false
+}
+function applyCustomDuration() {
+  const secs = Math.max(0, Math.round(customDurationMins.value * 60))
+  targetDuration.value = secs
+}
+// Track if current value matches any preset
+const durationIsCustom = computed(() =>
+  !durationPresets.some(d => d.value === targetDuration.value)
+)
+// When user types in custom input, apply immediately
+watch(customDurationMins, applyCustomDuration)
+
 const avgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[pacing.value]))
 const estimatedShots = computed(() =>
   targetDuration.value > 0
     ? Math.max(3, Math.round(targetDuration.value / avgShotDur.value))
-    : '自动'
+    : null
 )
+const estimatedShotsSummary = computed(() => {
+  if (!estimatedShots.value) return 'AI 自动决定镜头数'
+  const mins = Math.floor(targetDuration.value / 60)
+  const secs = targetDuration.value % 60
+  const timeStr = mins > 0
+    ? (secs > 0 ? `${mins}分${secs}秒` : `${mins}分钟`)
+    : `${secs}秒`
+  return `预计约 ${estimatedShots.value} 个镜头 · ${timeStr}`
+})
 
 // ── Options ──
 const SHOT_SIZE_OPTIONS = [
@@ -679,35 +710,65 @@ defineExpose({ loadVideoProviders: async () => {
         生成后可逐条编辑，确认无误再生成素材
       </p>
       <!-- 分镜生成控制 -->
-      <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 text-sm">
-        <div class="flex items-center gap-1.5">
-          <span class="text-gray-500 dark:text-gray-400 text-xs">节奏</span>
-          <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            <button v-for="p in pacingOptions" :key="p.value"
-              class="px-2.5 py-1 text-xs transition-colors"
-              :class="pacing === p.value
-                ? 'bg-primary-500 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-              @click="pacing = p.value">
-              {{ p.label }}
+      <div class="flex flex-col items-center gap-2 mb-4 text-sm">
+        <!-- 节奏 + 时长 同行 -->
+        <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+          <!-- 节奏 -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0">节奏</span>
+            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button v-for="p in pacingOptions" :key="p.value"
+                class="flex flex-col items-center px-2.5 py-1 text-xs transition-colors leading-tight"
+                :class="pacing === p.value
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                :title="p.hint"
+                @click="pacing = p.value">
+                <span>{{ p.label }}</span>
+                <span class="text-[10px] opacity-70">{{ p.hint }}</span>
+              </button>
+            </div>
+          </div>
+          <!-- 时长预设 -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0">时长</span>
+            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <button v-for="d in durationPresets" :key="d.value"
+                class="px-2.5 py-1 text-xs transition-colors"
+                :class="targetDuration === d.value && !durationIsCustom
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                @click="selectDurationPreset(d.value)">
+                {{ d.label }}
+              </button>
+            </div>
+            <!-- 自定义 toggle -->
+            <button
+              class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
+              :class="durationIsCustom || showCustomDuration
+                ? 'bg-primary-500 text-white border-primary-500'
+                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-primary-300'"
+              title="自定义时长"
+              @click="showCustomDuration = !showCustomDuration; if (durationIsCustom) customDurationMins = targetDuration / 60"
+            >
+              自定义
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-gray-500 dark:text-gray-400 text-xs">时长</span>
-          <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            <button v-for="d in durationOptions" :key="d.value"
-              class="px-2.5 py-1 text-xs transition-colors"
-              :class="targetDuration === d.value
-                ? 'bg-primary-500 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-              @click="targetDuration = d.value">
-              {{ d.label }}
-            </button>
-          </div>
+        <!-- 自定义时长输入行 -->
+        <div v-if="showCustomDuration" class="flex items-center gap-2">
+          <span class="text-xs text-gray-500 dark:text-gray-400">自定义时长</span>
+          <input
+            v-model.number="customDurationMins"
+            type="number" min="0.5" max="120" step="0.5"
+            class="w-20 px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+          />
+          <span class="text-xs text-gray-400">分钟</span>
+          <span v-if="targetDuration > 0" class="text-xs text-primary-500">= {{ targetDuration }}秒</span>
         </div>
+        <!-- 预计镜头数 -->
         <span class="text-xs text-gray-400 dark:text-gray-500">
-          预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ estimatedShots }}</span> 个镜头
+          {{ estimatedShotsSummary }}
         </span>
       </div>
       <!-- 高级 AI 参数（折叠） -->

@@ -9,6 +9,8 @@ const taskStore = useTaskStore()
 const { openLightbox } = useImageLightbox()
 
 const showAnchorModal = ref(false)
+const showDeleteConfirm = ref(false)
+const anchorToDelete = ref<any | null>(null)
 const anchorForm = ref({
   name: '',
   type: 'exterior' as string,
@@ -48,11 +50,18 @@ async function saveAnchor() {
   }
 }
 
-async function deleteAnchor(id: number) {
-  if (!confirm('确定删除该场景锚点？')) return
+function handleDeleteAnchor(anchor: any, event: Event) {
+  event.stopPropagation()
+  anchorToDelete.value = anchor
+  showDeleteConfirm.value = true
+}
+
+async function confirmDeleteAnchor() {
+  if (!anchorToDelete.value) return
   try {
-    await sceneAnchorStore.deleteAnchor(id)
+    await sceneAnchorStore.deleteAnchor(anchorToDelete.value.id)
     toast.success('已删除')
+    anchorToDelete.value = null
   } catch (e: any) {
     toast.error(e.message || '删除失败')
   }
@@ -131,55 +140,95 @@ async function generateRefImage(anchor: any) {
     generatingRefImage.value[anchor.id] = false
   }
 }
+
+function getTypeColor(type: string): string {
+  const colors: Record<string, string> = {
+    interior:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    exterior:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    imaginary: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  }
+  return colors[type] || 'bg-gray-100 text-gray-600'
+}
+
+function getTypeLabel(type: string): string {
+  const labels: Record<string, string> = { interior: '室内', exterior: '室外', imaginary: '虚幻' }
+  return labels[type] || type
+}
 </script>
 
 <template>
   <div class="space-y-4">
     <!-- 工具栏 -->
-    <div class="flex flex-wrap items-center gap-3">
-      <select v-model="selectedChapterForExtract" class="input text-sm flex-1 min-w-0 max-w-xs">
-        <option value="all">全部章节</option>
-        <option v-for="ch in chapterStore.chapters" :key="ch.id" :value="ch.id">
-          第 {{ ch.chapter_no }} 章 {{ ch.title }}
-        </option>
-      </select>
-      <button class="btn btn-primary text-sm" :disabled="extractingAnchors || extractingAllAnchors" @click="extractAnchors">
-        <span v-if="extractingAllAnchors || extractingAnchors">提取中…</span>
-        <span v-else>AI 提取</span>
-      </button>
-      <button
-        class="btn btn-secondary text-sm"
-        :disabled="batchGeneratingAnchorImages || sceneAnchorStore.anchors.length === 0"
-        title="批量为所有锚点生成参考图（跳过已有参考图的锚点）"
-        @click="handleBatchAnchorImages"
-      >
-        <svg v-if="batchGeneratingAnchorImages" class="w-4 h-4 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-        </svg>
-        <span>{{ batchGeneratingAnchorImages ? '生成中...' : '批量生成参考图' }}</span>
-      </button>
-      <button class="btn btn-secondary text-sm ml-auto" @click="startAnchorCreate">+ 手动新建</button>
-    </div>
-
-    <!-- 锚点列表 -->
-    <div v-if="sceneAnchorStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <div v-for="i in 4" :key="i" class="card p-4">
-        <div class="skeleton h-28 w-full rounded-lg mb-3"></div>
-        <div class="skeleton h-4 w-1/2 mb-2"></div>
-        <div class="skeleton h-3 w-3/4"></div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">场景列表</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 章节选择器（AI 提取范围） -->
+        <select v-model="selectedChapterForExtract" class="input text-sm h-9 py-0 max-w-[180px]">
+          <option value="all">全部章节</option>
+          <option v-for="ch in chapterStore.chapters" :key="ch.id" :value="ch.id">
+            第 {{ ch.chapter_no }} 章 {{ ch.title }}
+          </option>
+        </select>
+        <button
+          class="btn-secondary text-sm"
+          :disabled="extractingAnchors || extractingAllAnchors"
+          @click="extractAnchors"
+        >
+          <svg v-if="extractingAnchors || extractingAllAnchors" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          {{ (extractingAnchors || extractingAllAnchors) ? 'AI 提取中...' : (sceneAnchorStore.anchors.length > 0 ? 'AI 更新场景' : 'AI 提取场景') }}
+        </button>
+        <button
+          class="btn-secondary text-sm"
+          :disabled="batchGeneratingAnchorImages || sceneAnchorStore.anchors.length === 0"
+          title="批量为所有锚点生成参考图（跳过已有参考图的锚点）"
+          @click="handleBatchAnchorImages"
+        >
+          <svg v-if="batchGeneratingAnchorImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          {{ batchGeneratingAnchorImages ? '生成中...' : '批量生成参考图' }}
+        </button>
+        <button class="btn-primary text-sm" @click="startAnchorCreate">
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          新建场景
+        </button>
       </div>
     </div>
 
+    <!-- 骨架屏 -->
+    <div v-if="sceneAnchorStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div v-for="i in 4" :key="i" class="card overflow-hidden">
+        <div class="skeleton h-32 w-full"></div>
+        <div class="p-3 space-y-2">
+          <div class="skeleton h-4 w-1/2"></div>
+          <div class="skeleton h-3 w-3/4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 空状态 -->
     <div v-else-if="sceneAnchorStore.anchors.length === 0" class="card p-8 text-center">
       <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
       <p class="text-gray-500 dark:text-gray-400 mb-1">暂无场景锚点</p>
-      <p class="text-xs text-gray-400 dark:text-gray-500">可手动新建，或通过「AI 提取」从章节内容自动生成</p>
+      <p class="text-xs text-gray-400 dark:text-gray-500">可手动新建，或通过「AI 提取场景」从章节内容自动生成</p>
     </div>
 
+    <!-- 场景网格 -->
     <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="anchor in sceneAnchorStore.anchors"
@@ -187,9 +236,15 @@ async function generateRefImage(anchor: any) {
         class="card overflow-hidden group cursor-pointer hover:shadow-medium transition-shadow"
         @click="startAnchorEdit(anchor)"
       >
-        <!-- 参考图区域 -->
+        <!-- 图片区域 -->
         <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-          <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover cursor-zoom-in" :alt="anchor.name" @click.stop="openLightbox(anchor.ref_image_url)" />
+          <img
+            v-if="anchor.ref_image_url"
+            :src="anchor.ref_image_url"
+            class="w-full h-full object-cover cursor-zoom-in"
+            :alt="anchor.name"
+            @click.stop="openLightbox(anchor.ref_image_url)"
+          />
           <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -199,38 +254,34 @@ async function generateRefImage(anchor: any) {
           <!-- 类型徽章 -->
           <span
             class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
-            :class="{
-              'bg-blue-100 text-blue-700': anchor.type === 'interior',
-              'bg-green-100 text-green-700': anchor.type === 'exterior',
-              'bg-purple-100 text-purple-700': anchor.type === 'imaginary',
-            }"
-          >{{ anchor.type === 'interior' ? '室内' : anchor.type === 'exterior' ? '室外' : anchor.type === 'imaginary' ? '虚幻' : anchor.type }}</span>
+            :class="getTypeColor(anchor.type)"
+          >{{ getTypeLabel(anchor.type) }}</span>
           <!-- 锁定状态 -->
           <span v-if="anchor.ref_image_locked_at" class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
             <svg class="w-3 h-3 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </span>
-          <!-- 生成图按钮 (stop propagation) -->
+          <!-- 生成参考图按钮 -->
           <button
-            class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-500 hover:text-primary-600 rounded opacity-0 group-hover:opacity-100 transition-opacity text-xs flex items-center gap-1"
+            class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-500 hover:text-primary-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             :disabled="generatingRefImage[anchor.id]"
             :title="anchor.ref_image_url ? '重新生成参考图' : '生成参考图'"
             @click.stop="generateRefImage(anchor)"
           >
-            <svg v-if="generatingRefImage[anchor.id]" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <svg v-if="generatingRefImage[anchor.id]" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
-            <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
           </button>
           <!-- 删除按钮 -->
           <button
             class="absolute bottom-2 left-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-            title="删除锚点"
-            @click.stop="deleteAnchor(anchor.id)"
+            title="删除场景"
+            @click.stop="handleDeleteAnchor(anchor, $event)"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -249,50 +300,77 @@ async function generateRefImage(anchor: any) {
           <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ anchor.description }}</p>
           <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
             <span>引用 {{ anchor.usage_count }}</span>
-            <span v-if="anchor.avg_cons_score > 0" :class="anchor.avg_cons_score >= 0.85 ? 'text-green-600' : anchor.avg_cons_score >= 0.70 ? 'text-amber-500' : 'text-red-500'">
-              均分 {{ anchor.avg_cons_score.toFixed(2) }}
-            </span>
+            <span
+              v-if="anchor.avg_cons_score > 0"
+              :class="anchor.avg_cons_score >= 0.85 ? 'text-green-600' : anchor.avg_cons_score >= 0.70 ? 'text-amber-500' : 'text-red-500'"
+            >均分 {{ anchor.avg_cons_score.toFixed(2) }}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 新建 Modal（仅用于快速创建，编辑跳转到详情页） -->
-    <div v-if="showAnchorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="card w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <h3 class="text-base font-semibold">新建场景锚点</h3>
-        <div class="space-y-3">
-          <div>
-            <label class="label">名称 <span class="text-red-500">*</span></label>
-            <input v-model="anchorForm.name" class="input w-full" placeholder="如：皇宫正殿" maxlength="100" />
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="label">类型</label>
-              <select v-model="anchorForm.type" class="input w-full">
-                <option value="exterior">室外 (exterior)</option>
-                <option value="interior">室内 (interior)</option>
-                <option value="imaginary">虚幻 (imaginary)</option>
-              </select>
+    <!-- 新建场景弹窗 -->
+    <Teleport to="body">
+      <div v-if="showAnchorModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showAnchorModal = false" />
+        <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-lg font-bold text-gray-900 dark:text-white">新建场景锚点</h2>
+              <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showAnchorModal = false">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
             </div>
-            <div>
-              <label class="label">变体</label>
-              <input v-model="anchorForm.variant" class="input w-full" placeholder="day/night/winter" />
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
+                <input v-model="anchorForm.name" class="input" placeholder="如：皇宫正殿" maxlength="100" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
+                  <select v-model="anchorForm.type" class="input">
+                    <option value="exterior">室外</option>
+                    <option value="interior">室内</option>
+                    <option value="imaginary">虚幻</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">变体</label>
+                  <input v-model="anchorForm.variant" class="input" placeholder="day/night/winter" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉描述</label>
+                <textarea v-model="anchorForm.description" class="input resize-none" rows="2" placeholder="场景的视觉描述..."></textarea>
+              </div>
+            </div>
+            <p class="mt-3 text-xs text-gray-400">创建后可在详情页完善提示词锁定等高级设置。</p>
+            <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button class="btn-secondary" @click="showAnchorModal = false">取消</button>
+              <button class="btn-primary" :disabled="savingAnchor" @click="saveAnchor">
+                <svg v-if="savingAnchor" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                {{ savingAnchor ? '创建中…' : '创建' }}
+              </button>
             </div>
           </div>
-          <div>
-            <label class="label">视觉描述（英文）</label>
-            <textarea v-model="anchorForm.description" class="input w-full resize-none" rows="2" placeholder="Brief English description..."></textarea>
-          </div>
-        </div>
-        <p class="text-xs text-gray-400">创建后可在详情页完善 Prompt Lock 等高级设置。</p>
-        <div class="flex gap-3 justify-end pt-2">
-          <button class="btn btn-secondary" @click="showAnchorModal = false">取消</button>
-          <button class="btn btn-primary" :disabled="savingAnchor" @click="saveAnchor">
-            {{ savingAnchor ? '创建中…' : '创建' }}
-          </button>
         </div>
       </div>
-    </div>
+    </Teleport>
+
+    <!-- 删除确认弹窗 -->
+    <ConfirmDialog
+      v-model="showDeleteConfirm"
+      title="删除场景锚点"
+      :description="`确认删除场景「${anchorToDelete?.name || ''}」？此操作不可撤销。`"
+      variant="danger"
+      confirm-text="确认删除"
+      @confirm="confirmDeleteAnchor"
+    />
   </div>
 </template>

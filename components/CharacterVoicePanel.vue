@@ -296,34 +296,39 @@ function speedLabel(v: number) {
       </div>
     </div>
 
-    <!-- Voice dropdown -->
+    <!-- Voice dropdown / manual input (互斥显示) -->
     <div>
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
-      <div class="relative">
-        <select
-          :value="showCustomInput ? '__custom__' : voiceId"
-          class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 pr-8 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-400"
-          @change="(e) => onSelectVoice((e.target as HTMLSelectElement).value)"
-        >
-          <option v-if="voiceModelsLoading" disabled value="">加载中…</option>
-          <template v-else>
-            <optgroup v-for="g in voiceGroups" :key="g.key" :label="g.label">
-              <option v-for="v in g.voices" :key="v.id" :value="v.id">
-                {{ v.label }}
-              </option>
-            </optgroup>
-            <optgroup label="其他">
-              <option value="__custom__">手动输入音色 ID…</option>
-            </optgroup>
-          </template>
-        </select>
-        <svg class="absolute right-2.5 top-3 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
-      </div>
 
-      <!-- Custom voice ID text input -->
-      <div v-if="showCustomInput" class="mt-2">
+      <!-- 预设模式：下拉选择 -->
+      <template v-if="!showCustomInput">
+        <div class="relative">
+          <select
+            :value="voiceId"
+            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 pr-8 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-400"
+            @change="(e) => onSelectVoice((e.target as HTMLSelectElement).value)"
+          >
+            <option v-if="voiceModelsLoading" disabled value="">加载中…</option>
+            <template v-else>
+              <optgroup v-for="g in voiceGroups" :key="g.key" :label="g.label">
+                <option v-for="v in g.voices" :key="v.id" :value="v.id">
+                  {{ v.label }}
+                </option>
+              </optgroup>
+              <optgroup label="其他">
+                <option value="__custom__">手动输入音色 ID…</option>
+              </optgroup>
+            </template>
+          </select>
+          <svg class="absolute right-2.5 top-3 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+        <p v-if="voiceId" class="mt-1 text-xs text-gray-400">已选：{{ voiceId }}</p>
+      </template>
+
+      <!-- 手动模式：文本输入 -->
+      <template v-else>
         <input
           :value="voiceId"
           type="text"
@@ -331,9 +336,14 @@ function speedLabel(v: number) {
           class="w-full text-sm border border-blue-300 dark:border-blue-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-400"
           @input="voiceId = ($event.target as HTMLInputElement).value"
         />
-        <p class="mt-1 text-xs text-gray-400">音色 ID 可从豆包控制台或其他 TTS 提供商文档中获取</p>
-      </div>
-      <p v-else-if="voiceId" class="mt-1 text-xs text-gray-400">已选：{{ voiceId }}</p>
+        <div class="flex items-center justify-between mt-1">
+          <p class="text-xs text-gray-400">音色 ID 可从豆包控制台或其他 TTS 提供商文档中获取</p>
+          <button
+            class="text-xs text-blue-500 hover:text-blue-400 shrink-0 ml-2"
+            @click="showCustomInput = false"
+          >← 选择预设</button>
+        </div>
+      </template>
     </div>
 
     <!-- Speed -->
