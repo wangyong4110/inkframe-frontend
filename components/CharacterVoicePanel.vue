@@ -8,6 +8,7 @@ const emit = defineEmits<{ update: [data: Partial<Character>] }>()
 
 const { updateCharacter, previewVoice } = useCharacterApi()
 const { getAvailableModels } = useModelApi()
+const toast = useToast()
 
 // ─── Static catalog ───────────────────────────────────────────────────────────
 
@@ -132,6 +133,8 @@ const audioEl         = ref<HTMLAudioElement | null>(null)
 const saving          = ref(false)
 const previewing      = ref(false)
 const errorMsg        = ref('')
+// 保存进行中时，屏蔽 watch 对本地状态的重置
+const suppressWatch   = ref(false)
 
 // Whether to show the manual text input (for IDs not in the dropdown)
 const showCustomInput = ref(false)
@@ -166,6 +169,7 @@ onMounted(async () => {
 })
 
 watch(() => props.character, (c) => {
+  if (suppressWatch.value) return
   const { lang, dialect } = parseLang((c as any).voice_language)
   selectedLang.value    = lang
   selectedDialect.value = dialect
@@ -191,6 +195,7 @@ function onSelectVoice(id: string) {
 async function save() {
   saving.value = true
   errorMsg.value = ''
+  suppressWatch.value = true
   try {
     await updateCharacter(props.character.id, {
       voice_id:       voiceId.value,
@@ -199,10 +204,14 @@ async function save() {
       voice_language: voiceLanguage.value,
     } as any)
     emit('update', { voice_id: voiceId.value, voice_speed: voiceSpeed.value, voice_style: voiceStyle.value, voice_language: voiceLanguage.value })
+    toast.success('配音设置已保存')
   } catch (e: any) {
-    errorMsg.value = e.message
+    errorMsg.value = e.message || '保存失败，请稍后重试'
+    toast.error('保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
+    // 延迟恢复，让 patchCurrentCharacter 的 watch 触发先跳过
+    setTimeout(() => { suppressWatch.value = false }, 200)
   }
 }
 
@@ -235,6 +244,15 @@ function speedLabel(v: number) {
   if (v <= 1.8) return '较快'
   return '很快'
 }
+
+defineExpose({
+  getVoiceData: () => ({
+    voice_id:       voiceId.value,
+    voice_speed:    voiceSpeed.value,
+    voice_style:    voiceStyle.value,
+    voice_language: voiceLanguage.value,
+  }),
+})
 </script>
 
 <template>

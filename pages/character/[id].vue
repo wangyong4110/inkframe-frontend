@@ -14,6 +14,7 @@ if (isNaN(characterId)) {
 
 const activeTab = ref('profile')
 const saving = ref(false)
+const voicePanelRef = ref<{ getVoiceData: () => Record<string, unknown> } | null>(null)
 const isDirty = ref(false)
 const generatingThreeView = ref(false)
 const generatingFaceCloseup = ref(false)
@@ -86,7 +87,8 @@ onMounted(async () => {
 async function handleSave() {
   saving.value = true
   try {
-    await characterStore.updateCharacter(characterId, { ...character.value })
+    const voiceData = voicePanelRef.value?.getVoiceData?.() ?? {}
+    await characterStore.updateCharacter(characterId, { ...character.value, ...voiceData })
     isDirty.value = false
     toast.success('角色信息已保存')
   } catch (e: any) {
@@ -426,6 +428,7 @@ function getRoleLabel(role: string): string {
       <p class="text-sm text-gray-500 mb-4">为角色选择专属声音，生成分镜配音时将自动使用此配置。</p>
       <CharacterVoicePanel
         v-if="characterStore.currentCharacter"
+        ref="voicePanelRef"
         :character="characterStore.currentCharacter"
         @update="(data) => characterStore.patchCurrentCharacter(data)"
       />
