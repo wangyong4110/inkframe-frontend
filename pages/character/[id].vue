@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const { openLightbox, previewLightbox } = useImageLightbox()
 const characterStore = useCharacterStore()
 const novelStore = useNovelStore()
 const route = useRoute()
@@ -138,16 +137,12 @@ async function handleGenerateThreeView() {
           generatingThreeView.value = false
           const updatedChar = (task.data?.character ?? task.character) as any
           const newUrl = updatedChar?.three_view_sheet
-          if (newUrl && newUrl !== character.value.three_view_sheet) {
-            previewLightbox(newUrl, character.value.three_view_sheet, (confirmed) => {
-              character.value.three_view_sheet = confirmed
-              isDirty.value = true
-            })
-          } else if (newUrl) {
+          if (newUrl) {
             character.value.three_view_sheet = newUrl
+            await nextTick()
+            isDirty.value = false
           }
-          isDirty.value = false
-          toast.success('三视图生成完成，请确认后保存')
+          toast.success('三视图生成完成')
         } else if (task.status === 'failed') {
           clearThreeViewTimer()
           generatingThreeView.value = false
@@ -192,16 +187,13 @@ async function handleGenerateFaceCloseup() {
           generatingFaceCloseup.value = false
           const updatedChar = (task.data?.character ?? task.character) as any
           const newUrl = updatedChar?.face_closeup
-          if (newUrl && newUrl !== character.value.face_closeup) {
-            previewLightbox(newUrl, character.value.face_closeup, (confirmed) => {
-              character.value.face_closeup = confirmed
-              isDirty.value = true
-            })
-          } else if (newUrl) {
+          if (newUrl) {
             character.value.face_closeup = newUrl
+            character.value.portrait = newUrl
+            await nextTick()
+            isDirty.value = false
           }
-          isDirty.value = false
-          toast.success('面部特写生成完成，请确认后保存')
+          toast.success('面部特写生成完成')
         } else if (task.status === 'failed') {
           clearFaceCloseupTimer()
           generatingFaceCloseup.value = false
@@ -319,107 +311,89 @@ function getRoleLabel(role: string): string {
     <!-- 图像资产 Tab -->
     <div v-if="activeTab === 'images'" class="card p-6">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-6">图像资产</h3>
-      <div class="space-y-8">
-        <!-- Portrait -->
+      <!-- column ratio 24:76 so that 9:16 and 16:9 boxes share the same row height -->
+      <div class="grid gap-6" style="grid-template-columns: 24fr 76fr">
+        <!-- Face closeup (LEFT, 9:16) — also used as portrait/avatar -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">头像 / 肖像参考图片</label>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">上传后将作为 AI 生成三视图时的参考，保持人物面部一致性</p>
-          <div class="w-32">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-white">面部特写</h4>
+              <p class="text-xs text-gray-500 mt-0.5">头部特写，同时用作角色头像</p>
+            </div>
+            <button
+              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+              :disabled="generatingFaceCloseup"
+              @click="handleGenerateFaceCloseup"
+            >
+              <svg v-if="generatingFaceCloseup" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingFaceCloseup ? '生成中...' : 'AI 生成' }}
+            </button>
+          </div>
+          <div class="relative">
             <ImageUploadBox
-              v-model="character.portrait"
-              placeholder="点击上传"
-              @error="(msg) => toast.error('上传失败：' + msg)"
+              v-model="character.face_closeup"
+              aspect-ratio="9/16"
+              placeholder="面部特写图"
+              :on-save="(url: string) => { character.face_closeup = url; character.portrait = url; isDirty = true }"
+              @error="toast.error"
             />
+            <div v-if="generatingFaceCloseup" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          </div>
+          <div v-if="faceCloseupTaskStatus !== 'idle'" class="mt-2 text-xs">
+            <span v-if="faceCloseupTaskStatus === 'pending' || faceCloseupTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
+              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              AI 正在生成，请稍候…
+            </span>
+            <span v-else-if="faceCloseupTaskStatus === 'completed'" class="text-green-500">生成完成</span>
+            <span v-else-if="faceCloseupTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
           </div>
         </div>
 
-        <!-- Three-view + Face closeup side by side -->
-        <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-          <!-- column ratio 76:24 ≈ 256:81 so that 16:9 and 9:16 boxes share the same row height -->
-          <div class="grid gap-6" style="grid-template-columns: 76fr 24fr">
-            <!-- Three-view sheet -->
+        <!-- Three-view sheet (RIGHT, 16:9) -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
             <div>
-              <div class="flex items-center justify-between mb-3">
-                <div>
-                  <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图参考图</h4>
-                  <p class="text-xs text-gray-500 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
-                </div>
-                <button
-                  class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-                  :disabled="generatingThreeView"
-                  @click="handleGenerateThreeView"
-                >
-                  <svg v-if="generatingThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {{ generatingThreeView ? '生成中...' : 'AI 生成' }}
-                </button>
-              </div>
-              <div class="relative">
-                <ImageUploadBox
-                  v-model="character.three_view_sheet"
-                  aspect-ratio="16/9"
-                  placeholder="三视图参考图（正面+侧面+背面合图）"
-                  :on-save="(url: string) => { character.three_view_sheet = url; isDirty = true }"
-                  @error="toast.error"
-                />
-                <div v-if="generatingThreeView" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-                  <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              </div>
-              <div v-if="threeViewTaskStatus !== 'idle'" class="mt-2 text-xs">
-                <span v-if="threeViewTaskStatus === 'pending' || threeViewTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
-                  <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  AI 正在生成，请稍候…
-                </span>
-                <span v-else-if="threeViewTaskStatus === 'completed'" class="text-green-500">生成完成</span>
-                <span v-else-if="threeViewTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
-              </div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图参考图</h4>
+              <p class="text-xs text-gray-500 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
             </div>
-
-            <!-- Face closeup -->
-            <div>
-              <div class="flex items-center justify-between mb-3">
-                <div>
-                  <h4 class="text-sm font-medium text-gray-900 dark:text-white">面部特写</h4>
-                  <p class="text-xs text-gray-500 mt-0.5">头部特写，展示五官细节</p>
-                </div>
-                <button
-                  class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-                  :disabled="generatingFaceCloseup"
-                  @click="handleGenerateFaceCloseup"
-                >
-                  <svg v-if="generatingFaceCloseup" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {{ generatingFaceCloseup ? '生成中...' : 'AI 生成' }}
-                </button>
-              </div>
-              <div class="relative">
-                <ImageUploadBox
-                  v-model="character.face_closeup"
-                  aspect-ratio="9/16"
-                  placeholder="面部特写图"
-                  :on-save="(url: string) => { character.face_closeup = url; isDirty = true }"
-                  @error="toast.error"
-                />
-                <div v-if="generatingFaceCloseup" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-                  <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              </div>
-              <div v-if="faceCloseupTaskStatus !== 'idle'" class="mt-2 text-xs">
-                <span v-if="faceCloseupTaskStatus === 'pending' || faceCloseupTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
-                  <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  AI 正在生成，请稍候…
-                </span>
-                <span v-else-if="faceCloseupTaskStatus === 'completed'" class="text-green-500">生成完成</span>
-                <span v-else-if="faceCloseupTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
-              </div>
+            <button
+              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+              :disabled="generatingThreeView"
+              @click="handleGenerateThreeView"
+            >
+              <svg v-if="generatingThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingThreeView ? '生成中...' : 'AI 生成' }}
+            </button>
+          </div>
+          <div class="relative">
+            <ImageUploadBox
+              v-model="character.three_view_sheet"
+              aspect-ratio="16/9"
+              placeholder="三视图参考图（正面+侧面+背面合图）"
+              :on-save="(url: string) => { character.three_view_sheet = url; isDirty = true }"
+              @error="toast.error"
+            />
+            <div v-if="generatingThreeView" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
           </div>
+          <div v-if="threeViewTaskStatus !== 'idle'" class="mt-2 text-xs">
+            <span v-if="threeViewTaskStatus === 'pending' || threeViewTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
+              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              AI 正在生成，请稍候…
+            </span>
+            <span v-else-if="threeViewTaskStatus === 'completed'" class="text-green-500">生成完成</span>
+            <span v-else-if="threeViewTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
+          </div>
         </div>
-        <p class="text-xs text-gray-500">需填写「角色描述」或「视觉提示词」，AI 才能生成准确的图像。生成后点击「保存」即可保留。</p>
       </div>
+      <p class="text-xs text-gray-500 mt-4">需填写「角色描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
 
     <!-- 配音设置 Tab -->
