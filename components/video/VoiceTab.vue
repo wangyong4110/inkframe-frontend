@@ -249,7 +249,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             {{ { bottom: '底部', center: '居中', top: '顶部' }[subtitleConfig.position] }}
             · {{ subtitleConfig.font_size }}px
             · {{ { none: '无背景', shadow: '阴影', box: '底框' }[subtitleConfig.bg_style] }}
-            <NuxtLink to="/novel" class="text-green-500 hover:underline ml-1" title="在项目配置中修改字幕样式">编辑样式</NuxtLink>
+            <NuxtLink :to="`/novel/${videoStore.currentVideo?.novel_id}?tab=settings`" class="text-green-500 hover:underline ml-1" title="在项目配置中修改字幕样式">编辑样式</NuxtLink>
           </div>
         </div>
         <!-- 字幕快速操作 -->

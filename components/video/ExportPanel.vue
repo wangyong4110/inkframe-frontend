@@ -21,11 +21,34 @@ const allReady = computed(() => props.shots.length > 0 && missingShots.value.len
 // ── 批量生成缺失素材 ────────────────────────────────
 const batchGenerating = ref(false)
 async function handleBatchGenerate() {
+  const shotsNeedingImages = props.shots.filter(s => !s.image_url)
+  const shotsNeedingClips = props.shots.filter(s => s.image_url && !s.video_url)
+  if (shotsNeedingImages.length === 0 && shotsNeedingClips.length === 0) {
+    toast.error('没有需要补全的素材'); return
+  }
   batchGenerating.value = true
   try {
-    const api = useVideoApi()
-    await api.batchGenerateImages(props.videoId)
-    toast.success('批量生成任务已提交，请稍后刷新查看进度')
+    const taskStore = useTaskStore()
+    const tasks: Promise<string>[] = []
+    if (shotsNeedingImages.length > 0)
+      tasks.push(videoStore.batchGenerateShotImages(props.videoId, shotsNeedingImages.map(s => s.id)))
+    if (shotsNeedingClips.length > 0)
+      tasks.push(videoStore.batchGenerateShotClips(props.videoId, shotsNeedingClips.map(s => s.id)))
+    const taskIds = await Promise.all(tasks)
+    toast.success(`补全任务已提交（${taskIds.length} 个任务），请稍后查看进度`)
+    let doneCount = 0
+    for (const taskId of taskIds) {
+      if (!taskId) continue
+      taskStore.trackTask(taskId, async (task) => {
+        doneCount++
+        if (task.status === 'completed' && doneCount >= taskIds.length) {
+          await videoStore.fetchStoryboard(props.videoId)
+          toast.success('素材补全完成')
+        } else if (task.status === 'failed') {
+          toast.error('部分素材生成失败，请检查')
+        }
+      })
+    }
   } catch (e: any) {
     toast.error('提交失败：' + (e.message || ''))
   } finally {
