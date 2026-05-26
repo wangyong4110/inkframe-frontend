@@ -39,6 +39,12 @@ export const useRewriteApi = () => {
   const approveChapter = (projectId: number, taskId: number) =>
     request<ApiResponse<{ message: string }>>(`/rewrite/projects/${projectId}/chapters/${taskId}/approve`, { method: 'POST' })
 
+  const updateBible = (id: number, data: Partial<RewriteBible>) =>
+    request<ApiResponse<{ message: string }>>(`/rewrite/projects/${id}/bible`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
   return {
     listProjects,
     createProject,
@@ -51,5 +57,6 @@ export const useRewriteApi = () => {
     listChapterTasks,
     getChapterTask,
     approveChapter,
+    updateBible,
   }
 }

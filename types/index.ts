@@ -778,8 +778,10 @@ export interface RewriteBible {
   id: number
   project_id: number
   new_world_name: string
+  naming_style: string
   new_char_names: string // JSON string: {oldName: newName}
   plot_transform: string
+  props_transform: string
   voice_strategy: string
   style_guide: string
   forbidden_elems: string
@@ -797,6 +799,7 @@ export interface ChapterRewriteTask {
   rewritten_content: string
   similarity_score: number
   lexical_sim: number
+  structural_sim: number
   passed: boolean
   retry_count: number
   error_msg: string

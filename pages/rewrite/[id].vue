@@ -137,27 +137,75 @@
       <!-- Tab: 改写圣经 -->
       <div v-else-if="activeTab === 'bible'">
         <div v-if="!bible" class="text-center py-20 text-gray-500">暂无改写圣经</div>
-        <div v-else class="space-y-4">
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h3 class="text-sm font-semibold text-gray-400 mb-2">新世界观名称</h3>
-            <p class="text-xl font-bold text-violet-300">{{ bible.new_world_name || '（同原作）' }}</p>
-          </div>
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h3 class="text-sm font-semibold text-gray-400 mb-3">角色名称对照</h3>
-            <div class="space-y-2">
-              <div v-for="(newName, oldName) in parseJSON(bible.new_char_names)" :key="String(oldName)"
-                class="flex items-center gap-3 text-sm">
-                <span class="text-gray-300 font-medium">{{ oldName }}</span>
-                <span class="text-gray-500">&rarr;</span>
-                <span class="text-violet-300 font-medium">{{ String(newName) }}</span>
-              </div>
+        <div v-else>
+          <!-- Toolbar -->
+          <div class="flex justify-end mb-4">
+            <button v-if="!bibleEditMode" @click="startBibleEdit"
+              class="text-sm px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors">
+              编辑圣经
+            </button>
+            <div v-else class="flex gap-2">
+              <button @click="cancelBibleEdit" class="text-sm px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors">
+                取消
+              </button>
+              <button @click="saveBible" :disabled="bibleSaving"
+                class="text-sm px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-50">
+                {{ bibleSaving ? '保存中...' : '保存' }}
+              </button>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <RewriteBibleCard title="情节转化规则" icon="🔄" :data="parseJSON(bible.plot_transform)" />
-            <RewriteBibleCard title="叙事声音策略" icon="🎭" :data="parseJSON(bible.voice_strategy)" />
-            <RewriteBibleCard title="文风指南" icon="✍️" :data="parseJSON(bible.style_guide)" />
-            <RewriteBibleCard title="禁止元素" icon="🚫" :data="parseJSON(bible.forbidden_elems)" :danger="true" />
+
+          <!-- View mode -->
+          <div v-if="!bibleEditMode" class="space-y-4">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <h3 class="text-sm font-semibold text-gray-400 mb-2">新世界观名称</h3>
+              <p class="text-xl font-bold text-violet-300">{{ bible.new_world_name || '（同原作）' }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <h3 class="text-sm font-semibold text-gray-400 mb-3">角色名称对照</h3>
+              <div class="space-y-2">
+                <div v-for="(newName, oldName) in parseJSON(bible.new_char_names)" :key="String(oldName)"
+                  class="flex items-center gap-3 text-sm">
+                  <span class="text-gray-300 font-medium">{{ oldName }}</span>
+                  <span class="text-gray-500">&rarr;</span>
+                  <span class="text-violet-300 font-medium">{{ String(newName) }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <RewriteBibleCard title="情节转化规则" icon="🔄" :data="parseJSON(bible.plot_transform)" />
+              <RewriteBibleCard title="叙事声音策略" icon="🎭" :data="parseJSON(bible.voice_strategy)" />
+              <RewriteBibleCard title="文风指南" icon="✍️" :data="parseJSON(bible.style_guide)" />
+              <RewriteBibleCard title="禁止元素" icon="🚫" :data="parseJSON(bible.forbidden_elems)" :danger="true" />
+            </div>
+          </div>
+
+          <!-- Edit mode -->
+          <div v-else class="space-y-4">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1.5">新世界观名称</label>
+                <input v-model="bibleEditData.new_world_name" type="text"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-1.5">命名风格</label>
+                <input v-model="bibleEditData.naming_style" type="text"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+              </div>
+            </div>
+            <div v-for="field in [
+              { key: 'new_char_names', label: '角色名称对照（JSON）' },
+              { key: 'plot_transform', label: '情节转化规则（JSON）' },
+              { key: 'props_transform', label: '道具替换（JSON）' },
+              { key: 'voice_strategy', label: '叙事声音策略（JSON）' },
+              { key: 'style_guide', label: '文风指南（JSON）' },
+              { key: 'forbidden_elems', label: '禁止元素（JSON）' },
+            ]" :key="field.key" class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <label class="block text-xs text-gray-400 mb-1.5">{{ field.label }}</label>
+              <textarea v-model="bibleEditData[field.key]" rows="5"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-violet-500 resize-y"></textarea>
+            </div>
           </div>
         </div>
       </div>
@@ -249,6 +297,7 @@ const {
   getAnalysis,
   getBible,
   listChapterTasks,
+  updateBible: apiUpdateBible,
 } = useRewriteApi()
 const { getTask, cancelTask } = useTaskApi()
 
@@ -261,6 +310,45 @@ const loading = ref(true)
 const activeTab = ref('overview')
 const actionLoading = ref(false)
 const comparisonTask = ref<ChapterRewriteTask | null>(null)
+
+// ── Bible editing ─────────────────────────────────────────────────────────────
+const bibleEditMode = ref(false)
+const bibleEditData = ref<Record<string, string>>({})
+const bibleSaving = ref(false)
+
+function startBibleEdit() {
+  if (!bible.value) return
+  bibleEditData.value = {
+    new_world_name: bible.value.new_world_name || '',
+    naming_style: bible.value.naming_style || '',
+    new_char_names: bible.value.new_char_names || '{}',
+    plot_transform: bible.value.plot_transform || '{}',
+    props_transform: bible.value.props_transform || '{}',
+    voice_strategy: bible.value.voice_strategy || '{}',
+    style_guide: bible.value.style_guide || '{}',
+    forbidden_elems: bible.value.forbidden_elems || '{}',
+  }
+  bibleEditMode.value = true
+}
+
+function cancelBibleEdit() {
+  bibleEditMode.value = false
+}
+
+async function saveBible() {
+  bibleSaving.value = true
+  try {
+    await apiUpdateBible(projectId, bibleEditData.value as any)
+    // Refresh bible from server
+    const bRes = await getBible(projectId)
+    bible.value = bRes.data
+    bibleEditMode.value = false
+  } catch (e) {
+    console.error(e)
+  } finally {
+    bibleSaving.value = false
+  }
+}
 
 // ── Async task polling ────────────────────────────────────────────────────────
 const activeTaskId = ref<string | null>(null)
@@ -288,13 +376,10 @@ function startPolling(taskId: string) {
     try {
       const res = await getTask(taskId)
       activeTask.value = res.data
+      // Always refresh project so status badge, progress bar and chapter list stay live
+      await refreshProject()
       if (TERMINAL.has(res.data.status)) {
         stopPolling()
-        await refreshProject()
-        // Reload chapter tasks if rewriting just finished
-        if (['completed', 'failed'].includes(res.data.status) && project.value?.status !== 'analyzing') {
-          await reloadChapterTasks()
-        }
       }
     } catch { /* network blip — keep polling */ }
   }, 2500)
