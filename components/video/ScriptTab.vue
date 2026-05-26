@@ -730,29 +730,29 @@ defineExpose({ loadVideoProviders: async () => {
             </div>
           </div>
           <!-- 时长预设 -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0">时长</span>
-            <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="flex items-start gap-1.5">
+            <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0 mt-1">时长</span>
+            <div class="flex flex-wrap gap-1">
               <button v-for="d in durationPresets" :key="d.value"
-                class="px-2.5 py-1 text-xs transition-colors"
+                class="px-2.5 py-1 text-xs rounded-md border transition-colors"
                 :class="targetDuration === d.value && !durationIsCustom
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                  ? 'bg-primary-500 border-primary-500 text-white'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
                 @click="selectDurationPreset(d.value)">
                 {{ d.label }}
               </button>
+              <!-- 自定义 toggle -->
+              <button
+                class="px-2.5 py-1 text-xs rounded-md border transition-colors"
+                :class="durationIsCustom || showCustomDuration
+                  ? 'bg-primary-500 text-white border-primary-500'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-primary-300'"
+                title="自定义时长"
+                @click="showCustomDuration = !showCustomDuration; if (durationIsCustom) customDurationMins = targetDuration / 60"
+              >
+                自定义
+              </button>
             </div>
-            <!-- 自定义 toggle -->
-            <button
-              class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
-              :class="durationIsCustom || showCustomDuration
-                ? 'bg-primary-500 text-white border-primary-500'
-                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-primary-300'"
-              title="自定义时长"
-              @click="showCustomDuration = !showCustomDuration; if (durationIsCustom) customDurationMins = targetDuration / 60"
-            >
-              自定义
-            </button>
           </div>
         </div>
         <!-- 自定义时长输入行 -->

@@ -5,7 +5,6 @@ import { useCharacterApi } from '~/composables/useCharacterApi'
 const props = defineProps<{ novelId: number }>()
 
 const toast = useToast()
-const router = useRouter()
 const characterStore = useCharacterStore()
 const taskStore = useTaskStore()
 const { openLightbox } = useImageLightbox()
@@ -16,11 +15,14 @@ const generatingCharacters = ref(false)
 const batchGeneratingCharImages = ref(false)
 const showDeleteConfirm = ref(false)
 const characterToDelete = ref<Character | null>(null)
+const showCharacterModal = ref(false)
+const newCharacterForm = ref({ name: '', role: 'supporting' as string, description: '' })
+const savingCharacter = ref(false)
 
 const characters = computed(() => characterStore.characters)
 
 function goToCharacter(character: Character) {
-  router.push(`/character/${character.id}`)
+  navigateTo(`/character/${character.id}`)
 }
 
 function getRoleColor(role: string): string {
@@ -84,6 +86,25 @@ async function handleBatchCharacterImages() {
   }
 }
 
+async function createCharacter() {
+  if (!newCharacterForm.value.name.trim()) return
+  savingCharacter.value = true
+  try {
+    await characterStore.createCharacter(props.novelId, {
+      name: newCharacterForm.value.name.trim(),
+      role: newCharacterForm.value.role as any,
+      description: newCharacterForm.value.description.trim(),
+    })
+    newCharacterForm.value = { name: '', role: 'supporting', description: '' }
+    showCharacterModal.value = false
+    toast.success('角色已创建')
+  } catch (e: any) {
+    toast.error('创建失败：' + (e.message || ''))
+  } finally {
+    savingCharacter.value = false
+  }
+}
+
 function handleDeleteCharacter(event: MouseEvent, character: Character) {
   event.stopPropagation()
   characterToDelete.value = character
@@ -133,12 +154,12 @@ async function confirmDeleteCharacter() {
           </svg>
           {{ batchGeneratingCharImages ? '生成中...' : '批量生成图片' }}
         </button>
-        <NuxtLink :to="`/character/create?novelId=${novelId}`" class="btn-primary text-sm">
+        <button class="btn-primary text-sm" @click="showCharacterModal = true">
           <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           新建角色
-        </NuxtLink>
+        </button>
       </div>
     </div>
 
@@ -182,14 +203,14 @@ async function confirmDeleteCharacter() {
           <span v-else class="text-4xl font-bold text-gray-300 dark:text-gray-600 select-none">
             {{ character.name.charAt(0) }}
           </span>
-          <!-- 角色类型徽章 -->
+          <!-- 角色类型徽章（左上） -->
           <span
             class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
             :class="getRoleColor(character.role)"
           >
             {{ getRoleLabel(character.role) }}
           </span>
-          <!-- 删除按钮 -->
+          <!-- 删除按钮（右下，hover 显示） -->
           <button
             class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             title="删除角色"
@@ -210,6 +231,54 @@ async function confirmDeleteCharacter() {
         </div>
       </div>
     </div>
+
+    <!-- 新建角色弹窗 -->
+    <Teleport to="body">
+      <div v-if="showCharacterModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showCharacterModal = false" />
+        <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-md">
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-lg font-bold text-gray-900 dark:text-white">新建角色</h2>
+              <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showCharacterModal = false">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
+                <input v-model="newCharacterForm.name" type="text" class="input" placeholder="角色名称" maxlength="100" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">角色类型</label>
+                <select v-model="newCharacterForm.role" class="input">
+                  <option value="protagonist">主角</option>
+                  <option value="antagonist">反派</option>
+                  <option value="supporting">配角</option>
+                  <option value="minor">路人</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
+                <textarea v-model="newCharacterForm.description" rows="3" class="input resize-none" placeholder="角色的外貌、性格、背景..."></textarea>
+              </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button class="btn-secondary" @click="showCharacterModal = false">取消</button>
+              <button class="btn-primary" :disabled="savingCharacter || !newCharacterForm.name.trim()" @click="createCharacter">
+                <svg v-if="savingCharacter" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                {{ savingCharacter ? '创建中...' : '创建' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 删除确认弹窗 -->
     <ConfirmDialog

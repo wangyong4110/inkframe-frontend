@@ -196,12 +196,16 @@ async function confirmDeleteItem() {
             :alt="item.name"
             @click.stop="openLightbox(item.image_url)"
           />
-          <div v-else class="text-4xl text-gray-300 dark:text-gray-600 select-none">📦</div>
-          <!-- 状态指示 -->
+          <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+          </div>
+          <!-- 状态指示（右上） -->
           <span class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
             <span class="w-1.5 h-1.5 rounded-full" :class="getItemStatusDot(item.status)" />
           </span>
-          <!-- 删除按钮 -->
+          <!-- 删除按钮（右下，hover 显示） -->
           <button
             class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             title="删除物品"

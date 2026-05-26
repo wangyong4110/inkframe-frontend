@@ -529,12 +529,22 @@ const pacingOptions = [
   { value: 'fast' as const, label: '快' },
 ]
 const durationOptions = [
-  { value: 0, label: '自动' },
-  { value: 60, label: '1分钟' },
-  { value: 180, label: '3分钟' },
-  { value: 300, label: '5分钟' },
+  { value: 0,   label: '自动' },
+  { value: 30,  label: '30秒' },
+  { value: 60,  label: '1分' },
+  { value: 120, label: '2分' },
+  { value: 180, label: '3分' },
+  { value: 300, label: '5分' },
+  { value: 600, label: '10分' },
+  { value: 900, label: '15分' },
 ]
-const scriptAvgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[scriptPacing.value]))
+const scriptDurationIsCustom = computed(() => !durationOptions.some(d => d.value === scriptTargetDuration.value))
+const showScriptCustomDuration = ref(false)
+const scriptCustomDurationMins = ref(5)
+watch(scriptCustomDurationMins, (v) => {
+  scriptTargetDuration.value = Math.max(0, Math.round(v * 60))
+})
+const scriptAvgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[scriptPacing.value] ?? 5))
 const scriptEstimatedShots = computed(() =>
   scriptTargetDuration.value > 0
     ? Math.max(3, Math.round(scriptTargetDuration.value / scriptAvgShotDur.value))
@@ -1710,13 +1720,31 @@ async function fetchShotsForChapter() {
               <!-- 时长 -->
               <div>
                 <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">目标时长</label>
-                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div class="flex flex-wrap gap-1">
                   <button
                     v-for="d in durationOptions" :key="d.value"
-                    class="flex-1 py-1.5 text-xs transition-colors"
-                    :class="scriptTargetDuration === d.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="scriptTargetDuration = d.value"
+                    class="px-2.5 py-1 text-xs rounded-md border transition-colors"
+                    :class="scriptTargetDuration === d.value && !scriptDurationIsCustom
+                      ? 'bg-primary-500 border-primary-500 text-white'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
+                    @click="scriptTargetDuration = d.value; showScriptCustomDuration = false"
                   >{{ d.label }}</button>
+                  <button
+                    class="px-2.5 py-1 text-xs rounded-md border transition-colors"
+                    :class="scriptDurationIsCustom || showScriptCustomDuration
+                      ? 'bg-primary-500 text-white border-primary-500'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-primary-300'"
+                    @click="showScriptCustomDuration = !showScriptCustomDuration; if (scriptDurationIsCustom) scriptCustomDurationMins = scriptTargetDuration / 60"
+                  >自定义</button>
+                </div>
+                <div v-if="showScriptCustomDuration" class="flex items-center gap-2 mt-1.5">
+                  <input
+                    v-model.number="scriptCustomDurationMins"
+                    type="number" min="0.5" max="120" step="0.5"
+                    class="w-20 px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  />
+                  <span class="text-xs text-gray-400">分钟</span>
+                  <span v-if="scriptTargetDuration > 0" class="text-xs text-primary-500">= {{ scriptTargetDuration }}秒</span>
                 </div>
                 <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
                   预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头

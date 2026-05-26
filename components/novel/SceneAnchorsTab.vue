@@ -262,9 +262,9 @@ function getTypeLabel(type: string): string {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </span>
-          <!-- 生成参考图按钮 -->
+          <!-- 生成参考图按钮（左下，hover 显示） -->
           <button
-            class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-500 hover:text-primary-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute bottom-2 left-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-500 hover:text-primary-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             :disabled="generatingRefImage[anchor.id]"
             :title="anchor.ref_image_url ? '重新生成参考图' : '生成参考图'"
             @click.stop="generateRefImage(anchor)"
@@ -277,9 +277,9 @@ function getTypeLabel(type: string): string {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
           </button>
-          <!-- 删除按钮 -->
+          <!-- 删除按钮（右下，hover 显示） -->
           <button
-            class="absolute bottom-2 left-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             title="删除场景"
             @click.stop="handleDeleteAnchor(anchor, $event)"
           >
