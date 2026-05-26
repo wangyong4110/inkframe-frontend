@@ -319,6 +319,7 @@ export interface StoryboardShot {
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
   negative_prompt?: string
   motion_prompt?: string
+  shot_task_id?: string  // 正在生成中的任务ID，用于取消
 }
 
 export interface ShotSFXItem {

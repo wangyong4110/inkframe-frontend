@@ -29,6 +29,8 @@ const batchGeneratingClips = ref(false)
 const uploadingShotId = ref<number | null>(null)
 const shotImageInputRef = ref<HTMLInputElement | null>(null)
 const shotImageTargetId = ref<number | null>(null)
+// Maps shot.id → in-flight task_id for cancellation support
+const shotTaskIds = ref<Record<number, string>>({})
 
 const confirmingScript = ref(false)
 const editingId = ref<number | null>(null)
@@ -334,18 +336,39 @@ async function handleGenerateShot(shot: StoryboardShot) {
     const res = await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
     const taskId = res?.task_id
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
+    shotTaskIds.value[shot.id] = taskId
     toast.info(`镜头 #${shot.shot_no} 素材生成中…`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
+      delete shotTaskIds.value[shot.id]
       if (task.status === 'completed') {
         await videoStore.fetchStoryboard(props.videoId)
         toast.success(`镜头 #${shot.shot_no} 素材已生成`)
-      } else {
+      } else if (task.status !== 'cancelled') {
         toast.error(`镜头 #${shot.shot_no} 生成失败`)
       }
     })
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleStopShot(shot: StoryboardShot) {
+  const taskId = shotTaskIds.value[shot.id] || shot.shot_task_id
+  if (!taskId) {
+    // No task ID — just reset status directly
+    await videoStore.updateShot(props.videoId, shot.id, { status: 'pending' })
+    toast.info(`镜头 #${shot.shot_no} 已停止`)
+    return
+  }
+  try {
+    const taskStore = useTaskStore()
+    await taskStore.cancelTask(taskId)
+    delete shotTaskIds.value[shot.id]
+    await videoStore.updateShot(props.videoId, shot.id, { status: 'pending' })
+    toast.info(`镜头 #${shot.shot_no} 已停止，可重新生成`)
+  } catch (e: any) {
+    toast.error('停止失败：' + (e.message || ''))
   }
 }
 
@@ -1102,8 +1125,15 @@ defineExpose({ loadVideoProviders: async () => {
                   </svg>
                 </button>
               </template>
-              <div v-else-if="shot.status === 'generating'" class="p-2 flex items-center justify-center w-full h-full">
+              <div v-else-if="shot.status === 'generating'" class="p-2 flex flex-col items-center justify-center gap-1.5 w-full h-full">
                 <div class="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
+                <button
+                  class="text-[10px] px-2 py-0.5 rounded border border-red-400 text-red-400 hover:bg-red-500/10 transition-colors leading-none"
+                  title="停止生成"
+                  @click.stop="handleStopShot(shot)"
+                >
+                  停止
+                </button>
               </div>
               <button
                 v-else
