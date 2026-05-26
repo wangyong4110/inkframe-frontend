@@ -122,12 +122,6 @@
             </div>
 
             <p v-if="fileError" class="mt-2 text-xs text-red-400">{{ fileError }}</p>
-
-            <button v-if="selectedFile && !fileUploading" type="button"
-              class="mt-3 w-full py-2 text-sm font-medium rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors"
-              @click="uploadFile">
-              开始上传解析
-            </button>
           </div>
         </template>
       </div>
@@ -217,12 +211,12 @@ function getAuthHeader(): Record<string, string> {
 
 function handleFileSelect(e: Event) {
   const t = e.target as HTMLInputElement
-  if (t.files?.[0]) { selectedFile.value = t.files[0]; uploadedNovelId.value = null; fileError.value = ''; fileProgress.value = 0 }
+  if (t.files?.[0]) { selectedFile.value = t.files[0]; uploadedNovelId.value = null; fileError.value = ''; fileProgress.value = 0; uploadFile() }
 }
 
 function handleFileDrop(e: DragEvent) {
   e.preventDefault()
-  if (e.dataTransfer?.files?.[0]) { selectedFile.value = e.dataTransfer.files[0]; uploadedNovelId.value = null; fileError.value = ''; fileProgress.value = 0 }
+  if (e.dataTransfer?.files?.[0]) { selectedFile.value = e.dataTransfer.files[0]; uploadedNovelId.value = null; fileError.value = ''; fileProgress.value = 0; uploadFile() }
 }
 
 async function uploadFile() {
@@ -311,15 +305,26 @@ const submitting = ref(false)
 
 const form = ref({
   name: '',
-  level: 1,
+  level: 2,
 })
 
 const levels = [
   {
+    emoji: '✏️',
+    name: '字词润色',
+    tag: '最轻',
+    desc: '仅做词句级同义替换，情节、对话、结构完全保留。改写痕迹最轻，适合规避字面抄袭的场景。',
+    activeClass: 'border-sky-500 bg-sky-500/10',
+    tagClass: 'bg-sky-500/20 text-sky-300',
+    barColor: 'bg-sky-400',
+    retention: 5,
+    retentionText: '90-95%',
+  },
+  {
     emoji: '✍️',
     name: '文学精炼',
     tag: '推荐',
-    desc: '保留80-90%情节结构，用全新文学语言重新表达。适合希望保持故事框架同时降低文本相似度的场景。',
+    desc: '保留80-90%情节结构，用全新文学语言重新表达。适合保持故事框架同时显著降低文本相似度。',
     activeClass: 'border-blue-500 bg-blue-500/10',
     tagClass: 'bg-blue-500/20 text-blue-300',
     barColor: 'bg-blue-400',
@@ -327,15 +332,26 @@ const levels = [
     retentionText: '80-90%',
   },
   {
+    emoji: '🔀',
+    name: '情节调整',
+    tag: '中度',
+    desc: '保留60-75%核心情节，适度调整场景顺序与细节，改写对话语气与部分情节触发点。',
+    activeClass: 'border-teal-500 bg-teal-500/10',
+    tagClass: 'bg-teal-500/20 text-teal-300',
+    barColor: 'bg-teal-400',
+    retention: 3,
+    retentionText: '60-75%',
+  },
+  {
     emoji: '🔄',
     name: '结构重构',
     tag: '深度',
-    desc: '保留40-60%核心情节，重构世界观设定、角色关系和场景架构。大幅改变故事外在形式。',
+    desc: '保留30-50%核心情节，重构世界观设定、角色关系和场景架构。大幅改变故事外在形式。',
     activeClass: 'border-violet-500 bg-violet-500/10',
     tagClass: 'bg-violet-500/20 text-violet-300',
     barColor: 'bg-violet-400',
-    retention: 3,
-    retentionText: '40-60%',
+    retention: 2,
+    retentionText: '30-50%',
   },
   {
     emoji: '🔥',

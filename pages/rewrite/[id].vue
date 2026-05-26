@@ -434,7 +434,7 @@ function parseJSON(str: string): Record<string, unknown> {
 }
 
 function levelLabel(level: number) {
-  return (['', '文学精炼', '结构重构', '精神蒸馏'] as const)[level] || '未知'
+  return (['', '字词润色', '文学精炼', '情节调整', '结构重构', '精神蒸馏'] as const)[level] || '未知'
 }
 
 function levelColor(level: number) {

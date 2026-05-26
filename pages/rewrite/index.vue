@@ -145,14 +145,16 @@ async function doDelete() {
 }
 
 function levelLabel(level: number) {
-  return (['', '文学精炼', '结构重构', '精神蒸馏'] as const)[level] || '未知'
+  return (['', '字词润色', '文学精炼', '情节调整', '结构重构', '精神蒸馏'] as const)[level] || '未知'
 }
 
 function levelBadgeClass(level: number) {
   const map: Record<number, string> = {
-    1: 'bg-blue-500/20 text-blue-300',
-    2: 'bg-violet-500/20 text-violet-300',
-    3: 'bg-amber-500/20 text-amber-300',
+    1: 'bg-sky-500/20 text-sky-300',
+    2: 'bg-blue-500/20 text-blue-300',
+    3: 'bg-teal-500/20 text-teal-300',
+    4: 'bg-violet-500/20 text-violet-300',
+    5: 'bg-amber-500/20 text-amber-300',
   }
   return map[level] || 'bg-gray-700 text-gray-300'
 }
