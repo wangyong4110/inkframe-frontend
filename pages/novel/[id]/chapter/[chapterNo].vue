@@ -557,7 +557,7 @@ async function handleGenerateScript() {
   const maxTokens = scriptMaxTokens.value || undefined
   const temperature = scriptTemperature.value || undefined
   const timeout = scriptTimeoutSeconds.value || undefined
-  const voiceMode = scriptVoiceMode.value !== 'both' ? scriptVoiceMode.value : undefined
+  const voiceMode = (scriptVoiceMode.value && scriptVoiceMode.value !== 'auto' && scriptVoiceMode.value !== 'both') ? scriptVoiceMode.value : undefined
   if (!currentVideoId.value) {
     // Auto-create project with defaults, then generate
     generatingScript.value = true
@@ -1725,23 +1725,16 @@ async function fetchShotsForChapter() {
               <!-- 配音模式 -->
               <div>
                 <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">配音模式</label>
-                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                  <button
-                    class="flex-1 py-1.5 text-xs transition-colors"
-                    :class="scriptVoiceMode === 'both' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="scriptVoiceMode = 'both'"
-                  >对白+旁白</button>
-                  <button
-                    class="flex-1 py-1.5 text-xs transition-colors"
-                    :class="scriptVoiceMode === 'narration' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="scriptVoiceMode = 'narration'"
-                  >仅旁白</button>
-                  <button
-                    class="flex-1 py-1.5 text-xs transition-colors"
-                    :class="scriptVoiceMode === 'dialogue' ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="scriptVoiceMode = 'dialogue'"
-                  >仅对白</button>
-                </div>
+                <select
+                  v-model="scriptVoiceMode"
+                  class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="auto">自动</option>
+                  <option value="narration">仅旁白</option>
+                  <option value="dialogue">仅对白</option>
+                  <option value="narration_primary">旁白为主</option>
+                  <option value="dialogue_primary">对白为主</option>
+                </select>
               </div>
               <!-- 用户提示词 -->
               <div>

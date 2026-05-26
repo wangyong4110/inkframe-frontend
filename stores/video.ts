@@ -232,7 +232,7 @@ export const useVideoStore = defineStore('video', {
         if (maxTokens && maxTokens > 0) body.max_tokens = maxTokens
         if (temperature && temperature > 0) body.temperature = temperature
         if (timeoutSeconds && timeoutSeconds > 0) body.timeout_seconds = timeoutSeconds
-        if (voiceMode && voiceMode !== 'both') body.voice_mode = voiceMode
+        if (voiceMode && voiceMode !== 'auto' && voiceMode !== 'both') body.voice_mode = voiceMode
         const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')

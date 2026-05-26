@@ -13,7 +13,7 @@ interface AiGenParamsCookie {
   maxTokens?: number
   temperature?: number
   timeoutSeconds?: number
-  voiceMode?: 'both' | 'narration' | 'dialogue'
+  voiceMode?: 'auto' | 'narration' | 'dialogue' | 'narration_primary' | 'dialogue_primary'
 }
 
 export const useAiGenerationParams = () => {
@@ -30,7 +30,7 @@ export const useAiGenerationParams = () => {
   const advMaxTokens      = ref<number>(cookie.value?.maxTokens ?? 0)
   const advTemperature    = ref<number>(cookie.value?.temperature ?? 0)
   const advTimeoutSeconds = ref<number>(cookie.value?.timeoutSeconds ?? 0)
-  const voiceMode         = ref<'both' | 'narration' | 'dialogue'>(cookie.value?.voiceMode ?? 'both')
+  const voiceMode         = ref<'auto' | 'narration' | 'dialogue' | 'narration_primary' | 'dialogue_primary'>(cookie.value?.voiceMode ?? 'auto')
 
   // ── Auto-save to cookie whenever any param changes ─────────────────────────
   watch(pacing,            (v) => { cookie.value = { ...cookie.value, pacing: v } })

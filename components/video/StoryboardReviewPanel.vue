@@ -8,6 +8,9 @@ const videoStore = useVideoStore()
 const toast = useToast()
 const { confirm } = useConfirm()
 
+// 组件挂载后自动启动审查，避免父组件通过 ref 调用的时序问题
+onMounted(() => startReview())
+
 const shots = computed(() => videoStore.storyboard)
 
 // ── Review state ──
@@ -225,13 +228,13 @@ async function startReview() {
   }
 }
 
-defineExpose({ startReview })
+defineExpose({ startReview, reviewing })
 </script>
 
 <template>
   <!-- AI Review Panel -->
   <Teleport to="body">
-    <Transition name="slide-right">
+    <Transition name="slide-right" appear>
       <div class="fixed inset-0 z-50 flex justify-end">
         <div class="absolute inset-0 bg-black/30" @click="emit('close')" />
         <div class="relative w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">

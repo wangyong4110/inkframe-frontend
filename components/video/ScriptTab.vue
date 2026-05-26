@@ -3,6 +3,7 @@ import type { StoryboardShot, VideoQualityTier } from '~/types'
 import { SHOT_STATUS_LABELS, SHOT_STATUS_COLORS, QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
 import { getAuthToken } from '~/utils/auth'
+import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 
@@ -151,6 +152,8 @@ const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_O
 // ── Review panel ref ──
 const reviewPanelRef = ref<{ startReview: () => void } | null>(null)
 const showReviewPanel = ref(false)
+// reviewing = panel is open (disable the button while panel is visible)
+const reviewing = computed(() => showReviewPanel.value)
 
 // ── Voice text inline edit (shared with voice tab context) ──
 const editingVoiceTextId = ref<number | null>(null)
@@ -181,8 +184,6 @@ function startEdit(shot: StoryboardShot) {
     description: shot.description,
     narration: shot.narration,
     dialogue: shot.dialogue,
-    subtitle: shot.subtitle,
-    emotional_tone: (shot as any).emotional_tone || '',
     shot_size: shot.shot_size,
     camera_angle: shot.camera_angle,
     camera_type: shot.camera_type,
@@ -294,7 +295,7 @@ async function handleGenerateStoryboard(userPrompt?: string) {
 
 function handleReviewStoryboard() {
   showReviewPanel.value = true
-  reviewPanelRef.value?.startReview()
+  // startReview 由 StoryboardReviewPanel 的 onMounted 自动触发
 }
 
 async function handleGenerateShot(shot: StoryboardShot) {
@@ -799,36 +800,25 @@ defineExpose({ loadVideoProviders: async () => {
               </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">画面描述（英文，用于AI图片生成）</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1">画面描述（用于AI图片生成）</label>
               <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="English visual prompt for image generation..." />
             </div>
             <div>
-              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">运镜提示（Motion Prompt）</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1">视频提示词</label>
               <textarea
                 v-model="editForm.motion_prompt"
                 rows="2"
-                class="w-full text-xs border rounded px-2 py-1 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                placeholder="视频运镜描述，留空则自动生成"
+                class="input text-sm resize-none font-mono"
+                placeholder="视频生成提示词（Kling/Seedance），留空则自动生成"
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">旁白文案（中文，用于TTS和字幕）</label>
+              <label class="block text-xs font-medium text-gray-500 mb-1">旁白文案（用于TTS和字幕）</label>
               <textarea v-model="editForm.narration" rows="2" class="input text-sm resize-none" placeholder="观众听到的旁白内容，不含镜头语言..." />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">角色台词（格式：角色名：台词内容）</label>
               <textarea v-model="editForm.dialogue" rows="2" class="input text-sm resize-none" placeholder="凌云：你敢再说一遍！（无对话可留空）" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">
-                字幕覆盖
-                <span class="ml-1 text-gray-400 font-normal">（留空则自动使用台词/旁白）</span>
-              </label>
-              <textarea v-model="editForm.subtitle" rows="2" class="input text-sm resize-none" placeholder="自定义字幕文本，可与旁白不同..." />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">情绪基调</label>
-              <input v-model="editForm.emotional_tone" type="text" class="input text-sm" placeholder="如：紧张、浪漫史诗、压抑→释怀" />
             </div>
             <div class="grid grid-cols-4 gap-2">
               <div>
@@ -1014,7 +1004,7 @@ defineExpose({ loadVideoProviders: async () => {
         <div v-if="insertingShotAfter === shot.shot_no" class="card p-3 border-2 border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20 space-y-2">
           <p class="text-xs font-medium text-primary-700 dark:text-primary-300">在镜头 #{{ shot.shot_no }} 之后插入新镜头</p>
           <textarea v-model="insertShotForm.narration" rows="2" class="input text-sm resize-none" placeholder="旁白/台词（中文）" />
-          <textarea v-model="insertShotForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="画面描述（英文，用于 AI 生图）" />
+          <textarea v-model="insertShotForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="画面描述（用于 AI 生图）" />
           <div class="flex items-center gap-2">
             <label class="text-xs text-gray-500">时长</label>
             <input v-model.number="insertShotForm.duration" type="number" min="1" max="30" step="0.5" class="input text-sm py-1 w-20" />
