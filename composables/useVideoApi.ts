@@ -9,6 +9,7 @@ import type {
   VideoPublishRecord,
   StoryboardReview,
   ReviewRecord,
+  IgnoredSuggestion,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -298,6 +299,20 @@ export const useVideoApi = () => {
   const unpublishVideo = (id: number) =>
     request<ApiResponse<{ unpublished: boolean }>>(`/videos/${id}/unpublish`, { method: 'POST' })
 
+  const listIgnoredSuggestions = (id: number) =>
+    request<ApiResponse<IgnoredSuggestion[]>>(`/videos/${id}/storyboard/ignored-suggestions`)
+
+  const ignoreSuggestion = (id: number, shotNo: number, issueText: string, note?: string) =>
+    request<ApiResponse<IgnoredSuggestion>>(`/videos/${id}/storyboard/ignored-suggestions`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_no: shotNo, issue_text: issueText, ...(note ? { note } : {}) }),
+    })
+
+  const unignoreSuggestion = (id: number, suggestionId: number) =>
+    request<ApiResponse<null>>(`/videos/${id}/storyboard/ignored-suggestions/${suggestionId}`, {
+      method: 'DELETE',
+    })
+
   const listPublishRecords = (id: number) =>
     request<ApiResponse<VideoPublishRecord[]>>(`/videos/${id}/publish-records`)
 
@@ -361,5 +376,8 @@ export const useVideoApi = () => {
     unpublishVideo,
     listPublishRecords,
     publishExternal,
+    listIgnoredSuggestions,
+    ignoreSuggestion,
+    unignoreSuggestion,
   }
 }

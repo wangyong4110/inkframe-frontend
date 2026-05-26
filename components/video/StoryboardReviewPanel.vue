@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardReview, ReviewRecord } from '~/types'
+import type { StoryboardReview, ReviewRecord, IgnoredSuggestion } from '~/types'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -10,7 +10,7 @@ const { confirm } = useConfirm()
 
 // 组件挂载：优先复用最新历史记录，避免每次打开都重新触发 AI 审查
 onMounted(async () => {
-  await loadReviewHistory()
+  await Promise.all([loadReviewHistory(), loadIgnoredSuggestions()])
   const latest = reviewHistory.value[0]
   if (latest?.review) {
     // 有历史记录 → 直接恢复，无需再次调用 AI
@@ -34,7 +34,7 @@ type DiffItem = {
   record_id?: number
 }
 
-const reviewPanelTab = ref<'current' | 'history'>('current')
+const reviewPanelTab = ref<'current' | 'history' | 'ignored'>('current')
 const reviewing = ref(false)
 const reviewResult = ref<StoryboardReview | null>(null)
 const reviewError = ref('')
@@ -46,6 +46,56 @@ const applyResult = ref<{ count: number } | null>(null)
 const reviewHistory = ref<ReviewRecord[]>([])
 const loadingHistory = ref(false)
 const rollingBackId = ref<number | null>(null)
+
+// ── Ignored suggestions ──
+const ignoredSuggestions = ref<IgnoredSuggestion[]>([])
+const ignoringIssue = ref<string | null>(null)
+
+// Set of "<shot_no>|<issue_text>" for O(1) lookup
+const ignoredIssueSet = computed(() => {
+  const s = new Set<string>()
+  for (const ig of ignoredSuggestions.value) {
+    s.add(`${ig.shot_no}|${ig.issue_text}`)
+  }
+  return s
+})
+
+async function loadIgnoredSuggestions() {
+  try {
+    const api = useVideoApi()
+    const res = await api.listIgnoredSuggestions(props.videoId)
+    ignoredSuggestions.value = (res.data ?? []) as IgnoredSuggestion[]
+  } catch (_) {
+    // non-critical
+  }
+}
+
+async function handleIgnore(shotNo: number, issueText: string) {
+  const key = `${shotNo}|${issueText}`
+  if (ignoredIssueSet.value.has(key)) return
+  ignoringIssue.value = key
+  try {
+    const api = useVideoApi()
+    await api.ignoreSuggestion(props.videoId, shotNo, issueText)
+    await loadIgnoredSuggestions()
+    toast.success('已忽略该建议，下次审查将不再出现')
+  } catch (e: any) {
+    toast.error(e.message || '忽略失败')
+  } finally {
+    ignoringIssue.value = null
+  }
+}
+
+async function handleUnignore(suggestion: IgnoredSuggestion) {
+  try {
+    const api = useVideoApi()
+    await api.unignoreSuggestion(props.videoId, suggestion.id)
+    await loadIgnoredSuggestions()
+    toast.success('已取消忽略')
+  } catch (e: any) {
+    toast.error(e.message || '操作失败')
+  }
+}
 
 // 是否存在可应用的文字改动（narration 或 description 有实际差异）
 const hasApplicableDiffs = computed(() => {
@@ -293,6 +343,16 @@ defineExpose({ startReview, reviewing })
                   历史记录
                   <span v-if="reviewHistory.length > 0" class="ml-1 text-xs opacity-75">({{ reviewHistory.length }})</span>
                 </button>
+                <button
+                  class="px-3 py-1 text-xs font-medium transition-colors relative"
+                  :class="reviewPanelTab === 'ignored'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
+                  @click="reviewPanelTab = 'ignored'; loadIgnoredSuggestions()"
+                >
+                  已忽略
+                  <span v-if="ignoredSuggestions.length > 0" class="ml-1 text-xs opacity-75">({{ ignoredSuggestions.length }})</span>
+                </button>
               </div>
             </div>
             <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="emit('close')">
@@ -302,8 +362,33 @@ defineExpose({ startReview, reviewing })
             </button>
           </div>
 
+          <!-- Ignored suggestions tab content -->
+          <div v-if="reviewPanelTab === 'ignored'" class="flex-1 overflow-y-auto px-5 py-4">
+            <div v-if="ignoredSuggestions.length === 0" class="py-12 text-center text-sm text-gray-400 dark:text-gray-600">
+              暂无已忽略的建议
+            </div>
+            <div v-else class="space-y-2">
+              <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">以下问题已被标记为忽略，AI 审查不会再次提出。取消忽略后恢复检测。</p>
+              <div
+                v-for="ig in ignoredSuggestions"
+                :key="ig.id"
+                class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 flex items-start gap-3"
+              >
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">镜头 #{{ ig.shot_no }}</div>
+                  <div class="text-sm text-gray-700 dark:text-gray-300 leading-snug">{{ ig.issue_text }}</div>
+                  <div class="text-xs text-gray-400 dark:text-gray-600 mt-1">忽略于 {{ ig.created_at }}</div>
+                </div>
+                <button
+                  class="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-red-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  @click="handleUnignore(ig)"
+                >取消忽略</button>
+              </div>
+            </div>
+          </div>
+
           <!-- History tab content -->
-          <div v-if="reviewPanelTab === 'history'" class="flex-1 overflow-y-auto px-5 py-4">
+          <div v-else-if="reviewPanelTab === 'history'" class="flex-1 overflow-y-auto px-5 py-4">
             <div v-if="loadingHistory" class="flex items-center justify-center py-12 text-gray-400 gap-2 text-sm">
               <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -491,7 +576,30 @@ defineExpose({ startReview, reviewing })
                   >
                     <div class="font-medium text-gray-800 dark:text-gray-200 mb-1">镜 {{ fb.shot_no }}</div>
                     <ul class="mb-1.5 space-y-0.5">
-                      <li v-for="issue in fb.issues" :key="issue" class="text-gray-600 dark:text-gray-400">· {{ issue }}</li>
+                      <li v-for="issue in fb.issues" :key="issue" class="flex items-start gap-1.5 text-gray-600 dark:text-gray-400">
+                        <span class="shrink-0">·</span>
+                        <span class="flex-1">{{ issue }}</span>
+                        <button
+                          v-if="!ignoredIssueSet.has(`${fb.shot_no}|${issue}`)"
+                          class="shrink-0 ml-1 text-gray-300 hover:text-amber-500 dark:text-gray-600 dark:hover:text-amber-400 transition-colors"
+                          :disabled="ignoringIssue === `${fb.shot_no}|${issue}`"
+                          title="忽略此建议（下次审查不再出现）"
+                          @click.stop="handleIgnore(fb.shot_no, issue)"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        </button>
+                        <span
+                          v-else
+                          class="shrink-0 ml-1 text-amber-400 dark:text-amber-500"
+                          title="已忽略"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        </span>
+                      </li>
                     </ul>
                     <div v-if="fb.suggestion" class="text-gray-500 dark:text-gray-500 text-xs italic">{{ fb.suggestion }}</div>
                     <div v-if="fb.suggested_narration" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">

@@ -1011,3 +1011,13 @@ export interface ReviewRecord {
   applied_at?: string
   review?: StoryboardReview
 }
+
+export interface IgnoredSuggestion {
+  id: number
+  video_id: number
+  shot_no: number
+  issue_text: string
+  issue_hash: string
+  note: string
+  created_at: string
+}
