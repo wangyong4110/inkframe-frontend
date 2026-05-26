@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Novel, NovelComment, Chapter } from '~/types'
+import type { Novel, NovelComment, Chapter, ChapterComment, ReadingProgress } from '~/types'
 
 definePageMeta({ auth: false })
 
@@ -24,6 +24,25 @@ const liking = ref(false)
 const chapters = ref<Chapter[]>([])
 const selectedChapter = ref<Chapter | null>(null)
 const readerOpen = ref(false)
+const loadingChapterContent = ref(false)
+
+// Chapter social state
+const chapterLiked = ref(false)
+const chapterLikeCount = ref(0)
+const chapterLiking = ref(false)
+const chapterComments = ref<ChapterComment[]>([])
+const chapterCommentTotal = ref(0)
+const chapterCommentPage = ref(1)
+const loadingChapterComments = ref(false)
+const chapterCommentText = ref('')
+const postingChapterComment = ref(false)
+const readerTab = ref<'content' | 'comments'>('content')
+
+// Reading progress state
+const readingProgress = ref<ReadingProgress | null>(null)
+const readChapterIds = ref<Set<number>>(new Set())
+let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
+const contentScrollEl = ref<HTMLElement | null>(null)
 
 useHead(() => ({
   title: novel.value ? `${novel.value.title} - InkFrame 小说广场` : 'InkFrame 小说广场',
@@ -80,9 +99,25 @@ async function loadMoreComments() {
   await loadComments(true)
 }
 
-function openChapter(ch: Chapter) {
+async function openChapter(ch: Chapter) {
   selectedChapter.value = ch
   readerOpen.value = true
+  if (!ch.content) {
+    loadingChapterContent.value = true
+    try {
+      const res = await novelApi.getChapter(novelId.value, ch.chapter_no)
+      if (res.data) {
+        selectedChapter.value = res.data
+        // Update the chapter in the list so switching back is instant
+        const idx = chapters.value.findIndex(c => c.id === ch.id)
+        if (idx >= 0) chapters.value[idx] = res.data
+      }
+    } catch {
+      // ignore — content will show empty
+    } finally {
+      loadingChapterContent.value = false
+    }
+  }
 }
 
 function closeReader() {
@@ -92,13 +127,13 @@ function closeReader() {
 function prevChapter() {
   if (!selectedChapter.value) return
   const idx = chapters.value.findIndex(c => c.id === selectedChapter.value!.id)
-  if (idx > 0) selectedChapter.value = chapters.value[idx - 1]
+  if (idx > 0) openChapter(chapters.value[idx - 1])
 }
 
 function nextChapter() {
   if (!selectedChapter.value) return
   const idx = chapters.value.findIndex(c => c.id === selectedChapter.value!.id)
-  if (idx < chapters.value.length - 1) selectedChapter.value = chapters.value[idx + 1]
+  if (idx < chapters.value.length - 1) openChapter(chapters.value[idx + 1])
 }
 
 const selectedIdx = computed(() =>
@@ -143,6 +178,132 @@ async function deleteComment(cid: number) {
   if (novel.value) novel.value.comment_count = Math.max(0, (novel.value.comment_count ?? 0) - 1)
 }
 
+// ── Chapter social ──────────────────────────────────────────────────────────
+
+async function toggleChapterLike() {
+  if (!authStore.isLoggedIn) { navigateTo('/auth/login'); return }
+  if (!selectedChapter.value || chapterLiking.value) return
+  chapterLiking.value = true
+  try {
+    const res = await novelApi.toggleChapterLike(novelId.value, selectedChapter.value.chapter_no)
+    chapterLiked.value = res.data.liked
+    chapterLikeCount.value = res.data.like_count
+    if (selectedChapter.value) selectedChapter.value.like_count = res.data.like_count
+  } finally {
+    chapterLiking.value = false
+  }
+}
+
+async function loadChapterComments(append = false) {
+  if (!selectedChapter.value) return
+  loadingChapterComments.value = true
+  try {
+    const res = await novelApi.listChapterComments(novelId.value, selectedChapter.value.chapter_no, chapterCommentPage.value, 20)
+    if (append) {
+      chapterComments.value.push(...(res.data.items ?? []))
+    } else {
+      chapterComments.value = res.data.items ?? []
+    }
+    chapterCommentTotal.value = res.data.total
+  } finally {
+    loadingChapterComments.value = false
+  }
+}
+
+async function loadMoreChapterComments() {
+  chapterCommentPage.value++
+  await loadChapterComments(true)
+}
+
+async function postChapterComment() {
+  const text = chapterCommentText.value.trim()
+  if (!text || !selectedChapter.value) return
+  if (!authStore.isLoggedIn) { navigateTo('/auth/login'); return }
+  postingChapterComment.value = true
+  try {
+    const res = await novelApi.addChapterComment(novelId.value, selectedChapter.value.chapter_no, { content: text })
+    chapterComments.value.unshift(res.data)
+    chapterCommentTotal.value++
+    chapterCommentText.value = ''
+  } finally {
+    postingChapterComment.value = false
+  }
+}
+
+async function deleteChapterCommentFn(cid: number) {
+  if (!selectedChapter.value) return
+  await novelApi.deleteChapterComment(novelId.value, selectedChapter.value.chapter_no, cid)
+  chapterComments.value = chapterComments.value.filter(c => c.id !== cid)
+  chapterCommentTotal.value = Math.max(0, chapterCommentTotal.value - 1)
+}
+
+// ── Reading progress ─────────────────────────────────────────────────────────
+
+async function loadReadingProgress() {
+  if (!authStore.isLoggedIn) return
+  try {
+    const res = await novelApi.getReadingProgress(novelId.value)
+    readingProgress.value = res.data ?? null
+  } catch { /* ignore */ }
+}
+
+async function loadReadChapters() {
+  if (!authStore.isLoggedIn) return
+  try {
+    const res = await novelApi.getReadChapters(novelId.value)
+    readChapterIds.value = new Set(res.data.chapter_ids ?? [])
+  } catch { /* ignore */ }
+}
+
+function scheduleProgressSave() {
+  if (!selectedChapter.value || !authStore.isLoggedIn) return
+  const el = contentScrollEl.value
+  if (!el) return
+  const pct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight || 1)) * 100)
+  if (progressSaveTimer) clearTimeout(progressSaveTimer)
+  progressSaveTimer = setTimeout(async () => {
+    if (!selectedChapter.value) return
+    try {
+      await novelApi.saveReadingProgress(novelId.value, {
+        chapter_no: selectedChapter.value.chapter_no,
+        chapter_id: selectedChapter.value.id,
+        scroll_pct: Math.min(100, pct),
+      })
+      readingProgress.value = {
+        chapter_no: selectedChapter.value.chapter_no,
+        chapter_id: selectedChapter.value.id,
+        scroll_pct: Math.min(100, pct),
+        novel_id: novelId.value,
+        user_id: authStore.user?.id ?? 0,
+        updated_at: new Date().toISOString(),
+        created_at: readingProgress.value?.created_at ?? new Date().toISOString(),
+      }
+      if (pct >= 50) readChapterIds.value.add(selectedChapter.value.id)
+    } catch { /* ignore */ }
+  }, 1500)
+}
+
+watch(selectedChapter, async (ch) => {
+  if (!ch) return
+  chapterLiked.value = false
+  chapterLikeCount.value = ch.like_count ?? 0
+  chapterComments.value = []
+  chapterCommentPage.value = 1
+  chapterCommentTotal.value = 0
+  readerTab.value = 'content'
+  if (authStore.isLoggedIn) {
+    try {
+      const res = await novelApi.getChapterIsLiked(novelId.value, ch.chapter_no)
+      chapterLiked.value = res.data.liked
+    } catch { /* ignore */ }
+  }
+  loadChapterComments()
+})
+
+onBeforeUnmount(() => {
+  if (progressSaveTimer) clearTimeout(progressSaveTimer)
+})
+
 function formatDate(s?: string) {
   if (!s) return ''
   return new Date(s).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -171,7 +332,7 @@ const genreLabels: Record<string, string> = {
 
 onMounted(async () => {
   await loadNovel()
-  await Promise.all([loadChapters(), loadComments()])
+  await Promise.all([loadChapters(), loadComments(), loadReadingProgress(), loadReadChapters()])
 })
 </script>
 
@@ -280,15 +441,24 @@ onMounted(async () => {
             <button
               v-for="ch in chapters"
               :key="ch.id"
-              class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
+              :class="[
+                'w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group',
+                readChapterIds.has(ch.id) ? 'bg-green-50/40 dark:bg-green-900/10' : '',
+              ]"
               @click="openChapter(ch)"
             >
               <span class="text-xs text-gray-400 w-8 shrink-0 text-right">{{ ch.chapter_no }}</span>
-              <span class="flex-1 text-sm text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+              <span :class="[
+                'flex-1 text-sm truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400',
+                readChapterIds.has(ch.id) ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300',
+              ]">
                 {{ ch.title || `第${ch.chapter_no}章` }}
               </span>
               <span v-if="ch.word_count" class="text-xs text-gray-400 shrink-0">{{ ch.word_count >= 1000 ? `${(ch.word_count / 1000).toFixed(1)}k` : ch.word_count }}字</span>
-              <svg class="w-4 h-4 text-gray-300 group-hover:text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg v-if="readChapterIds.has(ch.id)" class="w-3.5 h-3.5 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+              </svg>
+              <svg v-else class="w-4 h-4 text-gray-300 group-hover:text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
               </svg>
             </button>
@@ -426,14 +596,23 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Start reading button -->
-        <button
-          v-if="chapters.length > 0"
-          @click="openChapter(chapters[0])"
-          class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm transition-colors"
-        >
-          开始阅读
-        </button>
+        <!-- Continue / start reading button -->
+        <template v-if="chapters.length > 0">
+          <button
+            v-if="readingProgress"
+            @click="openChapter(chapters.find(c => c.chapter_no === readingProgress!.chapter_no) ?? chapters[readingProgress!.chapter_no - 1] ?? chapters[0])"
+            class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm transition-colors"
+          >
+            续读第{{ readingProgress.chapter_no }}章
+          </button>
+          <button
+            v-else
+            @click="openChapter(chapters[0])"
+            class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm transition-colors"
+          >
+            开始阅读
+          </button>
+        </template>
       </div>
     </div>
 
@@ -483,9 +662,39 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- Content -->
-            <div class="flex-1 overflow-y-auto px-8 py-6">
-              <div v-if="selectedChapter?.content" class="prose prose-gray dark:prose-invert max-w-none">
+            <!-- Tab bar -->
+            <div class="flex border-b border-gray-100 dark:border-gray-700 shrink-0">
+              <button
+                @click="readerTab = 'content'"
+                :class="[
+                  'flex-1 py-2.5 text-sm font-medium transition-colors',
+                  readerTab === 'content'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                ]"
+              >内容</button>
+              <button
+                @click="readerTab = 'comments'"
+                :class="[
+                  'flex-1 py-2.5 text-sm font-medium transition-colors',
+                  readerTab === 'comments'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                ]"
+              >评论{{ chapterCommentTotal > 0 ? ` (${chapterCommentTotal})` : '' }}</button>
+            </div>
+
+            <!-- Content tab -->
+            <div
+              v-if="readerTab === 'content'"
+              ref="contentScrollEl"
+              class="flex-1 overflow-y-auto px-8 py-6"
+              @scroll="scheduleProgressSave"
+            >
+              <div v-if="loadingChapterContent" class="flex justify-center items-center py-16">
+                <span class="inline-block w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+              <div v-else-if="selectedChapter?.content" class="prose prose-gray dark:prose-invert max-w-none">
                 <p
                   v-for="(para, i) in formatContent(selectedChapter.content)"
                   :key="i"
@@ -493,6 +702,64 @@ onMounted(async () => {
                 >{{ para }}</p>
               </div>
               <p v-else class="text-center text-gray-400 py-16 text-sm">暂无内容</p>
+            </div>
+
+            <!-- Comments tab -->
+            <div v-else class="flex-1 overflow-y-auto flex flex-col">
+              <!-- Input -->
+              <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+                <div class="flex gap-3">
+                  <div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-300 shrink-0">
+                    {{ authStore.user?.nickname?.charAt(0)?.toUpperCase() ?? '?' }}
+                  </div>
+                  <div class="flex-1">
+                    <textarea
+                      v-model="chapterCommentText"
+                      rows="2"
+                      :placeholder="authStore.isLoggedIn ? '对本章发表看法...' : '登录后发表评论'"
+                      :disabled="!authStore.isLoggedIn"
+                      class="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 resize-none focus:outline-none focus:border-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <div class="flex justify-end mt-2">
+                      <button
+                        :disabled="!chapterCommentText.trim() || postingChapterComment || !authStore.isLoggedIn"
+                        @click="postChapterComment"
+                        class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm disabled:opacity-40 transition-colors"
+                      >{{ postingChapterComment ? '发送中...' : '发送' }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Comment list -->
+              <div class="flex-1 overflow-y-auto px-5 py-3 space-y-4">
+                <div v-if="loadingChapterComments && !chapterComments.length" class="py-8 text-center text-gray-400 text-sm">加载中...</div>
+                <p v-else-if="!chapterComments.length" class="text-center text-sm text-gray-400 py-8">暂无评论，来发表第一条吧</p>
+                <div v-for="c in chapterComments" :key="c.id" class="flex gap-3">
+                  <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-500 shrink-0">
+                    {{ (c.nickname || String(c.user_id)).charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-baseline gap-2">
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ c.nickname || `用户${c.user_id}` }}</span>
+                      <span class="text-xs text-gray-400">{{ formatDate(c.created_at) }}</span>
+                    </div>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">{{ c.content }}</p>
+                    <button
+                      v-if="authStore.user?.id === c.user_id"
+                      @click="deleteChapterCommentFn(c.id)"
+                      class="text-xs text-gray-400 hover:text-red-500 mt-1 transition-colors"
+                    >删除</button>
+                  </div>
+                </div>
+                <div v-if="chapterComments.length < chapterCommentTotal" class="text-center pt-2 pb-4">
+                  <button
+                    :disabled="loadingChapterComments"
+                    @click="loadMoreChapterComments"
+                    class="px-5 py-1.5 border border-gray-200 dark:border-gray-600 rounded-full text-sm text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                  >{{ loadingChapterComments ? '加载中...' : '加载更多' }}</button>
+                </div>
+              </div>
             </div>
 
             <!-- Reader footer -->
@@ -507,7 +774,24 @@ onMounted(async () => {
                 </svg>
                 上一章
               </button>
-              <span class="text-xs text-gray-400">{{ selectedIdx + 1 }} / {{ chapters.length }}</span>
+
+              <!-- Like button -->
+              <button
+                @click="toggleChapterLike"
+                :disabled="chapterLiking"
+                :class="[
+                  'flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-all',
+                  chapterLiked
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-500'
+                    : 'text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20',
+                ]"
+              >
+                <svg class="w-4 h-4" :fill="chapterLiked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                </svg>
+                <span>{{ chapterLikeCount || '' }}</span>
+              </button>
+
               <button
                 :disabled="selectedIdx >= chapters.length - 1"
                 @click="nextChapter"

@@ -43,6 +43,9 @@ export const useChapterApi = () => {
   const unpublishChapter = (novelId: number, chapterNo: number) =>
     request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/${chapterNo}/unpublish`, { method: 'POST' })
 
+  const batchPublishChapters = (novelId: number) =>
+    request<ApiResponse<{ published_count: number }>>(`/novels/${novelId}/chapters/batch-publish`, { method: 'POST' })
+
   return {
     getChapters,
     getChapter,
@@ -52,5 +55,6 @@ export const useChapterApi = () => {
     generateChapter,
     publishChapter,
     unpublishChapter,
+    batchPublishChapters,
   }
 }

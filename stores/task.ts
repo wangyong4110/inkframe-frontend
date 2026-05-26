@@ -142,8 +142,10 @@ export const useTaskStore = defineStore('task', {
           return
         }
 
-        // Still running — schedule next poll with backoff
-        delay = Math.min(delay * POLL_BACKOFF_FACTOR, POLL_MAX_MS)
+        // Still running — schedule next poll with backoff.
+        // Cap at 3 s when progress is visible so the bar feels responsive.
+        const effectiveMax = task.progress > 0 ? 3000 : POLL_MAX_MS
+        delay = Math.min(delay * POLL_BACKOFF_FACTOR, effectiveMax)
         this._timers[taskId] = setTimeout(poll, delay)
       }
 

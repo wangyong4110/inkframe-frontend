@@ -8,8 +8,18 @@ const videoStore = useVideoStore()
 const toast = useToast()
 const { confirm } = useConfirm()
 
-// 组件挂载后自动启动审查，避免父组件通过 ref 调用的时序问题
-onMounted(() => startReview())
+// 组件挂载：优先复用最新历史记录，避免每次打开都重新触发 AI 审查
+onMounted(async () => {
+  await loadReviewHistory()
+  const latest = reviewHistory.value[0]
+  if (latest?.review) {
+    // 有历史记录 → 直接恢复，无需再次调用 AI
+    reviewResult.value = { ...latest.review, record_id: latest.id }
+  } else {
+    // 无任何审查记录 → 首次打开，自动触发
+    startReview()
+  }
+})
 
 const shots = computed(() => videoStore.storyboard)
 
@@ -19,6 +29,7 @@ type DiffItem = {
   orig_narration: string; suggested_narration: string; has_narration_diff: boolean
   orig_description: string; suggested_description: string; has_description_diff: boolean
   issues: string[]; severity: 'info' | 'warning' | 'error'
+  suggestion?: string   // 结构性建议文本（无可应用文字改动时展示）
   selected: boolean
   record_id?: number
 }
@@ -35,6 +46,18 @@ const applyResult = ref<{ count: number } | null>(null)
 const reviewHistory = ref<ReviewRecord[]>([])
 const loadingHistory = ref(false)
 const rollingBackId = ref<number | null>(null)
+
+// 是否存在可应用的文字改动（narration 或 description 有实际差异）
+const hasApplicableDiffs = computed(() => {
+  if (!reviewResult.value?.shot_feedback?.length) return false
+  const shotMap = new Map(shots.value.map(s => [s.shot_no, s]))
+  return reviewResult.value.shot_feedback.some(fb => {
+    const shot = shotMap.get(fb.shot_no)
+    const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
+    const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
+    return hasNarr || hasDesc
+  })
+})
 
 // ── Statistics ──
 const SHOT_SIZE_LABEL: Record<string, string> = {
@@ -73,9 +96,15 @@ const durationBuckets = computed(() => {
 })
 
 // ── Helpers ──
+// Normalize legacy scores stored on 0-100 scale to 0-10
+function normalizeScore(score: number): number {
+  return score > 10 ? score / 10 : score
+}
+
 function scoreColor(score: number) {
-  if (score >= 8) return 'text-green-600 dark:text-green-400'
-  if (score >= 6) return 'text-yellow-600 dark:text-yellow-400'
+  const s = normalizeScore(score)
+  if (s >= 8) return 'text-green-600 dark:text-green-400'
+  if (s >= 6) return 'text-yellow-600 dark:text-yellow-400'
   return 'text-red-600 dark:text-red-400'
 }
 
@@ -152,7 +181,6 @@ function openDiffModal() {
     const shot = shotMap.get(fb.shot_no)
     const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
     const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
-    if (!hasNarr && !hasDesc) continue
     items.push({
       shot_no: fb.shot_no,
       orig_narration: shot?.narration ?? '',
@@ -163,12 +191,13 @@ function openDiffModal() {
       has_description_diff: hasDesc,
       issues: fb.issues,
       severity: fb.severity,
-      selected: true,
+      suggestion: (!hasNarr && !hasDesc) ? ((fb as any).suggestion ?? '') : undefined,
+      selected: hasNarr || hasDesc,
       record_id: reviewResult.value.record_id,
     })
   }
   if (items.length === 0) {
-    toast.info('审查报告中没有可应用的文本修改建议')
+    toast.info('暂无审查建议')
     return
   }
   diffItems.value = items
@@ -192,10 +221,12 @@ async function handleApplyDiffs() {
     })), recordId)
     const count = res.data?.updated_shots ?? 0
     applyResult.value = { count }
-    toast.success(`已应用 ${count} 处修改`)
+    toast.success(`已应用 ${count} 处修改，正在重新评分…`)
     showDiffModal.value = false
     await videoStore.fetchStoryboard(props.videoId)
     if (recordId) loadReviewHistory()
+    // 应用修改后自动重新审查，以获取更新后的评分
+    startReview()
   } catch (e: any) {
     toast.error(e.message || '应用失败，请稍后重试')
   } finally {
@@ -205,7 +236,7 @@ async function handleApplyDiffs() {
 
 // ── Review trigger (called from parent via startReview) ──
 async function startReview() {
-  const prevScore = reviewResult.value?.overall_score ?? 0
+  const prevScore = normalizeScore(reviewResult.value?.overall_score ?? 0)
   reviewing.value = true
   reviewError.value = ''
   reviewResult.value = null
@@ -289,7 +320,7 @@ defineExpose({ startReview, reviewing })
                 class="rounded-xl border border-gray-200 dark:border-gray-700 p-4"
               >
                 <div class="flex items-center gap-2 mb-2">
-                  <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ rec.overall_score.toFixed(1) }}</span>
+                  <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ normalizeScore(rec.overall_score).toFixed(1) }}</span>
                   <span class="text-xs text-gray-400">/ 10</span>
                   <span
                     class="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
@@ -374,10 +405,11 @@ defineExpose({ startReview, reviewing })
               <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
                 <div class="flex items-end gap-3 mb-4">
                   <div class="text-4xl font-bold" :class="scoreColor(reviewResult.overall_score)">
-                    {{ reviewResult.overall_score.toFixed(1) }}
+                    {{ normalizeScore(reviewResult.overall_score).toFixed(1) }}
                   </div>
                   <div class="text-sm text-gray-500 pb-1">/ 10</div>
                   <div class="flex-1" />
+                  <span v-if="reviewHistory[0]?.review && !reviewing" class="text-[10px] text-gray-400 dark:text-gray-500">上次审查结果</span>
                   <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="reviewing" @click="startReview">重新审查</button>
                   <button
                     class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-violet-600 hover:bg-violet-700 text-white"
@@ -409,7 +441,7 @@ defineExpose({ startReview, reviewing })
                         :class="item.score >= 8 ? 'bg-green-500' : item.score >= 6 ? 'bg-yellow-500' : 'bg-red-500'"
                         :style="`width:${item.score * 10}%`" />
                     </div>
-                    <span class="font-medium" :class="scoreColor(item.score)">{{ item.score.toFixed(1) }}</span>
+                    <span class="font-medium" :class="scoreColor(item.score)">{{ normalizeScore(item.score).toFixed(1) }}</span>
                   </div>
                 </div>
                 <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±1.5 属正常范围 · 每次审查独立采样</div>
@@ -493,14 +525,15 @@ defineExpose({ startReview, reviewing })
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               <h3 class="font-semibold text-gray-900 dark:text-gray-100">预览改动方案</h3>
-              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.length }} 处建议，已选 {{ diffItems.filter(d => d.selected).length }} 处</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.length }} 处建议，可应用 {{ diffItems.filter(d => d.has_narration_diff || d.has_description_diff).length }} 处</span>
             </div>
             <div class="flex items-center gap-3">
               <button
+                v-if="diffItems.some(d => d.has_narration_diff || d.has_description_diff)"
                 class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
-                @click="diffItems.forEach(d => d.selected = !diffItems.every(x => x.selected))"
+                @click="diffItems.filter(d => d.has_narration_diff || d.has_description_diff).forEach(d => d.selected = !diffItems.filter(x => x.has_narration_diff || x.has_description_diff).every(x => x.selected))"
               >
-                {{ diffItems.every(d => d.selected) ? '全不选' : '全选' }}
+                {{ diffItems.filter(d => d.has_narration_diff || d.has_description_diff).every(d => d.selected) ? '全不选' : '全选' }}
               </button>
               <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showDiffModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -515,41 +548,60 @@ defineExpose({ startReview, reviewing })
               v-for="item in diffItems"
               :key="item.shot_no"
               class="rounded-xl border transition-colors"
-              :class="item.selected
-                ? 'border-violet-300 dark:border-violet-700 bg-violet-50/50 dark:bg-violet-900/10'
-                : 'border-gray-200 dark:border-gray-700'"
+              :class="(item.has_narration_diff || item.has_description_diff)
+                ? (item.selected ? 'border-violet-300 dark:border-violet-700 bg-violet-50/50 dark:bg-violet-900/10' : 'border-gray-200 dark:border-gray-700')
+                : 'border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-900/10'"
             >
-              <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
-                <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-violet-600 shrink-0" />
-                <span class="font-medium text-sm text-gray-800 dark:text-gray-200">镜头 #{{ item.shot_no }}</span>
-                <span
-                  class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
-                  :class="{
-                    'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.severity === 'error',
-                    'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400': item.severity === 'warning',
-                    'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': item.severity === 'info',
-                  }"
-                >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
-              </label>
-              <div class="px-4 pb-3 space-y-3 text-xs">
-                <div v-if="item.has_narration_diff" class="space-y-1">
-                  <div class="font-medium text-gray-600 dark:text-gray-400">旁白修改</div>
-                  <div class="grid grid-cols-2 gap-2">
-                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed">{{ item.orig_narration || '（空）' }}</div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed">{{ item.suggested_narration }}</div>
+              <!-- 有文字改动：可勾选应用 -->
+              <template v-if="item.has_narration_diff || item.has_description_diff">
+                <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
+                  <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-violet-600 shrink-0" />
+                  <span class="font-medium text-sm text-gray-800 dark:text-gray-200">镜头 #{{ item.shot_no }}</span>
+                  <span
+                    class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
+                    :class="{
+                      'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.severity === 'error',
+                      'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400': item.severity === 'warning',
+                      'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': item.severity === 'info',
+                    }"
+                  >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
+                </label>
+                <div class="px-4 pb-3 space-y-3 text-xs">
+                  <div v-if="item.has_narration_diff" class="space-y-1">
+                    <div class="font-medium text-gray-600 dark:text-gray-400">旁白修改</div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed">{{ item.orig_narration || '（空）' }}</div>
+                      <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed">{{ item.suggested_narration }}</div>
+                    </div>
+                  </div>
+                  <div v-if="item.has_description_diff" class="space-y-1">
+                    <div class="font-medium text-gray-600 dark:text-gray-400">画面描述修改</div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 font-mono leading-relaxed">{{ item.orig_description || '（空）' }}</div>
+                      <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ item.suggested_description }}</div>
+                    </div>
+                  </div>
+                  <div v-if="item.issues.length" class="text-gray-500 dark:text-gray-500 pt-1">
+                    <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>
                   </div>
                 </div>
-                <div v-if="item.has_description_diff" class="space-y-1">
-                  <div class="font-medium text-gray-600 dark:text-gray-400">画面描述修改</div>
-                  <div class="grid grid-cols-2 gap-2">
-                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 font-mono leading-relaxed">{{ item.orig_description || '（空）' }}</div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ item.suggested_description }}</div>
+              </template>
+              <!-- 只有结构性建议：只读展示，不可应用 -->
+              <template v-else>
+                <div class="flex items-center gap-3 px-4 py-2.5">
+                  <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span class="font-medium text-sm text-gray-800 dark:text-gray-200">镜头 #{{ item.shot_no }}</span>
+                  <span class="ml-auto text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">需手动调整</span>
+                </div>
+                <div class="px-4 pb-3 space-y-1.5 text-xs">
+                  <div v-if="item.issues.length" class="text-gray-600 dark:text-gray-400">
+                    <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>
                   </div>
+                  <div v-if="item.suggestion" class="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 leading-relaxed">{{ item.suggestion }}</div>
                 </div>
-                <div v-if="item.issues.length" class="text-gray-500 dark:text-gray-500 pt-1">
-                  <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>
-                </div>
-              </div>
+              </template>
             </div>
           </div>
           <!-- Footer -->

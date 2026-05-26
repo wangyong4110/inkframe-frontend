@@ -123,10 +123,28 @@ const visible = computed(() => taskStore.tasks.length > 0)
 
 const TYPE_LABELS: Record<string, string> = {
   storyboard_gen: '分镜',
+  storyboard_review: '分镜审查',
+  storyboard_optimize: '分镜优化',
   chapter_gen: '章节',
+  chapter_summary_batch: '批量摘要',
   voice_gen: '配音',
   image_gen: '图像',
   three_view: '三视图',
+  face_closeup: '近景图',
+  char_gen: '角色生成',
+  item_extract: '物品提取',
+  plot_extract: '情节提取',
+  asset_gen: '素材',
+  scene_anchor_extract: '场景提取',
+  sfx_gen: '音效',
+  import: '导入',
+  novel_analysis: '小说分析',
+  rewrite_analysis: '改写分析',
+  rewrite_chapters: '改写章节',
+  bgm_analyze: 'BGM分析',
+  bgm_generate: 'BGM生成',
+  platform_publish: '平台发布',
+  video_synthesis: '视频合成',
 }
 
 function taskTypeLabel(type: AsyncTaskType | string) {

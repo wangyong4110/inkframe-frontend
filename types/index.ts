@@ -69,6 +69,27 @@ export interface NovelComment {
   created_at: string
 }
 
+export interface ChapterComment {
+  id: number
+  chapter_id: number
+  novel_id: number
+  user_id: number
+  nickname?: string
+  content: string
+  parent_id?: number
+  created_at: string
+}
+
+export interface ReadingProgress {
+  user_id: number
+  novel_id: number
+  chapter_no: number
+  chapter_id: number
+  scroll_pct: number
+  updated_at: string
+  created_at?: string
+}
+
 export type NovelGenre = 'fantasy' | 'xianxia' | 'urban' | 'scifi' | 'romance' | 'mystery' | 'historical'
 
 export type NovelStatus = 'planning' | 'writing' | 'paused' | 'completed' | 'archived'
@@ -94,6 +115,7 @@ export interface Chapter {
   is_published?: boolean
   published_at?: string
   quality_score?: number
+  like_count?: number
   created_at: string
   updated_at: string
 }

@@ -118,20 +118,35 @@ async function doGenerateCover() {
 
 // ── Publish ──────────────────────────────────────────────────────────────────
 const publishLoading = ref(false)
+const showPublishConfirm = ref(false)
+const showUnpublishConfirm = ref(false)
 const { publishNovel, unpublishNovel } = useNovelApi()
+const { batchPublishChapters } = useChapterApi()
 
-async function togglePublish() {
+async function confirmPublish() {
   if (!novel.value) return
   publishLoading.value = true
+  showPublishConfirm.value = false
   try {
-    if (novel.value.is_published) {
-      await unpublishNovel(novel.value.id)
-      toast.success('已取消发布')
-    } else {
-      await publishNovel(novel.value.id, 'public')
-      toast.success('已发布到小说广场')
-    }
+    await publishNovel(novel.value.id, 'public')
+    await batchPublishChapters(novel.value.id)
+    await Promise.all([novelStore.fetchNovel(novelId), chapterStore.fetchChapters(novelId)])
+    toast.success(`已发布到小说广场（${novelChapterCount.value} 章）`)
+  } catch {
+    toast.error('发布失败')
+  } finally {
+    publishLoading.value = false
+  }
+}
+
+async function confirmUnpublish() {
+  if (!novel.value) return
+  publishLoading.value = true
+  showUnpublishConfirm.value = false
+  try {
+    await unpublishNovel(novel.value.id)
     await novelStore.fetchNovel(novelId)
+    toast.success('已取消发布')
   } catch {
     toast.error('操作失败')
   } finally {
@@ -357,19 +372,29 @@ onMounted(async () => {
             </div>
           </div>
           <div class="flex items-center space-x-2">
-            <button class="btn-secondary" :disabled="publishLoading" @click="togglePublish">
-              <svg v-if="novel.is_published" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+            <!-- 已发布：显示"取消发布"+ 广场链接 -->
+            <template v-if="novel.is_published">
+              <NuxtLink :to="`/plaza/novel/${novel.id}`" class="text-xs text-green-600 dark:text-green-400 hover:underline whitespace-nowrap">
+                已发布 →
+              </NuxtLink>
+              <button class="btn-secondary" :disabled="publishLoading" @click="showUnpublishConfirm = true">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+                取消发布
+              </button>
+            </template>
+            <!-- 未发布：显示"发布"按钮 -->
+            <button v-else class="btn-primary" :disabled="publishLoading" @click="showPublishConfirm = true">
+              <svg v-if="publishLoading" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
-              <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              {{ novel.is_published ? '取消发布' : '发布到广场' }}
+              发布
             </button>
-            <span v-if="novel.is_published" class="text-xs text-green-600 dark:text-green-400">
-              <NuxtLink :to="`/plaza/novel/${novel.id}`" class="hover:underline">已发布 →</NuxtLink>
-            </span>
             <NuxtLink :to="`/import?novel_id=${novel?.id}`" class="btn-secondary">
               <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -504,4 +529,104 @@ onMounted(async () => {
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />
   </div>
+
+  <!-- Publish confirmation modal -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="showPublishConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showPublishConfirm = false" />
+        <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <!-- Icon -->
+          <div class="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/40 mx-auto mb-4">
+            <svg class="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-gray-900 dark:text-white text-center mb-1">发布到小说广场</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 text-center mb-5">
+            确认后将发布《{{ novel?.title }}》及其全部
+            <span class="font-semibold text-gray-700 dark:text-gray-200">{{ novelChapterCount }}</span>
+            个章节，所有人可公开阅读。
+          </p>
+          <!-- Stats -->
+          <div class="grid grid-cols-3 gap-3 mb-6 text-center">
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl py-2.5">
+              <div class="text-lg font-bold text-gray-800 dark:text-gray-100">{{ novelChapterCount }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">章节</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl py-2.5">
+              <div class="text-lg font-bold text-gray-800 dark:text-gray-100">{{ completedChapterCount }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">已完成</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl py-2.5">
+              <div class="text-lg font-bold text-gray-800 dark:text-gray-100">
+                {{ novelTotalWords >= 10000 ? `${(novelTotalWords / 10000).toFixed(1)}w` : novelTotalWords }}
+              </div>
+              <div class="text-xs text-gray-500 mt-0.5">总字数</div>
+            </div>
+          </div>
+          <div class="flex gap-3">
+            <button
+              class="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              @click="showPublishConfirm = false"
+            >取消</button>
+            <button
+              class="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+              @click="confirmPublish"
+            >确认发布</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Unpublish confirmation modal -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="showUnpublishConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showUnpublishConfirm = false" />
+        <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div class="flex items-center justify-center w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/40 mx-auto mb-4">
+            <svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-gray-900 dark:text-white text-center mb-1">取消发布</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
+            《{{ novel?.title }}》将从小说广场下架，读者将无法继续访问。
+          </p>
+          <div class="flex gap-3">
+            <button
+              class="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              @click="showUnpublishConfirm = false"
+            >取消</button>
+            <button
+              class="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-sm font-medium transition-colors"
+              @click="confirmUnpublish"
+            >确认下架</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
+
+<style scoped>
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+.modal-fade-enter-active .relative,
+.modal-fade-leave-active .relative {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.modal-fade-enter-from .relative,
+.modal-fade-leave-to .relative {
+  transform: scale(0.95);
+  opacity: 0;
+}
+</style>

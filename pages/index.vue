@@ -165,11 +165,6 @@ const stats = [
           <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
         </NuxtLink>
 
-        <!-- Nav links -->
-        <div class="hidden md:flex items-center gap-6">
-          <NuxtLink to="/plaza" class="text-gray-400 hover:text-white text-sm transition-colors">作品集</NuxtLink>
-        </div>
-
         <!-- Auth -->
         <div class="flex items-center gap-3">
           <template v-if="!authStore.isLoggedIn">
@@ -235,10 +230,10 @@ const stats = [
             立即创作 →
           </NuxtLink>
           <NuxtLink
-            to="/novel"
+            to="/plaza"
             class="w-full sm:w-auto bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-8 py-3.5 rounded-xl transition-colors border border-gray-700 text-center"
           >
-            我的作品
+            作品集
           </NuxtLink>
         </div>
 
