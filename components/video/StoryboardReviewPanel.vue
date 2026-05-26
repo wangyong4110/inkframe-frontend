@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardReview, ReviewRecord, IgnoredSuggestion } from '~/types'
+import type { StoryboardReview, ReviewRecord, IgnoredSuggestion, ShotInsertSuggestion, ShotDeleteSuggestion } from '~/types'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -42,6 +42,87 @@ const showDiffModal = ref(false)
 const diffItems = ref<DiffItem[]>([])
 const applyingDiffs = ref(false)
 const applyResult = ref<{ count: number } | null>(null)
+
+// ── Structural changes (insert / delete) ──
+const applyingInserts = ref(false)
+const applyingDeletes = ref(false)
+// Track which individual inserts/deletes have already been applied this session
+const appliedInsertIndexes = ref<Set<number>>(new Set())
+const appliedDeleteShotNos = ref<Set<number>>(new Set())
+
+async function handleApplyInsert(ins: ShotInsertSuggestion, idx: number) {
+  if (appliedInsertIndexes.value.has(idx)) return
+  applyingInserts.value = true
+  try {
+    const api = useVideoApi()
+    await api.applyReviewInserts(props.videoId, [ins])
+    appliedInsertIndexes.value = new Set([...appliedInsertIndexes.value, idx])
+    toast.success(`已在镜头 #${ins.after_shot_no} 后插入新镜头`)
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error(e.message || '插入失败')
+  } finally {
+    applyingInserts.value = false
+  }
+}
+
+async function handleApplyAllInserts() {
+  if (!reviewResult.value?.suggested_inserts?.length) return
+  const pending = reviewResult.value.suggested_inserts.filter((_, i) => !appliedInsertIndexes.value.has(i))
+  if (!pending.length) return
+  applyingInserts.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.applyReviewInserts(props.videoId, pending)
+    const count = res.data?.inserted_shots ?? pending.length
+    reviewResult.value.suggested_inserts.forEach((_, i) => appliedInsertIndexes.value.add(i))
+    appliedInsertIndexes.value = new Set(appliedInsertIndexes.value)
+    toast.success(`已插入 ${count} 个新镜头`)
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error(e.message || '批量插入失败')
+  } finally {
+    applyingInserts.value = false
+  }
+}
+
+async function handleApplyDelete(del: ShotDeleteSuggestion) {
+  if (appliedDeleteShotNos.value.has(del.shot_no)) return
+  applyingDeletes.value = true
+  try {
+    const api = useVideoApi()
+    await api.applyReviewDeletes(props.videoId, [del.shot_no])
+    appliedDeleteShotNos.value = new Set([...appliedDeleteShotNos.value, del.shot_no])
+    toast.success(`已删除镜头 #${del.shot_no}`)
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error(e.message || '删除失败')
+  } finally {
+    applyingDeletes.value = false
+  }
+}
+
+async function handleApplyAllDeletes() {
+  if (!reviewResult.value?.suggested_deletes?.length) return
+  const pending = reviewResult.value.suggested_deletes
+    .filter(d => !appliedDeleteShotNos.value.has(d.shot_no))
+    .map(d => d.shot_no)
+  if (!pending.length) return
+  applyingDeletes.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.applyReviewDeletes(props.videoId, pending)
+    const count = res.data?.deleted_shots ?? pending.length
+    pending.forEach(no => appliedDeleteShotNos.value.add(no))
+    appliedDeleteShotNos.value = new Set(appliedDeleteShotNos.value)
+    toast.success(`已删除 ${count} 个镜头`)
+    await videoStore.fetchStoryboard(props.videoId)
+  } catch (e: any) {
+    toast.error(e.message || '批量删除失败')
+  } finally {
+    applyingDeletes.value = false
+  }
+}
 
 const reviewHistory = ref<ReviewRecord[]>([])
 const loadingHistory = ref(false)
@@ -291,6 +372,8 @@ async function startReview() {
   reviewError.value = ''
   reviewResult.value = null
   applyResult.value = null
+  appliedInsertIndexes.value = new Set()
+  appliedDeleteShotNos.value = new Set()
   reviewPanelTab.value = 'current'
   loadReviewHistory()
   try {
@@ -563,6 +646,106 @@ defineExpose({ startReview, reviewing })
                   </li>
                 </ol>
               </div>
+              <!-- ── Insert suggestions ── -->
+              <div v-if="reviewResult.suggested_inserts?.length">
+                <div class="flex items-center justify-between mb-2">
+                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    建议插入 <span class="normal-case font-normal text-gray-400">（{{ reviewResult.suggested_inserts.length }} 处）</span>
+                  </h4>
+                  <button
+                    v-if="reviewResult.suggested_inserts.some((_, i) => !appliedInsertIndexes.has(i))"
+                    class="text-xs px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-1 disabled:opacity-50"
+                    :disabled="applyingInserts"
+                    @click="handleApplyAllInserts"
+                  >
+                    <svg v-if="applyingInserts" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    全部插入
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="(ins, idx) in reviewResult.suggested_inserts"
+                    :key="idx"
+                    class="rounded-lg border p-3 text-sm transition-colors"
+                    :class="appliedInsertIndexes.has(idx)
+                      ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/15 opacity-60'
+                      : 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-900/10'"
+                  >
+                    <div class="flex items-start gap-2 mb-2">
+                      <div class="flex-1 min-w-0">
+                        <span class="font-medium text-gray-800 dark:text-gray-200">
+                          在镜头 #{{ ins.after_shot_no }} 后插入
+                        </span>
+                        <span v-if="ins.shot_size" class="ml-2 text-xs text-gray-400">{{ ins.shot_size }}</span>
+                        <span class="ml-2 text-xs text-gray-400">{{ ins.duration }}s</span>
+                      </div>
+                      <button
+                        v-if="!appliedInsertIndexes.has(idx)"
+                        class="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-50"
+                        :disabled="applyingInserts"
+                        @click="handleApplyInsert(ins, idx)"
+                      >插入</button>
+                      <span v-else class="shrink-0 text-xs text-emerald-600 dark:text-emerald-400 font-medium">已插入</span>
+                    </div>
+                    <div class="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded p-2 mb-2 leading-relaxed">
+                      {{ ins.reason }}
+                    </div>
+                    <div v-if="ins.narration" class="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                      <span class="font-medium">旁白：</span>{{ ins.narration }}
+                    </div>
+                    <div v-if="ins.description" class="text-xs text-gray-500 dark:text-gray-500 font-mono leading-relaxed">
+                      {{ ins.description }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Delete suggestions ── -->
+              <div v-if="reviewResult.suggested_deletes?.length">
+                <div class="flex items-center justify-between mb-2">
+                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    建议删除 <span class="normal-case font-normal text-gray-400">（{{ reviewResult.suggested_deletes.length }} 处）</span>
+                  </h4>
+                  <button
+                    v-if="reviewResult.suggested_deletes.some(d => !appliedDeleteShotNos.has(d.shot_no))"
+                    class="text-xs px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium flex items-center gap-1 disabled:opacity-50"
+                    :disabled="applyingDeletes"
+                    @click="handleApplyAllDeletes"
+                  >
+                    <svg v-if="applyingDeletes" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    全部删除
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="del in reviewResult.suggested_deletes"
+                    :key="del.shot_no"
+                    class="rounded-lg border p-3 text-sm transition-colors"
+                    :class="appliedDeleteShotNos.has(del.shot_no)
+                      ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/10 opacity-60'
+                      : 'border-red-200 dark:border-red-800/60 bg-red-50/40 dark:bg-red-900/10'"
+                  >
+                    <div class="flex items-start gap-2">
+                      <div class="flex-1 min-w-0">
+                        <span class="font-medium text-gray-800 dark:text-gray-200">镜头 #{{ del.shot_no }}</span>
+                        <p class="mt-1 text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{{ del.reason }}</p>
+                      </div>
+                      <button
+                        v-if="!appliedDeleteShotNos.has(del.shot_no)"
+                        class="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-red-400 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium disabled:opacity-50"
+                        :disabled="applyingDeletes"
+                        @click="handleApplyDelete(del)"
+                      >删除</button>
+                      <span v-else class="shrink-0 text-xs text-red-500 dark:text-red-400 font-medium">已删除</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div v-if="reviewResult.shot_feedback?.length">
                 <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
                   逐镜反馈 <span class="normal-case font-normal text-gray-400">（共 {{ reviewResult.shot_feedback.length }} 条）</span>

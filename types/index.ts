@@ -995,6 +995,21 @@ export interface ShotReviewFeedback {
   suggested_description?: string
 }
 
+export interface ShotInsertSuggestion {
+  after_shot_no: number
+  narration: string
+  description: string
+  duration: number
+  shot_size?: string
+  camera_type?: string
+  reason: string
+}
+
+export interface ShotDeleteSuggestion {
+  shot_no: number
+  reason: string
+}
+
 export interface StoryboardReview {
   overall_score: number
   narrative_score: number
@@ -1006,6 +1021,8 @@ export interface StoryboardReview {
   weaknesses: string[]
   global_suggestions: string[]
   shot_feedback: ShotReviewFeedback[]
+  suggested_inserts?: ShotInsertSuggestion[]
+  suggested_deletes?: ShotDeleteSuggestion[]
   record_id?: number
 }
 

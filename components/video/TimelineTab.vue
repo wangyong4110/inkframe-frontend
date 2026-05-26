@@ -55,6 +55,30 @@ const timelineMediaRecorder = ref<MediaRecorder | null>(null)
 const timelineCurrentBgmSegId = ref<number | null>(null)
 const timelineDownloading = ref(false)
 
+// Fullscreen idle-hide: controls auto-hide after 1s of no mouse movement
+const timelineFullscreen = ref(false)
+const timelineControlsVisible = ref(true)
+let _controlsHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function showControlsBriefly() {
+  timelineControlsVisible.value = true
+  if (_controlsHideTimer) clearTimeout(_controlsHideTimer)
+  _controlsHideTimer = setTimeout(() => { timelineControlsVisible.value = false }, 1000)
+}
+
+function handleFullscreenChange() {
+  timelineFullscreen.value = !!document.fullscreenElement
+  if (timelineFullscreen.value) {
+    showControlsBriefly()
+  } else {
+    if (_controlsHideTimer) { clearTimeout(_controlsHideTimer); _controlsHideTimer = null }
+    timelineControlsVisible.value = true
+  }
+}
+
+// Image cache for canvas-based recording (preloaded on mount so drawImage is sync)
+const _recImgCache = new Map<number, HTMLImageElement>()
+
 // Fix 1: Track active document listeners for cleanup on unmount
 const activeDocListeners = ref<Array<{ event: string; fn: EventListenerOrEventListenerObject }>>([])
 
@@ -449,32 +473,29 @@ async function timelineToggleRecording() {
     return
   }
   try {
-    // Request screen sharing FIRST — before starting playback so the dialog doesn't
-    // cause us to miss the beginning of the recording.
-    let tabStream: MediaStream
-    try {
-      tabStream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: { frameRate: 30 },
-        preferCurrentTab: true,
-        selfBrowserSurface: 'include',
-      })
-    } catch (err) {
-      if ((err as DOMException).name === 'NotAllowedError') return
-      throw err
-    }
-    // Reset to the beginning and start playback only after screen sharing is confirmed.
-    timelineStop()
-    await nextTick()
-    timelinePlay()
+    // Canvas-based recording: draw preview frames directly without screen-share permission.
+    const canvas = document.createElement('canvas')
+    canvas.width = 1280
+    canvas.height = 720
+    const ctx2d = canvas.getContext('2d')!
 
+    // Ensure images for all shots are preloaded (may already be cached from watch)
+    for (const shot of timelineOrderedShots.value) {
+      if (shot.image_url && !_recImgCache.has(shot.id)) {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.src = shot.image_url
+        _recImgCache.set(shot.id, img)
+      }
+    }
+
+    // Mix audio from the three hidden audio elements via AudioContext
     let audioCtx: AudioContext | null = null
     let mixedTrack: MediaStreamTrack | null = null
     const audioEls = [timelineVoiceRef.value, timelineSfxRef.value, timelineBgmRef.value]
       .filter((el): el is HTMLMediaElement => el != null)
     const capturable = audioEls.filter(el => typeof (el as any).captureStream === 'function')
-    // Also pick up any system audio the user chose to share (e.g. "Share tab audio")
-    const tabAudioTracks = tabStream.getAudioTracks()
-    if (capturable.length > 0 || tabAudioTracks.length > 0) {
+    if (capturable.length > 0) {
       try {
         audioCtx = new AudioContext()
         await audioCtx.resume()
@@ -482,35 +503,75 @@ async function timelineToggleRecording() {
         for (const el of capturable) {
           try {
             const elStream: MediaStream = (el as any).captureStream()
-            if (elStream.getAudioTracks().length > 0) {
+            if (elStream.getAudioTracks().length > 0)
               audioCtx.createMediaStreamSource(elStream).connect(dest)
-            }
-          } catch { /* skip — cross-origin elements can't be captured */ }
-        }
-        for (const track of tabAudioTracks) {
-          try { audioCtx.createMediaStreamSource(new MediaStream([track])).connect(dest) } catch { /* skip */ }
+          } catch { /* skip cross-origin elements */ }
         }
         mixedTrack = dest.stream.getAudioTracks()[0] ?? null
-      } catch { /* ignore */ }
+      } catch { /* AudioContext unavailable */ }
     }
-    const finalTracks: MediaStreamTrack[] = [...tabStream.getVideoTracks()]
+
+    const canvasStream = canvas.captureStream(30)
+    const finalTracks: MediaStreamTrack[] = [...canvasStream.getVideoTracks()]
     if (mixedTrack) finalTracks.push(mixedTrack)
     const stream = new MediaStream(finalTracks)
+
     const chunks: Blob[] = []
     const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
       ? 'video/webm; codecs=vp9'
       : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
-    tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-      if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
-    }, { once: true })
+
+    // rAF draw loop: composite current shot onto the canvas each frame
+    let rafHandle: number
+    function drawFrame() {
+      const shot = timelineCurrentShot.value
+      ctx2d.fillStyle = '#000'
+      ctx2d.fillRect(0, 0, canvas.width, canvas.height)
+      if (shot) {
+        const vid = timelineVideoRef.value
+        if (vid && shot.video_url && !vid.paused && vid.readyState >= 2) {
+          try { ctx2d.drawImage(vid, 0, 0, canvas.width, canvas.height) } catch { /* tainted */ }
+        } else {
+          const img = _recImgCache.get(shot.id)
+          if (img?.complete && img.naturalWidth > 0) {
+            // object-fit: cover crop
+            const iw = img.naturalWidth, ih = img.naturalHeight
+            const cw = canvas.width, ch = canvas.height
+            const scale = Math.max(cw / iw, ch / ih)
+            const sw = cw / scale, sh = ch / scale
+            const sx = (iw - sw) / 2, sy = (ih - sh) / 2
+            try { ctx2d.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch) } catch { /* tainted */ }
+          }
+        }
+        // Subtitle overlay
+        if (subtitleEnabled.value) {
+          const text = effectiveSubtitle(shot)
+          if (text) {
+            ctx2d.save()
+            ctx2d.font = 'bold 26px "PingFang SC", "Noto Sans SC", sans-serif'
+            ctx2d.textAlign = 'center'
+            const metrics = ctx2d.measureText(text)
+            const px = 14, py = 7, ty = canvas.height - 52
+            ctx2d.fillStyle = 'rgba(0,0,0,0.55)'
+            ctx2d.fillRect(canvas.width / 2 - metrics.width / 2 - px, ty - 26 - py, metrics.width + px * 2, 26 + py * 2)
+            ctx2d.fillStyle = '#fff'
+            ctx2d.fillText(text, canvas.width / 2, ty)
+            ctx2d.restore()
+          }
+        }
+      }
+      rafHandle = requestAnimationFrame(drawFrame)
+    }
+    drawFrame()
+
     recorder.onstop = () => {
+      cancelAnimationFrame(rafHandle)
       audioCtx?.close()
-      tabStream.getTracks().forEach(t => t.stop())
       timelineRecording.value = false
       timelineMediaRecorder.value = null
-      if (chunks.length === 0) { toast.error('录制内容为空，请确认屏幕共享已正常开始后再试'); return }
+      if (chunks.length === 0) { toast.error('录制内容为空，请重试'); return }
       const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
       const filename = `inkframe-preview-${props.videoId}-${Date.now()}.webm`
       const url = URL.createObjectURL(blob)
@@ -523,6 +584,11 @@ async function timelineToggleRecording() {
       setTimeout(() => URL.revokeObjectURL(url), 30_000)
       toast.success(`录制已保存：${filename}（查看浏览器下载栏）`)
     }
+
+    // Reset to beginning then start playback and recording together
+    timelineStop()
+    await nextTick()
+    timelinePlay()
     recorder.start(500)
     timelineMediaRecorder.value = recorder
     timelineRecording.value = true
@@ -587,6 +653,15 @@ watch(() => shots.value, (newShots) => {
   if (timelineShotsOrder.value.length === 0 && newShots.length > 0) {
     timelineShotsOrder.value = newShots.map(s => s.id)
   }
+  // Preload images into cache for canvas-based recording
+  for (const shot of newShots) {
+    if (shot.image_url && !_recImgCache.has(shot.id)) {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.src = shot.image_url
+      _recImgCache.set(shot.id, img)
+    }
+  }
 }, { immediate: true })
 
 watch(timelineSelectedShotId, (id) => {
@@ -626,6 +701,75 @@ watch(
   },
 )
 
+// ──────── Keyboard shortcuts ────────
+// Active whenever no text input is focused (the component is mounted = timeline tab is open).
+// In fullscreen the shortcuts additionally refresh the idle-hide timer.
+function handleKeydown(e: KeyboardEvent) {
+  const tag = (document.activeElement?.tagName ?? '').toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+  // contenteditable elements also capture text
+  if ((document.activeElement as HTMLElement)?.isContentEditable) return
+
+  switch (e.key) {
+    case ' ':
+    case 'k':
+      e.preventDefault()
+      timelinePlaying.value ? timelinePause() : timelinePlay()
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'ArrowLeft':
+      e.preventDefault()
+      if (timelineCurrentShotIndex.value > 0)
+        timelineSeekToShot(timelineCurrentShotIndex.value - 1)
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'ArrowRight':
+      e.preventDefault()
+      if (timelineCurrentShotIndex.value < timelineOrderedShots.value.length - 1)
+        timelineSeekToShot(timelineCurrentShotIndex.value + 1)
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      timelineMasterVolume.value = Math.min(100, timelineMasterVolume.value + 10)
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'ArrowDown':
+      e.preventDefault()
+      timelineMasterVolume.value = Math.max(0, timelineMasterVolume.value - 10)
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'f':
+    case 'F':
+      e.preventDefault()
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {})
+      } else {
+        timelinePreviewRef.value?.requestFullscreen().catch(() => {})
+      }
+      break
+    case 'm':
+    case 'M':
+      e.preventDefault()
+      timelineMuted.value = !timelineMuted.value
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case '.':
+      e.preventDefault()
+      timelineCycleSpeed()
+      timelineFullscreen.value && showControlsBriefly()
+      break
+    case 'Escape':
+      // Browser handles Escape to exit fullscreen natively; nothing extra needed
+      break
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', handleFullscreenChange)
+  document.addEventListener('keydown', handleKeydown)
+})
+
 onUnmounted(() => {
   timelinePause()
   if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
@@ -634,6 +778,9 @@ onUnmounted(() => {
     document.removeEventListener(event, fn)
   }
   activeDocListeners.value = []
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  document.removeEventListener('keydown', handleKeydown)
+  if (_controlsHideTimer) clearTimeout(_controlsHideTimer)
   // Also stop any active playback timer
   if (timelineTimer.value) { clearInterval(timelineTimer.value); timelineTimer.value = null }
 })
@@ -896,7 +1043,9 @@ const publishDrawerOpen = ref(false)
         <div
           ref="timelinePreviewRef"
           class="timeline-preview relative bg-black rounded-lg overflow-hidden group w-full"
+          :class="timelineFullscreen && !timelineControlsVisible ? 'cursor-none' : ''"
           style="aspect-ratio:16/9"
+          @mousemove="timelineFullscreen && showControlsBriefly()"
         >
           <video
             ref="timelineVideoRef"
@@ -932,9 +1081,14 @@ const publishDrawerOpen = ref(false)
           </div>
           <!-- Record button -->
           <button
-            class="absolute top-1.5 right-8 w-6 h-6 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            :class="timelineRecording ? 'bg-red-600 hover:bg-red-700 opacity-100' : 'bg-black/60 hover:bg-black/80'"
-            :title="timelineRecording ? '停止录制' : '录制屏幕'"
+            class="absolute top-1.5 right-8 w-6 h-6 text-white rounded flex items-center justify-center transition-opacity"
+            :class="[
+              timelineRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-black/60 hover:bg-black/80',
+              timelineFullscreen
+                ? ((timelineControlsVisible || timelineRecording) ? 'opacity-100' : 'opacity-0 pointer-events-none')
+                : (timelineRecording ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'),
+            ]"
+            :title="timelineRecording ? '停止录制' : '录制预览视频'"
             @click="timelineToggleRecording"
           >
             <svg v-if="timelineRecording" class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
@@ -946,7 +1100,10 @@ const publishDrawerOpen = ref(false)
           </button>
           <!-- Fullscreen -->
           <button
-            class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded flex items-center justify-center transition-opacity"
+            :class="timelineFullscreen
+              ? (timelineControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none')
+              : 'opacity-0 group-hover:opacity-100'"
             title="全屏"
             @click="timelinePreviewRef ? timelinePreviewRef.requestFullscreen().catch(() => {}) : null"
           >
@@ -955,7 +1112,12 @@ const publishDrawerOpen = ref(false)
             </svg>
           </button>
           <!-- Hover overlay controls -->
-          <div class="timeline-overlay absolute bottom-0 left-0 right-0 px-2.5 pt-6 pb-2 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
+          <div
+            class="timeline-overlay absolute bottom-0 left-0 right-0 px-2.5 pt-6 pb-2 bg-gradient-to-t from-black/85 to-transparent transition-opacity duration-200 select-none"
+            :class="timelineFullscreen
+              ? (timelineControlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none')
+              : 'opacity-0 group-hover:opacity-100'"
+          >
             <div class="w-full bg-white/30 rounded-full h-1 mb-2 cursor-pointer" @click="timelineSeekByClick">
               <div class="h-full bg-white rounded-full transition-none" :style="`width:${timelineTotalDuration > 0 ? (timelineTotalElapsed / timelineTotalDuration) * 100 : 0}%`" />
             </div>
@@ -1024,6 +1186,16 @@ const publishDrawerOpen = ref(false)
           </button>
           <div class="flex-1" />
           <span class="text-[10px] font-mono text-gray-400 dark:text-gray-500 tabular-nums">{{ tlFmtTime(Math.floor(timelineTotalElapsed)) }} / {{ tlFmtTime(timelineTotalDuration) }}</span>
+        </div>
+
+        <!-- Keyboard shortcut hint -->
+        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-300 dark:text-gray-600 leading-tight">
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">Space</kbd> 播放/暂停</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">←</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">→</kbd> 上/下镜头</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">↑</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">↓</kbd> 音量</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">F</kbd> 全屏</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">M</kbd> 静音</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">.</kbd> 切换速度</span>
         </div>
 
         <!-- ── Synthesize block ── -->

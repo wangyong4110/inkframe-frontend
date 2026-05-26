@@ -263,8 +263,20 @@ defineExpose({ activeTab, generateStoryboard })
       v-if="isProductionTab && !tabLoading"
       :class="standalone ? 'flex min-h-0 -mt-4' : ''"
     >
-      <!-- Main content -->
-      <div :class="standalone ? 'flex-1 min-w-0 overflow-x-hidden' : ''">
+      <!-- Standalone mode: sidebar slot divs — rendered FIRST in DOM so that Teleport targets
+           (#voice-ai-slot, #bgm-ai-slot, #sfx-ai-slot) exist before child tab components mount.
+           CSS order-2 keeps it visually on the right despite appearing first in the HTML. -->
+      <aside
+        v-if="standalone && activeTab !== 'timeline' && activeTab !== 'export'"
+        class="w-80 flex-shrink-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto order-2"
+      >
+        <div v-if="activeTab === 'sfx'" id="sfx-ai-slot" />
+        <div v-else-if="activeTab === 'bgm'" id="bgm-ai-slot" />
+        <div v-else-if="activeTab === 'voice'" id="voice-ai-slot" />
+      </aside>
+
+      <!-- Main content (order-1 keeps it visually on the left in standalone flex layout) -->
+      <div :class="standalone ? 'flex-1 min-w-0 overflow-x-hidden order-1' : ''">
         <!-- ── Voice Tab ── -->
         <VoiceTab
           v-if="activeTab === 'voice'"
@@ -312,16 +324,6 @@ defineExpose({ activeTab, generateStoryboard })
           :inline-sidebar="standalone"
         />
       </div>
-
-      <!-- Standalone mode: slot divs for non-timeline tabs (voice/bgm/sfx use Teleport to these) -->
-      <aside
-        v-if="standalone && activeTab !== 'timeline' && activeTab !== 'export'"
-        class="w-80 flex-shrink-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto"
-      >
-        <div v-if="activeTab === 'sfx'" id="sfx-ai-slot" />
-        <div v-else-if="activeTab === 'bgm'" id="bgm-ai-slot" />
-        <div v-else-if="activeTab === 'voice'" id="voice-ai-slot" />
-      </aside>
     </div>
   </div>
 </template>

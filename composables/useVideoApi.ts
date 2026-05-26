@@ -313,6 +313,18 @@ export const useVideoApi = () => {
       method: 'DELETE',
     })
 
+  const applyReviewInserts = (id: number, inserts: import('~/types').ShotInsertSuggestion[]) =>
+    request<ApiResponse<{ inserted_shots: number }>>(`/videos/${id}/storyboard/review/apply-inserts`, {
+      method: 'POST',
+      body: JSON.stringify({ inserts }),
+    })
+
+  const applyReviewDeletes = (id: number, shotNos: number[]) =>
+    request<ApiResponse<{ deleted_shots: number }>>(`/videos/${id}/storyboard/review/apply-deletes`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_nos: shotNos }),
+    })
+
   const listPublishRecords = (id: number) =>
     request<ApiResponse<VideoPublishRecord[]>>(`/videos/${id}/publish-records`)
 
@@ -379,5 +391,7 @@ export const useVideoApi = () => {
     listIgnoredSuggestions,
     ignoreSuggestion,
     unignoreSuggestion,
+    applyReviewInserts,
+    applyReviewDeletes,
   }
 }
