@@ -364,7 +364,7 @@ async function refreshProject() {
     const res = await getProject(projectId)
     project.value = res.data
 
-    if (['analyzing', 'bible_ready', 'rewriting', 'completed'].includes(project.value.status)) {
+    if (['bible_ready', 'rewriting', 'completed'].includes(project.value.status)) {
       try {
         const aRes = await getAnalysis(projectId)
         analysis.value = aRes.data

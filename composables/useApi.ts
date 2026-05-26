@@ -45,6 +45,10 @@ export const useApi = () => {
       throw new Error(error.message || `HTTP error ${response.status}`)
     }
 
+    if (response.status === 204) {
+      return undefined as T
+    }
+
     return response.json()
   }
 

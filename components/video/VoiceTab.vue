@@ -76,7 +76,6 @@ async function handleGenerateAllVoice() {
     const res = await api.batchGenerateVoice(props.videoId, {
       subtitle_enabled: subtitleEnabled.value,
       skip_existing: true,
-      max_shots: 10,
     })
     const taskId = (res as any)?.data?.task_id
     const shotCount = (res as any)?.data?.shot_count ?? 0
@@ -85,10 +84,7 @@ async function handleGenerateAllVoice() {
       batchVoiceGenerating.value = false
       return
     }
-    const totalShots = shots.value.length
-    const remaining = totalShots - shotCount
-    const remainingHint = remaining > 0 ? `，还有 ${remaining} 个未处理，完成后可再次提交` : ''
-    toast.info(`批量配音任务已提交（${shotCount} 个分镜）${remainingHint}，顺序处理中…`)
+    toast.info(`批量配音任务已提交（${shotCount} 个分镜）`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
       batchVoiceGenerating.value = false
@@ -288,7 +284,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             <svg v-if="batchVoiceGenerating" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {{ batchVoiceGenerating ? '生成中（最多10个）…' : '一键生成全部配音' }}
+            {{ batchVoiceGenerating ? '生成中…' : '生成全部配音' }}
           </button>
         </div>
       </div>
