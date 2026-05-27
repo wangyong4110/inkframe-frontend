@@ -438,6 +438,46 @@ function timelineCycleSpeed() {
   timelinePlaybackSpeed.value = speeds[(idx + 1) % speeds.length]
 }
 
+function timelineSpeedUp() {
+  const speeds = [0.5, 1.0, 1.5, 2.0]
+  const idx = speeds.indexOf(timelinePlaybackSpeed.value)
+  if (idx < speeds.length - 1) timelinePlaybackSpeed.value = speeds[idx + 1]
+}
+
+function timelineSpeedDown() {
+  const speeds = [0.5, 1.0, 1.5, 2.0]
+  const idx = speeds.indexOf(timelinePlaybackSpeed.value)
+  if (idx > 0) timelinePlaybackSpeed.value = speeds[idx - 1]
+}
+
+// Seek the playhead by `delta` seconds (negative = rewind, positive = forward).
+// Works across shot boundaries.
+function timelineSeekBySeconds(delta: number) {
+  const total = timelineTotalDuration.value
+  if (total <= 0) return
+  const target = Math.max(0, Math.min(total, timelineTotalElapsed.value + delta))
+  const wasPlaying = timelinePlaying.value
+  timelinePause()
+  let elapsed = 0
+  const shots = timelineOrderedShots.value
+  for (let i = 0; i < shots.length; i++) {
+    const dur = timelineEffectiveDuration(shots[i])
+    if (elapsed + dur > target || i === shots.length - 1) {
+      timelineCurrentShotIndex.value = i
+      timelineShotElapsed.value = Math.min(target - elapsed, dur)
+      timelineTotalElapsed.value = target
+      if (wasPlaying) timelinePlay()
+      return
+    }
+    elapsed += dur
+  }
+}
+
+// Jump to a percentage of total duration (0–100).
+function timelineSeekToPercent(pct: number) {
+  timelineSeekBySeconds(pct / 100 * timelineTotalDuration.value - timelineTotalElapsed.value)
+}
+
 async function timelineDownloadCurrent() {
   if (timelineDownloading.value) return
   const config = useRuntimeConfig()
@@ -710,35 +750,77 @@ function handleKeydown(e: KeyboardEvent) {
   // contenteditable elements also capture text
   if ((document.activeElement as HTMLElement)?.isContentEditable) return
 
+  const refresh = () => timelineFullscreen.value && showControlsBriefly()
   switch (e.key) {
     case ' ':
     case 'k':
+    case 'K':
       e.preventDefault()
       timelinePlaying.value ? timelinePause() : timelinePlay()
-      timelineFullscreen.value && showControlsBriefly()
-      break
+      refresh(); break
+
+    // ── Time seek (arrow keys) ───────────────────────────────────
     case 'ArrowLeft':
+      e.preventDefault()
+      timelineSeekBySeconds(-5)
+      refresh(); break
+    case 'ArrowRight':
+      e.preventDefault()
+      timelineSeekBySeconds(5)
+      refresh(); break
+
+    // ── Shot navigation ──────────────────────────────────────────
+    case 'j':
+    case 'J':
       e.preventDefault()
       if (timelineCurrentShotIndex.value > 0)
         timelineSeekToShot(timelineCurrentShotIndex.value - 1)
-      timelineFullscreen.value && showControlsBriefly()
-      break
-    case 'ArrowRight':
+      refresh(); break
+    case 'l':
+    case 'L':
       e.preventDefault()
       if (timelineCurrentShotIndex.value < timelineOrderedShots.value.length - 1)
         timelineSeekToShot(timelineCurrentShotIndex.value + 1)
-      timelineFullscreen.value && showControlsBriefly()
-      break
+      refresh(); break
+    case 'Home':
+      e.preventDefault()
+      timelineSeekToShot(0)
+      refresh(); break
+    case 'End':
+      e.preventDefault()
+      timelineSeekToShot(timelineOrderedShots.value.length - 1)
+      refresh(); break
+
+    // ── Volume ───────────────────────────────────────────────────
     case 'ArrowUp':
       e.preventDefault()
       timelineMasterVolume.value = Math.min(100, timelineMasterVolume.value + 10)
-      timelineFullscreen.value && showControlsBriefly()
-      break
+      refresh(); break
     case 'ArrowDown':
       e.preventDefault()
       timelineMasterVolume.value = Math.max(0, timelineMasterVolume.value - 10)
-      timelineFullscreen.value && showControlsBriefly()
-      break
+      refresh(); break
+
+    // ── Speed ────────────────────────────────────────────────────
+    case '>':
+    case '.':
+      e.preventDefault()
+      timelineSpeedUp()
+      refresh(); break
+    case '<':
+    case ',':
+      e.preventDefault()
+      timelineSpeedDown()
+      refresh(); break
+
+    // ── Percentage jump (0 = start, 1 = 10%, …, 9 = 90%) ────────
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+      e.preventDefault()
+      timelineSeekToPercent(parseInt(e.key) * 10)
+      refresh(); break
+
+    // ── Misc ─────────────────────────────────────────────────────
     case 'f':
     case 'F':
       e.preventDefault()
@@ -752,13 +834,7 @@ function handleKeydown(e: KeyboardEvent) {
     case 'M':
       e.preventDefault()
       timelineMuted.value = !timelineMuted.value
-      timelineFullscreen.value && showControlsBriefly()
-      break
-    case '.':
-      e.preventDefault()
-      timelineCycleSpeed()
-      timelineFullscreen.value && showControlsBriefly()
-      break
+      refresh(); break
     case 'Escape':
       // Browser handles Escape to exit fullscreen natively; nothing extra needed
       break
@@ -1075,8 +1151,8 @@ const publishDrawerOpen = ref(false)
               {{ effectiveSubtitle(timelineCurrentShot) }}
             </span>
           </div>
-          <!-- Shot badge -->
-          <div v-if="timelineCurrentShot" class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded">
+          <!-- Shot badge (hidden in fullscreen) -->
+          <div v-if="timelineCurrentShot && !timelineFullscreen" class="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded">
             #{{ timelineCurrentShot.shot_no }}
           </div>
           <!-- Record button -->
@@ -1191,11 +1267,14 @@ const publishDrawerOpen = ref(false)
         <!-- Keyboard shortcut hint -->
         <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-300 dark:text-gray-600 leading-tight">
           <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">Space</kbd> 播放/暂停</span>
-          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">←</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">→</kbd> 上/下镜头</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">←</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">→</kbd> 后退/前进 5s</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">J</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">L</kbd> 上/下镜头</span>
           <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">↑</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">↓</kbd> 音量</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">,</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">.</kbd> 减速/加速</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">0–9</kbd> 跳转进度</span>
+          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">Home</kbd><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded ml-0.5">End</kbd> 首/末镜头</span>
           <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">F</kbd> 全屏</span>
           <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">M</kbd> 静音</span>
-          <span><kbd class="font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 rounded">.</kbd> 切换速度</span>
         </div>
 
         <!-- ── Synthesize block ── -->
