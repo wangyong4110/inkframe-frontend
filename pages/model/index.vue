@@ -104,9 +104,17 @@ async function loadProviderTemplates() {
   }
 }
 
+// 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
+const HARDCODED_NEEDS_SECRET_KEY = new Set([
+  'volcengine-visual', 'doubao-speech-v1',
+  'kling', 'kling-sfx', 'kling-tts', 'kling-image',
+])
+
 // 当前选中提供商是否需要 AK/SK 双密钥
 const selectedProviderNeedsSecretKey = computed(() => {
-  const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
+  const name = editingProvider.value?.name ?? providerForm.value.name
+  if (HARDCODED_NEEDS_SECRET_KEY.has(name)) return true
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === name)
   return opt?.needsSecretKey ?? false
 })
 
@@ -131,24 +139,24 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     versionHint: 'volcano_mega：豆包2.0大模型音色（_uranus_bigtts / _tob）；volcano_tts：经典音色（BV001_streaming 等）',
   },
   kling: {
-    akLabel: 'API Key', akPlaceholder: '可灵 API Key（kling / kling-sfx / kling-tts / kling-image 共用同一密钥）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '',
-    skHint: '可灵四个提供商（视频/音效/语音/图像）使用同一个 KLING_API_KEY，端点统一为 https://api.klingai.com',
+    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
+    skHint: '可灵四个提供商（视频/音效/语音/图像）使用同一对 AK/SK，通过 JWT（HS256）鉴权，端点统一为 https://api.klingai.com',
   },
   'kling-sfx': {
-    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-tts / kling-image 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '',
-    skHint: '可灵文生音效（kling-sfx）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-tts / kling-image 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
+    skHint: '可灵文生音效（kling-sfx）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'kling-tts': {
-    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-sfx / kling-image 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '',
-    skHint: '可灵语音合成（kling-tts）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-image 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
+    skHint: '可灵语音合成（kling-tts）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'kling-image': {
-    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-sfx / kling-tts 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '',
-    skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-tts 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
+    skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
 }
 const credentialMeta = computed<CredentialMeta>(() => {
@@ -831,7 +839,7 @@ watch(activeTab, (tab) => {
             <svg class="w-3.5 h-3.5 text-fuchsia-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <span class="text-xs text-fuchsia-700 dark:text-fuchsia-300">可灵四能力（视频/音效/语音/图像）共用同一 API Key · 端点统一为 <code class="font-mono">https://api.klingai.com</code></span>
+            <span class="text-xs text-fuchsia-700 dark:text-fuchsia-300">可灵四能力（视频/音效/语音/图像）共用同一对 Access Key + Secret Key · JWT（HS256）鉴权 · 端点 <code class="font-mono">https://api.klingai.com</code></span>
           </div>
 
           <!-- Model list toggle -->
@@ -1056,7 +1064,7 @@ watch(activeTab, (tab) => {
                 <p v-if="editingProvider" class="mt-1 text-xs text-gray-400">当前密钥：<span class="font-mono">{{ maskKey(editingProvider.api_key) }}</span></p>
               </div>
               <!-- AK/SK 双密钥提供商额外展示第二密钥输入框 -->
-              <div v-if="selectedProviderNeedsSecretKey || (editingProvider && editingProvider.name === 'volcengine-visual')">
+              <div v-if="selectedProviderNeedsSecretKey">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   {{ credentialMeta.skLabel }}<span v-if="!editingProvider" class="text-red-500">*</span>
                 </label>
