@@ -6,7 +6,8 @@ const props = defineProps<{ novelId: number }>()
 
 const toast = useToast()
 const taskStore = useTaskStore()
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
 
 const itemApi = useItemApi()
 
@@ -31,6 +32,20 @@ async function fetchItems() {
 }
 
 onMounted(() => fetchItems())
+
+function openItemImage(item: Item) {
+  if (!item.image_url) return
+  openLightbox(
+    item.image_url,
+    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    async (newUrl) => {
+      try {
+        await itemApi.updateItem(item.id, { image_url: newUrl })
+        item.image_url = newUrl
+      } catch { /* ignore */ }
+    },
+  )
+}
 
 function getItemStatusDot(status: string): string {
   const dots: Record<string, string> = {
@@ -194,7 +209,7 @@ async function confirmDeleteItem() {
             :src="item.image_url"
             class="w-full h-full object-cover cursor-zoom-in"
             :alt="item.name"
-            @click.stop="openLightbox(item.image_url)"
+            @click.stop="openItemImage(item)"
           />
           <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

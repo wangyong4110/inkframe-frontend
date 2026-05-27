@@ -7,7 +7,8 @@ const props = defineProps<{ novelId: number }>()
 const toast = useToast()
 const characterStore = useCharacterStore()
 const taskStore = useTaskStore()
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
 
 const characterApi = useCharacterApi()
 
@@ -20,6 +21,18 @@ const newCharacterForm = ref({ name: '', role: 'supporting' as string, descripti
 const savingCharacter = ref(false)
 
 const characters = computed(() => characterStore.characters)
+
+function openCharacterImage(character: Character) {
+  const src = character.three_view_sheet || character.portrait || ''
+  if (!src) return
+  openLightbox(
+    src,
+    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    async (newUrl) => {
+      await characterStore.updateCharacter(character.id, { three_view_sheet: newUrl })
+    },
+  )
+}
 
 function goToCharacter(character: Character) {
   navigateTo(`/character/${character.id}`)
@@ -198,7 +211,7 @@ async function confirmDeleteCharacter() {
             :src="character.three_view_sheet || character.portrait"
             class="w-full h-full object-cover cursor-zoom-in"
             :alt="character.name"
-            @click.stop="openLightbox(character.three_view_sheet || character.portrait)"
+            @click.stop="openCharacterImage(character)"
           />
           <span v-else class="text-4xl font-bold text-gray-300 dark:text-gray-600 select-none">
             {{ character.name.charAt(0) }}

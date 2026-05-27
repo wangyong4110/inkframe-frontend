@@ -6,7 +6,8 @@ const toast = useToast()
 const sceneAnchorStore = useSceneAnchorStore()
 const chapterStore = useChapterStore()
 const taskStore = useTaskStore()
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
 
 const showAnchorModal = ref(false)
 const showDeleteConfirm = ref(false)
@@ -25,6 +26,17 @@ const extractingAllAnchors = ref(false)
 const selectedChapterForExtract = ref<number | 'all'>('all')
 const batchGeneratingAnchorImages = ref(false)
 const generatingRefImage = ref<Record<number, boolean>>({})
+
+function openAnchorImage(anchor: any) {
+  if (!anchor.ref_image_url) return
+  openLightbox(
+    anchor.ref_image_url,
+    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    async (newUrl) => {
+      await sceneAnchorStore.lockRefImage(anchor.id, newUrl)
+    },
+  )
+}
 
 function startAnchorCreate() {
   anchorForm.value = { name: '', type: 'exterior', description: '', prompt_lock: '', variant: '', parent_anchor_id: undefined }
@@ -243,7 +255,7 @@ function getTypeLabel(type: string): string {
             :src="anchor.ref_image_url"
             class="w-full h-full object-cover cursor-zoom-in"
             :alt="anchor.name"
-            @click.stop="openLightbox(anchor.ref_image_url)"
+            @click.stop="openAnchorImage(anchor)"
           />
           <div v-else class="flex flex-col items-center gap-1 text-gray-300 dark:text-gray-600">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

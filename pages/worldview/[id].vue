@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Worldview, WorldviewEntity } from '~/types'
 
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -131,6 +132,20 @@ async function saveEntity() {
   } finally {
     entitySaving.value = false
   }
+}
+
+function openEntityImage(entity: WorldviewEntity) {
+  if (!entity.image_url || !worldviewId.value) return
+  const wid = worldviewId.value
+  openLightbox(
+    entity.image_url,
+    (instruction) => editImage(lightboxUrl.value, instruction),
+    async (newUrl) => {
+      const { updateEntity } = useWorldviewApi()
+      await updateEntity(wid, entity.id, { image_url: newUrl })
+      entity.image_url = newUrl
+    },
+  )
 }
 
 async function deleteEntity(entity: WorldviewEntity) {
@@ -364,7 +379,7 @@ async function generateWorldview() {
                 </button>
               </div>
             </div>
-            <img v-if="entity.image_url" :src="entity.image_url" :alt="entity.name" class="w-full h-24 object-cover rounded mb-2 cursor-zoom-in" @click="openLightbox(entity.image_url)" />
+            <img v-if="entity.image_url" :src="entity.image_url" :alt="entity.name" class="w-full h-24 object-cover rounded mb-2 cursor-zoom-in" @click="openEntityImage(entity)" />
             <p class="text-sm text-gray-600 dark:text-gray-400">{{ entity.description }}</p>
           </div>
         </div>
