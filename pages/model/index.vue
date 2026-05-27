@@ -130,6 +130,26 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     versionPlaceholder: 'volcano_mega',
     versionHint: 'volcano_mega：豆包2.0大模型音色（_uranus_bigtts / _tob）；volcano_tts：经典音色（BV001_streaming 等）',
   },
+  kling: {
+    akLabel: 'API Key', akPlaceholder: '可灵 API Key（kling / kling-sfx / kling-tts / kling-image 共用同一密钥）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '',
+    skHint: '可灵四个提供商（视频/音效/语音/图像）使用同一个 KLING_API_KEY，端点统一为 https://api.klingai.com',
+  },
+  'kling-sfx': {
+    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-tts / kling-image 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '',
+    skHint: '可灵文生音效（kling-sfx）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+  },
+  'kling-tts': {
+    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-sfx / kling-image 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '',
+    skHint: '可灵语音合成（kling-tts）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+  },
+  'kling-image': {
+    akLabel: 'API Key', akPlaceholder: '可灵 API Key（与 kling / kling-sfx / kling-tts 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '',
+    skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一 API Key，端点为 https://api.klingai.com',
+  },
 }
 const credentialMeta = computed<CredentialMeta>(() => {
   const name = editingProvider.value?.name ?? providerForm.value.name
@@ -207,7 +227,7 @@ const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> 
   voice:     { include: /tts|whisper|voice|audio|speech/i },
   video:     { include: /video|sora|kling|seedance/i },
   embedding: { include: /embed/i },
-  sfx:       { include: /sfx|sound|audio|effect|elevenlabs/i },
+  sfx:       { include: /sfx|sound|audio|effect|elevenlabs|\d+s$/i },
 }
 const filteredProviderModelList = computed(() => {
   const f = MODEL_TYPE_FILTER[providerForm.value.type]
@@ -241,6 +261,10 @@ const PROVIDER_COLORS: Record<string, string> = {
   seedance:           'bg-violet-100  text-violet-700',
   'doubao-speech':    'bg-teal-100    text-teal-700',
   'doubao-speech-v1': 'bg-teal-100    text-teal-700',
+  kling:              'bg-fuchsia-100 text-fuchsia-700',
+  'kling-sfx':        'bg-fuchsia-100 text-fuchsia-700',
+  'kling-tts':        'bg-fuchsia-100 text-fuchsia-700',
+  'kling-image':      'bg-fuchsia-100 text-fuchsia-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
@@ -801,6 +825,13 @@ watch(activeTab, (tab) => {
               {{ revealedKeys.has(p.id) ? '隐藏' : '显示' }}
             </button>
             <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" @click="openEditProvider(p)">更改密钥</button>
+          </div>
+          <!-- 可灵系列：共用 API Key 提示 -->
+          <div v-if="['kling','kling-sfx','kling-tts','kling-image'].includes(p.name)" class="px-5 py-2 bg-fuchsia-50 dark:bg-fuchsia-900/10 border-t border-fuchsia-100 dark:border-fuchsia-800 flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-fuchsia-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-xs text-fuchsia-700 dark:text-fuchsia-300">可灵四能力（视频/音效/语音/图像）共用同一 API Key · 端点统一为 <code class="font-mono">https://api.klingai.com</code></span>
           </div>
 
           <!-- Model list toggle -->
