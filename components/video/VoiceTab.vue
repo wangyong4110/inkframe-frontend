@@ -9,6 +9,7 @@ const toast = useToast()
 const { openLightbox } = useImageLightbox()
 
 const shots = computed(() => videoStore.storyboard)
+const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(shots)
 const narrationVoice = computed(() => novelStore.currentNovel?.narration_voice ?? '')
 const { subtitleEnabled, subtitleConfig } = useSubtitleConfig()
 
@@ -291,7 +292,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
     </Teleport>
 
     <div class="space-y-2">
-      <div v-for="shot in shots" :key="shot.id" class="card p-4">
+      <div v-for="shot in pagedShots" :key="shot.id" class="card p-4">
         <div class="flex items-start gap-3">
           <!-- Thumbnail -->
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
@@ -406,6 +407,13 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
           </div>
         </div>
       </div>
+      <ShotsPaginationBar
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total-items="shots.length"
+        :page-numbers="pageNumbers"
+        @update:current-page="currentPage = $event"
+      />
     </div>
   </div>
 </template>

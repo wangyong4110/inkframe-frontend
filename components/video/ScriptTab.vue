@@ -200,32 +200,8 @@ const insertShotForm = reactive({ narration: '', description: '', duration: 4 })
 const insertingShotLoading = ref(false)
 
 // ── Pagination ──
-const PAGE_SIZE = 15
-const currentPage = ref(1)
-const totalPages = computed(() => Math.max(1, Math.ceil(shots.value.length / PAGE_SIZE)))
-const pagedShots = computed(() => {
-  const page = Math.min(currentPage.value, totalPages.value)
-  return shots.value.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-})
-// Clamp current page if shots shrink (e.g. after deletion)
-watch(totalPages, (n) => { if (currentPage.value > n) currentPage.value = n })
-// Reset to page 1 on new generation (shots array fully replaced while empty → repopulated)
-watch(() => shots.value.length, (newLen, oldLen) => {
-  if (oldLen === 0 && newLen > 0) currentPage.value = 1
-})
-
-// Page number list with ellipsis (max 7 buttons: 1 … x-1 x x+1 … n)
-const pageNumbers = computed<(number | '…')[]>(() => {
-  const total = totalPages.value
-  const cur = currentPage.value
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const pages: (number | '…')[] = [1]
-  if (cur > 3) pages.push('…')
-  for (let p = Math.max(2, cur - 1); p <= Math.min(total - 1, cur + 1); p++) pages.push(p)
-  if (cur < total - 2) pages.push('…')
-  pages.push(total)
-  return pages
-})
+const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(shots)
+const PAGE_SIZE = 15 // kept for handleInsertShot page jump calculation
 
 // ── Debounced storyboard refresh ──
 // Replaces redundant per-mutation fetchStoryboard calls with a single
@@ -1301,42 +1277,13 @@ defineExpose({ loadVideoProviders: async () => {
       </template>
 
       <!-- ── Pagination ── -->
-      <div v-if="totalPages > 1" class="flex items-center justify-between pt-1 pb-2">
-        <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-          第 {{ Math.min(currentPage, totalPages) }} / {{ totalPages }} 页 · 共 {{ shots.length }} 个镜头
-        </span>
-        <div class="flex items-center gap-1">
-          <button
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-sm disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed transition-colors"
-            :disabled="currentPage <= 1"
-            @click="currentPage--"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <template v-for="p in pageNumbers" :key="p">
-            <span v-if="p === '…'" class="w-7 h-7 flex items-center justify-center text-xs text-gray-400 select-none">…</span>
-            <button
-              v-else
-              class="w-7 h-7 flex items-center justify-center rounded-lg text-xs font-medium transition-colors"
-              :class="p === Math.min(currentPage, totalPages)
-                ? 'bg-primary-500 text-white'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'"
-              @click="currentPage = p as number"
-            >{{ p }}</button>
-          </template>
-          <button
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-sm disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed transition-colors"
-            :disabled="currentPage >= totalPages"
-            @click="currentPage++"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      </div>
+      <ShotsPaginationBar
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total-items="shots.length"
+        :page-numbers="pageNumbers"
+        @update:current-page="currentPage = $event"
+      />
     </div>
 
 

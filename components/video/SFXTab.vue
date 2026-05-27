@@ -8,6 +8,7 @@ const videoStore = useVideoStore()
 const toast = useToast()
 
 const shots = computed(() => videoStore.storyboard)
+const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(shots)
 const generatingSFX = ref(false)
 const analyzingTags = ref(false)
 const sfxAiContext = ref('')
@@ -251,7 +252,7 @@ defineExpose({ sfxItems, loadSFXItems })
 
     <!-- Shot SFX list -->
     <div class="space-y-3">
-      <div v-for="shot in shots" :key="shot.id" class="card overflow-hidden">
+      <div v-for="shot in pagedShots" :key="shot.id" class="card overflow-hidden">
         <!-- Shot header -->
         <div class="flex items-start gap-3 p-3">
           <span class="text-xs font-bold text-gray-400 flex-shrink-0 mt-0.5">镜 {{ shot.shot_no }}</span>
@@ -364,6 +365,13 @@ defineExpose({ sfxItems, loadSFXItems })
       <p v-if="shots.length === 0" class="text-sm text-gray-400 text-center py-8">
         请先在「分镜脚本」Tab 生成分镜
       </p>
+      <ShotsPaginationBar
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total-items="shots.length"
+        :page-numbers="pageNumbers"
+        @update:current-page="currentPage = $event"
+      />
     </div>
   </div>
 </template>
