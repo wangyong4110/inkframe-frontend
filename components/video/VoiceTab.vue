@@ -5,8 +5,11 @@ const props = defineProps<{ videoId: number }>()
 
 const videoStore = useVideoStore()
 const novelStore = useNovelStore()
+const characterStore = useCharacterStore()
 const toast = useToast()
 const { openLightbox } = useImageLightbox()
+
+const characters = computed(() => characterStore.characters)
 
 const shots = computed(() => videoStore.storyboard)
 const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(shots)
@@ -220,6 +223,27 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
   if (idx >= 0) videoStore.storyboard[idx].image_url = newUrl
 }
 
+// Dialogue character replacement
+const speakerDropdownShotId = ref<number | null>(null)
+
+function parseDialogue(dialogue: string): { speaker: string; text: string } {
+  const idx = dialogue.indexOf('：')
+  if (idx > 0) return { speaker: dialogue.slice(0, idx), text: dialogue.slice(idx + 1) }
+  const asciiIdx = dialogue.indexOf(':')
+  if (asciiIdx > 0 && asciiIdx < 15) return { speaker: dialogue.slice(0, asciiIdx), text: dialogue.slice(asciiIdx + 1).trimStart() }
+  return { speaker: '', text: dialogue }
+}
+
+async function handleChangeDialogueSpeaker(shot: StoryboardShot, newSpeaker: string) {
+  const { text } = parseDialogue(shot.dialogue || '')
+  const newDialogue = `${newSpeaker}：${text}`
+  try {
+    await videoStore.updateShot(props.videoId, shot.id, { dialogue: newDialogue })
+  } catch (e: any) {
+    toast.error('更新角色失败：' + (e.message || ''))
+  }
+}
+
 // Expose shotAudioUrls & shotSegments for parent (TimelineTab needs them)
 defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId })
 </script>
@@ -291,6 +315,8 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
       </div>
     </Teleport>
 
+    <!-- close dropdown when clicking outside -->
+    <div v-if="speakerDropdownShotId !== null" class="fixed inset-0 z-20" @click="speakerDropdownShotId = null" />
     <div class="space-y-2">
       <div v-for="shot in pagedShots" :key="shot.id" class="card p-4">
         <div class="flex items-start gap-3">
@@ -324,8 +350,38 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 </button>
               </div>
             </div>
-            <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
-              {{ shot.narration || shot.dialogue || shot.description || '（无台词）' }}
+            <!-- Dialogue shot: character badge + text -->
+            <div v-if="shot.dialogue && !shot.narration" class="flex items-start gap-1.5">
+              <div class="relative flex-shrink-0">
+                <button
+                  class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors font-medium whitespace-nowrap"
+                  @click.stop="speakerDropdownShotId = speakerDropdownShotId === shot.id ? null : shot.id"
+                >
+                  {{ parseDialogue(shot.dialogue).speaker || '未知角色' }} ▾
+                </button>
+                <div
+                  v-if="speakerDropdownShotId === shot.id"
+                  class="absolute top-full left-0 mt-1 z-30 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl min-w-[120px] max-h-52 overflow-y-auto"
+                >
+                  <button
+                    v-for="char in characters"
+                    :key="char.id"
+                    class="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+                    :class="{ 'text-blue-600 dark:text-blue-400 font-medium': char.name === parseDialogue(shot.dialogue).speaker }"
+                    @click="handleChangeDialogueSpeaker(shot, char.name); speakerDropdownShotId = null"
+                  >
+                    {{ char.name }}
+                  </button>
+                  <p v-if="!characters.length" class="px-3 py-2 text-xs text-gray-400">暂无角色</p>
+                </div>
+              </div>
+              <p class="text-sm italic text-blue-500 dark:text-blue-400 leading-relaxed line-clamp-2 flex-1">
+                {{ parseDialogue(shot.dialogue).text }}
+              </p>
+            </div>
+            <!-- Narration / description shot -->
+            <p v-else class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
+              {{ shot.narration || shot.description || '（无台词）' }}
             </p>
             <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-1.5 w-full h-8" />
           </div>
