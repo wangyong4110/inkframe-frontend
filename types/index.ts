@@ -1045,3 +1045,46 @@ export interface IgnoredSuggestion {
   note: string
   created_at: string
 }
+
+// ─── Chapter AI Review ──────────────────────────────────────────────────────
+
+export interface ParagraphFeedback {
+  index: number
+  orig_text: string
+  issues: string[]
+  suggestion: string
+  suggested_rewrite: string
+  severity: 'info' | 'warning' | 'error'
+}
+
+export interface ChapterReview {
+  overall_score: number
+  narrative_score: number
+  character_score: number
+  writing_score: number
+  pacing_score: number
+  summary: string
+  strengths: string[]
+  weaknesses: string[]
+  global_suggestions: string[]
+  paragraph_feedback: ParagraphFeedback[]
+  record_id?: number
+}
+
+export interface ChapterReviewRecord {
+  id: number
+  created_at: string
+  overall_score: number
+  status: 'pending' | 'applied' | 'rolled_back'
+  applied_at?: string
+  review?: ChapterReview
+}
+
+export interface ChapterIgnoredIssue {
+  id: number
+  chapter_id: number
+  issue_text: string
+  issue_hash: string
+  note: string
+  created_at: string
+}

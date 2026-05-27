@@ -27,10 +27,14 @@ export const useChapterApi = () => {
   const generateChapter = (novelId: number, data: {
     chapter_no: number
     prompt?: string
+    word_count?: number
     max_tokens?: number
     model?: string
     temperature?: number
     timeout_seconds?: number
+    web_search?: boolean
+    wiki_search?: boolean
+    use_story_pattern?: boolean
   }) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/generate`, {
       method: 'POST',

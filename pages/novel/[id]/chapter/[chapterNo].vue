@@ -244,11 +244,12 @@ async function handleGenerate() {
   const currentChapterNo = chapter.value.chapter_no
   generating.value = true
   try {
-    // advMaxTokens 优先；否则用字数目标×2 估算
-    const maxTokens = advMaxTokens.value > 0 ? advMaxTokens.value : (wordCountOverride.value > 0 ? wordCountOverride.value * 2 : undefined)
+    const wordCount = wordCountOverride.value > 0 ? wordCountOverride.value : undefined
+    // max_tokens 仅作为 LLM 上下文限制；不再用于推算目标字数
+    const maxTokens = advMaxTokens.value > 0 ? advMaxTokens.value : undefined
     const temperature = advTemperature.value > 0 ? advTemperature.value : undefined
     const timeoutSeconds = advTimeoutSeconds.value > 0 ? advTimeoutSeconds.value : undefined
-    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds)
+    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined)
     toast.info('AI 正在生成，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
     content.value = result.content || ''
@@ -263,10 +264,14 @@ async function handleGenerate() {
 
 async function handleCheckQuality() {
   if (!chapter.value) return
-  await chapterStore.checkQuality(chapter.value.id)
-  // Reset selections when re-running check
-  selectedSuggestions.value = new Set()
-  refinedContent.value = ''
+  checking.value = true
+  try {
+    await chapterStore.checkQuality(chapter.value.id)
+    refinedContent.value = ''
+    showRefinedPreview.value = false
+  } finally {
+    checking.value = false
+  }
 }
 
 // ── 导入内容 ──────────────────────────────────────────────────────────────────
@@ -285,34 +290,39 @@ function handleImportContent() {
 }
 
 // ── 质量改进 ──────────────────────────────────────────────────────────────────
-const selectedSuggestions = ref<Set<string>>(new Set())
+const checking = ref(false)
 const refining = ref(false)
 const refinedContent = ref('')
+const showRefinedPreview = ref(false)
 
-function toggleSuggestion(sg: string) {
-  if (selectedSuggestions.value.has(sg)) {
-    selectedSuggestions.value.delete(sg)
-  } else {
-    selectedSuggestions.value.add(sg)
-  }
-  selectedSuggestions.value = new Set(selectedSuggestions.value)
+// ── AI 深度审查面板 ───────────────────────────────────────────────────────────
+const showReviewPanel = ref(false)
+
+async function handleReviewContentUpdated() {
+  await chapterStore.fetchChapter(novelId, chapterNo)
 }
 
-function selectAllSuggestions() {
-  const all = qualityReport.value?.suggestions ?? []
-  selectedSuggestions.value = new Set(all)
+function qualityTier(score: number): { label: string; color: string } {
+  if (score >= 0.85) return { label: '优秀', color: 'text-green-600' }
+  if (score >= 0.70) return { label: '良好', color: 'text-blue-600' }
+  if (score >= 0.55) return { label: '中等', color: 'text-amber-500' }
+  return { label: '较差', color: 'text-red-500' }
 }
 
 async function handleApplyImprovements() {
-  if (!chapter.value || selectedSuggestions.value.size === 0) return
+  if (!chapter.value) return
+  const all = qualityReport.value?.suggestions ?? []
+  if (all.length === 0) return
   refining.value = true
   refinedContent.value = ''
+  showRefinedPreview.value = false
   try {
     const api = useQualityApi()
-    const resp = await api.refineChapter(chapter.value.id, Array.from(selectedSuggestions.value))
+    const resp = await api.refineChapter(chapter.value.id, all)
     refinedContent.value = resp.data?.content ?? ''
+    if (refinedContent.value) showRefinedPreview.value = true
   } catch (e: any) {
-    alert('AI精修失败：' + (e.message ?? '未知错误'))
+    toast.error('AI精修失败：' + (e.message ?? '未知错误'))
   } finally {
     refining.value = false
   }
@@ -320,9 +330,18 @@ async function handleApplyImprovements() {
 
 async function acceptRefinement() {
   if (!chapter.value || !refinedContent.value) return
+  content.value = refinedContent.value
   await chapterStore.updateChapter(novelId, chapter.value.chapter_no, { content: refinedContent.value })
   refinedContent.value = ''
-  selectedSuggestions.value = new Set()
+  showRefinedPreview.value = false
+  toast.success('已采纳精修内容')
+  // Re-run quality check to reflect updated score
+  await handleCheckQuality()
+}
+
+function discardRefinement() {
+  refinedContent.value = ''
+  showRefinedPreview.value = false
 }
 
 function countWords(text: string): number {
@@ -517,6 +536,12 @@ const {
 } = useAiGenerationParams()
 // 高级 AI 参数（各面板共享，0 = 使用系统默认，不覆盖）
 const showAdvancedParams = ref(false)
+// 联网参考开关（需要后端 web_search MCP 工具已启用）
+const webSearchEnabled = ref(false)
+// 百科知识开关（调用 wiki_search MCP 工具，无需 API Key）
+const wikiSearchEnabled = ref(false)
+// 情节模板开关（调用 story_pattern MCP 工具，本地数据库）
+const storyPatternEnabled = ref(false)
 
 // 脚本面板保留独立别名，方便模板区分（实际指向同一组 ref）
 const showScriptAdvancedParams = showAdvancedParams
@@ -1398,6 +1423,54 @@ async function fetchShotsForChapter() {
                       <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
                       <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
                     </div>
+                    <div class="flex items-center justify-between pt-1">
+                      <div>
+                        <span class="text-xs text-gray-600 dark:text-gray-300">联网参考</span>
+                        <p class="text-[10px] text-gray-400">搜索相关故事片段作为灵感（需启用 web_search 工具）</p>
+                      </div>
+                      <button
+                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                        :class="webSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                        @click="webSearchEnabled = !webSearchEnabled"
+                      >
+                        <span
+                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                          :class="webSearchEnabled ? 'translate-x-4' : ''"
+                        />
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between pt-1">
+                      <div>
+                        <span class="text-xs text-gray-600 dark:text-gray-300">百科知识</span>
+                        <p class="text-[10px] text-gray-400">查询 Wikipedia 提升世界观准确性（需启用 wiki_search 工具）</p>
+                      </div>
+                      <button
+                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                        :class="wikiSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                        @click="wikiSearchEnabled = !wikiSearchEnabled"
+                      >
+                        <span
+                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                          :class="wikiSearchEnabled ? 'translate-x-4' : ''"
+                        />
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between pt-1">
+                      <div>
+                        <span class="text-xs text-gray-600 dark:text-gray-300">情节模板</span>
+                        <p class="text-[10px] text-gray-400">注入逆袭/觉醒等叙事结构参考（需启用 story_pattern 工具）</p>
+                      </div>
+                      <button
+                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                        :class="storyPatternEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                        @click="storyPatternEnabled = !storyPatternEnabled"
+                      >
+                        <span
+                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                          :class="storyPatternEnabled ? 'translate-x-4' : ''"
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <button
@@ -1417,90 +1490,127 @@ async function fetchShotsForChapter() {
 
               <!-- Quality report -->
               <div v-if="qualityReport" class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
-                <!-- Score header -->
-                <div class="flex items-center justify-between">
-                  <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">质量报告</h4>
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-bold" :class="qualityReport.overall_score >= 0.8 ? 'text-green-600' : qualityReport.overall_score >= 0.6 ? 'text-amber-500' : 'text-red-500'">
-                      {{ (qualityReport.overall_score * 100).toFixed(0) }}分
-                    </span>
-                    <button class="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="handleCheckQuality">重新检查</button>
+                <!-- Score card -->
+                <div class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-baseline gap-1.5">
+                      <span class="text-2xl font-bold tabular-nums" :class="qualityTier(qualityReport.overall_score).color">
+                        {{ (qualityReport.overall_score * 100).toFixed(0) }}
+                      </span>
+                      <span class="text-xs text-gray-400">/ 100</span>
+                      <span class="ml-1 text-xs font-semibold" :class="qualityTier(qualityReport.overall_score).color">
+                        {{ qualityTier(qualityReport.overall_score).label }}
+                      </span>
+                    </div>
+                    <div class="mt-1.5 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                      <div
+                        class="h-full rounded-full transition-all duration-500"
+                        :style="{ width: `${qualityReport.overall_score * 100}%` }"
+                        :class="qualityReport.overall_score >= 0.85 ? 'bg-green-500' : qualityReport.overall_score >= 0.70 ? 'bg-blue-500' : qualityReport.overall_score >= 0.55 ? 'bg-amber-500' : 'bg-red-500'"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all"
-                    :style="{ width: `${qualityReport.overall_score * 100}%` }"
-                    :class="qualityReport.overall_score >= 0.8 ? 'bg-green-500' : qualityReport.overall_score >= 0.6 ? 'bg-amber-500' : 'bg-red-500'"
-                  />
+                  <button
+                    class="shrink-0 px-2.5 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-lg hover:border-gray-300 transition-colors disabled:opacity-40"
+                    :disabled="checking"
+                    @click="handleCheckQuality"
+                  >
+                    <svg v-if="checking" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <span v-else>重检</span>
+                  </button>
                 </div>
 
                 <!-- Issues -->
-                <div v-if="qualityReport.issues.length > 0" class="space-y-1.5">
+                <div v-if="qualityReport.issues.length > 0" class="space-y-1">
                   <div
                     v-for="issue in qualityReport.issues.slice(0, 4)"
                     :key="issue.description"
-                    class="px-3 py-2 rounded-lg text-xs leading-relaxed"
+                    class="flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg text-xs leading-relaxed"
                     :class="{
                       'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300': issue.severity === 'high',
                       'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300': issue.severity === 'medium',
                       'bg-gray-50 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300': issue.severity === 'low',
                     }"
-                  >{{ issue.description }}</div>
+                  >
+                    <span class="shrink-0 mt-0.5 font-bold" :class="{ 'text-red-500': issue.severity === 'high', 'text-amber-500': issue.severity === 'medium', 'text-gray-400': issue.severity === 'low' }">
+                      {{ issue.severity === 'high' ? '●' : issue.severity === 'medium' ? '◐' : '○' }}
+                    </span>
+                    {{ issue.description }}
+                  </div>
                 </div>
 
-                <!-- Suggestions with checkboxes -->
+                <!-- Suggestions + one-click refine -->
                 <div v-if="qualityReport.suggestions && qualityReport.suggestions.length > 0" class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">改进建议</span>
-                    <button class="text-[10px] text-blue-500 hover:text-blue-700" @click="selectAllSuggestions">全选</button>
+                  <div class="space-y-1">
+                    <div
+                      v-for="sg in qualityReport.suggestions"
+                      :key="sg"
+                      class="flex items-start gap-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed"
+                    >
+                      <span class="shrink-0 text-blue-400 mt-0.5">›</span>
+                      {{ sg }}
+                    </div>
                   </div>
-                  <label
-                    v-for="sg in qualityReport.suggestions"
-                    :key="sg"
-                    class="flex items-start gap-2 cursor-pointer group"
-                  >
-                    <input
-                      type="checkbox"
-                      :checked="selectedSuggestions.has(sg)"
-                      class="mt-0.5 rounded border-gray-300 text-blue-600 shrink-0"
-                      @change="toggleSuggestion(sg)"
-                    />
-                    <span class="text-xs text-gray-600 dark:text-gray-300 leading-relaxed group-hover:text-gray-900 dark:group-hover:text-gray-100">{{ sg }}</span>
-                  </label>
-
-                  <!-- Apply button -->
                   <button
-                    :disabled="selectedSuggestions.size === 0 || refining"
-                    class="w-full py-1.5 text-xs rounded-lg transition-colors disabled:opacity-40"
-                    :class="selectedSuggestions.size > 0 && !refining ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 dark:bg-gray-700'"
+                    :disabled="refining"
+                    class="w-full py-2 text-xs font-medium rounded-lg transition-colors disabled:opacity-40 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5"
                     @click="handleApplyImprovements"
                   >
-                    <span v-if="refining">AI精修中...</span>
-                    <span v-else>应用所选建议 ({{ selectedSuggestions.size }})</span>
+                    <svg v-if="refining" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                    {{ refining ? 'AI精修中...' : '✨ AI一键精修' }}
                   </button>
                 </div>
 
-                <!-- Refined content preview -->
-                <div v-if="refinedContent" class="space-y-2 border border-blue-200 dark:border-blue-700 rounded-lg p-3 bg-blue-50 dark:bg-blue-900/20">
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">AI精修预览</span>
-                    <button class="text-[10px] text-gray-400 hover:text-gray-600" @click="refinedContent = ''">取消</button>
+                <!-- Refined content preview panel -->
+                <div v-if="showRefinedPreview && refinedContent" class="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden">
+                  <div class="flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-700">
+                    <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">✨ AI精修预览</span>
+                    <span class="text-[10px] text-blue-400">{{ refinedContent.length.toLocaleString() }} 字</span>
                   </div>
-                  <div class="text-xs text-gray-700 dark:text-gray-300 leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap">{{ refinedContent.slice(0, 400) }}{{ refinedContent.length > 400 ? '...' : '' }}</div>
-                  <button
-                    class="w-full py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    @click="acceptRefinement"
-                  >接受并替换原文</button>
+                  <div class="p-3 max-h-64 overflow-y-auto text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap bg-white dark:bg-gray-800">{{ refinedContent }}</div>
+                  <div class="flex gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-600">
+                    <button
+                      class="flex-1 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                      @click="acceptRefinement"
+                    >采纳</button>
+                    <button
+                      class="flex-1 py-1.5 text-xs font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
+                      @click="discardRefinement"
+                    >丢弃</button>
+                  </div>
                 </div>
               </div>
 
               <!-- Quick check CTA -->
               <button
                 v-if="!qualityReport"
-                class="w-full py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-dashed border-gray-200 dark:border-gray-600 rounded-lg transition-colors hover:border-gray-300"
+                class="w-full py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-dashed border-gray-200 dark:border-gray-600 rounded-lg transition-colors hover:border-gray-300 flex items-center justify-center gap-1.5 disabled:opacity-40"
+                :disabled="checking"
                 @click="handleCheckQuality"
-              >运行质量检查</button>
+              >
+                <svg v-if="checking" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                {{ checking ? '检查中...' : '运行质量检查' }}
+              </button>
+
+              <!-- AI 深度审查入口 -->
+              <button
+                class="w-full py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 border border-dashed border-primary-300 dark:border-primary-600 rounded-lg transition-colors hover:border-primary-400 flex items-center justify-center gap-1.5"
+                @click="showReviewPanel = true"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                AI 深度审查
+              </button>
 
               <!-- Import panel -->
               <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
@@ -1972,4 +2082,12 @@ async function fetchShotsForChapter() {
       </div>
     </div>
   </Teleport>
+
+  <!-- AI 深度审查面板 -->
+  <ChapterReviewPanel
+    v-if="showReviewPanel && chapter"
+    :chapter-id="chapter.id"
+    @close="showReviewPanel = false"
+    @content-updated="handleReviewContentUpdated"
+  />
 </template>

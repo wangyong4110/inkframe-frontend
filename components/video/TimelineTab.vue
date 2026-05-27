@@ -559,7 +559,11 @@ async function timelineToggleRecording() {
     const chunks: Blob[] = []
     const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
       ? 'video/webm; codecs=vp9'
-      : MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
+      : MediaRecorder.isTypeSupported('video/webm')
+        ? 'video/webm'
+        : MediaRecorder.isTypeSupported('video/mp4')
+          ? 'video/mp4'
+          : ''
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
 
@@ -611,9 +615,13 @@ async function timelineToggleRecording() {
       audioCtx?.close()
       timelineRecording.value = false
       timelineMediaRecorder.value = null
+      // Defer one macrotask so any pending ondataavailable events finish first.
+      // Some browsers (Chrome) fire onstop before the final ondataavailable in the queue.
+      setTimeout(() => {
       if (chunks.length === 0) { toast.error('录制内容为空，请重试'); return }
+      const fileExt = (recorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm'
       const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
-      const filename = `inkframe-preview-${props.videoId}-${Date.now()}.webm`
+      const filename = `inkframe-preview-${props.videoId}-${Date.now()}.${fileExt}`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -623,15 +631,18 @@ async function timelineToggleRecording() {
       document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(url), 30_000)
       toast.success(`录制已保存：${filename}（查看浏览器下载栏）`)
+      }, 0) // end deferred chunk-processing
     }
 
-    // Reset to beginning then start playback and recording together
+    // Reset to beginning then start playback and recording together.
+    // Assign timelineMediaRecorder/timelineRecording BEFORE start() to avoid
+    // a race where timelineTick fires between start() and the assignment.
     timelineStop()
     await nextTick()
-    timelinePlay()
-    recorder.start(500)
     timelineMediaRecorder.value = recorder
     timelineRecording.value = true
+    timelinePlay()
+    recorder.start(200)
   } catch (e: any) {
     toast.error('录制失败：' + ((e as Error)?.message || '浏览器不支持'))
   }

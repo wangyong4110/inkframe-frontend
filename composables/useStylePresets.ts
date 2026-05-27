@@ -212,6 +212,36 @@ export const WRITING_PRESETS: WritingStylePreset[] = [
       dialogue_ratio: 0.3,
     },
   },
+  {
+    id: 'comedy_humorous',
+    name: '喜剧搞笑',
+    description: '第一人称，极短句制造喜剧节奏，大量误解与反差，内心戏和现实行为落差强烈，对话密集活泼，适合轻喜剧、乡村搞笑、都市囧事等题材',
+    tags: ['喜剧', '短句节奏', '反差萌', '高对话'],
+    genre_affinity: ['urban', 'fantasy', 'rural'],
+    config: {
+      narrative_voice: 'first_person',
+      narrative_distance: 'close',
+      emotional_tone: 'warm',
+      sentence_complexity: 'simple',
+      description_density: 'minimal',
+      dialogue_ratio: 0.55,
+    },
+  },
+  {
+    id: 'absurd_comedy',
+    name: '荒诞喜剧',
+    description: '第三人称全知视角，叙事语气调侃，荒诞情节层层叠加，旁白大量使用反讽，角色行为逻辑自洽但离奇可笑',
+    tags: ['荒诞', '反讽旁白', '调侃语气'],
+    genre_affinity: ['urban', 'fantasy'],
+    config: {
+      narrative_voice: 'third_omniscient',
+      narrative_distance: 'medium',
+      emotional_tone: 'warm',
+      sentence_complexity: 'moderate',
+      description_density: 'moderate',
+      dialogue_ratio: 0.4,
+    },
+  },
 ]
 
 // ─── 图片/美术风格预设 ────────────────────────────────────────────────────────
