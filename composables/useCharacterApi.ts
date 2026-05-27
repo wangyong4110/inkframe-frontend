@@ -66,10 +66,10 @@ export const useCharacterApi = () => {
   const aiBatchGenerate = (novelId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/characters/ai-batch`, { method: 'POST' })
 
-  const batchGenerateImages = (novelId: number, provider?: string) =>
+  const batchGenerateImages = (novelId: number, provider?: string, force = false) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/characters/batch-images`, {
       method: 'POST',
-      body: JSON.stringify({ provider: provider ?? '' }),
+      body: JSON.stringify({ provider: provider ?? '', force }),
     })
 
   return {

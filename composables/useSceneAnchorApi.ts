@@ -101,10 +101,10 @@ export function useSceneAnchorApi() {
     return res.data
   }
 
-  async function batchGenerateRefImages(novelId: number, provider?: string): Promise<{ task_id: string }> {
+  async function batchGenerateRefImages(novelId: number, provider?: string, force = false): Promise<{ task_id: string }> {
     const res: { code: number; data: { task_id: string } } = await request(
       `/novels/${novelId}/scene-anchors/batch-ref-images`,
-      { method: 'POST', body: JSON.stringify({ provider: provider ?? '' }) },
+      { method: 'POST', body: JSON.stringify({ provider: provider ?? '', force }) },
     )
     return res.data
   }
