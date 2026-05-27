@@ -79,6 +79,11 @@ const STYLES = [
 
 const voiceModels = ref<AIModel[]>([])
 const voiceModelsLoading = ref(false)
+const voiceModelsLoadFailed = ref(false)
+
+const noVoiceConfigured = computed(
+  () => !voiceModelsLoading.value && !voiceModelsLoadFailed.value && voiceModels.value.length === 0
+)
 
 // Groups: [{ key, label, voices: [{id, label}] }]
 const voiceGroups = computed(() => {
@@ -162,7 +167,7 @@ onMounted(async () => {
     // If saved voice_id is not in the fetched list, show custom input
     checkCustom(voiceId.value)
   } catch {
-    // silent fail; FALLBACK_GROUP is used
+    voiceModelsLoadFailed.value = true
   } finally {
     voiceModelsLoading.value = false
   }
@@ -317,6 +322,17 @@ defineExpose({
     <!-- Voice dropdown / manual input (互斥显示) -->
     <div>
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
+
+      <!-- 未配置语音合成模型提示 -->
+      <div v-if="noVoiceConfigured" class="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <svg class="mt-0.5 shrink-0 w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+        </svg>
+        <span>
+          尚未配置语音合成模型，当前显示备用音色。
+          <NuxtLink to="/model" class="font-medium underline hover:no-underline ml-1">前往配置模型 →</NuxtLink>
+        </span>
+      </div>
 
       <!-- 预设模式：下拉选择 -->
       <template v-if="!showCustomInput">

@@ -207,6 +207,7 @@ const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> 
   voice:     { include: /tts|whisper|voice|audio|speech/i },
   video:     { include: /video|sora|kling|seedance/i },
   embedding: { include: /embed/i },
+  sfx:       { include: /sfx|sound|audio|effect|elevenlabs/i },
 }
 const filteredProviderModelList = computed(() => {
   const f = MODEL_TYPE_FILTER[providerForm.value.type]
@@ -265,7 +266,7 @@ function openAddProvider() {
 }
 function openEditProvider(p: ModelProvider) {
   editingProvider.value = p
-  const knownTypes = ['llm', 'image', 'video', 'voice', 'embedding']
+  const knownTypes = ['llm', 'image', 'video', 'voice', 'embedding', 'sfx']
   const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
   providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
     api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0 }
@@ -333,6 +334,7 @@ const TASK_TYPE_OPTIONS = [
   { value: 'image_gen', label: '图像生成' },
   { value: 'video_gen', label: '视频生成' },
   { value: 'voice_gen', label: '语音合成' },
+  { value: 'sfx_gen',   label: '文生音效' },
   { value: 'embedding', label: '向量嵌入' },
 ]
 
@@ -360,6 +362,7 @@ function openAddModelForm(providerId: number, providerType: string) {
   const defaultTask = providerType === 'image' ? 'image_gen'
     : providerType === 'video' ? 'video_gen'
     : providerType === 'voice' ? 'voice_gen'
+    : providerType === 'sfx' ? 'sfx_gen'
     : providerType === 'embedding' ? 'embedding'
     : 'chapter'
   addModelForms.value = { ...addModelForms.value, [providerId]: { name: '', tasks: defaultTask, saving: false } }
@@ -986,6 +989,7 @@ watch(activeTab, (tab) => {
                   <option value="image">图像生成</option>
                   <option value="video">视频生成</option>
                   <option value="voice">语音合成</option>
+                  <option value="sfx">文生音效</option>
                   <option value="embedding">向量嵌入</option>
                 </select>
               </div>
