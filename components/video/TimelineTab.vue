@@ -1144,7 +1144,7 @@ const publishDrawerOpen = ref(false)
           </div>
           <!-- Subtitle overlay -->
           <div
-            v-if="subtitleEnabled && timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
+            v-if="subtitleEnabled && timelineFullscreen && timelineCurrentShot && effectiveSubtitle(timelineCurrentShot)"
             :style="timelineSubtitleContainerStyle"
           >
             <span :style="timelineSubtitleTextStyle">
