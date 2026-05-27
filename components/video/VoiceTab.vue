@@ -39,34 +39,59 @@ watch(shots, (list) => {
 }, { immediate: true })
 
 async function handleGenerateVoice(shot: StoryboardShot) {
+  if (generatingVoice.value[shot.id]) return
   generatingVoice.value[shot.id] = true
+  const api = useVideoApi()
+  const taskStore = useTaskStore()
   try {
-    const api = useVideoApi()
-    const res = await api.generateVoice(
+    // 1. 生成主配音（旁白或对白整句）
+    const mainRes = await api.generateVoice(
       props.videoId, shot.id,
       narrationVoice.value || undefined,
       subtitleEnabled.value,
       subtitleEnabled.value ? subtitleConfig.value : undefined,
     )
-    const taskId = res.data?.task_id
-    if (!taskId) { toast.error('配音生成失败：未获取到任务ID'); generatingVoice.value[shot.id] = false; return }
-    toast.info(`镜头 #${shot.shot_no} 配音生成中…`)
-    const taskStore = useTaskStore()
-    taskStore.trackTask(taskId, async (task) => {
-      generatingVoice.value[shot.id] = false
-      if (task.status === 'completed') {
-        const base = ((task.data as any)?.audio_url as string | undefined)
-          || `/api/v1/videos/${props.videoId}/storyboard/${shot.id}/audio`
-        const sep = base.includes('?') ? '&' : '?'
-        shotAudioUrls.value[shot.id] = `${base}${sep}t=${Date.now()}`
-        await videoStore.fetchStoryboard(props.videoId)
-        toast.success(`镜头 #${shot.shot_no} 配音已生成`)
-      } else {
-        toast.error(`镜头 #${shot.shot_no} 配音生成失败`)
+    const mainTaskId = mainRes.data?.task_id
+    if (mainTaskId) {
+      taskStore.trackTask(mainTaskId, async (task) => {
+        if (task.status === 'completed') {
+          const base = ((task.data as any)?.audio_url as string | undefined)
+            || `/api/v1/videos/${props.videoId}/storyboard/${shot.id}/audio`
+          const sep = base.includes('?') ? '&' : '?'
+          shotAudioUrls.value[shot.id] = `${base}${sep}t=${Date.now()}`
+          await videoStore.fetchStoryboard(props.videoId)
+        } else {
+          toast.error(`镜头 #${shot.shot_no} 主配音生成失败`)
+        }
+      })
+    }
+
+    // 2. 加载并重新生成所有语音片段
+    await loadSegments(shot)
+    const segs = shotSegments.value[shot.id] || []
+    for (const seg of segs) {
+      try {
+        generatingSegmentVoice.value[seg.id] = true
+        const segRes = await api.generateSegmentVoice(props.videoId, shot.id, seg.id)
+        const segTaskId = segRes.data?.task_id
+        if (segTaskId) {
+          taskStore.trackTask(segTaskId, async (task) => {
+            generatingSegmentVoice.value[seg.id] = false
+            if (task.status === 'completed') await loadSegments(shot)
+          })
+        } else {
+          generatingSegmentVoice.value[seg.id] = false
+          await loadSegments(shot)
+        }
+      } catch {
+        generatingSegmentVoice.value[seg.id] = false
       }
-    })
+    }
+
+    toast.info(`镜头 #${shot.shot_no} 配音生成中${segs.length ? `（共 ${1 + segs.length} 段）` : '…'}`)
   } catch (e: any) {
     toast.error('配音生成失败：' + (e.message || ''))
+  } finally {
     generatingVoice.value[shot.id] = false
   }
 }
@@ -336,7 +361,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   :disabled="generatingVoice[shot.id]"
                   @click="handleGenerateVoice(shot)"
                 >
-                  {{ generatingVoice[shot.id] ? '生成中…' : (shotAudioUrls[shot.id] ? '重新生成旁白' : '生成旁白配音') }}
+                  {{ generatingVoice[shot.id] ? '生成中…' : '生成配音' }}
                 </button>
                 <!-- Expand segments -->
                 <button
