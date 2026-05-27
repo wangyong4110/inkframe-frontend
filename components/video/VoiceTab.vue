@@ -250,6 +250,8 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
 
 // Dialogue character replacement
 const speakerDropdownShotId = ref<number | null>(null)
+const dropdownShot = ref<StoryboardShot | null>(null)
+const dropdownPos = ref({ top: 0, left: 0 })
 
 function parseDialogue(dialogue: string): { speaker: string; text: string } {
   const idx = dialogue.indexOf('：')
@@ -257,6 +259,19 @@ function parseDialogue(dialogue: string): { speaker: string; text: string } {
   const asciiIdx = dialogue.indexOf(':')
   if (asciiIdx > 0 && asciiIdx < 15) return { speaker: dialogue.slice(0, asciiIdx), text: dialogue.slice(asciiIdx + 1).trimStart() }
   return { speaker: '', text: dialogue }
+}
+
+function openSpeakerDropdown(event: MouseEvent, shot: StoryboardShot) {
+  const btn = event.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  dropdownPos.value = { top: rect.bottom + 4, left: rect.left }
+  if (speakerDropdownShotId.value === shot.id) {
+    speakerDropdownShotId.value = null
+    dropdownShot.value = null
+  } else {
+    speakerDropdownShotId.value = shot.id
+    dropdownShot.value = shot
+  }
 }
 
 async function handleChangeDialogueSpeaker(shot: StoryboardShot, newSpeaker: string) {
@@ -340,8 +355,27 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
       </div>
     </Teleport>
 
-    <!-- close dropdown when clicking outside -->
-    <div v-if="speakerDropdownShotId !== null" class="fixed inset-0 z-20" @click="speakerDropdownShotId = null" />
+    <!-- Speaker dropdown — teleported to body to escape overflow:hidden clipping -->
+    <Teleport to="body">
+      <template v-if="dropdownShot !== null">
+        <div class="fixed inset-0 z-[199]" @click="speakerDropdownShotId = null; dropdownShot = null" />
+        <div
+          class="fixed z-[200] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl min-w-[120px] max-h-52 overflow-y-auto"
+          :style="{ top: dropdownPos.top + 'px', left: dropdownPos.left + 'px' }"
+        >
+          <button
+            v-for="char in characters"
+            :key="char.id"
+            class="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+            :class="{ 'text-blue-600 dark:text-blue-400 font-medium': char.name === parseDialogue(dropdownShot.dialogue || '').speaker }"
+            @click="handleChangeDialogueSpeaker(dropdownShot, char.name); speakerDropdownShotId = null; dropdownShot = null"
+          >
+            {{ char.name }}
+          </button>
+          <p v-if="!characters.length" class="px-3 py-2 text-xs text-gray-400">暂无角色</p>
+        </div>
+      </template>
+    </Teleport>
     <div class="space-y-2">
       <div v-for="shot in pagedShots" :key="shot.id" class="card p-4">
         <div class="flex items-start gap-3">
@@ -377,28 +411,13 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             </div>
             <!-- Dialogue shot: character badge + text -->
             <div v-if="shot.dialogue && !shot.narration" class="flex items-start gap-1.5">
-              <div class="relative flex-shrink-0">
+              <div class="flex-shrink-0">
                 <button
                   class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors font-medium whitespace-nowrap"
-                  @click.stop="speakerDropdownShotId = speakerDropdownShotId === shot.id ? null : shot.id"
+                  @click.stop="openSpeakerDropdown($event, shot)"
                 >
                   {{ parseDialogue(shot.dialogue).speaker || '未知角色' }} ▾
                 </button>
-                <div
-                  v-if="speakerDropdownShotId === shot.id"
-                  class="absolute top-full left-0 mt-1 z-30 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl min-w-[120px] max-h-52 overflow-y-auto"
-                >
-                  <button
-                    v-for="char in characters"
-                    :key="char.id"
-                    class="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
-                    :class="{ 'text-blue-600 dark:text-blue-400 font-medium': char.name === parseDialogue(shot.dialogue).speaker }"
-                    @click="handleChangeDialogueSpeaker(shot, char.name); speakerDropdownShotId = null"
-                  >
-                    {{ char.name }}
-                  </button>
-                  <p v-if="!characters.length" class="px-3 py-2 text-xs text-gray-400">暂无角色</p>
-                </div>
               </div>
               <p class="text-sm italic text-blue-500 dark:text-blue-400 leading-relaxed line-clamp-2 flex-1">
                 {{ parseDialogue(shot.dialogue).text }}
