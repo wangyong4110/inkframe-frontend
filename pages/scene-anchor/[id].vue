@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import type { SceneAnchor, UpdateSceneAnchorPayload } from '~/composables/useSceneAnchorApi'
+import type { SceneAnchor, UpdateSceneAnchorPayload, Novel } from '~/types'
 import { useSceneAnchorApi } from '~/composables/useSceneAnchorApi'
+import { useNovelApi } from '~/composables/useNovelApi'
 
 const { openLightbox } = useImageLightbox()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const api = useSceneAnchorApi()
+const novelApi = useNovelApi()
 
 const anchorId = parseInt(route.params.id as string)
 if (isNaN(anchorId)) {
@@ -20,6 +22,8 @@ const isDirty = ref(false)
 const loading = ref(true)
 
 const anchor = ref<SceneAnchor | null>(null)
+const novel = ref<Novel | null>(null)
+const isEn = computed(() => novel.value?.prompt_language === 'en')
 
 const form = ref({
   name: '',
@@ -30,6 +34,16 @@ const form = ref({
 })
 
 const generatingRefImage = ref(false)
+
+// 对话式编辑
+interface EditMessage {
+  role: 'user' | 'assistant'
+  text?: string
+  imageUrl?: string
+}
+const editMessages = ref<EditMessage[]>([])
+const editInstruction = ref('')
+const editingImage = ref(false)
 
 const tabs = [
   { key: 'basic',  label: '场景信息' },
@@ -60,17 +74,25 @@ function scoreColor(score: number) {
 onMounted(async () => {
   loading.value = true
   try {
-    const a = await api.getSceneAnchor(anchorId)
-    anchor.value = a
-    form.value = {
-      name: a.name ?? '',
-      type: a.type ?? 'interior',
-      variant: a.variant ?? '',
-      description: a.description ?? '',
-      prompt_lock: a.prompt_lock ?? '',
+    const [a, n] = await Promise.allSettled([
+      api.getSceneAnchor(anchorId),
+      !isNaN(novelId) ? novelApi.getNovel(novelId) : Promise.reject('no novelId'),
+    ])
+    if (a.status === 'fulfilled') {
+      anchor.value = a.value
+      form.value = {
+        name: a.value.name ?? '',
+        type: a.value.type ?? 'interior',
+        variant: a.value.variant ?? '',
+        description: a.value.description ?? '',
+        prompt_lock: a.value.prompt_lock ?? '',
+      }
+    } else {
+      toast.error('加载场景锚点失败')
     }
-  } catch (e: any) {
-    toast.error('加载场景锚点失败：' + (e.message || '未知错误'))
+    if (n.status === 'fulfilled') {
+      novel.value = (n.value as any)?.data ?? n.value
+    }
   } finally {
     loading.value = false
     await nextTick()
@@ -110,6 +132,27 @@ async function handleGenerateRefImage() {
     toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
     generatingRefImage.value = false
+  }
+}
+
+async function handleEditImage() {
+  const instr = editInstruction.value.trim()
+  if (!instr || editingImage.value) return
+  editMessages.value.push({ role: 'user', text: instr })
+  editInstruction.value = ''
+  const loadingIdx = editMessages.value.length
+  editMessages.value.push({ role: 'assistant' })
+  editingImage.value = true
+  try {
+    const updated = await api.editRefImage(anchorId, instr)
+    if (anchor.value) anchor.value = updated
+    editMessages.value[loadingIdx] = { role: 'assistant', imageUrl: updated.ref_image_url }
+    toast.success('编辑完成')
+  } catch (e: any) {
+    editMessages.value.splice(loadingIdx, 1)
+    toast.error('编辑失败：' + (e.message || '未知错误'))
+  } finally {
+    editingImage.value = false
   }
 }
 
@@ -238,7 +281,9 @@ function goBack() {
         <div class="card p-6 space-y-5">
           <div>
             <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">视觉提示词</h3>
-            <p class="text-xs text-gray-400">以下字段将直接注入 AI 图像/视频生成提示词，建议使用英文。</p>
+            <p class="text-xs text-gray-400">
+              {{ isEn ? '以下字段将直接注入 AI 图像/视频生成提示词，请使用英文。' : '以下字段将直接注入 AI 图像/视频生成提示词，建议英文；也可使用中文。' }}
+            </p>
           </div>
 
           <!-- Prompt Lock -->
@@ -248,21 +293,25 @@ function goBack() {
               v-model="form.prompt_lock"
               type="text"
               class="input font-mono text-sm"
-              placeholder="grand hall, marble columns, red carpet, golden torchlight"
+              :placeholder="isEn ? 'grand hall, marble columns, red carpet, golden torchlight' : '宏大宫殿, 汉白玉石柱, 红色地毯, 金色火炬光 / grand hall, marble columns...'"
             />
             <p class="mt-1 text-xs text-gray-400">逗号分隔，每次生成都会强制注入，控制场景一致性的核心视觉元素</p>
           </div>
 
           <!-- Description -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">完整视觉描述（英文）</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              完整视觉描述{{ isEn ? '（English）' : '' }}
+            </label>
             <textarea
               v-model="form.description"
               rows="5"
               class="input resize-none font-mono text-sm"
-              placeholder="A grand imperial throne hall bathed in warm golden light, towering marble columns lined with red silk banners, intricate dragon carvings on the ceiling, polished jade floor reflecting the candlelight..."
+              :placeholder="isEn
+                ? 'A grand imperial throne hall bathed in warm golden light, towering marble columns lined with red silk banners, intricate dragon carvings on the ceiling, polished jade floor reflecting the candlelight...'
+                : '金色暖光笼罩的宏伟皇宫大殿，高耸的汉白玉石柱悬挂红绸龙旗，穹顶精雕龙纹浮雕，翡翠地砖映照摇曳烛光…（也可用英文）'"
             ></textarea>
-            <p class="mt-1 text-xs text-gray-400">场景的完整英文视觉描述，包含建筑结构、光线氛围、空间感等细节</p>
+            <p class="mt-1 text-xs text-gray-400">场景的完整视觉描述，包含建筑结构、光线氛围、空间感等细节</p>
           </div>
 
           <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
@@ -340,6 +389,74 @@ function goBack() {
               <p class="text-xs text-gray-400">AI 将根据核心关键词和视觉描述生成参考图，生成完成后自动锁定。</p>
             </div>
           </div>
+        </div>
+
+        <!-- 对话式编辑卡片（有参考图时显示） -->
+        <div v-if="anchor?.ref_image_url" class="card p-6 space-y-4">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">对话式编辑</h3>
+            <p class="text-xs text-gray-400">用文字描述想要的改变，AI 将基于当前参考图进行编辑，每次编辑结果自动更新为新参考图。</p>
+          </div>
+
+          <!-- 消息历史 -->
+          <div v-if="editMessages.length > 0" class="space-y-3 max-h-80 overflow-y-auto pr-1">
+            <div v-for="(msg, i) in editMessages" :key="i">
+              <!-- 用户消息 -->
+              <div v-if="msg.role === 'user'" class="flex justify-end">
+                <div class="bg-primary-500 text-white text-sm px-3 py-2 rounded-2xl rounded-tr-sm max-w-[80%] break-words">
+                  {{ msg.text }}
+                </div>
+              </div>
+              <!-- AI 回复 -->
+              <div v-else class="flex justify-start">
+                <div class="max-w-[70%]">
+                  <!-- 加载中 -->
+                  <div v-if="!msg.imageUrl" class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-sm p-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 animate-spin text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    <span class="text-xs text-gray-400">AI 编辑中…</span>
+                  </div>
+                  <!-- 图片结果 -->
+                  <img
+                    v-else
+                    :src="msg.imageUrl"
+                    class="rounded-2xl rounded-tl-sm cursor-pointer w-full object-cover"
+                    style="max-width: 280px; aspect-ratio: 16/9"
+                    alt="编辑结果"
+                    @click="openLightbox(msg.imageUrl!)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 输入区 -->
+          <div class="flex gap-2">
+            <input
+              v-model="editInstruction"
+              type="text"
+              class="input flex-1 text-sm"
+              :placeholder="isEn ? 'e.g. make it darker, add morning mist, warmer lighting...' : '如：让场景更暗，增加晨雾，使整体色调更冷…'"
+              :disabled="editingImage"
+              @keydown.enter.prevent="handleEditImage"
+            />
+            <button
+              class="btn-primary flex-shrink-0 px-3"
+              :disabled="editingImage || !editInstruction.trim()"
+              @click="handleEditImage"
+            >
+              <svg v-if="editingImage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+              </svg>
+            </button>
+          </div>
+          <p class="text-xs text-gray-400">按 Enter 或点击发送，每轮编辑基于上一轮结果累积修改</p>
         </div>
       </div>
     </template>
