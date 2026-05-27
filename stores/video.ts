@@ -198,7 +198,9 @@ export const useVideoStore = defineStore('video', {
     },
 
     async fetchStoryboard(videoId: number) {
-      this.loading = true
+      // Show skeleton only on initial load; silent background refresh when list already populated
+      const isInitial = this.storyboard.length === 0
+      if (isInitial) this.loading = true
       this.error = null
 
       try {
@@ -210,7 +212,7 @@ export const useVideoStore = defineStore('video', {
         this.error = e.message || 'Failed to fetch storyboard'
         throw e
       } finally {
-        this.loading = false
+        if (isInitial) this.loading = false
       }
     },
 
