@@ -124,8 +124,13 @@ export const useVideoApi = () => {
   const listShotSFXItems = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotSFXItem[]>>(`/videos/${videoId}/shots/${shotId}/sfx-items`)
 
-  const updateShotSFXItem = (videoId: number, shotId: number, itemId: number, data: { volume: number }) =>
-    request<ApiResponse<ShotSFXItem>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, {
+  const updateShotSFXItem = (
+    videoId: number,
+    shotId: number,
+    itemId: number,
+    data: Partial<Pick<ShotSFXItem, 'volume' | 'loop_enabled' | 'fade_in_ms' | 'fade_out_ms' | 'start_offset'>>,
+  ) =>
+    request<ApiResponse<Record<string, unknown>>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     })
