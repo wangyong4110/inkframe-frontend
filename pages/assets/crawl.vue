@@ -9,6 +9,7 @@ const jobs = ref<CrawlJob[]>([])
 const loading = ref(true)
 const creating = ref(false)
 const cancellingId = ref<number | null>(null)
+const retryingId = ref<number | null>(null)
 const pollingId = ref<ReturnType<typeof setInterval> | null>(null)
 
 const form = reactive({
@@ -25,7 +26,6 @@ const sourceOptions = [
   { value: 'pixabay', label: 'Pixabay（图片/视频/音频）' },
   { value: 'freesound', label: 'Freesound（音效，CC0）' },
   { value: 'bbc-sfx', label: 'BBC Sound Effects（音效，免费）' },
-  { value: 'aigei', label: '爱给网（音效/音乐，免费）' },
   { value: 'nasa', label: 'NASA Images（图片/视频）' },
   { value: 'wikimedia', label: 'Wikimedia Commons（图片）' },
 ]
@@ -51,6 +51,16 @@ async function cancelJob(job: CrawlJob) {
     job.status = 'cancelled'
   } finally {
     cancellingId.value = null
+  }
+}
+
+async function retryJob(job: CrawlJob) {
+  retryingId.value = job.id
+  try {
+    const res = await assetApi.retryCrawlJob(job.id)
+    Object.assign(job, res.data)
+  } finally {
+    retryingId.value = null
   }
 }
 
@@ -207,6 +217,14 @@ onUnmounted(() => {
                   class="text-xs px-2 py-0.5 rounded border border-red-300 text-red-500 hover:bg-red-50 disabled:opacity-50"
                 >
                   {{ cancellingId === job.id ? '停止中...' : '停止' }}
+                </button>
+                <button
+                  v-if="job.status === 'failed' || job.status === 'cancelled'"
+                  :disabled="retryingId === job.id"
+                  @click="retryJob(job)"
+                  class="text-xs px-2 py-0.5 rounded border border-indigo-300 text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+                >
+                  {{ retryingId === job.id ? '重试中...' : '重试' }}
                 </button>
               </div>
               <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">

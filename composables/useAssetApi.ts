@@ -211,6 +211,9 @@ export const useAssetApi = () => {
   const cancelCrawlJob = (id: number) =>
     request<ApiResponse<{ cancelled: boolean }>>(`/crawl-jobs/${id}/cancel`, { method: 'POST' })
 
+  const retryCrawlJob = (id: number) =>
+    request<ApiResponse<CrawlJob>>(`/crawl-jobs/${id}/retry`, { method: 'POST' })
+
   // ─── Analytics ───────────────────────────────────────────────────────────────
 
   const getQuota = () =>
@@ -242,7 +245,7 @@ export const useAssetApi = () => {
     listCollections, createCollection, listCollectionItems, addToCollection, removeFromCollection,
     createShareLink, listShareLinks, revokeShareLink, getSharePage,
     listComments, addComment, deleteComment,
-    listCrawlJobs, createCrawlJob, getCrawlJob, cancelCrawlJob,
+    listCrawlJobs, createCrawlJob, getCrawlJob, cancelCrawlJob, retryCrawlJob,
     getQuota, getValueRanking, getSearchGaps,
     listPendingShareRequests, approveShareRequest, rejectShareRequest,
   }
