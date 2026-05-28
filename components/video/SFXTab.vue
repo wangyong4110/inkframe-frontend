@@ -15,6 +15,7 @@ const sfxAiContext = ref('')
 const showSfxAiPanel = ref(true)
 
 const sfxPlayingId = ref<number | null>(null)
+const sfxLoadingId = ref<number | null>(null)
 const sfxAudioRef = ref<HTMLAudioElement | null>(null)
 const sfxItems = ref<Record<number, ShotSFXItem[]>>({})
 const sfxItemsLoading = ref(false)
@@ -128,22 +129,48 @@ async function handleGenerateSFX() {
   }
 }
 
+function onAudioError() {
+  if (sfxLoadingId.value !== null || sfxPlayingId.value !== null) {
+    toast.error('音效播放出错，链接可能已失效')
+  }
+  sfxPlayingId.value = null
+  sfxLoadingId.value = null
+}
+
 function toggleSfxPreview(item: ShotSFXItem) {
   const audio = sfxAudioRef.value
   if (!audio) return
   if (sfxPlayingId.value === item.id) {
     audio.pause()
+    audio.currentTime = 0
     sfxPlayingId.value = null
+    sfxLoadingId.value = null
     return
   }
+  // 停止当前正在播放的音效
+  if (sfxPlayingId.value !== null) {
+    audio.pause()
+    audio.currentTime = 0
+    sfxPlayingId.value = null
+  }
+  if (!item.url) {
+    toast.error('该音效暂无可用链接')
+    return
+  }
+  sfxLoadingId.value = item.id
   audio.src = item.url
   audio.load()
-  audio.play().catch((e) => {
-    console.warn('[SFX Preview] play failed', item.url, e)
-    toast.error('音效预览失败，请检查音频链接')
-    sfxPlayingId.value = null
-  })
-  sfxPlayingId.value = item.id
+  audio.play()
+    .then(() => {
+      sfxPlayingId.value = item.id
+      sfxLoadingId.value = null
+    })
+    .catch((e) => {
+      console.warn('[SFX Preview] play failed', item.url, e)
+      toast.error('音效预览失败，请检查音频链接是否有效')
+      sfxPlayingId.value = null
+      sfxLoadingId.value = null
+    })
 }
 
 async function deleteSFXItem(shot: StoryboardShot, item: ShotSFXItem) {
@@ -180,7 +207,12 @@ defineExpose({ sfxItems, loadSFXItems })
 <template>
   <div class="space-y-4">
     <!-- Hidden audio element for preview -->
-    <audio ref="sfxAudioRef" class="hidden" @ended="sfxPlayingId = null" />
+    <audio
+      ref="sfxAudioRef"
+      class="hidden"
+      @ended="sfxPlayingId = null; sfxLoadingId = null"
+      @error="onAudioError"
+    />
 
     <!-- AI Panel — teleported into the aside panel via #sfx-ai-slot -->
     <Teleport to="#sfx-ai-slot">
@@ -300,11 +332,12 @@ defineExpose({ sfxItems, loadSFXItems })
             <!-- Source badge -->
             <span class="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
               :class="{
+                'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300': item.source === 'ai-sfx',
                 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300': item.source === 'freesound',
                 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300': item.source === 'elevenlabs',
                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': item.source === 'local',
               }">
-              {{ item.source }}
+              {{ item.source === 'ai-sfx' ? 'AI生成' : item.source }}
             </span>
             <!-- SFX type badge -->
             <span
@@ -331,19 +364,33 @@ defineExpose({ sfxItems, loadSFXItems })
               @change="updateSFXItemVolume(shot, item, parseFloat(($event.target as HTMLInputElement).value))"
             />
             <span class="text-xs text-gray-400 w-7 text-right flex-shrink-0">{{ Math.round(item.volume * 100) }}%</span>
-            <!-- Play button -->
+            <!-- Duration -->
+            <span v-if="item.duration_secs && item.duration_secs > 0" class="text-[10px] text-gray-400 w-8 text-right flex-shrink-0">
+              {{ item.duration_secs.toFixed(1) }}s
+            </span>
+            <!-- Play/Pause/Loading button -->
             <button
               class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
               :class="sfxPlayingId === item.id
                 ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:text-orange-500'"
+                : sfxLoadingId === item.id
+                  ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-400'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:text-orange-500'"
+              :title="sfxPlayingId === item.id ? '点击停止' : sfxLoadingId === item.id ? '加载中…' : '试听'"
+              :disabled="sfxLoadingId !== null && sfxLoadingId !== item.id"
               @click="toggleSfxPreview(item)"
             >
-              <svg v-if="sfxPlayingId !== item.id" class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
+              <!-- Loading spinner -->
+              <svg v-if="sfxLoadingId === item.id" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <!-- Pause icon -->
+              <svg v-else-if="sfxPlayingId === item.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+              <!-- Play icon -->
+              <svg v-else class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
               </svg>
             </button>
             <!-- Delete button -->
