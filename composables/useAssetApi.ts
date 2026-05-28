@@ -208,6 +208,9 @@ export const useAssetApi = () => {
   const getCrawlJob = (id: number) =>
     request<ApiResponse<CrawlJob>>(`/crawl-jobs/${id}`)
 
+  const cancelCrawlJob = (id: number) =>
+    request<ApiResponse<{ cancelled: boolean }>>(`/crawl-jobs/${id}/cancel`, { method: 'POST' })
+
   // ─── Analytics ───────────────────────────────────────────────────────────────
 
   const getQuota = () =>
@@ -239,7 +242,7 @@ export const useAssetApi = () => {
     listCollections, createCollection, listCollectionItems, addToCollection, removeFromCollection,
     createShareLink, listShareLinks, revokeShareLink, getSharePage,
     listComments, addComment, deleteComment,
-    listCrawlJobs, createCrawlJob, getCrawlJob,
+    listCrawlJobs, createCrawlJob, getCrawlJob, cancelCrawlJob,
     getQuota, getValueRanking, getSearchGaps,
     listPendingShareRequests, approveShareRequest, rejectShareRequest,
   }

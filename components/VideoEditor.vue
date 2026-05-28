@@ -8,8 +8,11 @@ import TimelineTab from '~/components/video/TimelineTab.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string; standalone?: boolean }>()
 const videoStore = useVideoStore()
+const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
+
+const promptLanguage = computed(() => novelStore.currentNovel?.prompt_language ?? 'zh')
 const toast = useToast()
 const { confirm } = useConfirm()
 
@@ -69,8 +72,11 @@ async function load() {
     ])
     videoStore.resumeStoryboardTask(props.videoId)
     const novelId = videoStore.currentVideo?.novel_id
-    if (novelId) sceneAnchorStore.fetchAnchors(novelId)
-    if (novelId) characterStore.fetchCharacters(novelId)
+    if (novelId) {
+      sceneAnchorStore.fetchAnchors(novelId)
+      characterStore.fetchCharacters(novelId)
+      novelStore.fetchNovel(novelId)
+    }
   } catch (e: any) {
     toast.error('加载失败：' + (e.message || ''))
   }
@@ -296,6 +302,7 @@ defineExpose({ activeTab, generateStoryboard })
           v-if="activeTab === 'sfx'"
           ref="sfxTabRef"
           :video-id="props.videoId"
+          :prompt-language="promptLanguage"
         />
 
         <!-- ── Timeline Tab ── -->

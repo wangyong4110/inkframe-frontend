@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import type { StoryboardShot, ShotSFXItem } from '~/types'
+import type { StoryboardShot, ShotSFXItem, SFXTagItem } from '~/types'
 import { parseSfxTags } from '~/utils/video'
 
-const props = defineProps<{ videoId: number }>()
+const props = defineProps<{
+  videoId: number
+  promptLanguage?: string  // 'zh' | 'en', from novel.prompt_language
+}>()
+
+const isChineseLang = computed(() => (props.promptLanguage ?? 'zh') !== 'en')
 
 const videoStore = useVideoStore()
 const toast = useToast()
@@ -200,6 +205,56 @@ async function toggleSFXItemDisabled(shot: StoryboardShot, item: ShotSFXItem) {
   if (idx !== -1) list[idx] = { ...list[idx], disabled }
 }
 
+// ── 内联 SFX 标签编辑 ────────────────────────────────────────────────────────
+
+// editingTagsFor: currently open tag editor's shot id (null = closed)
+const editingTagsFor = ref<number | null>(null)
+// local copy of tags being edited (keyed by shot.id)
+const editingTagsMap = ref<Record<number, SFXTagItem[]>>({})
+
+function openTagEditor(shot: StoryboardShot) {
+  editingTagsFor.value = shot.id
+  const existing = sfxTagsMap.value.get(shot.id) ?? []
+  editingTagsMap.value[shot.id] = existing.map(t => ({ ...t }))
+}
+
+function closeTagEditor() {
+  editingTagsFor.value = null
+}
+
+function addTag(shotId: number) {
+  if (!editingTagsMap.value[shotId]) editingTagsMap.value[shotId] = []
+  editingTagsMap.value[shotId].push({ tag: '', type: 'action' })
+}
+
+function removeTag(shotId: number, idx: number) {
+  editingTagsMap.value[shotId]?.splice(idx, 1)
+}
+
+// displayLabel: what to show as the primary tag text
+function displayLabel(t: SFXTagItem): string {
+  return isChineseLang.value ? (t.prompt || t.tag) : t.tag
+}
+
+const savingTagsFor = ref<number | null>(null)
+async function saveTagsForShot(shot: StoryboardShot) {
+  const tags = (editingTagsMap.value[shot.id] ?? []).filter(t => t.tag.trim() !== '')
+  savingTagsFor.value = shot.id
+  try {
+    const api = useVideoApi()
+    await api.updateShotSFXTags(props.videoId, shot.id, tags)
+    // Update the shot's sfx_tags in the store
+    const tagsJson = JSON.stringify(tags)
+    await videoStore.fetchStoryboard(props.videoId)
+    closeTagEditor()
+    toast.success('音效标签已保存')
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    savingTagsFor.value = null
+  }
+}
+
 // Expose sfxItems for TimelineTab
 defineExpose({ sfxItems, loadSFXItems })
 </script>
@@ -292,22 +347,96 @@ defineExpose({ sfxItems, loadSFXItems })
             <p class="text-sm text-gray-700 dark:text-gray-300 line-clamp-1">
               {{ shot.narration || shot.description || '（无描述）' }}
             </p>
-            <!-- SFX tags（新格式带类型色标，旧格式兼容显示） -->
-            <div v-if="(sfxTagsMap.get(shot.id) ?? []).length > 0" class="flex flex-wrap gap-1 mt-1">
-              <span
-                v-for="t in sfxTagsMap.get(shot.id)"
-                :key="t.tag"
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border"
-                :class="{
-                  'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800': t.type === 'action',
-                  'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-800': t.type === 'ambient',
-                  'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800': t.type === 'emotion',
-                  'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-800': !t.type,
-                }"
-              >
-                <span v-if="t.type" class="opacity-60 text-[9px] font-mono uppercase">{{ t.type[0] }}</span>
-                {{ t.tag }}
-              </span>
+            <!-- SFX tags：显示模式 + 编辑入口 -->
+            <div class="mt-1">
+              <!-- 展示模式 -->
+              <div v-if="editingTagsFor !== shot.id" class="flex flex-wrap items-center gap-1">
+                <span
+                  v-for="t in sfxTagsMap.get(shot.id)"
+                  :key="t.tag"
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border cursor-default"
+                  :class="{
+                    'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800': t.type === 'action',
+                    'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-800': t.type === 'ambient',
+                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800': t.type === 'emotion',
+                    'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-800': !t.type,
+                  }"
+                  :title="isChineseLang && t.tag !== displayLabel(t) ? `搜索词: ${t.tag}` : undefined"
+                >
+                  <span v-if="t.type" class="opacity-60 text-[9px] font-mono uppercase">{{ t.type[0] }}</span>
+                  {{ displayLabel(t) }}
+                </span>
+                <!-- 编辑按钮 -->
+                <button
+                  class="text-[10px] text-gray-400 hover:text-orange-500 transition-colors px-1"
+                  title="编辑标签"
+                  @click.stop="openTagEditor(shot)"
+                >✎</button>
+              </div>
+
+              <!-- 编辑模式 -->
+              <div v-else class="mt-1 space-y-1.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg p-2">
+                <div v-for="(t, idx) in editingTagsMap[shot.id]" :key="idx" class="flex items-center gap-1.5">
+                  <!-- type selector -->
+                  <select
+                    v-model="t.type"
+                    class="text-[10px] border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 px-1 py-0.5 w-20 flex-shrink-0"
+                  >
+                    <option value="action">动作</option>
+                    <option value="ambient">环境</option>
+                    <option value="emotion">情绪</option>
+                  </select>
+                  <!-- tag input: in Chinese mode show prompt, in English mode show tag -->
+                  <input
+                    v-if="isChineseLang"
+                    v-model="t.prompt"
+                    type="text"
+                    placeholder="中文描述（Kling SFX 用）"
+                    class="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 min-w-0"
+                    @keyup.enter="saveTagsForShot(shot)"
+                  />
+                  <input
+                    v-model="t.tag"
+                    type="text"
+                    :placeholder="isChineseLang ? 'English tag（Freesound 搜索）' : 'English SFX tag (Freesound format)'"
+                    class="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 min-w-0"
+                    :class="isChineseLang ? 'text-gray-400 w-28 flex-none' : ''"
+                    :style="isChineseLang ? 'flex: 0 0 9rem' : ''"
+                    @keyup.enter="saveTagsForShot(shot)"
+                  />
+                  <!-- delete tag -->
+                  <button
+                    class="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                    @click="removeTag(shot.id, idx)"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <!-- add + save/cancel row -->
+                <div class="flex items-center gap-1.5 pt-0.5">
+                  <button
+                    class="text-[10px] text-orange-600 hover:text-orange-700 flex items-center gap-0.5"
+                    @click="addTag(shot.id)"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    添加
+                  </button>
+                  <span class="flex-1" />
+                  <button
+                    class="text-[10px] px-2 py-0.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    @click="closeTagEditor"
+                  >取消</button>
+                  <button
+                    class="text-[10px] px-2 py-0.5 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                    :disabled="savingTagsFor === shot.id"
+                    @click="saveTagsForShot(shot)"
+                  >{{ savingTagsFor === shot.id ? '保存中…' : '保存' }}</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

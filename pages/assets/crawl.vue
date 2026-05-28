@@ -8,6 +8,7 @@ const assetApi = useAssetApi()
 const jobs = ref<CrawlJob[]>([])
 const loading = ref(true)
 const creating = ref(false)
+const cancellingId = ref<number | null>(null)
 const pollingId = ref<ReturnType<typeof setInterval> | null>(null)
 
 const form = reactive({
@@ -22,7 +23,9 @@ const sourceOptions = [
   { value: 'unsplash', label: 'Unsplash（图片）' },
   { value: 'pexels', label: 'Pexels（图片/视频）' },
   { value: 'pixabay', label: 'Pixabay（图片/视频/音频）' },
-  { value: 'freesound', label: 'Freesound（音效）' },
+  { value: 'freesound', label: 'Freesound（音效，CC0）' },
+  { value: 'bbc-sfx', label: 'BBC Sound Effects（音效，免费）' },
+  { value: 'aigei', label: '爱给网（音效/音乐，免费）' },
   { value: 'nasa', label: 'NASA Images（图片/视频）' },
   { value: 'wikimedia', label: 'Wikimedia Commons（图片）' },
 ]
@@ -40,6 +43,16 @@ const assetTypeOptions = [
 ]
 
 const hasRunningJob = computed(() => jobs.value.some(j => j.status === 'pending' || j.status === 'running'))
+
+async function cancelJob(job: CrawlJob) {
+  cancellingId.value = job.id
+  try {
+    await assetApi.cancelCrawlJob(job.id)
+    job.status = 'cancelled'
+  } finally {
+    cancellingId.value = null
+  }
+}
 
 async function loadJobs() {
   const res = await assetApi.listCrawlJobs()
@@ -71,6 +84,7 @@ function statusLabel(status: string) {
     running: '运行中',
     completed: '已完成',
     failed: '失败',
+    cancelled: '已取消',
   }
   return map[status] ?? status
 }
@@ -81,6 +95,7 @@ function statusClass(status: string) {
     running: 'bg-blue-100 text-blue-800',
     completed: 'bg-green-100 text-green-800',
     failed: 'bg-red-100 text-red-800',
+    cancelled: 'bg-gray-100 text-gray-600',
   }
   return map[status] ?? 'bg-gray-100 text-gray-700'
 }
@@ -185,6 +200,14 @@ onUnmounted(() => {
                 <span :class="statusClass(job.status)" class="text-xs px-2 py-0.5 rounded-full shrink-0">
                   {{ statusLabel(job.status) }}
                 </span>
+                <button
+                  v-if="job.status === 'pending' || job.status === 'running'"
+                  :disabled="cancellingId === job.id"
+                  @click="cancelJob(job)"
+                  class="text-xs px-2 py-0.5 rounded border border-red-300 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {{ cancellingId === job.id ? '停止中...' : '停止' }}
+                </button>
               </div>
               <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
                 <span>来源：{{ job.source }}</span>

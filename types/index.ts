@@ -322,6 +322,13 @@ export interface StoryboardShot {
   shot_task_id?: string  // 正在生成中的任务ID，用于取消
 }
 
+// SFX tag item (sfx_tags JSON field on StoryboardShot)
+export interface SFXTagItem {
+  tag: string                              // 搜索词（英文：Freesound格式；中文：Kling SFX）
+  type: 'action' | 'ambient' | 'emotion'  // 音效分类
+  prompt?: string                          // AI 生成提示词（Kling SFX / ElevenLabs 专用）
+}
+
 export interface ShotSFXItem {
   id: number
   shot_id: number

@@ -139,6 +139,12 @@ export const useVideoApi = () => {
       body: JSON.stringify({ disabled }),
     })
 
+  const updateShotSFXTags = (videoId: number, shotId: number, tags: import('~/types').SFXTagItem[]) =>
+    request<ApiResponse<{ shot_id: number; count: number }>>(`/videos/${videoId}/shots/${shotId}/sfx-tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tags }),
+    })
+
   const toggleBGMSegment = (videoId: number, segId: number, disabled: boolean) =>
     request<ApiResponse<{ id: number; disabled: boolean }>>(`/videos/${videoId}/bgm/segments/${segId}/disabled`, {
       method: 'PATCH',
@@ -355,6 +361,7 @@ export const useVideoApi = () => {
     updateShotSFXItem,
     deleteShotSFXItem,
     toggleShotSFXItem,
+    updateShotSFXTags,
     exportCapcut,
     exportVideo,
     getVideoProviders,

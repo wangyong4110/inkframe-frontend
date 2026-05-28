@@ -38,6 +38,45 @@ const tagSuggestions = ref<Tag[]>([])
 let tagPollTimer: ReturnType<typeof setTimeout> | null = null
 let tagPollCount = 0
 
+// Type filter chips
+const typeFilters = [
+  { key: '', label: '全部' },
+  { key: 'image', label: '图片' },
+  { key: 'video', label: '视频' },
+  { key: 'audio', label: '音效' },
+]
+
+// Inline crawl panel (shown when audio type is active)
+const showCrawlPanel = ref(false)
+const crawlForm = reactive({ source: 'freesound', query: '', limit: 20 })
+const crawlSources = [
+  { value: 'freesound', label: 'Freesound（CC0）' },
+  { value: 'bbc-sfx', label: 'BBC Sound Effects' },
+  { value: 'aigei', label: '爱给网' },
+  { value: 'pixabay', label: 'Pixabay' },
+]
+const crawling = ref(false)
+
+async function startAudioCrawl() {
+  if (!crawlForm.query.trim()) return
+  crawling.value = true
+  try {
+    await assetApi.createCrawlJob({
+      source: crawlForm.source,
+      query: crawlForm.query,
+      asset_type: 'audio',
+      limit: crawlForm.limit,
+    })
+    toast.success('已提交爬取任务，音效将在后台导入')
+    crawlForm.query = ''
+    showCrawlPanel.value = false
+  } catch (e: any) {
+    toast.error('提交失败：' + (e.message || ''))
+  } finally {
+    crawling.value = false
+  }
+}
+
 // Selected assets (for batch ops)
 const selected = ref<Set<number>>(new Set())
 
@@ -70,6 +109,7 @@ async function load() {
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
 watch([activeScope, page, filterType, filterSource, filterStatus, sortBy], load)
+watch(filterType, (v) => { if (v === 'audio') showCrawlPanel.value = true })
 onMounted(load)
 
 // Debounced search
@@ -303,6 +343,59 @@ function formatSize(bytes?: number) {
         @click="activeScope = tab.key as any; page = 1; selected = new Set()"
       >{{ tab.label }}</button>
     </div>
+
+    <!-- Type filter chips -->
+    <div class="flex gap-2 flex-wrap">
+      <button
+        v-for="t in typeFilters"
+        :key="t.key"
+        class="px-3 py-1 text-sm rounded-full border transition-colors"
+        :class="filterType === t.key
+          ? 'border-blue-500 bg-blue-600/20 text-blue-400'
+          : 'border-gray-700 text-gray-400 hover:text-gray-200'"
+        @click="filterType = t.key; page = 1"
+      >{{ t.label }}</button>
+    </div>
+
+    <!-- Audio crawl panel (shown when type=audio) -->
+    <Transition name="fade">
+      <div v-if="filterType === 'audio'" class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm font-medium text-gray-200">从网上爬取音效</span>
+          <button class="text-xs text-gray-400 hover:text-gray-200" @click="showCrawlPanel = !showCrawlPanel">
+            {{ showCrawlPanel ? '收起 ▲' : '展开 ▼' }}
+          </button>
+        </div>
+        <Transition name="fade">
+          <div v-if="showCrawlPanel" class="space-y-3">
+            <div class="flex gap-3">
+              <div class="flex-1">
+                <label class="block text-xs text-gray-400 mb-1">来源</label>
+                <select v-model="crawlForm.source"
+                  class="w-full px-2 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none">
+                  <option v-for="opt in crawlSources" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
+              <div class="flex-1">
+                <label class="block text-xs text-gray-400 mb-1">数量上限</label>
+                <input v-model.number="crawlForm.limit" type="number" min="1" max="200"
+                  class="w-full px-2 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none" />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <input v-model="crawlForm.query" type="text" placeholder="关键词，如：雨声、打斗、城市环境音..."
+                class="flex-1 px-3 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                @keyup.enter="startAudioCrawl" />
+              <button :disabled="!crawlForm.query.trim() || crawling" @click="startAudioCrawl"
+                class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 whitespace-nowrap">
+                {{ crawling ? '提交中...' : '开始爬取' }}
+              </button>
+            </div>
+            <p class="text-xs text-gray-500">爬取完成后音效自动入库，可在下方列表中查看。<NuxtLink to="/assets/crawl" class="text-blue-400 hover:underline">查看爬取记录 →</NuxtLink></p>
+          </div>
+        </Transition>
+      </div>
+    </Transition>
 
     <!-- Filters -->
     <div class="flex flex-wrap gap-3 items-center">
@@ -573,3 +666,8 @@ function formatSize(bytes?: number) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>
