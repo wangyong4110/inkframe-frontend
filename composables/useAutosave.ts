@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], debounceMs = 2000) {
   const lastSavedAt = ref<Date | null>(null)
   const autoSaving = ref(false)
+  const saveFailed = ref(false)
 
   let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -10,11 +11,12 @@ export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], de
     if (timer) clearTimeout(timer)
     timer = setTimeout(async () => {
       autoSaving.value = true
+      saveFailed.value = false
       try {
         await saveFn()
         lastSavedAt.value = new Date()
       } catch {
-        // silent — errors are handled by the caller's toast
+        saveFailed.value = true
       } finally {
         autoSaving.value = false
       }
@@ -25,5 +27,5 @@ export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], de
     if (timer) clearTimeout(timer)
   })
 
-  return { lastSavedAt, autoSaving }
+  return { lastSavedAt, autoSaving, saveFailed }
 }

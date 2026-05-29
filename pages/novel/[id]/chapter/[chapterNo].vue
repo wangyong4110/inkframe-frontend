@@ -190,13 +190,14 @@ const isDirty = computed(() =>
 
 useUnsavedGuard(isDirty, '章节有未保存的修改，确认离开？')
 
-const { lastSavedAt, autoSaving } = useAutosave(
+const { lastSavedAt, autoSaving, saveFailed } = useAutosave(
   () => doSave(),
   [content, chapterTitle, outlineEditText],
 )
 
 const autoSaveLabel = computed(() => {
   if (autoSaving.value) return '保存中...'
+  if (saveFailed.value) return '保存失败'
   if (lastSavedAt.value) {
     const hh = String(lastSavedAt.value.getHours()).padStart(2, '0')
     const mm = String(lastSavedAt.value.getMinutes()).padStart(2, '0')
@@ -306,6 +307,11 @@ function openReviewPanel() {
 
 async function handleReviewContentUpdated() {
   await chapterStore.fetchChapter(novelId, chapterNo)
+  // Sync local refs with the server-updated content (e.g., after applying review diffs).
+  // Without this, the textarea would show stale pre-diff content and autosave would
+  // overwrite the applied changes.
+  content.value = chapter.value?.content || ''
+  chapterTitle.value = chapter.value?.title || ''
 }
 
 function qualityTier(score: number): { label: string; color: string } {
@@ -880,7 +886,7 @@ async function fetchShotsForChapter() {
 
       <!-- Actions -->
       <div class="flex items-center gap-2 flex-shrink-0">
-        <span v-if="autoSaveLabel" class="text-xs text-gray-400 dark:text-gray-500">{{ autoSaveLabel }}</span>
+        <span v-if="autoSaveLabel" :class="saveFailed ? 'text-xs text-red-500' : 'text-xs text-gray-400 dark:text-gray-500'">{{ autoSaveLabel }}</span>
       </div>
     </header>
 
@@ -1977,7 +1983,7 @@ async function fetchShotsForChapter() {
           :class="progress >= 100 ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'"
         >{{ Math.round(progress) }}%</span>
       </div>
-      <span v-if="autoSaveLabel" class="text-xs text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{{ autoSaveLabel }}</span>
+      <span v-if="autoSaveLabel" :class="saveFailed ? 'text-xs text-red-500 ml-auto flex-shrink-0' : 'text-xs text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0'">{{ autoSaveLabel }}</span>
     </footer>
 
   </div>
