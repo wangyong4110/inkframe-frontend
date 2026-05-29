@@ -1023,7 +1023,7 @@ export interface StoryboardReview {
   narrative_score: number
   visual_score: number
   pacing_score: number
-  narration_score: number
+  voiceover_score: number
   summary: string
   strengths: string[]
   weaknesses: string[]
@@ -1070,6 +1070,8 @@ export interface ChapterReview {
   character_score: number
   writing_score: number
   pacing_score: number
+  dramatic_score: number
+  visual_potential: number
   summary: string
   strengths: string[]
   weaknesses: string[]
@@ -1089,7 +1091,7 @@ export interface ChapterReviewRecord {
 
 export interface ChapterIgnoredIssue {
   id: number
-  chapter_id: number
+  entity_id: number
   issue_text: string
   issue_hash: string
   note: string

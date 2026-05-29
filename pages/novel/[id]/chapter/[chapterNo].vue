@@ -297,6 +297,12 @@ const showRefinedPreview = ref(false)
 
 // ── AI 深度审查面板 ───────────────────────────────────────────────────────────
 const showReviewPanel = ref(false)
+const reviewPanelMounted = ref(false) // 懒挂载：首次打开后保持 alive，避免重复触发 AI 审查
+
+function openReviewPanel() {
+  reviewPanelMounted.value = true
+  showReviewPanel.value = true
+}
 
 async function handleReviewContentUpdated() {
   await chapterStore.fetchChapter(novelId, chapterNo)
@@ -1588,23 +1594,10 @@ async function fetchShotsForChapter() {
                 </div>
               </div>
 
-              <!-- Quick check CTA -->
-              <button
-                v-if="!qualityReport"
-                class="w-full py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-dashed border-gray-200 dark:border-gray-600 rounded-lg transition-colors hover:border-gray-300 flex items-center justify-center gap-1.5 disabled:opacity-40"
-                :disabled="checking"
-                @click="handleCheckQuality"
-              >
-                <svg v-if="checking" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                {{ checking ? '检查中...' : '运行质量检查' }}
-              </button>
-
               <!-- AI 深度审查入口 -->
               <button
                 class="w-full py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 border border-dashed border-primary-300 dark:border-primary-600 rounded-lg transition-colors hover:border-primary-400 flex items-center justify-center gap-1.5"
-                @click="showReviewPanel = true"
+                @click="openReviewPanel"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -2083,10 +2076,11 @@ async function fetchShotsForChapter() {
     </div>
   </Teleport>
 
-  <!-- AI 深度审查面板 -->
+  <!-- AI 深度审查面板（懒挂载：首次打开后保持 alive，通过 visible prop 控制显隐） -->
   <ChapterReviewPanel
-    v-if="showReviewPanel && chapter"
+    v-if="reviewPanelMounted && chapter"
     :chapter-id="chapter.id"
+    :visible="showReviewPanel"
     @close="showReviewPanel = false"
     @content-updated="handleReviewContentUpdated"
   />

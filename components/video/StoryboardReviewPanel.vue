@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { StoryboardReview, ReviewRecord, IgnoredSuggestion, ShotInsertSuggestion, ShotDeleteSuggestion } from '~/types'
 
-const props = defineProps<{ videoId: number; llmProvider?: string }>()
+const props = defineProps<{ videoId: number; llmProvider?: string; visible?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const videoStore = useVideoStore()
@@ -227,15 +227,13 @@ const durationBuckets = computed(() => {
 })
 
 // ── Helpers ──
-// Normalize legacy scores stored on 0-100 scale to 0-10
 function normalizeScore(score: number): number {
-  return score > 10 ? score / 10 : score
+  return score
 }
 
 function scoreColor(score: number) {
-  const s = normalizeScore(score)
-  if (s >= 8) return 'text-green-600 dark:text-green-400'
-  if (s >= 6) return 'text-yellow-600 dark:text-yellow-400'
+  if (score >= 80) return 'text-green-600 dark:text-green-400'
+  if (score >= 60) return 'text-yellow-600 dark:text-yellow-400'
   return 'text-red-600 dark:text-red-400'
 }
 
@@ -398,8 +396,8 @@ defineExpose({ startReview, reviewing })
 <template>
   <!-- AI Review Panel -->
   <Teleport to="body">
-    <Transition name="slide-right" appear>
-      <div class="fixed inset-0 z-50 flex justify-end">
+    <Transition name="slide-right">
+      <div v-if="props.visible !== false" class="fixed inset-0 z-50 flex justify-end">
         <div class="absolute inset-0 bg-black/30" @click="emit('close')" />
         <div class="relative w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">
           <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -488,8 +486,8 @@ defineExpose({ startReview, reviewing })
                 class="rounded-xl border border-gray-200 dark:border-gray-700 p-4"
               >
                 <div class="flex items-center gap-2 mb-2">
-                  <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ normalizeScore(rec.overall_score).toFixed(1) }}</span>
-                  <span class="text-xs text-gray-400">/ 10</span>
+                  <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ normalizeScore(rec.overall_score).toFixed(0) }}</span>
+                  <span class="text-xs text-gray-400">/ 100</span>
                   <span
                     class="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
                     :class="{
@@ -573,9 +571,9 @@ defineExpose({ startReview, reviewing })
               <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
                 <div class="flex items-end gap-3 mb-4">
                   <div class="text-4xl font-bold" :class="scoreColor(reviewResult.overall_score)">
-                    {{ normalizeScore(reviewResult.overall_score).toFixed(1) }}
+                    {{ normalizeScore(reviewResult.overall_score).toFixed(0) }}
                   </div>
-                  <div class="text-sm text-gray-500 pb-1">/ 10</div>
+                  <div class="text-sm text-gray-500 pb-1">/ 100</div>
                   <div class="flex-1" />
                   <span v-if="reviewHistory[0]?.review && !reviewing" class="text-[10px] text-gray-400 dark:text-gray-500">上次审查结果</span>
                   <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="reviewing" @click="startReview">重新审查</button>
@@ -601,18 +599,18 @@ defineExpose({ startReview, reviewing })
                     { label: '叙事连贯性', score: reviewResult.narrative_score },
                     { label: '视觉多样性', score: reviewResult.visual_score },
                     { label: '节奏控制',   score: reviewResult.pacing_score },
-                    { label: '旁白质量',   score: reviewResult.narration_score },
+                    { label: '旁白质量',   score: reviewResult.voiceover_score },
                   ]" :key="item.label" class="flex items-center gap-2">
                     <span class="text-gray-500 w-16 shrink-0">{{ item.label }}</span>
                     <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
                       <div class="h-full rounded-full transition-all"
-                        :class="item.score >= 8 ? 'bg-green-500' : item.score >= 6 ? 'bg-yellow-500' : 'bg-red-500'"
-                        :style="`width:${item.score * 10}%`" />
+                        :class="item.score >= 80 ? 'bg-green-500' : item.score >= 60 ? 'bg-yellow-500' : 'bg-red-500'"
+                        :style="`width:${item.score}%`" />
                     </div>
-                    <span class="font-medium" :class="scoreColor(item.score)">{{ normalizeScore(item.score).toFixed(1) }}</span>
+                    <span class="font-medium" :class="scoreColor(item.score)">{{ normalizeScore(item.score).toFixed(0) }}</span>
                   </div>
                 </div>
-                <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±1.5 属正常范围 · 每次审查独立采样</div>
+                <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±5 属正常范围 · 每次审查独立采样</div>
               </div>
               <div class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ reviewResult.summary }}</div>
               <div v-if="reviewResult.strengths?.length">
@@ -637,13 +635,25 @@ defineExpose({ startReview, reviewing })
                   </li>
                 </ul>
               </div>
-              <div v-if="reviewResult.global_suggestions?.length">
+              <div v-if="reviewResult.global_suggestions?.some(sg => !ignoredIssueSet.has(`0|${sg}`))">
                 <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">整体改进建议</h4>
                 <ol class="space-y-1.5">
-                  <li v-for="(sg, i) in reviewResult.global_suggestions" :key="i" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <span class="shrink-0 w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 text-xs flex items-center justify-center font-medium">{{ i + 1 }}</span>
-                    {{ sg }}
-                  </li>
+                  <template v-for="(sg, i) in reviewResult.global_suggestions" :key="i">
+                    <li v-if="!ignoredIssueSet.has(`0|${sg}`)" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <span class="shrink-0 w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 text-xs flex items-center justify-center font-medium">{{ i + 1 }}</span>
+                      <span class="flex-1">{{ sg }}</span>
+                      <button
+                        class="shrink-0 text-gray-300 hover:text-amber-500 dark:text-gray-600 dark:hover:text-amber-400 transition-colors"
+                        :disabled="ignoringIssue === `0|${sg}`"
+                        title="忽略此建议（下次审查不再出现）"
+                        @click.stop="handleIgnore(0, sg)"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                      </button>
+                    </li>
+                  </template>
                 </ol>
               </div>
               <!-- ── Insert suggestions ── -->

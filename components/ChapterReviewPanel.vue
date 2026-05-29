@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ChapterReview, ChapterReviewRecord, ChapterIgnoredIssue, ParagraphFeedback } from '~/types'
 
-const props = defineProps<{ chapterId: number; llmProvider?: string }>()
+const props = defineProps<{ chapterId: number; llmProvider?: string; visible?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'content-updated'): void }>()
 
 const toast = useToast()
@@ -37,6 +37,7 @@ type DiffItem = {
 }
 const diffItems = ref<DiffItem[]>([])
 const applyingDiffs = ref(false)
+const showDiffModal = ref(false)
 
 const ignoredHashSet = computed(() => {
   const s = new Set<string>()
@@ -139,10 +140,18 @@ async function handleRollback(record: ChapterReviewRecord) {
   }
 }
 
-async function handleApplySelected() {
+function openDiffModal() {
+  if (!diffItems.value.some(d => d.suggested_rewrite)) {
+    toast.info('暂无可应用的改写建议')
+    return
+  }
+  showDiffModal.value = true
+}
+
+async function handleApplyDiffs() {
   const selected = diffItems.value.filter(d => d.selected && d.suggested_rewrite)
   if (selected.length === 0) {
-    toast.info('请先勾选要应用的改写')
+    toast.info('请先选择要应用的修改')
     return
   }
   applyingDiffs.value = true
@@ -151,13 +160,30 @@ async function handleApplySelected() {
     const recordId = reviewResult.value?.record_id
     const res = await api.applyDiffs(props.chapterId, diffs, recordId)
     const count = res.data?.updated_paragraphs ?? 0
-    toast.success(`已应用 ${count} 处段落改写`)
+    showDiffModal.value = false
+    toast.success(`已应用 ${count} 处段落改写，正在重新审查…`)
     await loadHistory()
     emit('content-updated')
+    startReview()
   } catch (e: any) {
     toast.error(e.message || '应用失败')
   } finally {
     applyingDiffs.value = false
+  }
+}
+
+async function handleIgnoreGlobal(sg: string) {
+  const key = sha256Hex(sg)
+  if (ignoringKey.value === key) return
+  ignoringKey.value = key
+  try {
+    await api.ignoreIssue(props.chapterId, sg)
+    await loadIgnoredIssues()
+    toast.success('已忽略该建议')
+  } catch (e: any) {
+    toast.error(e.message || '忽略失败')
+  } finally {
+    ignoringKey.value = null
   }
 }
 
@@ -188,14 +214,14 @@ async function handleUnignore(item: ChapterIgnoredIssue) {
 
 // ── Helpers ──
 function scoreColor(score: number) {
-  if (score >= 0.85) return 'text-green-600 dark:text-green-400'
-  if (score >= 0.7) return 'text-yellow-600 dark:text-yellow-400'
+  if (score >= 85) return 'text-green-600 dark:text-green-400'
+  if (score >= 70) return 'text-yellow-600 dark:text-yellow-400'
   return 'text-red-600 dark:text-red-400'
 }
 
 function scoreBar(score: number) {
-  if (score >= 0.85) return 'bg-green-500'
-  if (score >= 0.7) return 'bg-yellow-500'
+  if (score >= 85) return 'bg-green-500'
+  if (score >= 70) return 'bg-yellow-500'
   return 'bg-red-500'
 }
 
@@ -215,8 +241,8 @@ defineExpose({ startReview, reviewing })
 
 <template>
   <Teleport to="body">
-    <Transition name="slide-right" appear>
-      <div class="fixed inset-0 z-50 flex justify-end">
+    <Transition name="slide-right">
+      <div v-if="props.visible !== false" class="fixed inset-0 z-50 flex justify-end">
         <div class="absolute inset-0 bg-black/30" @click="emit('close')" />
         <div class="relative w-full max-w-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden">
 
@@ -240,11 +266,6 @@ defineExpose({ startReview, reviewing })
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <button
-                v-if="!reviewing"
-                class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                @click="startReview"
-              >重新审查</button>
               <button class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" @click="emit('close')">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -254,7 +275,7 @@ defineExpose({ startReview, reviewing })
           </div>
 
           <!-- Body -->
-          <div class="flex-1 overflow-y-auto">
+          <div class="flex-1 overflow-y-auto flex flex-col">
 
             <!-- ── 当前审查 Tab ── -->
             <div v-if="tab === 'current'" class="p-5 space-y-5">
@@ -280,9 +301,22 @@ defineExpose({ startReview, reviewing })
                 <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                   <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">综合评分</span>
-                    <span class="text-2xl font-bold tabular-nums" :class="scoreColor(reviewResult.overall_score)">
-                      {{ (reviewResult.overall_score * 100).toFixed(0) }}
-                    </span>
+                    <div class="flex items-center gap-2">
+                      <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" :disabled="reviewing" @click="startReview">重新审查</button>
+                      <button
+                        class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-primary-600 hover:bg-primary-700 text-white"
+                        @click="openDiffModal"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        预览改动方案
+                      </button>
+                      <span class="text-2xl font-bold tabular-nums" :class="scoreColor(reviewResult.overall_score)">
+                        {{ reviewResult.overall_score.toFixed(0) }}
+                      </span>
+                    </div>
                   </div>
                   <div class="p-4 space-y-2.5">
                     <div v-for="dim in [
@@ -290,17 +324,19 @@ defineExpose({ startReview, reviewing })
                       { key: 'character_score', label: '角色一致' },
                       { key: 'writing_score', label: '文笔质量' },
                       { key: 'pacing_score', label: '节奏把控' },
+                      { key: 'dramatic_score', label: '戏剧张力' },
+                      { key: 'visual_potential', label: '画面感' },
                     ]" :key="dim.key" class="flex items-center gap-2">
                       <span class="text-xs text-gray-500 w-16 shrink-0">{{ dim.label }}</span>
                       <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                         <div
                           class="h-full rounded-full transition-all duration-500"
                           :class="scoreBar((reviewResult as any)[dim.key])"
-                          :style="{ width: `${((reviewResult as any)[dim.key] ?? 0) * 100}%` }"
+                          :style="{ width: `${(reviewResult as any)[dim.key] ?? 0}%` }"
                         />
                       </div>
                       <span class="text-xs tabular-nums w-10 text-right" :class="scoreColor((reviewResult as any)[dim.key])">
-                        {{ ((reviewResult as any)[dim.key] * 100).toFixed(0) }}
+                        {{ ((reviewResult as any)[dim.key] ?? 0).toFixed(0) }}
                       </span>
                     </div>
                   </div>
@@ -328,31 +364,31 @@ defineExpose({ startReview, reviewing })
                 </div>
 
                 <!-- Global suggestions -->
-                <div v-if="reviewResult.global_suggestions?.length" class="space-y-1">
+                <div v-if="reviewResult.global_suggestions?.some(sg => !ignoredHashSet.has(sha256Hex(sg)))" class="space-y-1">
                   <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">整体建议</p>
                   <ul class="space-y-1">
-                    <li v-for="sg in reviewResult.global_suggestions" :key="sg" class="flex gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                      <span class="text-blue-400 shrink-0">›</span>{{ sg }}
-                    </li>
+                    <template v-for="sg in reviewResult.global_suggestions" :key="sg">
+                      <li v-if="!ignoredHashSet.has(sha256Hex(sg))" class="flex items-start gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                        <span class="text-blue-400 shrink-0 mt-0.5">›</span>
+                        <span class="flex-1">{{ sg }}</span>
+                        <button
+                          class="shrink-0 ml-1 text-gray-300 hover:text-amber-500 dark:text-gray-600 dark:hover:text-amber-400 transition-colors"
+                          :disabled="ignoringKey === sha256Hex(sg)"
+                          title="忽略此建议（下次审查不再出现）"
+                          @click="handleIgnoreGlobal(sg)"
+                        >
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        </button>
+                      </li>
+                    </template>
                   </ul>
                 </div>
 
                 <!-- Paragraph feedback -->
                 <div v-if="diffItems.length > 0" class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">段落反馈（{{ diffItems.length }}）</p>
-                    <button
-                      v-if="diffItems.some(d => d.suggested_rewrite)"
-                      class="text-xs px-3 py-1 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-40"
-                      :disabled="applyingDiffs"
-                      @click="handleApplySelected"
-                    >
-                      <svg v-if="applyingDiffs" class="w-3 h-3 animate-spin inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                      </svg>
-                      应用选中改写
-                    </button>
-                  </div>
+                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">段落反馈（{{ diffItems.length }}）</p>
 
                   <div
                     v-for="(item, i) in diffItems"
@@ -431,7 +467,7 @@ defineExpose({ startReview, reviewing })
                 <div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-semibold tabular-nums" :class="scoreColor(rec.overall_score)">
-                      {{ (rec.overall_score * 100).toFixed(0) }}
+                      {{ rec.overall_score.toFixed(0) }}
                     </span>
                     <span class="text-xs text-gray-400">{{ rec.created_at }}</span>
                     <span
@@ -482,9 +518,116 @@ defineExpose({ startReview, reviewing })
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Diff preview modal -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="showDiffModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showDiffModal = false" />
+        <div class="relative w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center gap-2">
+              <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <h3 class="font-semibold text-gray-900 dark:text-gray-100">预览改动方案</h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.filter(d => d.suggested_rewrite).length }} 处改写建议</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <button
+                v-if="diffItems.some(d => d.suggested_rewrite)"
+                class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
+                @click="diffItems.filter(d => d.suggested_rewrite).forEach(d => d.selected = !diffItems.filter(x => x.suggested_rewrite).every(x => x.selected))"
+              >
+                {{ diffItems.filter(d => d.suggested_rewrite).every(d => d.selected) ? '全不选' : '全选' }}
+              </button>
+              <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showDiffModal = false">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <!-- Diff list -->
+          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            <div
+              v-for="item in diffItems"
+              :key="item.index"
+              class="rounded-xl border transition-colors"
+              :class="item.suggested_rewrite
+                ? (item.selected ? 'border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700')
+                : 'border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-900/10'"
+            >
+              <template v-if="item.suggested_rewrite">
+                <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
+                  <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-primary-600 shrink-0" />
+                  <span class="font-medium text-sm text-gray-800 dark:text-gray-200">段落 {{ item.index }}</span>
+                  <span
+                    class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
+                    :class="{
+                      'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.severity === 'error',
+                      'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400': item.severity === 'warning',
+                      'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': item.severity === 'info',
+                    }"
+                  >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
+                </label>
+                <div class="px-4 pb-3 space-y-2 text-xs">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text || '（空）' }}</div>
+                    <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{{ item.suggested_rewrite }}</div>
+                  </div>
+                  <div v-if="item.issues.length" class="text-gray-500 dark:text-gray-500 pt-1">
+                    <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
+                <div class="flex items-center gap-3 px-4 py-2.5">
+                  <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span class="font-medium text-sm text-gray-800 dark:text-gray-200">段落 {{ item.index }}</span>
+                  <span class="ml-auto text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">需手动调整</span>
+                </div>
+                <div class="px-4 pb-3 text-xs text-gray-500 dark:text-gray-400">{{ item.issues.join(' · ') }}</div>
+              </template>
+            </div>
+          </div>
+          <!-- Footer -->
+          <div class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+              将修改 {{ diffItems.filter(d => d.selected && d.suggested_rewrite).length }} 处段落内容
+            </span>
+            <div class="flex items-center gap-2">
+              <button class="btn-outline text-sm" @click="showDiffModal = false">取消</button>
+              <button
+                class="btn-primary text-sm"
+                :disabled="applyingDiffs || diffItems.filter(d => d.selected && d.suggested_rewrite).length === 0"
+                @click="handleApplyDiffs"
+              >
+                <svg v-if="applyingDiffs" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ applyingDiffs ? '应用中…' : `确认应用选中 (${diffItems.filter(d => d.selected && d.suggested_rewrite).length} 处)` }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 .slide-right-enter-active,
 .slide-right-leave-active {
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);

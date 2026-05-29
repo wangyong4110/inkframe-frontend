@@ -3,6 +3,7 @@ import type { CrawlProgress } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
 
 const { uploadImage, uploading: coverUploading } = useImageUpload()
+const { generateCoverImage } = useNovelApi()
 const coverFileInput = ref<HTMLInputElement | null>(null)
 
 async function onCoverFileChange(e: Event) {
@@ -85,6 +86,7 @@ const genreOptions = [
   { label: '其他', value: 'other' },
 ]
 const wordCountOptions = [
+  { label: 'AI 自定', value: 0 },
   { label: '5万字', value: 50000 },
   { label: '10万字', value: 100000 },
   { label: '30万字', value: 300000 },
@@ -92,6 +94,7 @@ const wordCountOptions = [
   { label: '100万字', value: 1000000 },
 ]
 const chapterCountOptions = [
+  { label: 'AI 自定', value: 0 },
   { label: '30章', value: 30 },
   { label: '50章', value: 50 },
   { label: '100章', value: 100 },
@@ -103,11 +106,12 @@ const aiForm = reactive({
   title: '',
   genre: 'fantasy',
   description: '',
-  target_word_count: 100000,
-  target_chapters: 100,
-  cover_image: 'purple',
+  target_word_count: 0,
+  target_chapters: 0,
+  cover_image: 'ai', // 默认使用 AI 生成封面
 })
 const aiLoading = ref(false)
+const aiLoadingMsg = ref('创建中...')
 const aiError = ref('')
 
 async function submitAI() {
@@ -115,28 +119,39 @@ async function submitAI() {
   if (!aiForm.description.trim()) { aiError.value = '请填写作品概要'; return }
   aiError.value = ''
   aiLoading.value = true
+  aiLoadingMsg.value = '创建中...'
   try {
+    const body: Record<string, unknown> = {
+      title: aiForm.title.trim(),
+      description: aiForm.description.trim(),
+      genre: aiForm.genre,
+    }
+    // 'ai' 特殊值：先不传 cover_image，创建后调用 AI 生成
+    if (aiForm.cover_image !== 'ai') body.cover_image = aiForm.cover_image
+    if (aiForm.target_word_count > 0) body.target_word_count = aiForm.target_word_count
+    if (aiForm.target_chapters > 0) body.target_chapters = aiForm.target_chapters
     const data = await request<any>('/novels', {
       method: 'POST',
-      body: JSON.stringify({
-        title: aiForm.title.trim(),
-        description: aiForm.description.trim(),
-        genre: aiForm.genre,
-        cover_image: aiForm.cover_image,
-        target_word_count: aiForm.target_word_count,
-        target_chapters: aiForm.target_chapters,
-      }),
+      body: JSON.stringify(body),
     })
     const novel = data.data ?? data
     if (!novel?.id) {
       aiError.value = '创建成功但未返回小说ID，请前往小说列表查看'
       return
     }
+    // AI 生成封面（同步等待，但失败不阻断流程）
+    if (aiForm.cover_image === 'ai') {
+      aiLoadingMsg.value = '生成封面中...'
+      try {
+        await generateCoverImage(novel.id)
+      } catch { /* 非致命，封面可在小说页面重新生成 */ }
+    }
     router.push(`/novel/${novel.id}?analyze=1&source=ai`)
   } catch (e: any) {
     aiError.value = e.message || '创建失败'
   } finally {
     aiLoading.value = false
+    aiLoadingMsg.value = '创建中...'
   }
 }
 
@@ -488,7 +503,13 @@ const crawlPercent = computed(() => {
                 : `background:${iconGradient(aiForm.cover_image)}`"
               @click="coverFileInput?.click()"
             >
-              <span v-if="!isCoverUrl(aiForm.cover_image)" class="text-2xl font-bold text-white opacity-80 select-none">
+              <!-- AI 生成封面：显示魔法棒图标 -->
+              <template v-if="aiForm.cover_image === 'ai'">
+                <svg class="w-7 h-7 text-white drop-shadow" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"/>
+                </svg>
+              </template>
+              <span v-else-if="!isCoverUrl(aiForm.cover_image)" class="text-2xl font-bold text-white opacity-80 select-none">
                 {{ aiForm.title.charAt(0) || 'I' }}
               </span>
               <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded-xl">
@@ -509,6 +530,20 @@ const crawlPercent = computed(() => {
               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm bg-white dark:bg-gray-700 dark:text-white mb-2"
             />
             <div class="flex gap-1.5 flex-wrap items-center">
+              <!-- AI 生成封面按钮 -->
+              <button
+                type="button"
+                class="px-2 py-0.5 text-xs rounded-md border transition-colors flex items-center gap-1"
+                :class="aiForm.cover_image === 'ai'
+                  ? 'bg-purple-600 border-purple-600 text-white'
+                  : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-purple-400'"
+                @click="aiForm.cover_image = 'ai'"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+                </svg>
+                AI 生成
+              </button>
               <button
                 v-for="opt in iconOptions"
                 :key="opt.value"
@@ -579,6 +614,7 @@ const crawlPercent = computed(() => {
               >{{ opt.label }}</button>
             </div>
             <input
+              v-if="aiForm.target_word_count > 0"
               v-model.number="aiForm.target_word_count"
               type="number"
               min="1000"
@@ -603,6 +639,7 @@ const crawlPercent = computed(() => {
               >{{ opt.label }}</button>
             </div>
             <input
+              v-if="aiForm.target_chapters > 0"
               v-model.number="aiForm.target_chapters"
               type="number"
               min="1"
@@ -625,7 +662,7 @@ const crawlPercent = computed(() => {
             :disabled="aiLoading || !aiForm.title.trim() || !aiForm.description.trim()"
             class="btn-primary"
             @click="submitAI"
-          >{{ aiLoading ? '创建中...' : '创建并开始分析' }}</button>
+          >{{ aiLoading ? aiLoadingMsg : '创建并开始分析' }}</button>
         </div>
       </div>
     </template>

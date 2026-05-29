@@ -185,8 +185,14 @@ const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_O
 // ── Review panel ref ──
 const reviewPanelRef = ref<{ startReview: () => void } | null>(null)
 const showReviewPanel = ref(false)
+const reviewPanelMounted = ref(false)
 // reviewing = panel is open (disable the button while panel is visible)
 const reviewing = computed(() => showReviewPanel.value)
+
+function openReviewPanel() {
+  reviewPanelMounted.value = true
+  showReviewPanel.value = true
+}
 
 // ── Voice text inline edit (shared with voice tab context) ──
 const editingVoiceTextId = ref<number | null>(null)
@@ -331,8 +337,7 @@ async function handleGenerateStoryboard(userPrompt?: string) {
 }
 
 function handleReviewStoryboard() {
-  showReviewPanel.value = true
-  // startReview 由 StoryboardReviewPanel 的 onMounted 自动触发
+  openReviewPanel()
 }
 
 async function handleGenerateShot(shot: StoryboardShot) {
@@ -1289,10 +1294,11 @@ defineExpose({ loadVideoProviders: async () => {
 
     <!-- AI Review Panel (extracted component) -->
     <StoryboardReviewPanel
-      v-if="showReviewPanel"
+      v-if="reviewPanelMounted"
       ref="reviewPanelRef"
       :video-id="props.videoId"
       :llm-provider="props.llmProvider"
+      :visible="showReviewPanel"
       @close="showReviewPanel = false"
     />
   </div>
