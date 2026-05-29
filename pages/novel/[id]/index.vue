@@ -63,7 +63,7 @@ const coverFileInput = ref<HTMLInputElement | null>(null)
 const coverGenerating = ref(false)
 const { uploadImage, uploading: coverUploading } = useImageUpload()
 const { url: lightboxUrl, openLightbox } = useImageLightbox()
-const { updateNovel } = useNovelApi()
+const { updateNovel, generateCoverImage } = useNovelApi()
 const { editImage } = useImageEditApi()
 
 function saveCoverImage(newUrl: string) {
