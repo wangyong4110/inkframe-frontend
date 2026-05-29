@@ -131,6 +131,11 @@ const progress = computed(() => {
 
 const content = ref('')
 const chapterTitle = ref('')
+// Snapshot of the last successfully saved content/title, used to determine isDirty.
+// Compared against content.value / chapterTitle.value rather than chapter.value?.content
+// to avoid reactivity timing issues with the Pinia store.
+const savedContent = ref('')
+const savedTitle = ref('')
 const prompt = ref('')
 const wordCountOverride = ref(0)
 
@@ -157,6 +162,8 @@ onMounted(async () => {
     }
     content.value = chapter.value?.content || ''
     chapterTitle.value = chapter.value?.title || ''
+    savedContent.value = content.value
+    savedTitle.value = chapterTitle.value
   }
   // 仅在用户未手动设置时，用小说配置推算字数目标
   if (wordCountOverride.value === 0) {
@@ -183,8 +190,8 @@ const outlineEditText = ref('')
 
 // ── 保存 & 自动保存 ───────────────────────────────────────────────────────────
 const isDirty = computed(() =>
-  content.value !== (chapter.value?.content || '') ||
-  chapterTitle.value !== (chapter.value?.title || '') ||
+  content.value !== savedContent.value ||
+  chapterTitle.value !== savedTitle.value ||
   (outlineEditMode.value && outlineEditText.value !== (chapter.value?.outline || ''))
 )
 
@@ -332,6 +339,9 @@ async function doSave() {
     updates.outline = outlineEditText.value
   }
   await chapterStore.updateChapter(novelId, chapter.value.chapter_no, updates)
+  // Update saved baseline so isDirty correctly reflects clean state.
+  savedContent.value = content.value
+  savedTitle.value = chapterTitle.value
 }
 
 async function handleSave() {
@@ -420,6 +430,8 @@ async function handleReviewContentUpdated() {
   // overwrite the applied changes.
   content.value = chapter.value?.content || ''
   chapterTitle.value = chapter.value?.title || ''
+  savedContent.value = content.value
+  savedTitle.value = chapterTitle.value
 }
 
 function qualityTier(score: number): { label: string; color: string } {
@@ -452,6 +464,7 @@ async function acceptRefinement() {
   if (!chapter.value || !refinedContent.value) return
   content.value = refinedContent.value
   await chapterStore.updateChapter(novelId, chapter.value.chapter_no, { content: refinedContent.value })
+  savedContent.value = content.value
   refinedContent.value = ''
   showRefinedPreview.value = false
   toast.success('已采纳精修内容')
@@ -515,7 +528,7 @@ function startEditWrite() {
 
 function cancelEditWrite() {
   writeEditMode.value = false
-  content.value = chapter.value?.content || ''
+  content.value = savedContent.value
 }
 
 async function handleSaveWrite() {
@@ -1056,19 +1069,6 @@ async function fetchShotsForChapter() {
               <!-- Edit mode actions -->
               <div v-else class="flex items-center gap-2 flex-shrink-0 mt-1">
                 <button
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg transition-colors disabled:opacity-60"
-                  :disabled="generatingOutline"
-                  @click="handleGenerateOutline"
-                >
-                  <svg v-if="generatingOutline" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                  </svg>
-                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                  </svg>
-                  {{ generatingOutline ? 'AI 生成中...' : '重新生成' }}
-                </button>
-                <button
                   class="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   @click="cancelEditOutline"
                 >取消</button>
@@ -1080,7 +1080,7 @@ async function fetchShotsForChapter() {
                   <svg v-if="savingOutline" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                   </svg>
-                  {{ savingOutline ? '保存中' : '保存大纲' }}
+                  {{ savingOutline ? '保存中' : '保存' }}
                 </button>
               </div>
             </div>
@@ -1110,90 +1110,6 @@ async function fetchShotsForChapter() {
                 >
                   {{ generatingOutline ? 'AI 生成中...' : '立即生成' }}
                 </button>
-              </div>
-            </div>
-
-            <!-- ─ 剧情点管理 ─ -->
-            <div class="mt-8">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">剧情点</h3>
-                <div class="flex items-center gap-2">
-                  <button
-                    class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50"
-                    :disabled="extractingPlotPoints || !chapter?.content"
-                    @click="handleExtractPlotPoints"
-                  >
-                    <svg v-if="extractingPlotPoints" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    {{ extractingPlotPoints ? 'AI 提取中...' : 'AI 提取' }}
-                  </button>
-                  <button
-                    class="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    :disabled="loadingPlotPoints"
-                    @click="loadPlotPoints"
-                    title="刷新"
-                  >
-                    <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': loadingPlotPoints }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- loading -->
-              <div v-if="loadingPlotPoints" class="flex items-center justify-center py-6">
-                <svg class="w-5 h-5 animate-spin text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-              </div>
-
-              <!-- empty state -->
-              <div v-else-if="plotPoints.length === 0" class="py-8 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
-                <p class="text-sm text-gray-400 dark:text-gray-500 mb-3">暂无剧情点</p>
-                <p class="text-xs text-gray-300 dark:text-gray-600">点击 <span class="font-medium text-purple-500">AI 提取</span> 自动识别</p>
-              </div>
-
-              <!-- list -->
-              <div v-else class="space-y-2">
-                <div
-                  v-for="pp in plotPoints"
-                  :key="pp.id"
-                  class="flex items-start gap-3 bg-white dark:bg-gray-800 border rounded-lg px-3 py-2.5 transition-colors"
-                  :class="pp.is_resolved ? 'border-gray-100 dark:border-gray-800 opacity-60' : 'border-gray-200 dark:border-gray-700'"
-                >
-                  <span
-                    class="flex-shrink-0 mt-0.5 text-xs font-medium px-1.5 py-0.5 rounded"
-                    :class="plotPointTypeBadgeClass[pp.type] ?? 'bg-gray-100 text-gray-600'"
-                  >{{ plotPointTypeLabel[pp.type] ?? pp.type }}</span>
-                  <p class="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed" :class="{ 'line-through text-gray-400': pp.is_resolved }">
-                    {{ pp.description }}
-                  </p>
-                  <div class="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      v-if="!pp.is_resolved"
-                      class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-                      title="标记为已解决"
-                      @click="handleResolvePlotPoint(pp)"
-                    >
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                      </svg>
-                    </button>
-                    <button
-                      class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                      title="删除"
-                      @click="handleDeletePlotPoint(pp.id)"
-                    >
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -1239,7 +1155,7 @@ async function fetchShotsForChapter() {
                   <svg v-if="savingWrite" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                   </svg>
-                  {{ savingWrite ? '保存中' : '保存写作' }}
+                  {{ savingWrite ? '保存中' : '保存' }}
                 </button>
               </div>
             </div>
