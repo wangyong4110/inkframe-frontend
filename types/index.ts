@@ -1060,6 +1060,7 @@ export interface ParagraphFeedback {
   orig_text: string
   issues: string[]
   suggestion: string
+  action?: 'rewrite' | 'delete'
   suggested_rewrite: string
   severity: 'info' | 'warning' | 'error'
 }

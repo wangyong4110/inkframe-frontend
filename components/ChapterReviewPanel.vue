@@ -29,6 +29,7 @@ const ignoringKey = ref<string | null>(null)
 type DiffItem = {
   index: number
   orig_text: string
+  action: 'rewrite' | 'delete'
   suggested_rewrite: string
   issues: string[]
   suggestion: string
@@ -90,11 +91,13 @@ function buildDiffItems(review: ChapterReview) {
   diffItems.value = (review.paragraph_feedback ?? []).map(fb => ({
     index: fb.index,
     orig_text: fb.orig_text,
-    suggested_rewrite: fb.suggested_rewrite,
+    action: (fb.action === 'delete' ? 'delete' : 'rewrite') as 'rewrite' | 'delete',
+    suggested_rewrite: fb.suggested_rewrite ?? '',
     issues: fb.issues,
     suggestion: fb.suggestion,
     severity: fb.severity,
-    selected: !!fb.suggested_rewrite,
+    // auto-select if there's a rewrite OR it's a delete action
+    selected: fb.action === 'delete' || !!fb.suggested_rewrite,
   }))
 }
 
@@ -140,8 +143,12 @@ async function handleRollback(record: ChapterReviewRecord) {
   }
 }
 
+function hasApplicableItems(items: DiffItem[]) {
+  return items.some(d => d.action === 'delete' || !!d.suggested_rewrite)
+}
+
 function openDiffModal() {
-  if (!diffItems.value.some(d => d.suggested_rewrite)) {
+  if (!hasApplicableItems(diffItems.value)) {
     toast.info('暂无可应用的改写建议')
     return
   }
@@ -149,14 +156,15 @@ function openDiffModal() {
 }
 
 async function handleApplyDiffs() {
-  const selected = diffItems.value.filter(d => d.selected && d.suggested_rewrite)
+  const selected = diffItems.value.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite))
   if (selected.length === 0) {
     toast.info('请先选择要应用的修改')
     return
   }
   applyingDiffs.value = true
   try {
-    const diffs = selected.map(d => ({ index: d.index, new_content: d.suggested_rewrite }))
+    // delete action sends empty string as new_content; backend treats empty = remove paragraph
+    const diffs = selected.map(d => ({ index: d.index, new_content: d.action === 'delete' ? '' : d.suggested_rewrite }))
     const recordId = reviewResult.value?.record_id
     const res = await api.applyDiffs(props.chapterId, diffs, recordId)
     const count = res.data?.updated_paragraphs ?? 0
@@ -399,7 +407,7 @@ defineExpose({ startReview, reviewing })
                     <!-- Item header -->
                     <div class="flex items-start gap-2 px-3 py-2.5 cursor-pointer" @click="toggleExpand(i)">
                       <input
-                        v-if="item.suggested_rewrite"
+                        v-if="item.action === 'delete' || !!item.suggested_rewrite"
                         type="checkbox"
                         class="mt-0.5 shrink-0 rounded text-primary-600"
                         :checked="item.selected"
@@ -433,7 +441,10 @@ defineExpose({ startReview, reviewing })
                       <div v-if="item.suggestion" class="text-xs text-gray-600 dark:text-gray-300 italic">
                         建议：{{ item.suggestion }}
                       </div>
-                      <div v-if="item.suggested_rewrite" class="bg-white dark:bg-gray-800 rounded-lg p-2.5 text-xs text-gray-700 dark:text-gray-300 leading-relaxed border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">
+                      <div v-if="item.action === 'delete'" class="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 line-through opacity-70 whitespace-pre-wrap">
+                        {{ item.orig_text }}
+                      </div>
+                      <div v-else-if="item.suggested_rewrite" class="bg-white dark:bg-gray-800 rounded-lg p-2.5 text-xs text-gray-700 dark:text-gray-300 leading-relaxed border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">
                         {{ item.suggested_rewrite }}
                       </div>
                       <button
@@ -532,15 +543,15 @@ defineExpose({ startReview, reviewing })
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               <h3 class="font-semibold text-gray-900 dark:text-gray-100">预览改动方案</h3>
-              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.filter(d => d.suggested_rewrite).length }} 处改写建议</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">共 {{ diffItems.filter(d => d.action === 'delete' || !!d.suggested_rewrite).length }} 处建议</span>
             </div>
             <div class="flex items-center gap-3">
               <button
-                v-if="diffItems.some(d => d.suggested_rewrite)"
+                v-if="hasApplicableItems(diffItems)"
                 class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
-                @click="diffItems.filter(d => d.suggested_rewrite).forEach(d => d.selected = !diffItems.filter(x => x.suggested_rewrite).every(x => x.selected))"
+                @click="(() => { const all = diffItems.filter(d => d.action === 'delete' || !!d.suggested_rewrite); const allSel = all.every(d => d.selected); all.forEach(d => d.selected = !allSel) })()"
               >
-                {{ diffItems.filter(d => d.suggested_rewrite).every(d => d.selected) ? '全不选' : '全选' }}
+                {{ diffItems.filter(d => d.action === 'delete' || !!d.suggested_rewrite).every(d => d.selected) ? '全不选' : '全选' }}
               </button>
               <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showDiffModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,14 +566,16 @@ defineExpose({ startReview, reviewing })
               v-for="item in diffItems"
               :key="item.index"
               class="rounded-xl border transition-colors"
-              :class="item.suggested_rewrite
+              :class="(item.action === 'delete' || !!item.suggested_rewrite)
                 ? (item.selected ? 'border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700')
                 : 'border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-900/10'"
             >
-              <template v-if="item.suggested_rewrite">
+              <!-- rewrite or delete action -->
+              <template v-if="item.action === 'delete' || !!item.suggested_rewrite">
                 <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer">
                   <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-primary-600 shrink-0" />
                   <span class="font-medium text-sm text-gray-800 dark:text-gray-200">段落 {{ item.index }}</span>
+                  <span v-if="item.action === 'delete'" class="ml-2 text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">删除</span>
                   <span
                     class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
                     :class="{
@@ -573,7 +586,8 @@ defineExpose({ startReview, reviewing })
                   >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
                 </label>
                 <div class="px-4 pb-3 space-y-2 text-xs">
-                  <div class="grid grid-cols-2 gap-2">
+                  <div v-if="item.action === 'delete'" class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text || '（空）' }}</div>
+                  <div v-else class="grid grid-cols-2 gap-2">
                     <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text || '（空）' }}</div>
                     <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{{ item.suggested_rewrite }}</div>
                   </div>
@@ -582,6 +596,7 @@ defineExpose({ startReview, reviewing })
                   </div>
                 </div>
               </template>
+              <!-- info-only, no actionable change -->
               <template v-else>
                 <div class="flex items-center gap-3 px-4 py-2.5">
                   <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -597,19 +612,19 @@ defineExpose({ startReview, reviewing })
           <!-- Footer -->
           <div class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
             <span class="text-sm text-gray-500 dark:text-gray-400">
-              将修改 {{ diffItems.filter(d => d.selected && d.suggested_rewrite).length }} 处段落内容
+              将修改 {{ diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length }} 处段落
             </span>
             <div class="flex items-center gap-2">
               <button class="btn-outline text-sm" @click="showDiffModal = false">取消</button>
               <button
                 class="btn-primary text-sm"
-                :disabled="applyingDiffs || diffItems.filter(d => d.selected && d.suggested_rewrite).length === 0"
+                :disabled="applyingDiffs || diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length === 0"
                 @click="handleApplyDiffs"
               >
                 <svg v-if="applyingDiffs" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {{ applyingDiffs ? '应用中…' : `确认应用选中 (${diffItems.filter(d => d.selected && d.suggested_rewrite).length} 处)` }}
+                {{ applyingDiffs ? '应用中…' : `确认应用选中 (${diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length} 处)` }}
               </button>
             </div>
           </div>
