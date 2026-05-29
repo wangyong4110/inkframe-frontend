@@ -7,7 +7,8 @@ import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
 const videoStore = useVideoStore()
 const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
@@ -433,14 +434,10 @@ async function onShotImageFileSelected(e: Event) {
   }
 }
 
-async function refineShotImage(shot: StoryboardShot, suggestion: string): Promise<string> {
-  const res = await videoApi.refineShotImage(props.videoId, shot.id, suggestion)
-  return res.data?.image_url || ''
-}
-
 function saveShotImage(shot: StoryboardShot, newUrl: string) {
   const idx = videoStore.storyboard.findIndex(s => s.id === shot.id)
   if (idx >= 0) videoStore.storyboard[idx].image_url = newUrl
+  videoApi.updateShotImageUrl(props.videoId, shot.id, newUrl).catch(() => {})
 }
 
 async function handleGenerateImages() {
@@ -1124,7 +1121,7 @@ defineExpose({ loadVideoProviders: async () => {
                 <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
               <template v-if="shot.image_url">
-                <img :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => refineShotImage(shot, s), (u) => saveShotImage(shot, u))" />
+                <img :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
                 <button
                   v-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"

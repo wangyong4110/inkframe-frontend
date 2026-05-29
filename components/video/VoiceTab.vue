@@ -7,7 +7,9 @@ const videoStore = useVideoStore()
 const novelStore = useNovelStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
-const { openLightbox } = useImageLightbox()
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { editImage } = useImageEditApi()
+const videoApi = useVideoApi()
 
 const characters = computed(() => characterStore.characters)
 
@@ -238,14 +240,10 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
   }
 }
 
-function refineShotImage(shot: StoryboardShot, suggestion: string): Promise<string> {
-  const api = useVideoApi()
-  return api.refineShotImage(props.videoId, shot.id, suggestion).then(r => r.data?.image_url || '')
-}
-
 function saveShotImage(shot: StoryboardShot, newUrl: string) {
   const idx = videoStore.storyboard.findIndex(s => s.id === shot.id)
   if (idx >= 0) videoStore.storyboard[idx].image_url = newUrl
+  videoApi.updateShotImageUrl(props.videoId, shot.id, newUrl).catch(() => {})
 }
 
 // Dialogue character replacement
@@ -381,7 +379,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         <div class="flex items-start gap-3">
           <!-- Thumbnail -->
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => refineShotImage(shot, s), (u) => saveShotImage(shot, u))" />
+            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
             <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
           </div>
           <!-- Header -->

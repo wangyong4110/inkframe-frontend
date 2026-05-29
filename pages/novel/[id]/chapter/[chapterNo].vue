@@ -504,6 +504,33 @@ async function handleSaveOutline() {
   }
 }
 
+// ── 写作编辑模式 ──────────────────────────────────────────────────────────────
+const writeEditMode = ref(false)
+const savingWrite = ref(false)
+
+function startEditWrite() {
+  writeEditMode.value = true
+  nextTick(() => textareaRef.value?.focus())
+}
+
+function cancelEditWrite() {
+  writeEditMode.value = false
+  content.value = chapter.value?.content || ''
+}
+
+async function handleSaveWrite() {
+  savingWrite.value = true
+  try {
+    await doSave()
+    writeEditMode.value = false
+    toast.success('章节已保存')
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    savingWrite.value = false
+  }
+}
+
 async function handleGenerateOutline() {
   if (!chapter.value) return
   generatingOutline.value = true
@@ -1178,84 +1205,151 @@ async function fetchShotsForChapter() {
 
         <!-- ─ 写作模式 ─ -->
         <div v-else-if="pageMode === 'write'" class="h-full flex flex-col overflow-hidden">
-          <!-- 工具栏 -->
-          <div class="flex-none flex items-center flex-wrap gap-0.5 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <!-- 查找 -->
-            <button
-              :class="['p-1.5 rounded text-gray-500 dark:text-gray-400 transition-colors', showFindBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800']"
-              title="查找 (Ctrl+F)"
-              @click="openFind"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
-            </button>
-            <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
-            <!-- 字号 -->
-            <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="减小字号" @click="editorFontSize = Math.max(12, (editorFontSize as number) - 1)">A-</button>
-            <span class="text-xs text-gray-400 dark:text-gray-500 w-6 text-center select-none">{{ editorFontSize }}</span>
-            <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="增大字号" @click="editorFontSize = Math.min(28, (editorFontSize as number) + 1)">A+</button>
-            <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
-            <!-- 中文特殊符号 -->
-            <button
-              v-for="ch in ['「', '」', '『', '』', '……', '——', '·', '《', '》']"
-              :key="ch"
-              class="px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm font-mono leading-none"
-              :title="ch"
-              @click="insertSpecialChar(ch)"
-            >{{ ch }}</button>
-          </div>
-
-          <!-- 查找/替换栏 -->
-          <div v-if="showFindBar" class="flex-none flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 flex-wrap">
-            <!-- 查找行 -->
-            <div class="flex items-center gap-1 min-w-0">
-              <input
-                id="find-input"
-                v-model="findText"
-                type="text"
-                placeholder="查找..."
-                class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
-                @keydown.enter.exact.prevent="findNext"
-                @keydown.shift.enter.prevent="findPrev"
-                @keydown.escape.prevent="closeFind"
-              />
-              <span class="text-xs text-gray-400 whitespace-nowrap w-14 text-center">
-                <template v-if="findText">{{ findMatches.length ? `${findMatchIdx + 1}/${findMatches.length}` : '无匹配' }}</template>
-              </span>
-              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="上一个 (Shift+Enter)" @click="findPrev">↑</button>
-              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="下一个 (Enter)" @click="findNext">↓</button>
-              <button
-                :class="['px-2 py-0.5 rounded text-xs transition-colors', showReplaceBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500']"
-                @click="showReplaceBar = !showReplaceBar"
-              >替换</button>
-              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none" @click="closeFind">✕</button>
-            </div>
-            <!-- 替换行 -->
-            <div v-if="showReplaceBar" class="flex items-center gap-1">
-              <input
-                v-model="replaceText"
-                type="text"
-                placeholder="替换为..."
-                class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
-                @keydown.escape.prevent="closeFind"
-              />
-              <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceCurrent">替换</button>
-              <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceAll">全部替换</button>
+          <!-- Header row (mirrors outline mode) -->
+          <div class="flex-none">
+            <div class="max-w-2xl mx-auto px-8 pt-10 pb-4 flex items-start justify-between">
+              <div>
+                <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">第 {{ chapterNo }} 章</p>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
+              </div>
+              <!-- View mode: 编辑 button -->
+              <div v-if="!writeEditMode" class="flex items-center gap-2 flex-shrink-0 mt-1">
+                <button
+                  v-if="content"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors"
+                  @click="startEditWrite"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                  编辑
+                </button>
+              </div>
+              <!-- Edit mode: 取消 + 保存 buttons -->
+              <div v-else class="flex items-center gap-2 flex-shrink-0 mt-1">
+                <button
+                  class="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  @click="cancelEditWrite"
+                >取消</button>
+                <button
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
+                  :disabled="savingWrite"
+                  @click="handleSaveWrite"
+                >
+                  <svg v-if="savingWrite" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                  {{ savingWrite ? '保存中' : '保存写作' }}
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- 编辑区 -->
-          <div class="flex-1 overflow-auto">
-            <div class="max-w-2xl mx-auto px-8 py-10 min-h-full">
-              <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-8">
-                第 {{ chapterNo }} 章
-              </p>
-              <textarea
-                ref="textareaRef"
-                v-model="content"
+          <!-- Edit mode: toolbar + find/replace + textarea -->
+          <template v-if="writeEditMode">
+            <!-- 工具栏 -->
+            <div class="flex-none border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
+              <div class="max-w-2xl mx-auto px-8 py-1.5 flex items-center flex-wrap gap-0.5">
+                <!-- 查找 -->
+                <button
+                  :class="['p-1.5 rounded text-gray-500 dark:text-gray-400 transition-colors', showFindBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800']"
+                  title="查找 (Ctrl+F)"
+                  @click="openFind"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
+                </button>
+                <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
+                <!-- 字号 -->
+                <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="减小字号" @click="editorFontSize = Math.max(12, (editorFontSize as number) - 1)">A-</button>
+                <span class="text-xs text-gray-400 dark:text-gray-500 w-6 text-center select-none">{{ editorFontSize }}</span>
+                <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="增大字号" @click="editorFontSize = Math.min(28, (editorFontSize as number) + 1)">A+</button>
+                <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
+                <!-- 中文特殊符号 -->
+                <button
+                  v-for="ch in ['「', '」', '『', '』', '……', '——', '·', '《', '》']"
+                  :key="ch"
+                  class="px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm font-mono leading-none"
+                  :title="ch"
+                  @click="insertSpecialChar(ch)"
+                >{{ ch }}</button>
+              </div>
+            </div>
+
+            <!-- 查找/替换栏 -->
+            <div v-if="showFindBar" class="flex-none bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+              <div class="max-w-2xl mx-auto px-8 py-2 flex items-center gap-2 flex-wrap">
+              <!-- 查找行 -->
+              <div class="flex items-center gap-1 min-w-0">
+                <input
+                  id="find-input"
+                  v-model="findText"
+                  type="text"
+                  placeholder="查找..."
+                  class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  @keydown.enter.exact.prevent="findNext"
+                  @keydown.shift.enter.prevent="findPrev"
+                  @keydown.escape.prevent="closeFind"
+                />
+                <span class="text-xs text-gray-400 whitespace-nowrap w-14 text-center">
+                  <template v-if="findText">{{ findMatches.length ? `${findMatchIdx + 1}/${findMatches.length}` : '无匹配' }}</template>
+                </span>
+                <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="上一个 (Shift+Enter)" @click="findPrev">↑</button>
+                <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="下一个 (Enter)" @click="findNext">↓</button>
+                <button
+                  :class="['px-2 py-0.5 rounded text-xs transition-colors', showReplaceBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500']"
+                  @click="showReplaceBar = !showReplaceBar"
+                >替换</button>
+                <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none" @click="closeFind">✕</button>
+              </div>
+              <!-- 替换行 -->
+              <div v-if="showReplaceBar" class="flex items-center gap-1">
+                <input
+                  v-model="replaceText"
+                  type="text"
+                  placeholder="替换为..."
+                  class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  @keydown.escape.prevent="closeFind"
+                />
+                <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceCurrent">替换</button>
+                <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceAll">全部替换</button>
+              </div>
+              </div>
+            </div>
+
+            <!-- 编辑区 -->
+            <div class="flex-1 overflow-auto">
+              <div class="max-w-2xl mx-auto px-8 pb-10 min-h-full">
+                <textarea
+                  ref="textareaRef"
+                  v-model="content"
+                  :style="{ fontSize: (editorFontSize as number) + 'px', lineHeight: '2' }"
+                  class="w-full min-h-[60vh] resize-none bg-transparent border-none outline-none text-gray-900 dark:text-white leading-8 placeholder-gray-300 dark:placeholder-gray-600 focus:ring-0"
+                  placeholder="开始写作..."
+                />
+              </div>
+            </div>
+          </template>
+
+          <!-- View mode: read-only content -->
+          <div v-else class="flex-1 overflow-auto">
+            <div class="max-w-2xl mx-auto px-8 pb-10">
+              <!-- Empty state -->
+              <div v-if="!content" class="py-12 text-center border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                <svg class="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="text-sm text-gray-400 dark:text-gray-500 mb-4">暂无内容</p>
+                <button
+                  class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+                  @click="startEditWrite"
+                >开始写作</button>
+              </div>
+              <!-- Content display -->
+              <p
+                v-else
+                class="text-base text-gray-700 dark:text-gray-300 leading-8 whitespace-pre-wrap"
                 :style="{ fontSize: (editorFontSize as number) + 'px', lineHeight: '2' }"
-                class="w-full min-h-[60vh] resize-none bg-transparent border-none outline-none text-gray-900 dark:text-white leading-8 placeholder-gray-300 dark:placeholder-gray-600 focus:ring-0"
-                placeholder="开始写作..."
-              />
+              >{{ content }}</p>
             </div>
           </div>
         </div>

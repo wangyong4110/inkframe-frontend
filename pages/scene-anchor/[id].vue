@@ -3,7 +3,8 @@ import type { SceneAnchor, UpdateSceneAnchorPayload, Novel } from '~/types'
 import { useSceneAnchorApi } from '~/composables/useSceneAnchorApi'
 import { useNovelApi } from '~/composables/useNovelApi'
 
-const { openLightbox } = useImageLightbox()
+const { openLightbox, url: lightboxUrl } = useImageLightbox()
+const { editImage } = useImageEditApi()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
@@ -332,7 +333,7 @@ function goBack() {
             <div
               class="relative flex-shrink-0 w-56 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-200 dark:border-gray-600 cursor-pointer"
               style="aspect-ratio: 16/9"
-              @click="anchor?.ref_image_url && openLightbox(anchor.ref_image_url)"
+              @click="anchor?.ref_image_url && openLightbox(anchor.ref_image_url, (s) => editImage(lightboxUrl.value, s, novelId), async (url) => { const updated = await api.lockRefImage(anchorId, { image_url: url }); if (anchor) anchor = updated })"
             >
               <img
                 v-if="anchor?.ref_image_url"

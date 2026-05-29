@@ -62,15 +62,9 @@ const videoProgress = computed(() => {
 const coverFileInput = ref<HTMLInputElement | null>(null)
 const coverGenerating = ref(false)
 const { uploadImage, uploading: coverUploading } = useImageUpload()
-const { openLightbox } = useImageLightbox()
-const { updateNovel, generateCoverImage } = useNovelApi()
-
-async function refineCoverImage(suggestion: string): Promise<string> {
-  const res = await generateCoverImage(novelId, suggestion)
-  const url = res.data?.url ?? ''
-  if (url) await novelStore.fetchNovel(novelId)
-  return url
-}
+const { url: lightboxUrl, openLightbox } = useImageLightbox()
+const { updateNovel } = useNovelApi()
+const { editImage } = useImageEditApi()
 
 function saveCoverImage(newUrl: string) {
   updateNovel(novelId, { cover_image: newUrl } as any).then(() => novelStore.fetchNovel(novelId))
@@ -78,7 +72,11 @@ function saveCoverImage(newUrl: string) {
 
 function openCoverLightbox() {
   if (!novel.value?.cover_image || !isCoverUrl(novel.value.cover_image)) return
-  openLightbox(novel.value.cover_image, refineCoverImage, saveCoverImage)
+  openLightbox(
+    novel.value.cover_image,
+    (instruction) => editImage(lightboxUrl.value, instruction, novelId),
+    saveCoverImage,
+  )
 }
 
 function isCoverUrl(v?: string): boolean {

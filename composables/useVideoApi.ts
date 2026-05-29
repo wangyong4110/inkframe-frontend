@@ -288,6 +288,12 @@ export const useVideoApi = () => {
   const generateSegmentVoice = (videoId: number, shotId: number, segId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}/voice`, { method: 'POST' })
 
+  const updateShotImageUrl = (videoId: number, shotId: number, imageUrl: string) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/storyboard/${shotId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ image_url: imageUrl, status: 'completed' }),
+    })
+
   const uploadShotImage = async (videoId: number, shotId: number, file: File): Promise<ApiResponse<StoryboardShot>> => {
     const uploadRes = await requestMultipart<{ url: string }>('/upload/image', file)
     const url = uploadRes?.url
@@ -359,6 +365,7 @@ export const useVideoApi = () => {
     batchGenerateShotImages,
     batchGenerateShotClips,
     refineShotImage,
+    updateShotImageUrl,
     analyzeSFXTags,
     batchGenerateSFX,
     generateShotSFX,

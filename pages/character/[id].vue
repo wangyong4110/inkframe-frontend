@@ -4,6 +4,8 @@ const novelStore = useNovelStore()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { url: lightboxUrl } = useImageLightbox()
+const { editImage } = useImageEditApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -336,6 +338,7 @@ function getRoleLabel(role: string): string {
               v-model="character.face_closeup"
               aspect-ratio="9/16"
               placeholder="面部特写图"
+              :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id)"
               :on-save="(url: string) => { character.face_closeup = url; character.portrait = url; isDirty = true }"
               @error="toast.error"
             />
@@ -376,6 +379,7 @@ function getRoleLabel(role: string): string {
               v-model="character.three_view_sheet"
               aspect-ratio="16/9"
               placeholder="三视图参考图（正面+侧面+背面合图）"
+              :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id)"
               :on-save="(url: string) => { character.three_view_sheet = url; isDirty = true }"
               @error="toast.error"
             />

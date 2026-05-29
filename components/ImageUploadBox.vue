@@ -8,7 +8,8 @@
  *   placeholder 无图时的提示文字
  *   aspectRatio CSS aspect-ratio，如 "1/1"、"16/9"，默认 "1/1"
  *   disabled    禁用上传
- *   onSave      点击放大 → 用户保存新 URL 时的回调（用于 previewLightbox 场景）
+ *   onRefine    交互式编辑回调：传入指令，返回新图片 URL（启用后 lightbox 显示重新生成面板）
+ *   onSave      点击放大 → 用户保存新 URL 时的回调（用于 previewLightbox / refine 场景）
  *
  * Emits:
  *   update:modelValue(url: string)
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   aspectRatio?: string
   disabled?: boolean
+  onRefine?: (instruction: string) => Promise<string>
   onSave?: (newUrl: string) => void
 }>(), {
   modelValue: '',
@@ -75,7 +77,7 @@ function remove() {
           :src="props.modelValue"
           alt="preview"
           class="w-full h-full object-cover cursor-zoom-in"
-          @click="openLightbox(props.modelValue, undefined, props.onSave)"
+          @click="openLightbox(props.modelValue, props.onRefine, props.onSave)"
         />
         <!-- Corner upload button (hover) -->
         <button
