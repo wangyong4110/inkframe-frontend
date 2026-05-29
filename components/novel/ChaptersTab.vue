@@ -155,7 +155,7 @@ async function confirmDeleteChapter() {
               <span class="text-gray-500 dark:text-gray-400">{{ chapter.title }}</span>
             </div>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-1">
-              {{ chapter.summary || '暂无摘要' }}
+              {{ chapter.outline || chapter.summary || '暂无摘要' }}
             </p>
           </div>
           <div class="flex items-center space-x-3">
