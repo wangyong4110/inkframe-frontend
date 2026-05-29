@@ -329,23 +329,27 @@ function closeFind() {
 watch(findText, () => computeFindMatches())
 
 async function doSave() {
-  if (!chapter.value) return
+  if (!chapter.value) throw new Error('章节未加载，请刷新后重试')
+  // Snapshot values BEFORE the await so savedContent/savedTitle reflect what was
+  // actually sent to the server, not what the user may have typed during the request.
+  const snapshotContent = content.value
+  const snapshotTitle = chapterTitle.value
   const updates: Record<string, any> = {
-    title: chapterTitle.value,
-    content: content.value,
-    word_count: countWords(content.value),
+    title: snapshotTitle,
+    content: snapshotContent,
+    word_count: countWords(snapshotContent),
   }
   if (outlineEditMode.value) {
     updates.outline = outlineEditText.value
   }
   await chapterStore.updateChapter(novelId, chapter.value.chapter_no, updates)
-  // Update saved baseline so isDirty correctly reflects clean state.
-  savedContent.value = content.value
-  savedTitle.value = chapterTitle.value
+  // Update saved baseline to what was actually persisted, not current (potentially
+  // newer) content — this keeps isDirty accurate when user types during the request.
+  savedContent.value = snapshotContent
+  savedTitle.value = snapshotTitle
 }
 
 async function handleSave() {
-  if (!chapter.value) return
   saving.value = true
   try {
     await doSave()
