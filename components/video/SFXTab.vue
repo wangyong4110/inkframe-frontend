@@ -137,7 +137,7 @@ async function handleAnalyzeSFXTags() {
         } else {
           toast.error('AI 音效标签分析失败：' + ((task as any).error || ''))
         }
-      })
+      }, () => videoStore.fetchStoryboard(props.videoId))
       toast.info('AI 正在分析分镜脚本，生成精准音效搜索词…')
     } else {
       analyzingTags.value = false
@@ -170,7 +170,7 @@ async function handleGenerateSFX() {
         } else {
           toast.success(`音效生成完成：${success} 个镜头`)
         }
-      })
+      }, async () => { await videoStore.fetchStoryboard(props.videoId); await loadSFXItems() })
       toast.success('音效生成任务已提交，请在右下角任务面板查看进度')
     } else {
       generatingSFX.value = false

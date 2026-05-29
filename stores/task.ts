@@ -5,12 +5,15 @@ const POLL_INITIAL_MS = 2000
 const POLL_MAX_MS = 15000
 const POLL_BACKOFF_FACTOR = 1.5
 const AUTO_DISMISS_MS = 5000 // auto-remove completed/failed tasks after 5s
+const DATA_REFRESH_MS = 3000  // fixed interval for refreshing entity data while a task runs
 
 export const useTaskStore = defineStore('task', {
   state: () => ({
     tasks: [] as AsyncTask[],
     _timers: {} as Record<string, ReturnType<typeof setTimeout>>,
     _dismissTimers: {} as Record<string, ReturnType<typeof setTimeout>>,
+    // Fixed 3s data-refresh intervals (separate from task-status backoff polling)
+    _refreshIntervals: {} as Record<string, ReturnType<typeof setInterval>>,
     // Track manually dismissed task IDs so in-flight refreshTask calls don't re-add them
     _dismissed: {} as Record<string, true>,
   }),
@@ -45,8 +48,10 @@ export const useTaskStore = defineStore('task', {
     },
 
     // Track a newly-started task and begin polling.
-    trackTask(taskId: string, onDone?: (task: AsyncTask) => void) {
-      this._startPolling(taskId, onDone)
+    // dataRefresh: optional callback fired every 3 s while the task is active,
+    // allowing the caller to reload entity data incrementally (e.g. shots, SFX items).
+    trackTask(taskId: string, onDone?: (task: AsyncTask) => void, dataRefresh?: () => unknown) {
+      this._startPolling(taskId, onDone, dataRefresh)
     },
 
     // Manually refresh a single task.
@@ -75,6 +80,11 @@ export const useTaskStore = defineStore('task', {
         clearTimeout(this._timers[taskId])
         delete this._timers[taskId]
       }
+      // Stop data-refresh interval
+      if (this._refreshIntervals[taskId]) {
+        clearInterval(this._refreshIntervals[taskId])
+        delete this._refreshIntervals[taskId]
+      }
       const idx = this.tasks.findIndex(t => t.task_id === taskId)
       if (idx >= 0) this.tasks.splice(idx, 1)
     },
@@ -94,6 +104,10 @@ export const useTaskStore = defineStore('task', {
           clearTimeout(this._timers[id])
           delete this._timers[id]
         }
+        if (this._refreshIntervals[id]) {
+          clearInterval(this._refreshIntervals[id])
+          delete this._refreshIntervals[id]
+        }
       }
       const doneSet = new Set(doneIds)
       for (let i = this.tasks.length - 1; i >= 0; i--) {
@@ -112,8 +126,13 @@ export const useTaskStore = defineStore('task', {
       }
     },
 
-    _startPolling(taskId: string, onDone?: (task: AsyncTask) => void) {
+    _startPolling(taskId: string, onDone?: (task: AsyncTask) => void, dataRefresh?: () => unknown) {
       if (this._timers[taskId]) return // already polling
+
+      // Start a fixed 3 s interval for entity data refresh (separate from status backoff)
+      if (dataRefresh && !this._refreshIntervals[taskId]) {
+        this._refreshIntervals[taskId] = setInterval(() => { dataRefresh() }, DATA_REFRESH_MS)
+      }
 
       let delay = POLL_INITIAL_MS
 
@@ -132,6 +151,11 @@ export const useTaskStore = defineStore('task', {
         if (task.status === 'completed' || task.status === 'failed') {
           clearTimeout(this._timers[taskId])
           delete this._timers[taskId]
+          // Stop data-refresh interval before calling onDone (onDone will do its own final fetch)
+          if (this._refreshIntervals[taskId]) {
+            clearInterval(this._refreshIntervals[taskId])
+            delete this._refreshIntervals[taskId]
+          }
           onDone?.(task)
           // Schedule auto-dismiss (only if not already dismissed)
           if (!this._dismissed[taskId]) {
@@ -157,10 +181,14 @@ export const useTaskStore = defineStore('task', {
         clearTimeout(this._timers[taskId])
         delete this._timers[taskId]
       }
+      if (this._refreshIntervals[taskId]) {
+        clearInterval(this._refreshIntervals[taskId])
+        delete this._refreshIntervals[taskId]
+      }
     },
 
     async cancelTask(taskId: string) {
-      // Stop polling immediately
+      // Stop polling and data-refresh immediately
       this.stopPolling(taskId)
       // Optimistically update local status
       const idx = this.tasks.findIndex(t => t.task_id === taskId)

@@ -92,7 +92,7 @@ async function handleBatchCharacterImages(force = false) {
       const result = task?.result as any
       toast.success(`角色图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
       await characterStore.fetchCharacters(props.novelId)
-    })
+    }, () => characterStore.fetchCharacters(props.novelId))
   } catch (e: any) {
     batchGeneratingCharImages.value = false
     toast.error('批量生成失败：' + (e.message || ''))

@@ -124,7 +124,7 @@ async function handleGenerateAllVoice() {
       } else {
         toast.error('批量配音任务失败，请重试')
       }
-    })
+    }, () => videoStore.fetchStoryboard(props.videoId))
   } catch (e: any) {
     toast.error('批量配音提交失败：' + (e.message || ''))
     batchVoiceGenerating.value = false

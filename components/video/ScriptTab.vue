@@ -393,7 +393,7 @@ async function handleGenerateAll() {
       } else {
         toast.error('批量生成失败，请重试')
       }
-    })
+    }, () => videoStore.fetchStoryboard(props.videoId))
   } catch (e: any) {
     toast.error('批量生成失败：' + (e.message || ''))
     batchGenerating.value = false
@@ -459,7 +459,7 @@ async function handleGenerateImages() {
       } else {
         toast.error('图片生成失败，请重试')
       }
-    })
+    }, () => videoStore.fetchStoryboard(props.videoId))
   } catch (e: any) {
     toast.error('图片生成失败：' + (e.message || ''))
     batchGeneratingImages.value = false
@@ -487,7 +487,7 @@ async function handleGenerateClips() {
       } else {
         toast.error('视频生成失败，请重试')
       }
-    })
+    }, () => videoStore.fetchStoryboard(props.videoId))
   } catch (e: any) {
     toast.error('视频生成失败：' + (e.message || ''))
     batchGeneratingClips.value = false

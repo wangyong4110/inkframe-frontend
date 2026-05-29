@@ -89,7 +89,7 @@ async function handleBatchItemImages(force = false) {
       const result = task?.result as any
       toast.success(`物品图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
       await fetchItems()
-    })
+    }, fetchItems)
   } catch (e: any) {
     batchGeneratingItemImages.value = false
     toast.error('批量生成失败：' + (e.message || ''))
