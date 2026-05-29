@@ -211,7 +211,115 @@ useEventListener('keydown', (e: KeyboardEvent) => {
     e.preventDefault()
     handleSave()
   }
+  if (pageMode.value === 'write') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault()
+      openFind()
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+      e.preventDefault()
+      showFindBar.value = true
+      showReplaceBar.value = true
+      nextTick(() => (document.getElementById('find-input') as HTMLInputElement | null)?.focus())
+    }
+    if (e.key === 'Escape' && showFindBar.value) {
+      closeFind()
+    }
+  }
 })
+
+// ── 写作工具栏 ────────────────────────────────────────────────────────────────
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const editorFontSize = useCookie<number>('editor-font-size', { default: () => 16 })
+const showFindBar = ref(false)
+const showReplaceBar = ref(false)
+const findText = ref('')
+const replaceText = ref('')
+const findMatchIdx = ref(-1)
+const findMatches = ref<number[]>([])
+
+function computeFindMatches() {
+  if (!findText.value) {
+    findMatches.value = []
+    findMatchIdx.value = -1
+    return
+  }
+  const text = content.value.toLowerCase()
+  const q = findText.value.toLowerCase()
+  const positions: number[] = []
+  let i = 0
+  while (i < text.length) {
+    const idx = text.indexOf(q, i)
+    if (idx === -1) break
+    positions.push(idx)
+    i = idx + 1
+  }
+  findMatches.value = positions
+  findMatchIdx.value = positions.length > 0 ? 0 : -1
+  if (positions.length > 0) jumpToMatch(0)
+}
+
+function jumpToMatch(idx: number) {
+  if (!textareaRef.value || idx < 0 || idx >= findMatches.value.length) return
+  const start = findMatches.value[idx]
+  textareaRef.value.focus()
+  textareaRef.value.setSelectionRange(start, start + findText.value.length)
+}
+
+function findNext() {
+  if (!findMatches.value.length) return
+  const next = (findMatchIdx.value + 1) % findMatches.value.length
+  findMatchIdx.value = next
+  jumpToMatch(next)
+}
+
+function findPrev() {
+  if (!findMatches.value.length) return
+  const prev = (findMatchIdx.value - 1 + findMatches.value.length) % findMatches.value.length
+  findMatchIdx.value = prev
+  jumpToMatch(prev)
+}
+
+function replaceCurrent() {
+  if (findMatchIdx.value < 0 || !findMatches.value.length) return
+  const start = findMatches.value[findMatchIdx.value]
+  const end = start + findText.value.length
+  content.value = content.value.slice(0, start) + replaceText.value + content.value.slice(end)
+  nextTick(() => computeFindMatches())
+}
+
+function replaceAll() {
+  if (!findText.value) return
+  const escaped = findText.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  content.value = content.value.replace(new RegExp(escaped, 'gi'), replaceText.value)
+  nextTick(() => { findMatches.value = []; findMatchIdx.value = -1 })
+}
+
+function insertSpecialChar(ch: string) {
+  const ta = textareaRef.value
+  if (!ta) { content.value += ch; return }
+  const start = ta.selectionStart ?? content.value.length
+  const end = ta.selectionEnd ?? start
+  content.value = content.value.slice(0, start) + ch + content.value.slice(end)
+  nextTick(() => { ta.focus(); ta.setSelectionRange(start + ch.length, start + ch.length) })
+}
+
+function openFind() {
+  showFindBar.value = true
+  nextTick(() => (document.getElementById('find-input') as HTMLInputElement | null)?.focus())
+}
+
+function closeFind() {
+  showFindBar.value = false
+  showReplaceBar.value = false
+  findText.value = ''
+  replaceText.value = ''
+  findMatches.value = []
+  findMatchIdx.value = -1
+  textareaRef.value?.focus()
+}
+
+watch(findText, () => computeFindMatches())
 
 async function doSave() {
   if (!chapter.value) return
@@ -1069,16 +1177,86 @@ async function fetchShotsForChapter() {
         </div>
 
         <!-- ─ 写作模式 ─ -->
-        <div v-else-if="pageMode === 'write'" class="h-full overflow-auto">
-          <div class="max-w-2xl mx-auto px-8 py-10 min-h-full">
-            <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-8">
-              第 {{ chapterNo }} 章
-            </p>
-            <textarea
-              v-model="content"
-              class="w-full min-h-[60vh] resize-none bg-transparent border-none outline-none text-gray-900 dark:text-white text-base leading-8 placeholder-gray-300 dark:placeholder-gray-600 focus:ring-0"
-              placeholder="开始写作..."
-            />
+        <div v-else-if="pageMode === 'write'" class="h-full flex flex-col overflow-hidden">
+          <!-- 工具栏 -->
+          <div class="flex-none flex items-center flex-wrap gap-0.5 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
+            <!-- 查找 -->
+            <button
+              :class="['p-1.5 rounded text-gray-500 dark:text-gray-400 transition-colors', showFindBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800']"
+              title="查找 (Ctrl+F)"
+              @click="openFind"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
+            </button>
+            <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
+            <!-- 字号 -->
+            <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="减小字号" @click="editorFontSize = Math.max(12, (editorFontSize as number) - 1)">A-</button>
+            <span class="text-xs text-gray-400 dark:text-gray-500 w-6 text-center select-none">{{ editorFontSize }}</span>
+            <button class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold leading-none" title="增大字号" @click="editorFontSize = Math.min(28, (editorFontSize as number) + 1)">A+</button>
+            <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
+            <!-- 中文特殊符号 -->
+            <button
+              v-for="ch in ['「', '」', '『', '』', '……', '——', '·', '《', '》']"
+              :key="ch"
+              class="px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm font-mono leading-none"
+              :title="ch"
+              @click="insertSpecialChar(ch)"
+            >{{ ch }}</button>
+          </div>
+
+          <!-- 查找/替换栏 -->
+          <div v-if="showFindBar" class="flex-none flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 flex-wrap">
+            <!-- 查找行 -->
+            <div class="flex items-center gap-1 min-w-0">
+              <input
+                id="find-input"
+                v-model="findText"
+                type="text"
+                placeholder="查找..."
+                class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                @keydown.enter.exact.prevent="findNext"
+                @keydown.shift.enter.prevent="findPrev"
+                @keydown.escape.prevent="closeFind"
+              />
+              <span class="text-xs text-gray-400 whitespace-nowrap w-14 text-center">
+                <template v-if="findText">{{ findMatches.length ? `${findMatchIdx + 1}/${findMatches.length}` : '无匹配' }}</template>
+              </span>
+              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="上一个 (Shift+Enter)" @click="findPrev">↑</button>
+              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 text-xs leading-none" title="下一个 (Enter)" @click="findNext">↓</button>
+              <button
+                :class="['px-2 py-0.5 rounded text-xs transition-colors', showReplaceBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500']"
+                @click="showReplaceBar = !showReplaceBar"
+              >替换</button>
+              <button class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 text-xs leading-none" @click="closeFind">✕</button>
+            </div>
+            <!-- 替换行 -->
+            <div v-if="showReplaceBar" class="flex items-center gap-1">
+              <input
+                v-model="replaceText"
+                type="text"
+                placeholder="替换为..."
+                class="w-48 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                @keydown.escape.prevent="closeFind"
+              />
+              <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceCurrent">替换</button>
+              <button class="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300" @click="replaceAll">全部替换</button>
+            </div>
+          </div>
+
+          <!-- 编辑区 -->
+          <div class="flex-1 overflow-auto">
+            <div class="max-w-2xl mx-auto px-8 py-10 min-h-full">
+              <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-8">
+                第 {{ chapterNo }} 章
+              </p>
+              <textarea
+                ref="textareaRef"
+                v-model="content"
+                :style="{ fontSize: (editorFontSize as number) + 'px', lineHeight: '2' }"
+                class="w-full min-h-[60vh] resize-none bg-transparent border-none outline-none text-gray-900 dark:text-white leading-8 placeholder-gray-300 dark:placeholder-gray-600 focus:ring-0"
+                placeholder="开始写作..."
+              />
+            </div>
           </div>
         </div>
 

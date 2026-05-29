@@ -59,8 +59,11 @@ export const useNovelApi = () => {
   const unpublishNovel = (id: number) =>
     request<ApiResponse<{ unpublished: boolean }>>(`/novels/${id}/unpublish`, { method: 'POST' })
 
-  const generateCoverImage = (id: number) =>
-    request<ApiResponse<{ url: string }>>(`/novels/${id}/cover/generate`, { method: 'POST' })
+  const generateCoverImage = (id: number, suggestion?: string) =>
+    request<ApiResponse<{ url: string }>>(`/novels/${id}/cover/generate`, {
+      method: 'POST',
+      body: suggestion ? JSON.stringify({ suggestion }) : undefined,
+    })
 
   return {
     getNovels,

@@ -62,7 +62,24 @@ const videoProgress = computed(() => {
 const coverFileInput = ref<HTMLInputElement | null>(null)
 const coverGenerating = ref(false)
 const { uploadImage, uploading: coverUploading } = useImageUpload()
+const { openLightbox } = useImageLightbox()
 const { updateNovel, generateCoverImage } = useNovelApi()
+
+async function refineCoverImage(suggestion: string): Promise<string> {
+  const res = await generateCoverImage(novelId, suggestion)
+  const url = res.data?.url ?? ''
+  if (url) await novelStore.fetchNovel(novelId)
+  return url
+}
+
+function saveCoverImage(newUrl: string) {
+  updateNovel(novelId, { cover_image: newUrl } as any).then(() => novelStore.fetchNovel(novelId))
+}
+
+function openCoverLightbox() {
+  if (!novel.value?.cover_image || !isCoverUrl(novel.value.cover_image)) return
+  openLightbox(novel.value.cover_image, refineCoverImage, saveCoverImage)
+}
 
 function isCoverUrl(v?: string): boolean {
   return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
@@ -280,22 +297,27 @@ onMounted(async () => {
       <div class="p-6">
         <div class="flex items-start gap-4 justify-between">
           <!-- 封面缩略图 -->
-          <div class="shrink-0 group">
+          <div class="shrink-0">
             <div
-              class="relative w-20 h-24 rounded-xl overflow-hidden shadow-sm cursor-pointer flex items-center justify-center"
+              class="relative w-20 h-24 rounded-xl overflow-hidden shadow-sm flex items-center justify-center"
+              :class="isCoverUrl(novel.cover_image) ? 'cursor-zoom-in' : 'cursor-pointer'"
               :style="coverStyle(novel.cover_image)"
-              @click="coverFileInput?.click()"
+              @click="isCoverUrl(novel.cover_image) ? openCoverLightbox() : coverFileInput?.click()"
             >
               <span v-if="!isCoverUrl(novel.cover_image)" class="text-3xl font-bold text-white opacity-60 select-none">
                 {{ novel.title.charAt(0) }}
               </span>
-              <!-- hover overlay -->
-              <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition rounded-xl flex items-center justify-center">
-                <svg v-if="!coverUploading && !coverGenerating" class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+              <!-- 右下角更换图标 -->
+              <button
+                class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-black/50 hover:bg-black/75 flex items-center justify-center transition"
+                title="更换封面"
+                @click.stop="coverFileInput?.click()"
+              >
+                <div v-if="coverUploading" class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+                <svg v-else class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                 </svg>
-                <div v-else class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              </div>
+              </button>
             </div>
             <input ref="coverFileInput" type="file" accept="image/*" class="hidden" @change="onCoverFileChange" />
             <!-- AI 生成封面按钮 -->
