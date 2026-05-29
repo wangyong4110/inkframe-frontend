@@ -280,9 +280,9 @@ onMounted(async () => {
       <div class="p-6">
         <div class="flex items-start gap-4 justify-between">
           <!-- 封面缩略图 -->
-          <div class="shrink-0 group relative">
+          <div class="shrink-0 group">
             <div
-              class="w-20 h-24 rounded-xl overflow-hidden shadow-sm cursor-pointer flex items-center justify-center"
+              class="relative w-20 h-24 rounded-xl overflow-hidden shadow-sm cursor-pointer flex items-center justify-center"
               :style="coverStyle(novel.cover_image)"
               @click="coverFileInput?.click()"
             >

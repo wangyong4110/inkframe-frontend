@@ -4,6 +4,7 @@ import { getAuthToken } from '~/utils/auth'
 
 const { uploadImage, uploading: coverUploading } = useImageUpload()
 const { generateCoverImage } = useNovelApi()
+const toast = useToast()
 const coverFileInput = ref<HTMLInputElement | null>(null)
 
 async function onCoverFileChange(e: Event) {
@@ -139,12 +140,14 @@ async function submitAI() {
       aiError.value = '创建成功但未返回小说ID，请前往小说列表查看'
       return
     }
-    // AI 生成封面（同步等待，但失败不阻断流程）
+    // AI 生成封面（同步等待，失败不阻断导航）
     if (aiForm.cover_image === 'ai') {
       aiLoadingMsg.value = '生成封面中...'
       try {
         await generateCoverImage(novel.id)
-      } catch { /* 非致命，封面可在小说页面重新生成 */ }
+      } catch (coverErr: any) {
+        toast.error('封面生成失败，可在小说页面重新生成：' + (coverErr?.message || ''))
+      }
     }
     router.push(`/novel/${novel.id}?analyze=1&source=ai`)
   } catch (e: any) {
