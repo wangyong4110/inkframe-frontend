@@ -79,7 +79,7 @@ const providerForm = ref({
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
-type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; noApiKey?: boolean; staticModels?: string[] }
+type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; noApiKey?: boolean; staticModels?: string[]; type?: string }
 const PROVIDER_OPTIONS = ref<ProviderOption[]>([
   { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
 ])
@@ -96,6 +96,7 @@ async function loadProviderTemplates() {
         needsSecretKey: t.needs_secret_key,
         noApiKey:       t.no_api_key ?? false,
         staticModels:   t.static_models,
+        type:           t.type,
       })),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
     ]
@@ -103,6 +104,13 @@ async function loadProviderTemplates() {
     // 加载失败时保留默认"自定义"选项，不影响其他功能
   }
 }
+
+// 按当前选中类型过滤的供应商选项（类型未设置或为 custom 时显示全部）
+const filteredProviderOptions = computed(() => {
+  const type = providerForm.value.type
+  if (!type) return PROVIDER_OPTIONS.value
+  return PROVIDER_OPTIONS.value.filter(opt => opt.name === 'custom' || !opt.type || opt.type === type)
+})
 
 // 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
 const HARDCODED_NEEDS_SECRET_KEY = new Set([
@@ -201,8 +209,18 @@ function onProviderSelect() {
   autoDisplayName()
 }
 
-// 类型变化时同步更新显示名称
-watch(() => providerForm.value.type, autoDisplayName)
+// 类型变化时：若当前已选供应商与新类型不符则清空，并同步更新显示名称
+watch(() => providerForm.value.type, (newType) => {
+  if (!editingProvider.value) {
+    const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
+    if (opt && opt.type && opt.type !== newType) {
+      providerForm.value.name = ''
+      providerForm.value.api_endpoint = ''
+      providerModelList.value = []
+    }
+  }
+  autoDisplayName()
+})
 
 // 填完端点和 Key 后自动获取模型列表（静默，失败则回退手动输入）
 // Ollama：只需端点即可触发（无需 Key）
@@ -1016,19 +1034,12 @@ watch(activeTab, (tab) => {
             <div class="px-6 py-5 space-y-4">
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  提供商标识 <span class="text-red-500">*</span>
-                  <span class="ml-1 text-xs text-gray-400 font-normal">（唯一，创建后不可修改）</span>
+                  <span class="inline-flex items-center gap-1.5">
+                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
+                    模型类型
+                  </span>
                 </label>
-                <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
-                <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
-                  <option value="" disabled>请选择提供商</option>
-                  <option v-for="opt in PROVIDER_OPTIONS" :key="opt.name" :value="opt.name">{{ opt.label }}</option>
-                </select>
-                <p v-if="providerForm.name" class="mt-1 text-xs text-gray-400 font-mono">标识：{{ providerForm.name }}</p>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">类型</label>
-                <select v-model="providerForm.type" class="input">
+                <select v-if="!editingProvider" v-model="providerForm.type" class="input">
                   <option value="llm">LLM（语言模型）</option>
                   <option value="image">图像生成</option>
                   <option value="video">视频生成</option>
@@ -1036,6 +1047,22 @@ watch(activeTab, (tab) => {
                   <option value="sfx">文生音效</option>
                   <option value="embedding">向量嵌入</option>
                 </select>
+                <div v-else class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ providerForm.type }}</div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  <span class="inline-flex items-center gap-1.5">
+                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
+                    提供商 <span class="text-red-500">*</span>
+                    <span class="text-xs text-gray-400 font-normal">（唯一标识，创建后不可修改）</span>
+                  </span>
+                </label>
+                <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
+                <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
+                  <option value="" disabled>请选择供应商</option>
+                  <option v-for="opt in filteredProviderOptions" :key="opt.name" :value="opt.name">{{ opt.label }}</option>
+                </select>
+                <p v-if="providerForm.name" class="mt-1 text-xs text-gray-400 font-mono">标识：{{ providerForm.name }}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
