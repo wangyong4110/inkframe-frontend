@@ -18,9 +18,13 @@ const pageSize = 24
 // Filters
 const searchQ = ref('')
 const filterType = ref('')
+const filterSubType = ref('')
 const filterSource = ref('')
 const filterStatus = ref('')
 const sortBy = ref('created_at')
+
+// Playback
+const playingAsset = ref<Asset | null>(null)
 
 // Upload dialog
 const showUpload = ref(false)
@@ -38,44 +42,30 @@ const tagSuggestions = ref<Tag[]>([])
 let tagPollTimer: ReturnType<typeof setTimeout> | null = null
 let tagPollCount = 0
 
-// Type filter chips
+// Type filter chips — each maps to a (type, subType) pair
 const typeFilters = [
-  { key: '', label: '全部' },
-  { key: 'image', label: '图片' },
-  { key: 'video', label: '视频' },
-  { key: 'audio', label: '音效' },
+  { key: 'image', label: '图片', type: 'image', subType: '' },
+  { key: 'video', label: '视频', type: 'video', subType: '' },
+  { key: 'sfx', label: '音效', type: 'audio', subType: 'sfx' },
+  { key: 'music', label: '音乐', type: 'audio', subType: 'bgm' },
 ]
 
-// Inline crawl panel (shown when audio type is active)
-const showCrawlPanel = ref(false)
-const crawlForm = reactive({ source: 'freesound', query: '', limit: 20 })
-const crawlSources = [
-  { value: 'freesound', label: 'Freesound（CC0）' },
-  { value: 'bbc-sfx', label: 'BBC Sound Effects' },
-  { value: 'aigei', label: '爱给网' },
-  { value: 'pixabay', label: 'Pixabay' },
-]
-const crawling = ref(false)
+const activeFilterKey = computed(() =>
+  typeFilters.find(f => f.type === filterType.value && f.subType === filterSubType.value)?.key ?? ''
+)
 
-async function startAudioCrawl() {
-  if (!crawlForm.query.trim()) return
-  crawling.value = true
-  try {
-    await assetApi.createCrawlJob({
-      source: crawlForm.source,
-      query: crawlForm.query,
-      asset_type: 'audio',
-      limit: crawlForm.limit,
-    })
-    toast.success('已提交爬取任务，音效将在后台导入')
-    crawlForm.query = ''
-    showCrawlPanel.value = false
-  } catch (e: any) {
-    toast.error('提交失败：' + (e.message || ''))
-  } finally {
-    crawling.value = false
+function setTypeFilter(f: typeof typeFilters[number]) {
+  // toggle off if already active
+  if (activeFilterKey.value === f.key) {
+    filterType.value = ''
+    filterSubType.value = ''
+  } else {
+    filterType.value = f.type
+    filterSubType.value = f.subType
   }
+  page.value = 1
 }
+
 
 // Selected assets (for batch ops)
 const selected = ref<Set<number>>(new Set())
@@ -93,6 +83,7 @@ async function load() {
     }
     if (searchQ.value) params.q = searchQ.value
     if (filterType.value) params.type = filterType.value
+    if (filterSubType.value) params.sub_type = filterSubType.value
     if (filterSource.value) params.source = filterSource.value
     if (filterStatus.value) params.status = filterStatus.value
 
@@ -108,8 +99,7 @@ async function load() {
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
-watch([activeScope, page, filterType, filterSource, filterStatus, sortBy], load)
-watch(filterType, (v) => { if (v === 'audio') showCrawlPanel.value = true })
+watch([activeScope, page, filterType, filterSubType, filterSource, filterStatus, sortBy], load)
 onMounted(load)
 
 // Debounced search
@@ -350,52 +340,12 @@ function formatSize(bytes?: number) {
         v-for="t in typeFilters"
         :key="t.key"
         class="px-3 py-1 text-sm rounded-full border transition-colors"
-        :class="filterType === t.key
+        :class="activeFilterKey === t.key
           ? 'border-blue-500 bg-blue-600/20 text-blue-400'
           : 'border-gray-700 text-gray-400 hover:text-gray-200'"
-        @click="filterType = t.key; page = 1"
+        @click="setTypeFilter(t)"
       >{{ t.label }}</button>
     </div>
-
-    <!-- Audio crawl panel (shown when type=audio) -->
-    <Transition name="fade">
-      <div v-if="filterType === 'audio'" class="bg-gray-800 border border-gray-700 rounded-xl p-4">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-gray-200">从网上爬取音效</span>
-          <button class="text-xs text-gray-400 hover:text-gray-200" @click="showCrawlPanel = !showCrawlPanel">
-            {{ showCrawlPanel ? '收起 ▲' : '展开 ▼' }}
-          </button>
-        </div>
-        <Transition name="fade">
-          <div v-if="showCrawlPanel" class="space-y-3">
-            <div class="flex gap-3">
-              <div class="flex-1">
-                <label class="block text-xs text-gray-400 mb-1">来源</label>
-                <select v-model="crawlForm.source"
-                  class="w-full px-2 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none">
-                  <option v-for="opt in crawlSources" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                </select>
-              </div>
-              <div class="flex-1">
-                <label class="block text-xs text-gray-400 mb-1">数量上限</label>
-                <input v-model.number="crawlForm.limit" type="number" min="1" max="200"
-                  class="w-full px-2 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none" />
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <input v-model="crawlForm.query" type="text" placeholder="关键词，如：雨声、打斗、城市环境音..."
-                class="flex-1 px-3 py-1.5 text-sm border border-gray-600 rounded-lg bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @keyup.enter="startAudioCrawl" />
-              <button :disabled="!crawlForm.query.trim() || crawling" @click="startAudioCrawl"
-                class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 whitespace-nowrap">
-                {{ crawling ? '提交中...' : '开始爬取' }}
-              </button>
-            </div>
-            <p class="text-xs text-gray-500">爬取完成后音效自动入库，可在下方列表中查看。<NuxtLink to="/assets/crawl" class="text-blue-400 hover:underline">查看爬取记录 →</NuxtLink></p>
-          </div>
-        </Transition>
-      </div>
-    </Transition>
 
     <!-- Filters -->
     <div class="flex flex-wrap gap-3 items-center">
@@ -482,19 +432,38 @@ function formatSize(bytes?: number) {
         >{{ statusBadge(asset)!.text }}</div>
 
         <!-- Thumbnail -->
-        <NuxtLink :to="`/assets/${asset.id}`">
-          <div class="aspect-square bg-gray-800">
-            <img
-              v-if="asset.thumbnail_url || asset.storage_url"
-              :src="asset.thumbnail_url || asset.storage_url"
-              :alt="asset.title"
-              class="w-full h-full object-cover"
-            />
-            <div v-else class="w-full h-full flex items-center justify-center text-3xl">
-              {{ asset.type === 'video' ? '🎬' : asset.type === 'audio' ? '🎵' : '📄' }}
+        <div class="relative">
+          <NuxtLink :to="`/assets/${asset.id}`">
+            <div class="aspect-square bg-gray-800">
+              <img
+                v-if="asset.thumbnail_url || (asset.type === 'image' && asset.storage_url)"
+                :src="asset.thumbnail_url || asset.storage_url"
+                :alt="asset.title"
+                class="w-full h-full object-cover"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center text-4xl">
+                {{ asset.type === 'video' ? '🎬' : asset.sub_type === 'bgm' ? '🎼' : asset.type === 'audio' ? '🎵' : '📄' }}
+              </div>
             </div>
-          </div>
-        </NuxtLink>
+          </NuxtLink>
+          <!-- Play button overlay for video/audio -->
+          <button
+            v-if="asset.type === 'video' || asset.type === 'audio'"
+            class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30"
+            @click.stop="playingAsset = asset"
+          >
+            <div class="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+              <svg class="w-5 h-5 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+          </button>
+          <!-- Duration badge -->
+          <div
+            v-if="asset.duration && (asset.type === 'video' || asset.type === 'audio')"
+            class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-black/70 text-white"
+          >{{ asset.duration >= 60 ? Math.floor(asset.duration/60) + ':' + String(Math.round(asset.duration%60)).padStart(2,'0') : asset.duration.toFixed(0) + 's' }}</div>
+        </div>
 
         <!-- Info -->
         <div class="p-2">
@@ -545,6 +514,53 @@ function formatSize(bytes?: number) {
         @click="page++"
       >下一页</button>
     </div>
+
+    <!-- Media Player Modal -->
+    <Teleport to="body">
+      <div v-if="playingAsset" class="fixed inset-0 z-[400] flex items-center justify-center p-4" @click.self="playingAsset = null">
+        <div class="absolute inset-0 bg-black/80" @click="playingAsset = null" />
+        <div class="relative max-w-3xl w-full">
+          <!-- Close button -->
+          <button
+            class="absolute -top-10 right-0 text-white/70 hover:text-white text-sm flex items-center gap-1"
+            @click="playingAsset = null"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            关闭
+          </button>
+
+          <!-- Video player -->
+          <template v-if="playingAsset.type === 'video'">
+            <video
+              :src="playingAsset.storage_url"
+              controls
+              autoplay
+              class="w-full rounded-xl shadow-2xl bg-black max-h-[75vh]"
+              @click.stop
+            />
+            <p class="text-white/70 text-sm mt-2 text-center truncate">{{ playingAsset.title }}</p>
+          </template>
+
+          <!-- Audio player -->
+          <template v-else-if="playingAsset.type === 'audio'">
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-8 text-center shadow-2xl" @click.stop>
+              <div class="text-6xl mb-4">{{ playingAsset.sub_type === 'bgm' ? '🎼' : '🎵' }}</div>
+              <p class="text-white font-semibold text-lg mb-1 truncate">{{ playingAsset.title }}</p>
+              <p class="text-gray-400 text-sm mb-6">
+                {{ playingAsset.sub_type === 'bgm' ? '背景音乐' : '音效' }}
+                <span v-if="playingAsset.duration" class="ml-2">{{ playingAsset.duration >= 60 ? Math.floor(playingAsset.duration/60) + ':' + String(Math.round(playingAsset.duration%60)).padStart(2,'0') : playingAsset.duration.toFixed(0) + 's' }}</span>
+              </p>
+              <audio
+                :src="playingAsset.storage_url"
+                controls
+                autoplay
+                class="w-full"
+              />
+            </div>
+          </template>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Upload Dialog -->
     <div v-if="showUpload" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="closeUploadDialog">

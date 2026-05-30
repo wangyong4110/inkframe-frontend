@@ -315,16 +315,18 @@ const uploadSfxType   = ref<'action' | 'ambient' | 'emotion'>('action')
 const uploadVolume    = ref(0.4)
 const uploadingFor    = ref<number | null>(null)
 const fileInputRef    = ref<HTMLInputElement | null>(null)
+const uploadPresetTag = ref<SFXTagDisplay | null>(null)  // tag that triggered the open
 
-function openUploadPanel(shotId: number) {
+function openUploadPanel(shotId: number, tag?: SFXTagDisplay) {
   uploadPanelFor.value = shotId
   uploadMode.value = 'file'
-  uploadTag.value = ''
+  uploadPresetTag.value = tag ?? null
+  uploadTag.value = tag ? (tag.prompt || tag.tag) : ''
   uploadUrl.value = ''
-  uploadSfxType.value = 'action'
+  uploadSfxType.value = (tag?.type as 'action' | 'ambient' | 'emotion') ?? 'action'
   uploadVolume.value = 0.4
 }
-function closeUploadPanel() { uploadPanelFor.value = null }
+function closeUploadPanel() { uploadPanelFor.value = null; uploadPresetTag.value = null }
 
 async function doImportFile(shot: StoryboardShot) {
   const file = fileInputRef.value?.files?.[0]
@@ -548,7 +550,7 @@ defineExpose({ sfxItems, loadSFXItems })
                   <span
                     v-for="t in sfxTagsMap.get(shot.id)"
                     :key="t.tag"
-                    class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] border cursor-default"
+                    class="group inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] border cursor-default"
                     :class="{
                       'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800': t.type === 'action',
                       'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-800': t.type === 'ambient',
@@ -559,6 +561,15 @@ defineExpose({ sfxItems, loadSFXItems })
                   >
                     <span v-if="t.type" class="opacity-50 text-[9px] font-mono uppercase">{{ t.type[0] }}</span>
                     {{ displayLabel(t) }}
+                    <button
+                      class="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5 hover:text-orange-600 dark:hover:text-orange-400 flex-shrink-0"
+                      title="上传此标签的音效文件"
+                      @click.stop="openUploadPanel(shot.id, t)"
+                    >
+                      <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                    </button>
                   </span>
                   <button
                     class="text-[10px] text-gray-400 hover:text-orange-500 transition-colors px-1"
@@ -846,6 +857,19 @@ defineExpose({ sfxItems, loadSFXItems })
             v-if="uploadPanelFor === shot.id"
             class="border-t border-orange-100 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10 px-3 py-3 space-y-2.5"
           >
+            <!-- 标签来源提示 -->
+            <div v-if="uploadPresetTag" class="flex items-center gap-1.5 text-[10px] text-orange-600 dark:text-orange-400">
+              <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 10V5a2 2 0 012-2z" />
+              </svg>
+              <span>为标签 <strong>{{ displayLabel(uploadPresetTag) }}</strong> 上传音效</span>
+              <button class="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="uploadPresetTag = null; uploadTag = ''; uploadSfxType = 'action'">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
             <!-- 模式切换 -->
             <div class="flex gap-1">
               <button

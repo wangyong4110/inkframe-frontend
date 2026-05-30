@@ -101,36 +101,13 @@ async function handleGenerateVoice(shot: StoryboardShot) {
 async function handleGenerateAllVoice() {
   if (shots.value.length === 0) { toast.error('没有分镜，无法生成配音'); return }
   if (batchVoiceGenerating.value) { toast.info('配音批量任务进行中…'); return }
-  batchVoiceGenerating.value = true
-  try {
-    const api = useVideoApi()
-    const res = await api.batchGenerateVoice(props.videoId, {
-      subtitle_enabled: subtitleEnabled.value,
-      skip_existing: true,
-    })
-    const taskId = (res as any)?.data?.task_id
-    const shotCount = (res as any)?.data?.shot_count ?? 0
-    if (!taskId) {
-      toast.success((res as any)?.message || '所有分镜已有配音')
-      batchVoiceGenerating.value = false
-      return
-    }
-    toast.info(`批量配音任务已提交（${shotCount} 个分镜）`)
-    const taskStore = useTaskStore()
-    taskStore.trackTask(taskId, async (task) => {
-      batchVoiceGenerating.value = false
-      if (task.status === 'completed') {
-        await videoStore.fetchStoryboard(props.videoId)
-        const d = task.data as any
-        toast.success(`批量配音完成：成功 ${d?.success ?? 0} 个，失败 ${d?.fail ?? 0} 个`)
-      } else {
-        toast.error('批量配音任务失败，请重试')
-      }
-    }, () => videoStore.fetchStoryboard(props.videoId))
-  } catch (e: any) {
-    toast.error('批量配音提交失败：' + (e.message || ''))
-    batchVoiceGenerating.value = false
+  const missing = findCharsWithoutVoice()
+  if (missing.length > 0) {
+    missingVoiceChars.value = missing
+    showVoiceWarningModal.value = true
+    return
   }
+  await doGenerateAllVoice()
 }
 
 async function batchFillSubtitles() {
@@ -246,6 +223,57 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
   videoApi.updateShotImageUrl(props.videoId, shot.id, newUrl).catch(() => {})
 }
 
+// ── 缺失音色警告弹窗 ──────────────────────────────────────────────────────────
+import type { Character } from '~/types'
+
+const showVoiceWarningModal = ref(false)
+const missingVoiceChars = ref<Character[]>([])
+
+function findCharsWithoutVoice(): Character[] {
+  const speakerNames = new Set<string>()
+  for (const shot of shots.value) {
+    if (shot.dialogue) {
+      const { speaker } = parseDialogue(shot.dialogue)
+      if (speaker) speakerNames.add(speaker.trim())
+    }
+  }
+  if (speakerNames.size === 0) return []
+  return characters.value.filter(c => speakerNames.has(c.name) && !c.voice_id)
+}
+
+async function doGenerateAllVoice() {
+  batchVoiceGenerating.value = true
+  try {
+    const api = useVideoApi()
+    const res = await api.batchGenerateVoice(props.videoId, {
+      subtitle_enabled: subtitleEnabled.value,
+      skip_existing: true,
+    })
+    const taskId = (res as any)?.data?.task_id
+    const shotCount = (res as any)?.data?.shot_count ?? 0
+    if (!taskId) {
+      toast.success((res as any)?.message || '所有分镜已有配音')
+      batchVoiceGenerating.value = false
+      return
+    }
+    toast.info(`批量配音任务已提交（${shotCount} 个分镜）`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      batchVoiceGenerating.value = false
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        const d = task.data as any
+        toast.success(`批量配音完成：成功 ${d?.success ?? 0} 个，失败 ${d?.fail ?? 0} 个`)
+      } else {
+        toast.error('批量配音任务失败，请重试')
+      }
+    }, () => videoStore.fetchStoryboard(props.videoId))
+  } catch (e: any) {
+    toast.error('批量配音提交失败：' + (e.message || ''))
+    batchVoiceGenerating.value = false
+  }
+}
+
 // Dialogue character replacement
 const speakerDropdownShotId = ref<number | null>(null)
 const dropdownShot = ref<StoryboardShot | null>(null)
@@ -351,6 +379,66 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
           </button>
         </div>
       </div>
+    </Teleport>
+
+    <!-- 缺失音色警告弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showVoiceWarningModal" class="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50" @click="showVoiceWarningModal = false" />
+          <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <!-- 标题 -->
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">部分角色未配置音色</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  以下角色在分镜中有台词，但尚未设置专属音色，生成时将使用默认旁白音色代替。
+                </p>
+              </div>
+            </div>
+
+            <!-- 角色列表 -->
+            <div class="space-y-2 max-h-52 overflow-y-auto">
+              <div
+                v-for="char in missingVoiceChars"
+                :key="char.id"
+                class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <img v-if="char.portrait || char.face_closeup" :src="char.portrait || char.face_closeup" class="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                  <div v-else class="w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ char.name[0] }}</span>
+                  </div>
+                  <span class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ char.name }}</span>
+                  <span class="text-xs text-amber-500 dark:text-amber-400 flex-shrink-0">未设置音色</span>
+                </div>
+                <NuxtLink
+                  :to="`/character/${char.id}?novelId=${videoStore.currentVideo?.novel_id}&tab=voice`"
+                  class="text-xs text-primary-600 dark:text-primary-400 hover:underline flex-shrink-0 ml-2"
+                  @click="showVoiceWarningModal = false"
+                >前往配置 →</NuxtLink>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-2 pt-1">
+              <button
+                class="flex-1 btn-secondary text-sm"
+                @click="showVoiceWarningModal = false"
+              >取消</button>
+              <button
+                class="flex-1 btn-primary text-sm"
+                @click="showVoiceWarningModal = false; doGenerateAllVoice()"
+              >仍然继续生成</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
 
     <!-- Speaker dropdown — teleported to body to escape overflow:hidden clipping -->
