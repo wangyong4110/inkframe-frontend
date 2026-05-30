@@ -22,7 +22,7 @@ export const useChapterReviewApi = () => {
 
   const applyDiffs = (
     id: number,
-    diffs: { index: number; new_content: string }[],
+    diffs: { index: number; new_content: string; orig_text?: string }[],
     recordId?: number,
   ) =>
     request<ApiResponse<{ updated_paragraphs: number }>>(`/chapters/${id}/review/apply-diffs`, {

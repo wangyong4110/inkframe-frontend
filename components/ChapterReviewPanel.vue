@@ -164,7 +164,8 @@ async function handleApplyDiffs() {
   applyingDiffs.value = true
   try {
     // delete action sends empty string as new_content; backend treats empty = remove paragraph
-    const diffs = selected.map(d => ({ index: d.index, new_content: d.action === 'delete' ? '' : d.suggested_rewrite }))
+    // orig_text enables content-based fallback matching in case indices shifted
+    const diffs = selected.map(d => ({ index: d.index, new_content: d.action === 'delete' ? '' : d.suggested_rewrite, orig_text: d.orig_text ?? '' }))
     const recordId = reviewResult.value?.record_id
     const res = await api.applyDiffs(props.chapterId, diffs, recordId)
     const count = res.data?.updated_paragraphs ?? 0
