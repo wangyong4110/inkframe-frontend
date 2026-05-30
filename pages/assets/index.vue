@@ -554,6 +554,7 @@ function formatSize(bytes?: number) {
                 :src="playingAsset.storage_url"
                 controls
                 autoplay
+                :loop="playingAsset.sub_type === 'bgm'"
                 class="w-full"
               />
             </div>

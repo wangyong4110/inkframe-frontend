@@ -74,9 +74,9 @@ const sfxTagsMap = computed(() => {
   return map
 })
 
-// 标签显示：优先中文 prompt（供人类阅读），英文 tag 作为 tooltip
+// 标签显示：始终显示英文 tag（Freesound 搜索词），中文 prompt 作为 tooltip
 function displayLabel(t: SFXTagDisplay): string {
-  return t.prompt || t.tag
+  return t.tag
 }
 
 // ── 场景分组辅助 ──────────────────────────────────────────────────────────────
@@ -240,6 +240,7 @@ function toggleSfxPreview(item: ShotSFXItem) {
   }
   if (!item.url) { toast.error('该音效暂无可用链接'); return }
   sfxLoadingId.value = item.id
+  audio.loop = item.sfx_type === 'ambient' || !!item.loop_enabled
   audio.src = item.url
   audio.load()
   audio.play()
@@ -557,7 +558,7 @@ defineExpose({ sfxItems, loadSFXItems })
                       'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800': t.type === 'emotion',
                       'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-800': !t.type,
                     }"
-                    :title="t.tag !== displayLabel(t) ? `搜索词: ${t.tag}` : undefined"
+                    :title="t.prompt || undefined"
                   >
                     <span v-if="t.type" class="opacity-50 text-[9px] font-mono uppercase">{{ t.type[0] }}</span>
                     {{ displayLabel(t) }}
