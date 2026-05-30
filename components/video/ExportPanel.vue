@@ -72,6 +72,22 @@ async function handleCapcut() {
   }
 }
 
+// ── B 剪草稿导出 ─────────────────────────────────────
+const exportingBroll = ref(false)
+async function handleBrollDraft() {
+  exportingBroll.value = true
+  try {
+    const api = useVideoApi()
+    const blob = await api.exportVideo(props.videoId, 'broll')
+    triggerDownload(blob, `${video.value?.title || 'video'}_broll.zip`)
+    toast.success('B 剪草稿导出成功，解压后在剪映中选择「本地草稿」导入')
+  } catch (e: any) {
+    toast.error('导出失败：' + (e.message || ''))
+  } finally {
+    exportingBroll.value = false
+  }
+}
+
 // ── 合成 MP4 ─────────────────────────────────────────
 const synthesizing = ref(false)
 async function handleSynthesize() {
@@ -205,6 +221,32 @@ function triggerDownload(blob: Blob, filename: string) {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
         </div>
+      </button>
+
+      <!-- B 剪草稿 -->
+      <button
+        class="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 transition-all"
+        :class="completedShots.length === 0 || exportingBroll
+          ? 'opacity-50 cursor-not-allowed'
+          : 'hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'"
+        :disabled="completedShots.length === 0 || exportingBroll"
+        @click="handleBrollDraft"
+      >
+        <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div class="flex-1 text-left">
+          <span class="font-medium text-gray-900 dark:text-white">{{ exportingBroll ? '导出中...' : 'B 剪草稿' }}</span>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">静态图 · 配音轨 · 分镜注释，供剪辑师二剪参考</p>
+        </div>
+        <svg v-if="exportingBroll" class="w-5 h-5 animate-spin text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <svg v-else class="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
       </button>
 
       <!-- 合成 MP4 -->

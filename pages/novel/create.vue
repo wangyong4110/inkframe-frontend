@@ -31,6 +31,7 @@ const { request } = useApi()
 
 // ── LLM 配置前置检查 ──────────────────────────────────────────────────────────
 const hasLLMProvider = ref<boolean | null>(null) // null = loading
+const showNoLLMModal = ref(false)
 const { getLLMCapableProviders } = useModelApi()
 
 onMounted(async () => {
@@ -39,9 +40,18 @@ onMounted(async () => {
     const list = (resp as any).data ?? []
     hasLLMProvider.value = list.length > 0
   } catch {
-    hasLLMProvider.value = true // 检查失败时不阻断，让后端兜底
+    hasLLMProvider.value = null // 检查失败保持 null，不静默放行
   }
 })
+
+function selectAIGenerate() {
+  if (hasLLMProvider.value === false) {
+    showNoLLMModal.value = true
+    return
+  }
+  // null = 仍在加载或检查失败，放行并让后端兜底
+  step.value = 'ai-form'
+}
 
 // ── 步骤状态机 ────────────────────────────────────────────────────────────────
 type Step = 'choose' | 'ai-form' | 'import-choose' | 'import-file' | 'import-crawl'
@@ -427,25 +437,47 @@ const crawlPercent = computed(() => {
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">选择创建方式开始你的创作</p>
     </div>
 
-    <!-- LLM 未配置警告横幅 -->
-    <div
-      v-if="hasLLMProvider === false"
-      class="mb-5 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 px-4 py-3.5"
-    >
-      <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-      </svg>
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-amber-800 dark:text-amber-300">请先配置 AI 模型</p>
-        <p class="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
-          创建小说项目需要至少一个文本生成（LLM）提供商，请先前往
-          <NuxtLink to="/model" class="underline font-medium hover:text-amber-900 dark:hover:text-amber-200">
-            模型管理
-          </NuxtLink>
-          配置 API Key，再返回此页面创建项目。
-        </p>
-      </div>
-    </div>
+    <!-- 未配置 LLM 拦截模态框 -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div
+          v-if="showNoLLMModal"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          @click.self="showNoLLMModal = false"
+        >
+          <div class="w-full max-w-sm mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 space-y-4">
+            <!-- 图标 -->
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+              </div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">尚未配置 AI 模型</h3>
+            </div>
+            <!-- 说明 -->
+            <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+              使用 AI 生成功能需要至少配置一个文本生成（LLM）提供商并填写有效的 API Key。
+            </p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              前往 <span class="font-medium text-gray-700 dark:text-gray-200">模型 → 模型提供商</span>，添加并配置你的 AI 服务商（如 OpenAI、DeepSeek、Claude 等）。
+            </p>
+            <!-- 操作 -->
+            <div class="flex gap-3 pt-1">
+              <button
+                class="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                @click="showNoLLMModal = false"
+              >稍后再说</button>
+              <NuxtLink
+                to="/model"
+                class="flex-1 px-4 py-2 text-sm rounded-lg bg-purple-600 text-white text-center hover:bg-purple-700 transition-colors font-medium"
+                @click="showNoLLMModal = false"
+              >去配置模型 →</NuxtLink>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- ═══ Screen 1: choose ════════════════════════════════════════════════════ -->
     <template v-if="step === 'choose'">
@@ -454,8 +486,7 @@ const crawlPercent = computed(() => {
         <button
           type="button"
           class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-500 transition-all shadow-sm text-left group"
-          :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': hasLLMProvider === false }"
-          @click="step = 'ai-form'"
+          @click="selectAIGenerate"
         >
           <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-200 dark:group-hover:bg-purple-800/40 transition-colors">
             <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -471,7 +502,6 @@ const crawlPercent = computed(() => {
         <button
           type="button"
           class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-all shadow-sm text-left group"
-          :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': hasLLMProvider === false }"
           @click="step = 'import-choose'"
         >
           <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-200 dark:group-hover:bg-blue-800/40 transition-colors">
@@ -852,3 +882,23 @@ const crawlPercent = computed(() => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+.modal-fade-enter-active .max-w-sm,
+.modal-fade-leave-active .max-w-sm {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.modal-fade-enter-from .max-w-sm,
+.modal-fade-leave-to .max-w-sm {
+  transform: scale(0.95);
+  opacity: 0;
+}
+</style>

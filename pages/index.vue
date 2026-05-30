@@ -537,7 +537,7 @@ const stats = [
           <span>InkFrame &copy; 2025</span>
         </div>
         <div class="flex gap-6 text-sm text-gray-500">
-          <NuxtLink to="/novel" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
+          <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
           <span class="hover:text-gray-300 cursor-default transition-colors">使用条款</span>
           <span class="hover:text-gray-300 cursor-default transition-colors">隐私政策</span>
         </div>
