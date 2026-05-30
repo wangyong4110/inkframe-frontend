@@ -159,9 +159,8 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'elevenlabs-sfx': {
-    akLabel: 'API Key', akPlaceholder: 'ElevenLabs xi-api-key',
-    skLabel: '', skPlaceholder: '',
-    skHint: 'ElevenLabs 文生音效仅需 API Key（xi-api-key header 鉴权），支持 0.5~22 秒音效生成',
+    akLabel: 'API Key', akPlaceholder: 'ElevenLabs API Key（xi-api-key 鉴权，0.5~22 秒音效生成）',
+    skLabel: '', skPlaceholder: '', skHint: '',
   },
 }
 const credentialMeta = computed<CredentialMeta>(() => {
