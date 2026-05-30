@@ -70,10 +70,10 @@ export const useVideoApi = () => {
       body: opts?.user_context ? JSON.stringify({ user_context: opts.user_context }) : undefined,
     })
 
-  const batchGenerateSFX = (videoId: number, opts?: { user_context?: string }) =>
+  const batchGenerateSFX = (videoId: number, opts?: { user_context?: string; provider?: string }) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/sfx`, {
       method: 'POST',
-      body: opts?.user_context ? JSON.stringify({ user_context: opts.user_context }) : undefined,
+      body: (opts?.user_context || opts?.provider) ? JSON.stringify({ ...(opts.user_context ? { user_context: opts.user_context } : {}), ...(opts.provider ? { provider: opts.provider } : {}) }) : undefined,
     })
 
   const batchGenerateVoice = (videoId: number, options?: { narration_voice?: string; subtitle_enabled?: boolean; max_shots?: number; skip_existing?: boolean }) =>
@@ -118,8 +118,11 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
-  const generateShotSFX = (videoId: number, shotId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/sfx`, { method: 'POST' })
+  const generateShotSFX = (videoId: number, shotId: number, provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/sfx`, {
+      method: 'POST',
+      body: provider ? JSON.stringify({ provider }) : undefined,
+    })
 
   const listShotSFXItems = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotSFXItem[]>>(`/videos/${videoId}/shots/${shotId}/sfx-items`)

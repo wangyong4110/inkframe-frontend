@@ -19,6 +19,13 @@ const generatingShotIds = ref<Record<number, boolean>>({})
 
 const sfxAiContext = ref('')
 const showSfxAiPanel = ref(true)
+const sfxProvider = ref('')  // '' = 默认降级链；'kling-sfx' / 'elevenlabs-sfx' = 强制指定
+
+const SFX_PROVIDER_OPTIONS = [
+  { value: '',              label: '自动（降级链）' },
+  { value: 'kling-sfx',    label: '可灵 SFX' },
+  { value: 'elevenlabs-sfx', label: 'ElevenLabs' },
+]
 
 // ── 音频试听 ──────────────────────────────────────────────────────────────────
 const sfxPlayingId = ref<number | null>(null)
@@ -153,7 +160,10 @@ async function handleGenerateSFX() {
   generatingSFX.value = true
   try {
     const api = useVideoApi()
-    const res = await api.batchGenerateSFX(props.videoId, sfxAiContext.value ? { user_context: sfxAiContext.value } : undefined)
+    const opts: { user_context?: string; provider?: string } = {}
+    if (sfxAiContext.value) opts.user_context = sfxAiContext.value
+    if (sfxProvider.value) opts.provider = sfxProvider.value
+    const res = await api.batchGenerateSFX(props.videoId, Object.keys(opts).length ? opts : undefined)
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       useTaskStore().trackTask(taskId, async (task) => {
@@ -186,7 +196,7 @@ async function regenerateShotSFX(shot: StoryboardShot) {
   generatingShotIds.value[shot.id] = true
   try {
     const api = useVideoApi()
-    const res = await api.generateShotSFX(props.videoId, shot.id)
+    const res = await api.generateShotSFX(props.videoId, shot.id, sfxProvider.value || undefined)
     const taskId = (res as any)?.data?.task_id
     if (taskId) {
       useTaskStore().trackTask(taskId, async (task) => {
@@ -377,6 +387,21 @@ defineExpose({ sfxItems, loadSFXItems })
                 class="px-2 py-0.5 rounded-full text-xs border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors"
                 @click="sfxAiContext = preset.value"
               >{{ preset.label }}</button>
+            </div>
+          </div>
+          <!-- 音效提供商选择 -->
+          <div>
+            <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">音效提供商</p>
+            <div class="flex gap-1.5">
+              <button
+                v-for="opt in SFX_PROVIDER_OPTIONS"
+                :key="opt.value"
+                class="px-2.5 py-1 rounded-full text-xs border transition-colors"
+                :class="sfxProvider === opt.value
+                  ? 'bg-orange-500 border-orange-500 text-white'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-orange-300 hover:text-orange-600 dark:hover:text-orange-400'"
+                @click="sfxProvider = opt.value"
+              >{{ opt.label }}</button>
             </div>
           </div>
           <!-- 上下文输入 -->
