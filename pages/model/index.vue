@@ -75,7 +75,8 @@ async function doFetchProviderModels() {
 const providerForm = ref({
   name: '', display_name: '', type: 'llm',
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
-  timeout: 0, // 秒，0 = 使用默认值 300s
+  timeout: 0,      // 秒，0 = 使用默认值 300s
+  concurrency: 0,  // 最大并发数，0 = 不限制
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
@@ -315,7 +316,7 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0 }
+  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -324,7 +325,7 @@ function openEditProvider(p: ModelProvider) {
   const knownTypes = ['llm', 'image', 'video', 'voice', 'embedding', 'sfx']
   const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
   providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
-    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0 }
+    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -822,6 +823,7 @@ watch(activeTab, (tab) => {
                 <span v-if="p.api_endpoint" class="font-mono truncate max-w-xs">{{ p.api_endpoint }}</span>
                 <span v-if="p.api_version">模型：<span class="font-mono">{{ p.api_version }}</span></span>
                 <span v-if="p.timeout" class="font-mono">超时 {{ p.timeout }}s</span>
+                <span v-if="p.concurrency" class="font-mono">并发 {{ p.concurrency }}</span>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
@@ -1156,18 +1158,29 @@ watch(activeTab, (tab) => {
                   </p>
                 </div>
               </div>
-              <!-- 超时配置 -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">请求超时（秒）</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model.number="providerForm.timeout"
-                    type="number" min="0" step="30"
-                    class="input w-32 font-mono text-sm"
-                    placeholder="0" />
-                  <span class="text-xs text-gray-400 dark:text-gray-500">
-                    0 = 默认 300s；分镜等大 JSON 任务建议设 600s
-                  </span>
+              <!-- 超时 + 并发度 -->
+              <div class="flex gap-4">
+                <div class="flex-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">请求超时（秒）</label>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model.number="providerForm.timeout"
+                      type="number" min="0" step="30"
+                      class="input w-28 font-mono text-sm"
+                      placeholder="0" />
+                    <span class="text-xs text-gray-400 dark:text-gray-500">0 = 默认 300s</span>
+                  </div>
+                </div>
+                <div class="flex-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大并发数</label>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model.number="providerForm.concurrency"
+                      type="number" min="0" step="1"
+                      class="input w-28 font-mono text-sm"
+                      placeholder="0" />
+                    <span class="text-xs text-gray-400 dark:text-gray-500">0 = 不限制</span>
+                  </div>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">

@@ -464,6 +464,7 @@ export interface ModelProvider {
   api_version?: string
   is_active: boolean
   timeout?: number              // HTTP 超时秒数，0 或未设置表示使用默认值 300s
+  concurrency?: number          // 最大并发调用数，0 或未设置表示不限制
   has_key?: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
   created_at?: string
