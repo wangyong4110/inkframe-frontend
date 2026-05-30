@@ -646,7 +646,6 @@ export interface SceneAnchor {
   name: string
   type: SceneAnchorType
   description: string
-  prompt_lock: string
   ref_image_url: string
   ref_image_locked_at?: string
   usage_count: number
@@ -661,7 +660,6 @@ export interface CreateSceneAnchorPayload {
   name: string
   type?: SceneAnchorType
   description?: string
-  prompt_lock?: string
   variant?: string
   parent_anchor_id?: number
 }

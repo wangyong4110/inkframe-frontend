@@ -76,34 +76,6 @@ onUnmounted(() => {
   revokeIfBlob(imageUrl.value)
 })
 
-// 本地上传物品图片
-const uploadingImage = ref(false)
-const imageFileInputRef = ref<HTMLInputElement | null>(null)
-
-async function handleImageUpload(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  // Show local preview immediately — no need to wait for server response.
-  const localPreview = URL.createObjectURL(file)
-  const prevUrl = imageUrl.value
-  imageUrl.value = localPreview
-  uploadingImage.value = true
-  try {
-    const data = await itemApi.uploadItemImage(itemId, file)
-    // Replace ObjectURL with the persisted server URL.
-    URL.revokeObjectURL(localPreview)
-    imageUrl.value = data.url
-    toast.success('图片上传成功')
-  } catch (err: any) {
-    URL.revokeObjectURL(localPreview)
-    imageUrl.value = prevUrl   // restore on failure
-    toast.error('上传失败：' + (err.message || '未知错误'))
-  } finally {
-    uploadingImage.value = false
-    if (imageFileInputRef.value) imageFileInputRef.value.value = ''
-  }
-}
-
 // 参考图片
 const referenceImageUrl = ref('')      // 服务端绝对 URL（OSS），用于 AI 调用
 const referenceImagePreview = ref('')  // 预览用 URL（ObjectURL 或 OSS URL）
@@ -175,7 +147,7 @@ const statusOptions = [
 
 const tabs = [
   { key: 'profile', label: '基本档案' },
-  { key: 'image',   label: '图片生成' },
+  { key: 'image',   label: '视觉设计' },
 ]
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -215,7 +187,7 @@ async function handleSave() {
   if (!form.value.name.trim()) { toast.error('物品名称不能为空'); return }
   saving.value = true
   try {
-    await itemApi.updateItem(itemId, { ...form.value })
+    await itemApi.updateItem(itemId, { ...form.value, image_url: imageUrl.value })
     isDirty.value = false
     toast.success('保存成功')
   } catch (e: any) {
@@ -335,145 +307,78 @@ function goBack() {
       </div>
     </div>
 
-    <!-- ── Tab: 图片生成 ───────────────────────────────────────────────────── -->
-    <div v-if="activeTab === 'image'" class="space-y-4">
-      <div class="card p-6">
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">物品图片</h3>
+    <!-- ── Tab: 视觉设计 ───────────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'image'" class="card p-6 space-y-6">
+      <!-- Visual prompt -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉提示词</label>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">供 AI 图像生成使用的提示词，由 AI 分析自动填写，也可手动编辑</p>
+        <textarea
+          v-model="form.visual_prompt"
+          rows="4"
+          class="input font-mono text-xs"
+          placeholder="e.g. tall black wooden tower with shining crossbow on top, gears visible, stone slot at base..."
+        />
+      </div>
 
-        <!-- Image preview -->
-        <div class="flex gap-6 items-start">
-          <div class="w-48 h-48 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-200 dark:border-gray-700">
-            <img v-if="imageUrl" :src="imageUrl" class="w-full h-full object-cover cursor-zoom-in" alt="物品图片" @click="openLightbox(imageUrl, (s) => editImage(lightboxUrl.value, s, novelId), (url) => { imageUrl = url })" />
-            <div v-else class="flex flex-col items-center gap-2 text-gray-300">
-              <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <p class="text-xs">暂无图片</p>
-            </div>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">图像资产</h3>
+
+      <!-- Item image -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">物品图片</h4>
+            <p class="text-xs text-gray-500 mt-0.5">
+              参考图（可选）：
+              <span v-if="referenceImagePreview" class="text-primary-500 cursor-pointer" @click="openLightbox(referenceImagePreview, (s) => editImage(lightboxUrl.value, s, novelId), (url) => { referenceImageUrl = url; referenceImagePreview = url })">已上传</span>
+              <span v-else class="cursor-pointer hover:text-gray-700" @click="fileInputRef?.click()">上传参考图</span>
+              <span v-if="referenceImagePreview" class="ml-1 text-gray-400 cursor-pointer hover:text-red-500" @click="clearReferenceImage">（清除）</span>
+            </p>
           </div>
-
-          <div class="flex-1 space-y-3">
-            <div>
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">生成设置</p>
-              <div class="space-y-1 text-sm text-gray-600 dark:text-gray-400">
-                <p><span class="text-gray-400">类别：</span>{{ categoryOptions.find(o => o.value === form.category)?.icon }} {{ categoryOptions.find(o => o.value === form.category)?.label }}</p>
-              </div>
-            </div>
-            <!-- 参考图片上传 -->
-            <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">参考图片（可选）</p>
-              <div v-if="referenceImagePreview" class="flex items-center gap-3 mb-2">
-                <img :src="referenceImagePreview" class="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-700 flex-shrink-0 cursor-zoom-in" alt="参考图" @click="openLightbox(referenceImagePreview, (s) => editImage(lightboxUrl.value, s, novelId), (url) => { referenceImageUrl = url; referenceImagePreview = url })" />
-                <div class="flex-1 min-w-0">
-                  <p class="text-xs text-gray-500 truncate">已上传参考图</p>
-                  <p class="text-xs text-gray-400">AI 生成时将以此为视觉参考</p>
-                </div>
-                <button
-                  class="text-xs text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                  @click="clearReferenceImage"
-                >清除</button>
-              </div>
-              <div v-else class="flex items-center gap-2">
-                <input
-                  ref="fileInputRef"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  class="hidden"
-                  @change="handleReferenceUpload"
-                />
-                <button
-                  class="btn-secondary text-sm flex items-center gap-1.5"
-                  :disabled="uploadingRef"
-                  @click="fileInputRef?.click()"
-                >
-                  <svg v-if="uploadingRef" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  {{ uploadingRef ? '上传中…' : '上传参考图' }}
-                </button>
-                <p class="text-xs text-gray-400">JPG / PNG / WebP，AI 生成时作为视觉参考</p>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2 pt-2">
-              <!-- 本地上传 -->
-              <input
-                ref="imageFileInputRef"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                class="hidden"
-                @change="handleImageUpload"
-              />
-              <button
-                class="btn-secondary flex items-center gap-2"
-                :disabled="uploadingImage"
-                @click="imageFileInputRef?.click()"
-              >
-                <svg v-if="uploadingImage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                {{ uploadingImage ? '上传中…' : '本地上传' }}
-              </button>
-              <!-- AI 生成 -->
-              <button
-                class="btn-primary flex items-center gap-2"
-                :disabled="generatingImage || saving"
-                @click="generateImage"
-              >
-                <svg v-if="generatingImage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {{ generatingImage ? 'AI 生成中…' : (imageUrl ? '重新生成' : 'AI 生成图片') }}
-              </button>
-              <button v-if="imageUrl" class="btn-secondary text-sm" @click="imageUrl = ''">清除</button>
-            </div>
-            <!-- 任务状态 -->
-            <div v-if="imageTaskStatus !== 'idle'" class="mt-2 text-xs">
-              <span v-if="imageTaskStatus === 'pending' || imageTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
-                <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                AI 正在生成图片，请稍候…
-              </span>
-              <span v-else-if="imageTaskStatus === 'completed'" class="text-green-500">生成完成</span>
-              <span v-else-if="imageTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
-            </div>
+          <div class="flex items-center gap-2">
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              class="hidden"
+              @change="handleReferenceUpload"
+            />
+            <button
+              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+              :disabled="generatingImage || saving"
+              @click="generateImage"
+            >
+              <svg v-if="generatingImage" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ generatingImage ? '生成中...' : 'AI 生成' }}
+            </button>
           </div>
         </div>
-
-        <!-- Visual prompt -->
-        <div class="mt-5 space-y-2">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            图片生成提示词
-            <span class="ml-1 text-xs font-normal text-gray-400">（留空将根据外观描述自动生成）</span>
-          </label>
-          <textarea
-            v-model="form.visual_prompt"
-            rows="4"
-            class="input resize-none"
-            placeholder="精细描述物品视觉特征，用于 AI 绘图。&#10;例：一顶红色天鹅绒小帽，金色蕾丝边沿，帽顶饰有白色小花，童话水彩风格，柔和光线，白色背景，高清细节…"
+        <div class="relative max-w-xs">
+          <ImageUploadBox
+            v-model="imageUrl"
+            aspect-ratio="1/1"
+            placeholder="物品图片"
+            :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelId)"
+            :on-save="(url: string) => { imageUrl = url; isDirty.value = true }"
+            @error="toast.error"
           />
-          <div class="flex flex-wrap gap-2">
-            <span class="text-xs text-gray-400">建议包含：</span>
-            <span
-              v-for="tip in ['材质纹理', '主色调', '光效', '艺术风格', '背景']"
-              :key="tip"
-              class="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600"
-              @click="form.visual_prompt += (form.visual_prompt ? '，' : '') + tip + '：'"
-            >{{ tip }}</span>
+          <div v-if="generatingImage" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
+            <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
           </div>
+        </div>
+        <div v-if="imageTaskStatus !== 'idle'" class="mt-2 text-xs">
+          <span v-if="imageTaskStatus === 'pending' || imageTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+            AI 正在生成，请稍候…
+          </span>
+          <span v-else-if="imageTaskStatus === 'completed'" class="text-green-500">生成完成</span>
+          <span v-else-if="imageTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
         </div>
       </div>
+
+      <p class="text-xs text-gray-500">需填写「物品描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
   </div>
 </template>

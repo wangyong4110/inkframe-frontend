@@ -31,7 +31,6 @@ const form = ref({
   type: 'interior' as string,
   variant: '',
   description: '',
-  prompt_lock: '',
 })
 
 const generatingRefImage = ref(false)
@@ -86,7 +85,6 @@ onMounted(async () => {
         type: a.value.type ?? 'interior',
         variant: a.value.variant ?? '',
         description: a.value.description ?? '',
-        prompt_lock: a.value.prompt_lock ?? '',
       }
     } else {
       toast.error('加载场景锚点失败')
@@ -110,7 +108,6 @@ async function handleSave() {
       type: form.value.type,
       variant: form.value.variant || undefined,
       description: form.value.description,
-      prompt_lock: form.value.prompt_lock,
     }
     const updated = await api.updateSceneAnchor(anchorId, payload)
     anchor.value = updated
@@ -287,37 +284,18 @@ function goBack() {
             </p>
           </div>
 
-          <!-- Prompt Lock -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">核心关键词（Prompt Lock）</label>
-            <input
-              v-model="form.prompt_lock"
-              type="text"
-              class="input font-mono text-sm"
-              :placeholder="isEn ? 'grand hall, marble columns, red carpet, golden torchlight' : '宏大宫殿, 汉白玉石柱, 红色地毯, 金色火炬光 / grand hall, marble columns...'"
-            />
-            <p class="mt-1 text-xs text-gray-400">逗号分隔，每次生成都会强制注入，控制场景一致性的核心视觉元素</p>
-          </div>
-
           <!-- Description -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              完整视觉描述{{ isEn ? '（English）' : '' }}
-            </label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图片生成提示词</label>
             <textarea
               v-model="form.description"
-              rows="5"
+              rows="6"
               class="input resize-none font-mono text-sm"
               :placeholder="isEn
                 ? 'A grand imperial throne hall bathed in warm golden light, towering marble columns lined with red silk banners, intricate dragon carvings on the ceiling, polished jade floor reflecting the candlelight...'
-                : '金色暖光笼罩的宏伟皇宫大殿，高耸的汉白玉石柱悬挂红绸龙旗，穹顶精雕龙纹浮雕，翡翠地砖映照摇曳烛光…（也可用英文）'"
+                : '金色暖光笼罩的宏伟皇宫大殿，高耸的汉白玉石柱悬挂红绸龙旗，穹顶精雕龙纹浮雕，翡翠地砖映照摇曳烛光…'"
             ></textarea>
-            <p class="mt-1 text-xs text-gray-400">场景的完整视觉描述，包含建筑结构、光线氛围、空间感等细节</p>
-          </div>
-
-          <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
-            <span class="font-medium">生成提示词顺序：</span>
-            <span class="font-mono ml-1">核心关键词 → 完整视觉描述 → 分镜动作描述</span>
+            <p class="mt-1 text-xs text-gray-400">场景的完整视觉描述，包含建筑结构、光线氛围、空间感等细节，由 AI 提取自动填写，也可手动编辑</p>
           </div>
         </div>
 
@@ -387,7 +365,7 @@ function goBack() {
                 {{ generatingRefImage ? 'AI 生成中…' : (anchor?.ref_image_url ? '重新生成' : 'AI 生成参考图') }}
               </button>
 
-              <p class="text-xs text-gray-400">AI 将根据核心关键词和视觉描述生成参考图，生成完成后自动锁定。</p>
+              <p class="text-xs text-gray-400">AI 将根据图片生成提示词生成参考图，生成完成后自动锁定。</p>
             </div>
           </div>
         </div>

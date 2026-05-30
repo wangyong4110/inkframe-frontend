@@ -13,7 +13,7 @@ import type {
 } from '~/types'
 
 export const useVideoApi = () => {
-  const { request, requestBlob, requestMultipart } = useApi()
+  const { request, requestBlob, requestMultipart, requestForm } = useApi()
 
   const getVideos = (params?: { novel_id?: number; page?: number; page_size?: number }) => {
     const searchParams = new URLSearchParams()
@@ -136,6 +136,31 @@ export const useVideoApi = () => {
     request<ApiResponse<Record<string, unknown>>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    })
+
+  const importShotSFXItemByFile = (
+    videoId: number,
+    shotId: number,
+    file: File,
+    opts: { tag?: string; sfxType?: string; volume?: number } = {},
+  ): Promise<ApiResponse<ShotSFXItem>> => {
+    const form = new FormData()
+    form.append('file', file)
+    if (opts.tag) form.append('tag', opts.tag)
+    if (opts.sfxType) form.append('sfx_type', opts.sfxType)
+    if (opts.volume != null) form.append('volume', String(opts.volume))
+    return requestForm<ApiResponse<ShotSFXItem>>(`/videos/${videoId}/shots/${shotId}/sfx-items`, form)
+  }
+
+  const importShotSFXItemByURL = (
+    videoId: number,
+    shotId: number,
+    url: string,
+    opts: { tag?: string; sfxType?: string; volume?: number } = {},
+  ): Promise<ApiResponse<ShotSFXItem>> =>
+    request<ApiResponse<ShotSFXItem>>(`/videos/${videoId}/shots/${shotId}/sfx-items`, {
+      method: 'POST',
+      body: JSON.stringify({ url, tag: opts.tag ?? '', sfx_type: opts.sfxType ?? 'action', volume: opts.volume ?? 0.4 }),
     })
 
   const deleteShotSFXItem = (videoId: number, shotId: number, itemId: number) =>
@@ -377,6 +402,8 @@ export const useVideoApi = () => {
     deleteShotSFXItem,
     toggleShotSFXItem,
     updateShotSFXTags,
+    importShotSFXItemByFile,
+    importShotSFXItemByURL,
     exportCapcut,
     exportVideo,
     getVideoProviders,

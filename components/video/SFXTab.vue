@@ -306,6 +306,69 @@ async function saveItemDetail(shot: StoryboardShot, item: ShotSFXItem, field: 's
   await api.updateShotSFXItem(props.videoId, shot.id, item.id, patch)
 }
 
+// ── 音效上传 ──────────────────────────────────────────────────────────────────
+const uploadPanelFor  = ref<number | null>(null)
+const uploadMode      = ref<'file' | 'url'>('file')
+const uploadTag       = ref('')
+const uploadUrl       = ref('')
+const uploadSfxType   = ref<'action' | 'ambient' | 'emotion'>('action')
+const uploadVolume    = ref(0.4)
+const uploadingFor    = ref<number | null>(null)
+const fileInputRef    = ref<HTMLInputElement | null>(null)
+
+function openUploadPanel(shotId: number) {
+  uploadPanelFor.value = shotId
+  uploadMode.value = 'file'
+  uploadTag.value = ''
+  uploadUrl.value = ''
+  uploadSfxType.value = 'action'
+  uploadVolume.value = 0.4
+}
+function closeUploadPanel() { uploadPanelFor.value = null }
+
+async function doImportFile(shot: StoryboardShot) {
+  const file = fileInputRef.value?.files?.[0]
+  if (!file) { toast.error('请先选择音频文件'); return }
+  const api = useVideoApi()
+  uploadingFor.value = shot.id
+  try {
+    const res = await api.importShotSFXItemByFile(props.videoId, shot.id, file, {
+      tag: uploadTag.value || file.name.replace(/\.[^.]+$/, ''),
+      sfxType: uploadSfxType.value,
+      volume: uploadVolume.value,
+    })
+    const item = (res as any).data ?? res
+    sfxItems.value[shot.id] = [...(sfxItems.value[shot.id] ?? []), item]
+    closeUploadPanel()
+    toast.success('音效已上传')
+  } catch (e: any) {
+    toast.error('上传失败：' + (e.message ?? '未知错误'))
+  } finally {
+    uploadingFor.value = null
+  }
+}
+
+async function doImportUrl(shot: StoryboardShot) {
+  if (!uploadUrl.value.trim()) { toast.error('请输入音频 URL'); return }
+  const api = useVideoApi()
+  uploadingFor.value = shot.id
+  try {
+    const res = await api.importShotSFXItemByURL(props.videoId, shot.id, uploadUrl.value.trim(), {
+      tag: uploadTag.value || uploadUrl.value.split('/').pop() || 'sfx',
+      sfxType: uploadSfxType.value,
+      volume: uploadVolume.value,
+    })
+    const item = (res as any).data ?? res
+    sfxItems.value[shot.id] = [...(sfxItems.value[shot.id] ?? []), item]
+    closeUploadPanel()
+    toast.success('音效已导入')
+  } catch (e: any) {
+    toast.error('导入失败：' + (e.message ?? '未知错误'))
+  } finally {
+    uploadingFor.value = null
+  }
+}
+
 // ── 标签编辑 ──────────────────────────────────────────────────────────────────
 const editingTagsFor = ref<number | null>(null)
 const editingTagsMap = ref<Record<number, SFXTagItem[]>>({})
@@ -565,6 +628,18 @@ defineExpose({ sfxItems, loadSFXItems })
               </div>
             </div>
 
+            <!-- 上传音效按钮 -->
+            <button
+              class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+              :class="{ 'text-orange-500 bg-orange-50 dark:bg-orange-900/20': uploadPanelFor === shot.id }"
+              title="上传音效（本地文件或 URL）"
+              @click="uploadPanelFor === shot.id ? closeUploadPanel() : openUploadPanel(shot.id)"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+
             <!-- 单镜头重新生成按钮 -->
             <button
               class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
@@ -764,6 +839,104 @@ defineExpose({ sfxItems, loadSFXItems })
           <!-- 空状态 -->
           <div v-else-if="!sfxItemsLoading" class="px-3 py-2 text-xs text-gray-400 italic">
             {{ (sfxTagsMap.get(shot.id) ?? []).length > 0 ? '已分析搜索词，点击「一键生成音效」匹配音频' : '点击「AI 分析标签」或「一键生成音效」' }}
+          </div>
+
+          <!-- 上传面板 -->
+          <div
+            v-if="uploadPanelFor === shot.id"
+            class="border-t border-orange-100 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10 px-3 py-3 space-y-2.5"
+          >
+            <!-- 模式切换 -->
+            <div class="flex gap-1">
+              <button
+                class="flex-1 py-1 text-xs rounded border transition-colors"
+                :class="uploadMode === 'file'
+                  ? 'bg-orange-500 text-white border-orange-500'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-orange-300'"
+                @click="uploadMode = 'file'"
+              >本地文件</button>
+              <button
+                class="flex-1 py-1 text-xs rounded border transition-colors"
+                :class="uploadMode === 'url'
+                  ? 'bg-orange-500 text-white border-orange-500'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-orange-300'"
+                @click="uploadMode = 'url'"
+              >音频 URL</button>
+            </div>
+
+            <!-- 文件选择 -->
+            <div v-if="uploadMode === 'file'">
+              <input
+                ref="fileInputRef"
+                type="file"
+                accept=".mp3,.wav,.ogg,.m4a,.flac"
+                class="w-full text-xs text-gray-600 dark:text-gray-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-orange-100 dark:file:bg-orange-900/30 file:text-orange-700 dark:file:text-orange-300 hover:file:bg-orange-200 cursor-pointer"
+              />
+              <p class="mt-0.5 text-[10px] text-gray-400">支持 mp3 / wav / ogg / m4a / flac</p>
+            </div>
+
+            <!-- URL 输入 -->
+            <div v-else>
+              <input
+                v-model="uploadUrl"
+                type="url"
+                placeholder="https://example.com/sound.mp3"
+                class="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-orange-400"
+              />
+            </div>
+
+            <!-- 标签 + 类型 + 音量 -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-gray-500 mb-0.5 block">标签（可选）</label>
+                <input
+                  v-model="uploadTag"
+                  type="text"
+                  placeholder="如 wind_howling"
+                  class="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-orange-400"
+                />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 mb-0.5 block">类型</label>
+                <select
+                  v-model="uploadSfxType"
+                  class="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-orange-400"
+                >
+                  <option value="action">动作音</option>
+                  <option value="ambient">环境音</option>
+                  <option value="emotion">情绪音</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 音量 -->
+            <div class="flex items-center gap-2">
+              <label class="text-[10px] text-gray-500 whitespace-nowrap">音量</label>
+              <input
+                v-model.number="uploadVolume"
+                type="range" min="0.05" max="1" step="0.05"
+                class="flex-1 accent-orange-500"
+              />
+              <span class="text-[10px] text-gray-400 w-7 text-right">{{ Math.round(uploadVolume * 100) }}%</span>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex justify-end gap-2 pt-0.5">
+              <button
+                class="text-xs px-2.5 py-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                @click="closeUploadPanel"
+              >取消</button>
+              <button
+                class="text-xs px-3 py-1 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+                :disabled="uploadingFor === shot.id"
+                @click="uploadMode === 'file' ? doImportFile(shot) : doImportUrl(shot)"
+              >
+                <svg v-if="uploadingFor === shot.id" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ uploadingFor === shot.id ? '导入中…' : (uploadMode === 'file' ? '上传' : '导入') }}
+              </button>
+            </div>
           </div>
         </div>
       </template>

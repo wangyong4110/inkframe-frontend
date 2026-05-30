@@ -100,9 +100,30 @@ export const useApi = () => {
     return json.data
   }
 
+  // Send a pre-built FormData (supports extra fields alongside the file).
+  const requestForm = async <T>(endpoint: string, form: FormData): Promise<T> => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120_000)
+    let res: Response
+    try {
+      res = await fetch(`${apiBase}${endpoint}`, {
+        method: 'POST',
+        headers: getAuthHeader(),
+        body: form,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
+    const json = await res.json().catch(() => ({ message: 'Upload failed' }))
+    if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)
+    return json
+  }
+
   return {
     request,
     requestBlob,
     requestMultipart,
+    requestForm,
   }
 }

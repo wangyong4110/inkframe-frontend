@@ -53,7 +53,7 @@ const character = ref({
 
 const tabs = [
   { key: 'profile', label: '角色档案' },
-  { key: 'images', label: '图像资产' },
+  { key: 'images', label: '视觉设计' },
   { key: 'voice', label: '配音设置' },
 ]
 
@@ -303,16 +303,16 @@ function getRoleLabel(role: string): string {
         <textarea v-model="character.description" rows="10" class="input" placeholder="描述角色的外貌特征、性格特点、背景故事、说话方式…"></textarea>
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉提示词（英文）</label>
-        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">供 AI 图像生成使用的英文提示词，由 AI 分析自动填写，也可手动编辑</p>
-        <textarea v-model="character.visual_prompt" rows="4" class="input font-mono text-xs" placeholder="e.g. young woman, long silver hair, blue eyes, traditional hanfu, elegant posture..."></textarea>
-      </div>
     </div>
 
-    <!-- 图像资产 Tab -->
-    <div v-if="activeTab === 'images'" class="card p-6">
-      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-6">图像资产</h3>
+    <!-- 视觉设计 Tab -->
+    <div v-if="activeTab === 'images'" class="card p-6 space-y-6">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉提示词</label>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">供 AI 图像生成使用的提示词，由 AI 分析自动填写，也可手动编辑</p>
+        <textarea v-model="character.visual_prompt" rows="4" class="input font-mono text-xs" placeholder="e.g. young woman, long silver hair, blue eyes, traditional hanfu, elegant posture..."></textarea>
+      </div>
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">图像资产</h3>
       <!-- column ratio 24:76 so that 9:16 and 16:9 boxes share the same row height -->
       <div class="grid gap-6" style="grid-template-columns: 24fr 76fr">
         <!-- Face closeup (LEFT, 9:16) — also used as portrait/avatar -->

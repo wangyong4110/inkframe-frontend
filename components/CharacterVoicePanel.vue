@@ -53,18 +53,6 @@ const ZH_DIALECTS = [
   { code: 'jin',  label: '晋语（太原话）' },
 ]
 
-// Fallback voices (OpenAI) — shown when no voice_gen models are configured
-const FALLBACK_VOICES = [
-  { id: 'nova',    label: 'Nova — 女声·活泼' },
-  { id: 'shimmer', label: 'Shimmer — 女声·温柔' },
-  { id: 'echo',    label: 'Echo — 男声·磁性' },
-  { id: 'onyx',    label: 'Onyx — 男声·低沉' },
-  { id: 'fable',   label: 'Fable — 男声·权威' },
-  { id: 'alloy',   label: 'Alloy — 中性·平衡' },
-]
-
-const FALLBACK_GROUP = [{ key: 'openai', label: 'OpenAI', voices: FALLBACK_VOICES }]
-
 const STYLES = [
   { id: '',         label: '默认' },
   { id: 'calm',     label: '平静' },
@@ -87,7 +75,6 @@ const noVoiceConfigured = computed(
 
 // Groups: [{ key, label, voices: [{id, label}] }]
 const voiceGroups = computed(() => {
-  if (voiceModels.value.length === 0) return FALLBACK_GROUP
   const map: Record<string, { key: string; label: string; voices: { id: string; label: string }[] }> = {}
   for (const m of voiceModels.value) {
     const key = m.provider?.name ?? 'unknown'
@@ -98,11 +85,7 @@ const voiceGroups = computed(() => {
   return Object.values(map)
 })
 
-const allKnownIds = computed(() =>
-  voiceModels.value.length === 0
-    ? FALLBACK_VOICES.map(v => v.id)
-    : voiceModels.value.map(m => m.name)
-)
+const allKnownIds = computed(() => voiceModels.value.map(m => m.name))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,12 +104,7 @@ const selectedLang    = ref(initLang)
 const selectedDialect = ref(initDialect)
 
 function defaultVoiceId(char: typeof props.character): string {
-  if (char.voice_id) return char.voice_id
-  const g = char.gender
-  if (g === 'male')    return 'echo'
-  if (g === 'female')  return 'nova'
-  if (g === 'neutral') return 'alloy'
-  return 'nova'
+  return char.voice_id ?? ''
 }
 
 const voiceId         = ref(defaultVoiceId(props.character))
@@ -323,19 +301,19 @@ defineExpose({
     <div>
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
 
-      <!-- 未配置语音合成模型提示 -->
-      <div v-if="noVoiceConfigured" class="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+      <!-- 未配置语音合成模型提示（替代下拉框） -->
+      <div v-if="noVoiceConfigured" class="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-3 text-xs text-amber-700 dark:text-amber-300">
         <svg class="mt-0.5 shrink-0 w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
         </svg>
         <span>
-          尚未配置语音合成模型，当前显示备用音色。
-          <NuxtLink to="/model" class="font-medium underline hover:no-underline ml-1">前往配置模型 →</NuxtLink>
+          尚未配置任何语音合成模型，请先到模型管理中添加并填写 TTS 供应商的 API Key。
+          <NuxtLink to="/model" class="font-medium underline hover:no-underline ml-1">前往模型管理 →</NuxtLink>
         </span>
       </div>
 
       <!-- 预设模式：下拉选择 -->
-      <template v-if="!showCustomInput">
+      <template v-else-if="!showCustomInput">
         <div class="relative">
           <select
             :value="voiceId"
