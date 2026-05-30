@@ -975,6 +975,13 @@ defineExpose({ sfxItems, loadSFXItems })
                   : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-orange-300'"
                 @click="uploadMode = 'url'"
               >音频 URL</button>
+              <button
+                class="flex-1 py-1 text-xs rounded border transition-colors"
+                :class="uploadMode === 'library'
+                  ? 'bg-orange-500 text-white border-orange-500'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-orange-300'"
+                @click="uploadMode = 'library'"
+              >素材库</button>
             </div>
 
             <!-- 文件选择 -->
@@ -989,13 +996,94 @@ defineExpose({ sfxItems, loadSFXItems })
             </div>
 
             <!-- URL 输入 -->
-            <div v-else>
+            <div v-else-if="uploadMode === 'url'">
               <input
                 v-model="uploadUrl"
                 type="url"
                 placeholder="https://example.com/sound.mp3"
                 class="w-full text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-orange-400"
               />
+            </div>
+
+            <!-- 素材库搜索 -->
+            <div v-else class="space-y-1.5">
+              <div class="flex gap-1">
+                <input
+                  v-model="librarySearchQ"
+                  type="text"
+                  placeholder="搜索音效素材…"
+                  class="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-orange-400"
+                  @keyup.enter="searchLibrary"
+                />
+                <button
+                  class="text-xs px-2.5 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  :disabled="librarySearching || !librarySearchQ.trim()"
+                  @click="searchLibrary"
+                >
+                  <svg v-if="librarySearching" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- 搜索结果 -->
+              <div v-if="libraryResults.length > 0" class="max-h-44 overflow-y-auto space-y-0.5 rounded border border-gray-100 dark:border-gray-700">
+                <div
+                  v-for="asset in libraryResults"
+                  :key="asset.id"
+                  class="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer transition-colors"
+                  :class="librarySelected?.id === asset.id
+                    ? 'bg-orange-100 dark:bg-orange-900/30'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'"
+                  @click="selectLibraryAsset(asset)"
+                >
+                  <!-- 预览播放按钮 -->
+                  <button
+                    class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full transition-colors"
+                    :class="libraryPlayingUrl === asset.storage_url
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-500 hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-orange-600'"
+                    :title="libraryPlayingUrl === asset.storage_url ? '暂停' : '试听'"
+                    @click.stop="toggleLibraryPreview(asset.storage_url)"
+                  >
+                    <svg v-if="libraryPlayingUrl === asset.storage_url" class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                    </svg>
+                    <svg v-else class="w-2.5 h-2.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+
+                  <!-- 标题 -->
+                  <span class="flex-1 text-xs truncate text-gray-700 dark:text-gray-300">{{ asset.title }}</span>
+
+                  <!-- 时长 -->
+                  <span v-if="asset.duration" class="text-[10px] text-gray-400 flex-shrink-0">
+                    {{ formatAssetDuration(asset.duration) }}
+                  </span>
+
+                  <!-- 选中标记 -->
+                  <svg v-if="librarySelected?.id === asset.id" class="w-3.5 h-3.5 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- 空状态 -->
+              <p v-else-if="librarySearching" class="text-[10px] text-gray-400 text-center py-1.5">搜索中…</p>
+              <p v-else-if="librarySearchQ && !librarySearching" class="text-[10px] text-gray-400 text-center py-1.5">没有找到相关音效</p>
+              <p v-else class="text-[10px] text-gray-400 text-center py-1.5">输入关键词搜索素材库中的音效</p>
+
+              <!-- 已选提示 -->
+              <div v-if="librarySelected" class="flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded px-2 py-1">
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="truncate">已选：{{ librarySelected.title }}</span>
+              </div>
             </div>
 
             <!-- 标签 + 类型 + 音量 -->
@@ -1041,13 +1129,13 @@ defineExpose({ sfxItems, loadSFXItems })
               >取消</button>
               <button
                 class="text-xs px-3 py-1 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
-                :disabled="uploadingFor === shot.id"
-                @click="uploadMode === 'file' ? doImportFile(shot) : doImportUrl(shot)"
+                :disabled="uploadingFor === shot.id || (uploadMode === 'library' && !librarySelected)"
+                @click="uploadMode === 'file' ? doImportFile(shot) : uploadMode === 'url' ? doImportUrl(shot) : doImportLibrary(shot)"
               >
                 <svg v-if="uploadingFor === shot.id" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {{ uploadingFor === shot.id ? '导入中…' : (uploadMode === 'file' ? '上传' : '导入') }}
+                {{ uploadingFor === shot.id ? '导入中…' : uploadMode === 'file' ? '上传' : '导入' }}
               </button>
             </div>
           </div>
