@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, ShotSFXItem, SFXTagItem } from '~/types'
+import type { StoryboardShot, ShotSFXItem, SFXTagItem, Asset } from '~/types'
 
 const props = defineProps<{
   videoId: number
@@ -309,25 +309,92 @@ async function saveItemDetail(shot: StoryboardShot, item: ShotSFXItem, field: 's
 
 // ── 音效上传 ──────────────────────────────────────────────────────────────────
 const uploadPanelFor  = ref<number | null>(null)
-const uploadMode      = ref<'file' | 'url'>('file')
+const uploadMode      = ref<'file' | 'url' | 'library'>('file')
 const uploadTag       = ref('')
 const uploadUrl       = ref('')
 const uploadSfxType   = ref<'action' | 'ambient' | 'emotion'>('action')
 const uploadVolume    = ref(0.4)
 const uploadingFor    = ref<number | null>(null)
 const fileInputRef    = ref<HTMLInputElement | null>(null)
-const uploadPresetTag = ref<SFXTagDisplay | null>(null)  // tag that triggered the open
+const uploadPresetTag = ref<SFXTagDisplay | null>(null)
+
+// ── 素材库搜索 ─────────────────────────────────────────────────────────────────
+const librarySearchQ   = ref('')
+const libraryResults   = ref<Asset[]>([])
+const librarySearching = ref(false)
+const librarySelected  = ref<Asset | null>(null)
+const libraryPlayingUrl = ref<string | null>(null)
+
+function formatAssetDuration(s: number): string {
+  if (s < 60) return `${Math.round(s)}s`
+  return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
+}
+
+async function searchLibrary() {
+  const q = librarySearchQ.value.trim()
+  if (!q) return
+  librarySearching.value = true
+  libraryResults.value = []
+  try {
+    const api = useAssetApi()
+    const res = await api.searchAssets({ type: 'audio', q, page_size: 8 })
+    libraryResults.value = (res as any)?.data?.items ?? []
+  } catch {
+    libraryResults.value = []
+  } finally {
+    librarySearching.value = false
+  }
+}
+
+function selectLibraryAsset(asset: Asset) {
+  librarySelected.value = asset
+  if (!uploadTag.value) uploadTag.value = asset.title
+  uploadSfxType.value = (asset.sub_type === 'ambient' ? 'ambient' : 'action') as 'action' | 'ambient' | 'emotion'
+}
+
+function toggleLibraryPreview(url: string) {
+  const audio = sfxAudioRef.value
+  if (!audio) return
+  if (libraryPlayingUrl.value === url) {
+    audio.pause(); audio.currentTime = 0
+    libraryPlayingUrl.value = null
+    return
+  }
+  if (sfxPlayingId.value !== null) { audio.pause(); sfxPlayingId.value = null }
+  libraryPlayingUrl.value = url
+  audio.loop = false
+  audio.src = url
+  audio.load()
+  audio.play().catch(() => { libraryPlayingUrl.value = null })
+}
+
+watch(uploadMode, (mode) => {
+  if (mode === 'library' && libraryResults.value.length === 0 && uploadPresetTag.value?.tag) {
+    librarySearchQ.value = uploadPresetTag.value.tag
+    searchLibrary()
+  }
+})
 
 function openUploadPanel(shotId: number, tag?: SFXTagDisplay) {
   uploadPanelFor.value = shotId
   uploadMode.value = 'file'
   uploadPresetTag.value = tag ?? null
-  uploadTag.value = tag ? (tag.prompt || tag.tag) : ''
+  uploadTag.value = tag?.tag ?? ''
   uploadUrl.value = ''
   uploadSfxType.value = (tag?.type as 'action' | 'ambient' | 'emotion') ?? 'action'
   uploadVolume.value = 0.4
+  librarySearchQ.value = ''
+  libraryResults.value = []
+  librarySelected.value = null
+  libraryPlayingUrl.value = null
 }
-function closeUploadPanel() { uploadPanelFor.value = null; uploadPresetTag.value = null }
+function closeUploadPanel() {
+  uploadPanelFor.value = null
+  uploadPresetTag.value = null
+  libraryPlayingUrl.value = null
+  const audio = sfxAudioRef.value
+  if (audio && libraryPlayingUrl.value) { audio.pause() }
+}
 
 async function doImportFile(shot: StoryboardShot) {
   const file = fileInputRef.value?.files?.[0]
@@ -365,6 +432,27 @@ async function doImportUrl(shot: StoryboardShot) {
     sfxItems.value[shot.id] = [...(sfxItems.value[shot.id] ?? []), item]
     closeUploadPanel()
     toast.success('音效已导入')
+  } catch (e: any) {
+    toast.error('导入失败：' + (e.message ?? '未知错误'))
+  } finally {
+    uploadingFor.value = null
+  }
+}
+
+async function doImportLibrary(shot: StoryboardShot) {
+  if (!librarySelected.value) { toast.error('请先从素材库中选择一个音效'); return }
+  const videoApi = useVideoApi()
+  uploadingFor.value = shot.id
+  try {
+    const res = await videoApi.importShotSFXItemByURL(props.videoId, shot.id, librarySelected.value.storage_url, {
+      tag: uploadTag.value || librarySelected.value.title,
+      sfxType: uploadSfxType.value,
+      volume: uploadVolume.value,
+    })
+    const item = (res as any).data ?? res
+    sfxItems.value[shot.id] = [...(sfxItems.value[shot.id] ?? []), item]
+    closeUploadPanel()
+    toast.success('音效已从素材库导入')
   } catch (e: any) {
     toast.error('导入失败：' + (e.message ?? '未知错误'))
   } finally {
@@ -420,7 +508,7 @@ defineExpose({ sfxItems, loadSFXItems })
     <audio
       ref="sfxAudioRef"
       class="hidden"
-      @ended="sfxPlayingId = null; sfxLoadingId = null"
+      @ended="sfxPlayingId = null; sfxLoadingId = null; libraryPlayingUrl = null"
       @error="onAudioError"
     />
 
