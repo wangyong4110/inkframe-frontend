@@ -335,6 +335,7 @@ async function searchLibrary() {
   if (!q) return
   librarySearching.value = true
   libraryResults.value = []
+  librarySelected.value = null
   try {
     const api = useAssetApi()
     const res = await api.searchAssets({ type: 'audio', q, page_size: 8 })
@@ -1128,7 +1129,7 @@ defineExpose({ sfxItems, loadSFXItems })
                 @click="closeUploadPanel"
               >取消</button>
               <button
-                class="text-xs px-3 py-1 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+                class="text-xs px-3 py-1 rounded transition-colors flex items-center gap-1 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:text-gray-400 dark:disabled:text-gray-500 enabled:bg-orange-500 enabled:text-white enabled:hover:bg-orange-600"
                 :disabled="uploadingFor === shot.id || (uploadMode === 'library' && !librarySelected)"
                 @click="uploadMode === 'file' ? doImportFile(shot) : uploadMode === 'url' ? doImportUrl(shot) : doImportLibrary(shot)"
               >
