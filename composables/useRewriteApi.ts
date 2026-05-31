@@ -1,4 +1,4 @@
-import type { ApiResponse, RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask } from '~/types'
+import type { ApiResponse, RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask, ComplianceReport } from '~/types'
 
 export const useRewriteApi = () => {
   const { request } = useApi()
@@ -45,6 +45,9 @@ export const useRewriteApi = () => {
       body: JSON.stringify(data),
     })
 
+  const getComplianceReport = (id: number) =>
+    request<ApiResponse<ComplianceReport>>(`/rewrite/projects/${id}/compliance-report`)
+
   return {
     listProjects,
     createProject,
@@ -58,5 +61,6 @@ export const useRewriteApi = () => {
     getChapterTask,
     approveChapter,
     updateBible,
+    getComplianceReport,
   }
 }

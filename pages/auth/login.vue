@@ -13,6 +13,7 @@ const emailLoading = ref(false)
 const emailError = ref('')
 
 async function loginWithEmail() {
+  if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
   emailError.value = ''
   emailLoading.value = true
   try {
@@ -34,6 +35,8 @@ async function loginWithEmail() {
 const phoneForm = reactive({ phone: '', code: '' })
 const phoneLoading = ref(false)
 const phoneError = ref('')
+const agreed = ref(false)
+
 const sendCooldown = ref(0)
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
 
@@ -59,6 +62,7 @@ async function sendPhoneCode() {
 }
 
 async function loginWithPhone() {
+  if (!agreed.value) { phoneError.value = '请先阅读并同意使用条款和隐私政策'; return }
   phoneError.value = ''
   phoneLoading.value = true
   try {
@@ -78,6 +82,7 @@ async function loginWithPhone() {
 
 // OAuth登录
 async function oauthLogin(provider: string) {
+  if (!agreed.value) return
   try {
     const state = Math.random().toString(36).slice(2)
     const data = await request<any>(`/auth/oauth/${provider}/url?state=${state}`)
@@ -90,12 +95,6 @@ async function oauthLogin(provider: string) {
 
 onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
 
-// 开发模式快捷登录
-const isDev = import.meta.dev
-function devLogin() {
-  authStore.mockLogin()
-  router.push('/')
-}
 </script>
 
 <template>
@@ -118,7 +117,7 @@ function devLogin() {
               </linearGradient>
             </defs>
           </svg>
-          <span class="text-2xl font-bold text-white tracking-tight">InkFrame</span>
+          <span class="text-2xl font-bold text-white tracking-tight">简影</span>
         </NuxtLink>
         <h2 class="mt-4 text-xl font-semibold text-gray-300">欢迎回来</h2>
       </div>
@@ -190,6 +189,23 @@ function devLogin() {
           </button>
         </form>
 
+        <!-- 协议同意 -->
+        <div class="mt-4">
+          <label class="flex items-start gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="agreed"
+              class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
+                     accent-violet-500 cursor-pointer flex-shrink-0" />
+            <span class="text-xs text-gray-500 leading-relaxed">
+              我已阅读并同意
+              <NuxtLink to="/terms" target="_blank"
+                class="text-violet-400 hover:text-violet-300 transition-colors">《用户服务协议》</NuxtLink>
+              和
+              <NuxtLink to="/privacy" target="_blank"
+                class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
+            </span>
+          </label>
+        </div>
+
         <!-- 第三方登录 -->
         <div class="mt-6">
           <div class="relative">
@@ -201,19 +217,32 @@ function devLogin() {
             </div>
           </div>
           <div class="mt-4 flex justify-center gap-5">
-            <button @click="oauthLogin('wechat')" title="微信登录"
-              class="w-11 h-11 flex items-center justify-center rounded-full border border-gray-700 hover:border-[#07C160] hover:bg-[#07C160]/10 transition-colors group">
-              <svg viewBox="0 0 24 24" class="w-6 h-6 fill-gray-500 group-hover:fill-[#07C160] transition-colors" xmlns="http://www.w3.org/2000/svg">
+            <button @click="oauthLogin('wechat')" title="微信登录" :disabled="!agreed"
+              class="w-11 h-11 flex items-center justify-center rounded-full border transition-colors"
+              :class="agreed
+                ? 'border-gray-700 hover:border-[#07C160] hover:bg-[#07C160]/10 group cursor-pointer'
+                : 'border-gray-800 opacity-40 cursor-not-allowed'">
+              <svg viewBox="0 0 24 24" class="w-6 h-6 fill-gray-500 transition-colors"
+                :class="agreed ? 'group-hover:fill-[#07C160]' : ''" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-3.898-6.348-7.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-7.063-6.122zm-3.494 3.033c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982zm4.856 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"/>
               </svg>
             </button>
-            <button @click="oauthLogin('alipay')" title="支付宝登录"
-              class="w-11 h-11 flex items-center justify-center rounded-full border border-gray-700 hover:border-[#1677FF] hover:bg-[#1677FF]/10 transition-colors group">
-              <img src="/images/alipay.png" alt="支付宝" class="w-6 h-6 object-contain opacity-40 group-hover:opacity-100 transition-opacity" />
+            <button @click="oauthLogin('alipay')" title="支付宝登录" :disabled="!agreed"
+              class="w-11 h-11 flex items-center justify-center rounded-full border transition-colors"
+              :class="agreed
+                ? 'border-gray-700 hover:border-[#1677FF] hover:bg-[#1677FF]/10 group cursor-pointer'
+                : 'border-gray-800 opacity-40 cursor-not-allowed'">
+              <img src="/images/alipay.png" alt="支付宝"
+                class="w-6 h-6 object-contain transition-opacity"
+                :class="agreed ? 'opacity-40 group-hover:opacity-100' : 'opacity-20'" />
             </button>
-            <button @click="oauthLogin('douyin')" title="抖音登录"
-              class="w-11 h-11 flex items-center justify-center rounded-full border border-gray-700 hover:border-gray-500 hover:bg-gray-800 transition-colors group">
-              <svg viewBox="0 0 24 24" class="w-6 h-6 fill-gray-500 group-hover:fill-gray-200 transition-colors" xmlns="http://www.w3.org/2000/svg">
+            <button @click="oauthLogin('douyin')" title="抖音登录" :disabled="!agreed"
+              class="w-11 h-11 flex items-center justify-center rounded-full border transition-colors"
+              :class="agreed
+                ? 'border-gray-700 hover:border-gray-500 hover:bg-gray-800 group cursor-pointer'
+                : 'border-gray-800 opacity-40 cursor-not-allowed'">
+              <svg viewBox="0 0 24 24" class="w-6 h-6 fill-gray-500 transition-colors"
+                :class="agreed ? 'group-hover:fill-gray-200' : ''" xmlns="http://www.w3.org/2000/svg">
                 <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.24 8.24 0 0 0 4.82 1.54V6.78a4.85 4.85 0 0 1-1.05-.09z"/>
               </svg>
             </button>
@@ -225,14 +254,6 @@ function devLogin() {
           <NuxtLink to="/auth/register" class="text-violet-400 hover:text-violet-300 font-medium transition-colors">注册</NuxtLink>
         </p>
 
-        <!-- 开发模式快捷登录 -->
-        <div v-if="isDev" class="mt-6 pt-5 border-t border-dashed border-gray-700/50">
-          <p class="text-center text-xs text-gray-500 mb-3">开发模式</p>
-          <button type="button" @click="devLogin"
-            class="w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm py-2.5 rounded-xl transition-colors">
-            跳过登录（测试账户）
-          </button>
-        </div>
       </div>
     </div>
   </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useHead({ title: '我的小说 - InkFrame' })
+useHead({ title: '我的小说 - 简影' })
 
 const novelStore = useNovelStore()
 

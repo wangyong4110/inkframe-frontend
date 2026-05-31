@@ -5,6 +5,7 @@ const props = defineProps<{ novelId: number }>()
 
 const toast = useToast()
 const novelStore = useNovelStore()
+const { guardAiProvider } = useAiProviderGuard()
 
 const novel = computed(() => novelStore.currentNovel)
 
@@ -47,6 +48,7 @@ watch(() => novel.value?.worldview_id, (id) => {
 })
 
 async function handleGenerateWorldview() {
+  if (!await guardAiProvider('LLM')) return
   if (!novel.value || generatingWorldview.value) return
   generatingWorldview.value = true
   try {

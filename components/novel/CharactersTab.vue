@@ -11,6 +11,7 @@ const { url: lightboxUrl, openLightbox } = useImageLightbox()
 const { editImage } = useImageEditApi()
 
 const characterApi = useCharacterApi()
+const { guardAiProvider } = useAiProviderGuard()
 
 const generatingCharacters = ref(false)
 const batchGeneratingCharImages = ref(false)
@@ -59,6 +60,7 @@ function getRoleLabel(role: string): string {
 }
 
 async function handleAICharacters() {
+  if (!await guardAiProvider('LLM')) return
   generatingCharacters.value = true
   try {
     const res = await characterApi.aiBatchGenerate(props.novelId)
@@ -79,6 +81,7 @@ async function handleAICharacters() {
 }
 
 async function handleBatchCharacterImages(force = false) {
+  if (!await guardAiProvider('IMAGE')) return
   batchGeneratingCharImages.value = true
   try {
     const res = await characterApi.batchGenerateImages(props.novelId, undefined, force)

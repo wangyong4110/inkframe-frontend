@@ -9,6 +9,7 @@ const router = useRouter()
 const toast = useToast()
 const itemApi = useItemApi()
 const novelStore = useNovelStore()
+const { guardAiProvider } = useAiProviderGuard()
 
 const itemId = parseInt(route.params.id as string)
 if (isNaN(itemId)) {
@@ -198,6 +199,7 @@ async function handleSave() {
 }
 
 async function generateImage() {
+  if (!await guardAiProvider('IMAGE')) return
   // Save first so the backend has the latest visual_prompt
   await handleSave()
   generatingImage.value = true

@@ -14,6 +14,7 @@ const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
+const { guardAiProvider } = useAiProviderGuard()
 const { confirm } = useConfirm()
 const videoApi = useVideoApi()
 
@@ -320,6 +321,7 @@ async function handleToggleMode(newMode: string) {
 const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
 
 async function handleGenerateStoryboard(userPrompt?: string) {
+  if (!await guardAiProvider('LLM')) return
   const novel = novelStore.currentNovel
   const effectiveMaxTokens = advMaxTokens.value || novel?.max_tokens || undefined
   const effectiveTemperature = advTemperature.value || novel?.temperature || undefined
@@ -342,6 +344,7 @@ function handleReviewStoryboard() {
 }
 
 async function handleGenerateShot(shot: StoryboardShot) {
+  if (!await guardAiProvider('VIDEO')) return
   try {
     const res = await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
     const taskId = res?.task_id
@@ -383,6 +386,7 @@ async function handleStopShot(shot: StoryboardShot) {
 }
 
 async function handleGenerateAll() {
+  if (!await guardAiProvider('VIDEO')) return
   const pending = shots.value.filter(s => s.status === 'pending' || s.status === 'failed')
   if (pending.length === 0) { toast.error('没有待生成的镜头'); return }
   batchGenerating.value = true
@@ -441,6 +445,7 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
 }
 
 async function handleGenerateImages() {
+  if (!await guardAiProvider('IMAGE')) return
   if (generatingStoryboard.value) {
     toast.error('分镜脚本正在生成中，请等待完成后再生成图片')
     return
@@ -469,6 +474,7 @@ async function handleGenerateImages() {
 }
 
 async function handleGenerateClips() {
+  if (!await guardAiProvider('VIDEO')) return
   if (generatingStoryboard.value) {
     toast.error('分镜脚本正在生成中，请等待完成后再生成视频')
     return

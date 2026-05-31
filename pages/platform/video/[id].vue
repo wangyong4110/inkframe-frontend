@@ -20,7 +20,7 @@ const postingComment = ref(false)
 const liking = ref(false)
 
 useHead(() => ({
-  title: video.value ? `${video.value.title} - InkFrame 视频广场` : 'InkFrame 视频广场',
+  title: video.value ? `${video.value.title} - 简影 视频广场` : '简影 视频广场',
   meta: [
     { name: 'description', content: video.value?.title ?? '' },
     { property: 'og:title', content: video.value?.title ?? '' },

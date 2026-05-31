@@ -13,7 +13,7 @@ function headingId(text: string) {
 const headings = computed<Heading[]>(() => {
   if (!rawMd.value) return []
   return rawMd.value.split('\n').flatMap(line => {
-    const m = line.match(/^(#{1,3})\s+(.+)/)
+    const m = line.match(/^(#{1,2})\s+(.+)/)   // 只取 h1/h2，不展开 h3
     if (!m) return []
     return [{ level: m[1].length, text: m[2].replace(/`/g, ''), id: headingId(m[2]) }]
   })

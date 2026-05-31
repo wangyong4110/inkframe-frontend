@@ -10,6 +10,7 @@ const router = useRouter()
 const toast = useToast()
 const api = useSceneAnchorApi()
 const novelApi = useNovelApi()
+const { guardAiProvider } = useAiProviderGuard()
 
 const anchorId = parseInt(route.params.id as string)
 if (isNaN(anchorId)) {
@@ -121,6 +122,7 @@ async function handleSave() {
 }
 
 async function handleGenerateRefImage() {
+  if (!await guardAiProvider('IMAGE')) return
   generatingRefImage.value = true
   try {
     const updated = await api.generateRefImage(anchorId)

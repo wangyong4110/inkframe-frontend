@@ -13,7 +13,8 @@ onMounted(() => {
 
 const navItems = [
   { label: '首页', to: '/' },
-  { label: '改写小说', to: '/rewrite' },
+  { label: '创作台', to: '/novel' },
+  { label: '作品集', to: '/plaza' },
   { label: '素材库', to: '/assets' },
   { label: '模型', to: '/model' },
 ]
@@ -52,7 +53,7 @@ const breadcrumbs = computed(() => {
               </linearGradient>
             </defs>
           </svg>
-          <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
+          <span class="font-bold text-white text-lg tracking-tight">简影</span>
         </NuxtLink>
 
         <!-- Navigation -->
@@ -168,14 +169,17 @@ const breadcrumbs = computed(() => {
               </linearGradient>
             </defs>
           </svg>
-          <span>InkFrame © 2025</span>
+          <span>简影 © 2025</span>
         </div>
         <div class="flex items-center gap-6 text-sm text-gray-500">
           <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
-          <span class="hover:text-gray-300 cursor-default transition-colors">使用条款</span>
-          <span class="hover:text-gray-300 cursor-default transition-colors">隐私政策</span>
+          <NuxtLink to="/terms" class="hover:text-gray-300 transition-colors">使用条款</NuxtLink>
+          <NuxtLink to="/privacy" class="hover:text-gray-300 transition-colors">隐私政策</NuxtLink>
         </div>
       </div>
     </footer>
   </div>
+
+  <!-- AI Provider Guard Modal -->
+  <AiProviderGuardModal />
 </template>

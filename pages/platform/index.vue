@@ -4,10 +4,10 @@ import type { Video } from '~/types'
 definePageMeta({ auth: false })
 
 useHead({
-  title: 'InkFrame 视频广场',
+  title: '简影 视频广场',
   meta: [
-    { name: 'description', content: 'InkFrame AI 小说视频广场 — 发现精彩视频作品' },
-    { property: 'og:title', content: 'InkFrame 视频广场' },
+    { name: 'description', content: '简影 AI 小说视频广场 — 发现精彩视频作品' },
+    { property: 'og:title', content: '简影 视频广场' },
   ],
 })
 

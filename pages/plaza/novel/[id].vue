@@ -45,7 +45,7 @@ let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
 const contentScrollEl = ref<HTMLElement | null>(null)
 
 useHead(() => ({
-  title: novel.value ? `${novel.value.title} - InkFrame 小说广场` : 'InkFrame 小说广场',
+  title: novel.value ? `${novel.value.title} - 简影 小说广场` : '简影 小说广场',
   meta: [
     { name: 'description', content: novel.value?.description ?? '' },
     { property: 'og:title', content: novel.value?.title ?? '' },

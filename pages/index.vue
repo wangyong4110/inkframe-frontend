@@ -4,7 +4,7 @@ import type { Novel, Video } from '~/types'
 
 definePageMeta({ layout: false })
 
-useHead({ title: 'InkFrame - AI 小说转视频平台' })
+useHead({ title: '简影 - AI 小说转视频平台' })
 
 const authStore = useAuthStore()
 const { getNovels } = useNovelApi()
@@ -162,7 +162,7 @@ const stats = [
               </linearGradient>
             </defs>
           </svg>
-          <span class="font-bold text-white text-lg tracking-tight">InkFrame</span>
+          <span class="font-bold text-white text-lg tracking-tight">简影</span>
         </NuxtLink>
 
         <!-- Auth -->
@@ -217,7 +217,7 @@ const stats = [
 
         <!-- Subtext -->
         <p class="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-          InkFrame 将 AI 创作、专业分镜、电影级视频生成融为一体。
+          简影 将 AI 创作、专业分镜、电影级视频生成融为一体。
           从一个想法出发，全自动生成完整小说，一键转化为视觉盛宴。
         </p>
 
@@ -534,12 +534,12 @@ const stats = [
               </linearGradient>
             </defs>
           </svg>
-          <span>InkFrame &copy; 2025</span>
+          <span>简影 &copy; 2025</span>
         </div>
         <div class="flex gap-6 text-sm text-gray-500">
           <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
-          <span class="hover:text-gray-300 cursor-default transition-colors">使用条款</span>
-          <span class="hover:text-gray-300 cursor-default transition-colors">隐私政策</span>
+          <NuxtLink to="/terms" class="hover:text-gray-300 transition-colors">使用条款</NuxtLink>
+          <NuxtLink to="/privacy" class="hover:text-gray-300 transition-colors">隐私政策</NuxtLink>
         </div>
       </div>
     </footer>

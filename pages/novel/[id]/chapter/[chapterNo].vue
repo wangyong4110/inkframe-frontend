@@ -15,6 +15,7 @@ const characterStore = useCharacterStore()
 const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
+const { guardAiProvider } = useAiProviderGuard()
 
 const saving = ref(false)
 const generating = ref(false)
@@ -363,6 +364,7 @@ async function handleSave() {
 
 // ── AI 生成 & 质量检查 ─────────────────────────────────────────────────────────
 async function handleGenerate() {
+  if (!await guardAiProvider('LLM')) return
   if (!chapter.value) return
   const currentChapterNo = chapter.value.chapter_no
   generating.value = true
@@ -549,6 +551,7 @@ async function handleSaveWrite() {
 }
 
 async function handleGenerateOutline() {
+  if (!await guardAiProvider('LLM')) return
   if (!chapter.value) return
   generatingOutline.value = true
   try {
@@ -575,6 +578,7 @@ async function handleGenerateOutline() {
 const generatingNovelOutline = ref(false)
 
 async function handleGenerateNovelOutline() {
+  if (!await guardAiProvider('LLM')) return
   generatingNovelOutline.value = true
   try {
     const overrides = {
@@ -749,6 +753,7 @@ async function switchToScript() {
 }
 
 async function handleGenerateScript() {
+  if (!await guardAiProvider('LLM')) return
   if (!chapter.value) return
   const prompt = scriptUserPrompt.value || undefined
   const pacing = scriptPacing.value !== 'normal' ? scriptPacing.value : undefined

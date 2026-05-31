@@ -6,6 +6,7 @@ const { editImage } = useImageEditApi()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { guardAiProvider } = useAiProviderGuard()
 
 const activeTab = ref('overview')
 const showGenerateModal = ref(false)
@@ -168,6 +169,7 @@ function entityTypeLabel(type: string) {
 }
 
 async function generateWorldview() {
+  if (!await guardAiProvider('LLM')) return
   generating.value = true
   try {
     const { generateWorldview: apiGenerate } = useWorldviewApi()

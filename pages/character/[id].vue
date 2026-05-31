@@ -6,6 +6,7 @@ const router = useRouter()
 const toast = useToast()
 const { url: lightboxUrl } = useImageLightbox()
 const { editImage } = useImageEditApi()
+const { guardAiProvider } = useAiProviderGuard()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -115,6 +116,7 @@ async function handleGenerateThreeView() {
     toast.error('请先填写角色描述或视觉提示词，再生成三视图')
     return
   }
+  if (!await guardAiProvider('IMAGE')) return
   try { await autoSaveIfDirty() } catch (e: any) {
     toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
     return
@@ -165,6 +167,7 @@ async function handleGenerateFaceCloseup() {
     toast.error('请先填写角色描述或视觉提示词，再生成面部特写')
     return
   }
+  if (!await guardAiProvider('IMAGE')) return
   try { await autoSaveIfDirty() } catch (e: any) {
     toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
     return

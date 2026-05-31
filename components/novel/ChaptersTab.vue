@@ -16,6 +16,7 @@ const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
 
 const { publishChapter, unpublishChapter } = useChapterApi()
+const { guardAiProvider } = useAiProviderGuard()
 
 const chapters = computed(() => chapterStore.chapters)
 const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
@@ -47,6 +48,7 @@ function goToChapter(chapter: Chapter) {
 }
 
 async function handleGenerateOutline() {
+  if (!await guardAiProvider('LLM')) return
   if (!novelStore.currentNovel) return
   generatingOutline.value = true
   try {

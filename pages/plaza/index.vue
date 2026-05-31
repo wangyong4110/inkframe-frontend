@@ -4,10 +4,10 @@ import type { Novel, Video } from '~/types'
 definePageMeta({ auth: false })
 
 useHead({
-  title: '作品广场 - InkFrame',
+  title: '作品广场 - 简影',
   meta: [
     { name: 'description', content: '探索 AI 生成的精彩视频内容' },
-    { property: 'og:title', content: '作品广场 - InkFrame' },
+    { property: 'og:title', content: '作品广场 - 简影' },
   ],
 })
 
@@ -270,7 +270,7 @@ const genreLabels: Record<string, string> = {
 </script>
 
 <template>
-  <div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>

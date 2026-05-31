@@ -6,6 +6,7 @@ const router = useRouter()
 const { request } = useApi()
 
 const activeTab = ref<'email' | 'phone'>('email')
+const agreed = ref(false)
 
 // 邮箱注册
 const emailForm = reactive({
@@ -18,6 +19,7 @@ const emailLoading = ref(false)
 const emailError = ref('')
 
 async function registerWithEmail() {
+  if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
   emailError.value = ''
   emailLoading.value = true
   try {
@@ -64,6 +66,7 @@ async function sendPhoneCode() {
 }
 
 async function registerWithPhone() {
+  if (!agreed.value) { phoneError.value = '请先阅读并同意使用条款和隐私政策'; return }
   phoneError.value = ''
   phoneLoading.value = true
   try {
@@ -103,7 +106,7 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               </linearGradient>
             </defs>
           </svg>
-          <span class="text-2xl font-bold text-white tracking-tight">InkFrame</span>
+          <span class="text-2xl font-bold text-white tracking-tight">简影</span>
         </NuxtLink>
         <h2 class="mt-4 text-xl font-semibold text-gray-300">创建账号</h2>
       </div>
@@ -136,8 +139,18 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               :placeholder="field.placeholder" :minlength="field.model === 'password' ? 8 : undefined"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
+          <label class="flex items-start gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="agreed"
+              class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 accent-violet-500 cursor-pointer flex-shrink-0" />
+            <span class="text-xs text-gray-500 leading-relaxed">
+              我已阅读并同意
+              <NuxtLink to="/terms" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《用户服务协议》</NuxtLink>
+              和
+              <NuxtLink to="/privacy" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
+            </span>
+          </label>
           <p v-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
-          <button type="submit" :disabled="emailLoading"
+          <button type="submit" :disabled="emailLoading || !agreed"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ emailLoading ? '注册中...' : '注 册' }}
           </button>
@@ -166,8 +179,18 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               </button>
             </div>
           </div>
+          <label class="flex items-start gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="agreed"
+              class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 accent-violet-500 cursor-pointer flex-shrink-0" />
+            <span class="text-xs text-gray-500 leading-relaxed">
+              我已阅读并同意
+              <NuxtLink to="/terms" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《用户服务协议》</NuxtLink>
+              和
+              <NuxtLink to="/privacy" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
+            </span>
+          </label>
           <p v-if="phoneError" class="text-red-400 text-xs">{{ phoneError }}</p>
-          <button type="submit" :disabled="phoneLoading"
+          <button type="submit" :disabled="phoneLoading || !agreed"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ phoneLoading ? '注册中...' : '注 册' }}
           </button>

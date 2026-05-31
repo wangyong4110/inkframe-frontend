@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CrawlProgress } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
+import type { Novel } from '~/types'
 
 const { uploadImage, uploading: coverUploading } = useImageUpload()
 const { generateCoverImage } = useNovelApi()
@@ -28,6 +29,8 @@ const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
 const { request } = useApi()
+const { getNovels } = useNovelApi()
+const { createProject, startAnalysis } = useRewriteApi()
 
 // ── LLM 配置前置检查 ──────────────────────────────────────────────────────────
 const hasLLMProvider = ref<boolean | null>(null) // null = loading
@@ -54,7 +57,7 @@ function selectAIGenerate() {
 }
 
 // ── 步骤状态机 ────────────────────────────────────────────────────────────────
-type Step = 'choose' | 'ai-form' | 'import-choose' | 'import-file' | 'import-crawl'
+type Step = 'choose' | 'ai-form' | 'import-choose' | 'import-file' | 'import-crawl' | 'rewrite-form'
 const step = ref<Step>('choose')
 
 // ── 颜色/图标选项 ─────────────────────────────────────────────────────────────
@@ -427,14 +430,193 @@ const crawlPercent = computed(() => {
   return Math.round((s.done / s.total) * 100)
 })
 
+// ── Screen: rewrite-form ──────────────────────────────────────────────────────
+const rwStep = ref<1 | 2>(1)
+
+type RwSourceMode = 'search' | 'upload'
+const rwSourceMode = ref<RwSourceMode>('search')
+
+const rwNovelSearch = ref('')
+const rwNovelResults = ref<Novel[]>([])
+const rwSelectedNovel = ref<Novel | null>(null)
+
+const rwFileInputRef = ref<HTMLInputElement | null>(null)
+const rwSelectedFile = ref<File | null>(null)
+const rwFileUploading = ref(false)
+const rwFileProgress = ref(0)
+const rwFileError = ref('')
+const rwUploadedNovelId = ref<number | null>(null)
+
+const rwForm = ref({ name: '', level: 3 })
+const rwSubmitting = ref(false)
+const rwError = ref('')
+
+const rwLevels = [
+  {
+    emoji: '✏️', name: '字词润色', tag: '⚠️ 衍生作品·需授权',
+    desc: '仅做词句级同义替换，情节、对话、结构完全保留。法律性质为衍生作品，需取得原著版权方书面授权。',
+    activeClass: 'border-sky-500 bg-sky-500/10', tagClass: 'bg-red-500/20 text-red-300',
+    barColor: 'bg-sky-400', retention: 5, retentionText: '90-95%', needsAuth: true,
+  },
+  {
+    emoji: '✍️', name: '文学精炼', tag: '⚠️ 衍生作品·需授权',
+    desc: '保留 80-90% 情节结构，用全新文学语言重新表达。仍属衍生作品范畴，商业使用前请确认版权授权。',
+    activeClass: 'border-blue-500 bg-blue-500/10', tagClass: 'bg-red-500/20 text-red-300',
+    barColor: 'bg-blue-400', retention: 4, retentionText: '80-90%', needsAuth: true,
+  },
+  {
+    emoji: '🔀', name: '题材借鉴', tag: '🔶 灰色地带',
+    desc: '保留故事核与情感逻辑，全面调整情节细节、场景顺序和对话语气，属于版权灰色地带。',
+    activeClass: 'border-teal-500 bg-teal-500/10', tagClass: 'bg-amber-500/20 text-amber-300',
+    barColor: 'bg-teal-400', retention: 3, retentionText: '60-75%', needsAuth: false,
+  },
+  {
+    emoji: '🔄', name: '精神传承', tag: '✅ 独立作品（推荐）',
+    desc: '仅保留母题与情感内核，彻底重构世界观、角色关系与情节形式。法律上构成独立作品，推荐用于商业出版。',
+    activeClass: 'border-violet-500 bg-violet-500/10', tagClass: 'bg-emerald-500/20 text-emerald-300',
+    barColor: 'bg-violet-400', retention: 2, retentionText: '30-50%', needsAuth: false,
+  },
+  {
+    emoji: '🔥', name: '深度蒸馏', tag: '✅ 独立作品',
+    desc: '只保留主题共鸣，全面重创世界观、人物与叙事形式。词汇相似度 < 18%，通过版权独创性检测。',
+    activeClass: 'border-amber-500 bg-amber-500/10', tagClass: 'bg-emerald-500/20 text-emerald-300',
+    barColor: 'bg-amber-400', retention: 1, retentionText: '5-20%', needsAuth: false,
+  },
+]
+
+async function rwSearchNovels() {
+  if (!rwNovelSearch.value.trim()) { rwNovelResults.value = []; return }
+  try {
+    const res = await getNovels({ page: 1, page_size: 100 })
+    const keyword = rwNovelSearch.value.trim().toLowerCase()
+    rwNovelResults.value = (res.data?.items || []).filter((n: Novel) =>
+      n.title.toLowerCase().includes(keyword)
+    )
+  } catch {}
+}
+
+function rwSelectNovel(novel: Novel) {
+  rwSelectedNovel.value = novel
+  if (!rwForm.value.name) rwForm.value.name = `「${novel.title}」改写版`
+}
+
+function rwHandleFileSelect(e: Event) {
+  const t = e.target as HTMLInputElement
+  if (t.files?.[0]) { rwSelectedFile.value = t.files[0]; rwUploadedNovelId.value = null; rwFileError.value = ''; rwFileProgress.value = 0; rwUploadFile() }
+}
+
+function rwHandleFileDrop(e: DragEvent) {
+  e.preventDefault()
+  if (e.dataTransfer?.files?.[0]) { rwSelectedFile.value = e.dataTransfer.files[0]; rwUploadedNovelId.value = null; rwFileError.value = ''; rwFileProgress.value = 0; rwUploadFile() }
+}
+
+async function rwUploadFile() {
+  if (!rwSelectedFile.value) return
+  rwFileError.value = ''; rwFileUploading.value = true; rwFileProgress.value = 5; rwUploadedNovelId.value = null
+  try {
+    let taskId: string
+    if (rwSelectedFile.value.size >= CHUNK_THRESHOLD) {
+      taskId = await rwChunkedUpload(rwSelectedFile.value)
+    } else {
+      const formData = new FormData()
+      formData.append('file', rwSelectedFile.value)
+      rwFileProgress.value = 20
+      const response = await fetch(`${apiBase}/import/novel/file`, { method: 'POST', headers: getAuthHeader(), body: formData })
+      const result = await response.json()
+      if (result.code !== 0) throw new Error(result.error || result.message || '导入失败')
+      taskId = result.data?.task_id
+      if (!taskId) throw new Error('未获取到导入任务ID')
+    }
+    rwFileProgress.value = 50
+    await rwPollUploadTask(taskId)
+  } catch (e: any) {
+    rwFileError.value = e.message || '上传失败'; rwFileUploading.value = false
+  }
+}
+
+async function rwChunkedUpload(file: File): Promise<string> {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+  const initData = await (await fetch(`${apiBase}/import/novel/file/init`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ filename: file.name, total_chunks: totalChunks }),
+  })).json()
+  if (initData.code !== 0) throw new Error(initData.error || '初始化分片上传失败')
+  const uploadId: string = initData.data?.upload_id
+  if (!uploadId) throw new Error('未获取到 upload_id')
+  for (let i = 1; i <= totalChunks; i++) {
+    const fd = new FormData()
+    fd.append('upload_id', uploadId); fd.append('chunk_no', String(i))
+    fd.append('chunk', file.slice((i - 1) * CHUNK_SIZE, i * CHUNK_SIZE), file.name)
+    const rd = await (await fetch(`${apiBase}/import/novel/file/chunk`, { method: 'PUT', headers: getAuthHeader(), body: fd })).json()
+    if (rd.code !== 0) throw new Error(rd.error || `片段 ${i} 上传失败`)
+    rwFileProgress.value = 5 + Math.round((i / totalChunks) * 40)
+  }
+  const completeData = await (await fetch(`${apiBase}/import/novel/file/complete`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ upload_id: uploadId }),
+  })).json()
+  if (completeData.code !== 0) throw new Error(completeData.error || '组装分片失败')
+  const taskId: string = completeData.data?.task_id
+  if (!taskId) throw new Error('未获取到 task_id')
+  return taskId
+}
+
+async function rwPollUploadTask(taskId: string) {
+  const maxWait = 5 * 60 * 1000; const interval = 1500; const start = Date.now()
+  const tick = async () => {
+    if (Date.now() - start > maxWait) { rwFileError.value = '导入超时'; rwFileUploading.value = false; return }
+    try {
+      const data = await (await fetch(`${apiBase}/tasks/${taskId}`, { headers: getAuthHeader() })).json()
+      const task = data.data; if (!task) { setTimeout(tick, interval); return }
+      const td = task.data ?? {}
+      if (task.status === 'completed') {
+        rwFileProgress.value = 100; rwFileUploading.value = false
+        if (td.novel_id) {
+          rwUploadedNovelId.value = td.novel_id
+          if (!rwForm.value.name) rwForm.value.name = `「${rwSelectedFile.value?.name.replace(/\.(txt|epub|docx|md)$/i, '') ?? '小说'}」改写版`
+        } else { rwFileError.value = '导入完成但未返回小说ID' }
+      } else if (task.status === 'failed') {
+        rwFileError.value = task.error || td.message || '导入失败'; rwFileUploading.value = false
+      } else { rwFileProgress.value = Math.min(90, rwFileProgress.value + 2); setTimeout(tick, interval) }
+    } catch { setTimeout(tick, interval) }
+  }
+  setTimeout(tick, interval)
+}
+
+const rwSourceNovelId = computed(() =>
+  rwSourceMode.value === 'search' ? (rwSelectedNovel.value?.id ?? null) : rwUploadedNovelId.value
+)
+const rwCanSubmit = computed(() =>
+  !!rwSourceNovelId.value && rwForm.value.name.trim().length > 0 && !rwSubmitting.value && !rwFileUploading.value
+)
+
+async function rwSubmit() {
+  if (!rwCanSubmit.value || !rwSourceNovelId.value) return
+  rwSubmitting.value = true; rwError.value = ''
+  try {
+    const res = await createProject({ novel_id: rwSourceNovelId.value, name: rwForm.value.name, level: rwForm.value.level })
+    const project = res.data
+    await startAnalysis(project.id)
+    router.push(`/rewrite/${project.id}`)
+  } catch (e: any) {
+    rwError.value = e.message || '创建失败'
+  } finally {
+    rwSubmitting.value = false
+  }
+}
+
 </script>
 
 <template>
   <div class="max-w-2xl mx-auto py-8 px-4">
     <!-- 标题 -->
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">创建小说项目</h1>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">选择创建方式开始你的创作</p>
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+        {{ step === 'rewrite-form' ? 'AI 改写' : '创建小说项目' }}
+      </h1>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        {{ step === 'rewrite-form' ? '基于已有小说进行 AI 改写，规避版权风险，保留故事精髓' : '选择创建方式开始你的创作' }}
+      </p>
     </div>
 
     <!-- 未配置 LLM 拦截模态框 -->
@@ -481,7 +663,7 @@ const crawlPercent = computed(() => {
 
     <!-- ═══ Screen 1: choose ════════════════════════════════════════════════════ -->
     <template v-if="step === 'choose'">
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <!-- AI 生成 -->
         <button
           type="button"
@@ -498,7 +680,7 @@ const crawlPercent = computed(() => {
           <span class="mt-4 text-sm font-medium text-purple-600 dark:text-purple-400">选择 AI 生成 →</span>
         </button>
 
-        <!-- 通过导入创建 -->
+        <!-- 导入小说 -->
         <button
           type="button"
           class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-all shadow-sm text-left group"
@@ -509,9 +691,25 @@ const crawlPercent = computed(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
             </svg>
           </div>
-          <h3 class="font-semibold text-gray-900 dark:text-white mb-1">通过导入创建</h3>
+          <h3 class="font-semibold text-gray-900 dark:text-white mb-1">导入小说</h3>
           <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">上传本地文件或爬取小说网站，支持 TXT / EPUB / 爬虫</p>
           <span class="mt-4 text-sm font-medium text-blue-600 dark:text-blue-400">选择导入 →</span>
+        </button>
+
+        <!-- AI 改写 -->
+        <button
+          type="button"
+          class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-sm text-left group"
+          @click="step = 'rewrite-form'; rwStep = 1"
+        >
+          <div class="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center mb-4 group-hover:bg-amber-200 dark:group-hover:bg-amber-800/40 transition-colors">
+            <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold text-gray-900 dark:text-white mb-1">AI 改写</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">基于已有小说进行 AI 改写，规避版权风险，保留故事精髓</p>
+          <span class="mt-4 text-sm font-medium text-amber-600 dark:text-amber-400">选择改写 →</span>
         </button>
       </div>
       <div class="mt-4 text-center">
@@ -879,6 +1077,236 @@ const crawlPercent = computed(() => {
           >{{ crawlLoading ? '启动中...' : crawlStatus ? '爬取中...' : '开始爬取' }}</button>
         </div>
       </div>
+    </template>
+
+    <!-- ═══ Screen: rewrite-form ════════════════════════════════════════════════ -->
+    <template v-else-if="step === 'rewrite-form'">
+      <!-- 步骤指示器 -->
+      <div class="flex items-center gap-3 mb-6">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors"
+            :class="rwStep >= 1 ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'">1</div>
+          <span class="text-sm font-medium" :class="rwStep === 1 ? 'text-amber-400' : 'text-gray-400'">选择原始小说</span>
+        </div>
+        <div class="flex-1 h-px" :class="rwStep >= 2 ? 'bg-amber-500/50' : 'bg-gray-700'" />
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors"
+            :class="rwStep >= 2 ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'">2</div>
+          <span class="text-sm font-medium" :class="rwStep === 2 ? 'text-amber-400' : 'text-gray-400'">改写配置</span>
+        </div>
+      </div>
+
+      <!-- ─── Step 1: 选择原始小说 ──────────────────────────────────────────── -->
+      <template v-if="rwStep === 1">
+        <div class="card p-6 space-y-4">
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 py-2 text-sm font-medium rounded-lg border transition-colors"
+              :class="rwSourceMode === 'search' ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-gray-300 dark:border-gray-600 text-gray-500 hover:border-gray-400'"
+              @click="rwSourceMode = 'search'"
+            >从系统小说选择</button>
+            <button
+              type="button"
+              class="flex-1 py-2 text-sm font-medium rounded-lg border transition-colors"
+              :class="rwSourceMode === 'upload' ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-gray-300 dark:border-gray-600 text-gray-500 hover:border-gray-400'"
+              @click="rwSourceMode = 'upload'"
+            >上传本地文件</button>
+          </div>
+
+          <!-- 搜索模式 -->
+          <template v-if="rwSourceMode === 'search'">
+            <input
+              v-model="rwNovelSearch"
+              placeholder="搜索小说名称..."
+              class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+              @input="rwSearchNovels"
+            />
+            <!-- 搜索结果列表 -->
+            <div v-if="rwNovelResults.length > 0" class="space-y-1 max-h-60 overflow-y-auto">
+              <div
+                v-for="novel in rwNovelResults"
+                :key="novel.id"
+                class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                :class="rwSelectedNovel?.id === novel.id ? 'bg-amber-500/10 border border-amber-500/40' : 'hover:bg-gray-100 dark:hover:bg-gray-700'"
+                @click="rwSelectNovel(novel)"
+              >
+                <div class="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded flex-shrink-0 flex items-center justify-center text-sm">📖</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ novel.title }}</p>
+                  <p class="text-xs text-gray-500">{{ novel.chapter_count || 0 }} 章</p>
+                </div>
+                <svg v-if="rwSelectedNovel?.id === novel.id" class="w-4 h-4 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+            </div>
+            <!-- 未找到结果 -->
+            <div v-else-if="rwNovelSearch.trim() && !rwSelectedNovel" class="rounded-lg border border-dashed border-gray-700 p-4 text-center space-y-1">
+              <p class="text-sm text-gray-400">未找到「{{ rwNovelSearch }}」</p>
+              <p class="text-xs text-gray-600">该小说尚未导入系统，可切换为「上传本地文件」</p>
+              <button type="button" class="text-xs text-amber-400 hover:text-amber-300 transition-colors mt-1" @click="rwSourceMode = 'upload'">
+                切换到上传文件 →
+              </button>
+            </div>
+            <div v-if="rwSelectedNovel" class="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+              <svg class="w-4 h-4 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+              </svg>
+              <span class="text-sm text-amber-300">已选择：{{ rwSelectedNovel.title }}</span>
+              <button type="button" class="ml-auto text-xs text-gray-500 hover:text-gray-300" @click="rwSelectedNovel = null; rwNovelSearch = ''; rwNovelResults = []">更换</button>
+            </div>
+          </template>
+
+          <!-- 上传模式 -->
+          <template v-else>
+            <div v-if="rwUploadedNovelId" class="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+              <svg class="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-emerald-300">上传成功</p>
+                <p class="text-xs text-emerald-400/70 truncate">{{ rwSelectedFile?.name }}</p>
+              </div>
+              <button type="button" class="text-xs text-gray-500 hover:text-gray-300" @click="rwSelectedFile = null; rwUploadedNovelId = null; rwFileProgress = 0">重新选择</button>
+            </div>
+            <div v-else>
+              <div
+                class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
+                :class="rwSelectedFile ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/10' : 'border-gray-300 dark:border-gray-600 hover:border-amber-400'"
+                @click="rwFileInputRef?.click()"
+                @drop="rwHandleFileDrop"
+                @dragover.prevent
+              >
+                <input ref="rwFileInputRef" type="file" accept=".txt,.md,.epub,.docx" class="hidden" @change="rwHandleFileSelect" />
+                <div v-if="rwSelectedFile" class="space-y-1">
+                  <p class="font-medium text-gray-900 dark:text-white">{{ rwSelectedFile.name }}</p>
+                  <p class="text-xs text-gray-500">{{ (rwSelectedFile.size / 1024).toFixed(1) }} KB · 点击更换</p>
+                </div>
+                <div v-else class="space-y-2 text-gray-400">
+                  <svg class="w-10 h-10 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                  </svg>
+                  <p class="text-sm">拖拽文件到此处，或点击选择</p>
+                  <p class="text-xs">支持 TXT / MD / EPUB / DOCX，最大 50MB</p>
+                </div>
+              </div>
+              <div v-if="rwFileUploading" class="mt-3 space-y-1.5">
+                <div class="flex justify-between text-xs text-gray-500">
+                  <span>{{ rwFileProgress < 50 ? '上传中...' : '解析导入中...' }}</span>
+                  <span>{{ rwFileProgress }}%</span>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                  <div class="bg-amber-500 h-1.5 rounded-full transition-all" :style="{ width: `${rwFileProgress}%` }" />
+                </div>
+              </div>
+              <p v-if="rwFileError" class="mt-2 text-xs text-red-500">{{ rwFileError }}</p>
+            </div>
+          </template>
+        </div>
+
+        <div class="flex items-center justify-between mt-4">
+          <button type="button" class="text-sm text-gray-500 hover:text-gray-300 transition-colors" @click="step = 'choose'">← 返回</button>
+          <div class="flex items-center gap-3">
+            <p v-if="rwSourceMode === 'search' && rwNovelSearch.trim() && !rwSelectedNovel"
+              class="text-xs text-amber-500/80">请从上方列表中点击选择小说</p>
+            <button
+              type="button"
+              class="btn-primary"
+              :class="{ 'opacity-50 cursor-not-allowed': !rwSourceNovelId }"
+              :disabled="!rwSourceNovelId"
+              @click="rwStep = 2"
+            >下一步 →</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- ─── Step 2: 改写配置 ──────────────────────────────────────────────── -->
+      <template v-else-if="rwStep === 2">
+        <div class="space-y-4">
+          <!-- 选中来源摘要 -->
+          <div class="flex items-center gap-3 p-3 rounded-xl bg-gray-800/60 border border-gray-700">
+            <span class="text-base">📖</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-gray-500 mb-0.5">原始小说</p>
+              <p class="text-sm font-medium text-gray-200 truncate">
+                {{ rwSelectedNovel?.title ?? rwSelectedFile?.name ?? '已上传文件' }}
+              </p>
+            </div>
+            <button type="button" class="text-xs text-amber-400 hover:text-amber-300 shrink-0" @click="rwStep = 1">更换</button>
+          </div>
+
+          <!-- 项目名称 -->
+          <div class="card p-5 space-y-3">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">项目名称</h2>
+            <input
+              v-model="rwForm.name"
+              placeholder="例如：「剑道传说」改写版"
+              class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+            />
+          </div>
+
+          <!-- 改写级别 -->
+          <div class="card p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">改写级别</h2>
+              <span class="text-xs text-gray-500">依据版权法「实质性相似」标准</span>
+            </div>
+            <div class="space-y-2">
+              <div
+                v-for="(level, idx) in rwLevels"
+                :key="idx"
+                class="p-4 rounded-xl border-2 cursor-pointer transition-all"
+                :class="rwForm.level === idx + 1 ? level.activeClass : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'"
+                @click="rwForm.level = idx + 1"
+              >
+                <div class="flex items-center gap-3">
+                  <span class="text-xl shrink-0">{{ level.emoji }}</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ level.name }}</span>
+                      <span class="text-xs px-2 py-0.5 rounded-full" :class="level.tagClass">{{ level.tag }}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{{ level.desc }}</p>
+                    <div class="mt-1.5 flex items-center gap-1">
+                      <span class="text-xs text-gray-400">原著保留：</span>
+                      <div class="flex gap-0.5">
+                        <div v-for="i in 5" :key="i" class="w-3 h-1.5 rounded-sm" :class="i <= level.retention ? level.barColor : 'bg-gray-200 dark:bg-gray-600'" />
+                      </div>
+                      <span class="text-xs text-gray-400 ml-1">{{ level.retentionText }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="rwForm.level <= 2" class="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-300">
+              <span class="shrink-0 mt-0.5">⚠️</span>
+              <span>此级别改写成果法律性质为<strong>衍生作品</strong>，商业使用前请确保已取得原著版权方书面授权。</span>
+            </div>
+          </div>
+
+          <!-- 版权声明 -->
+          <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
+            <svg class="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <p class="text-xs text-amber-200/70 leading-relaxed">本功能仅供学习研究和创作练习使用。请确保您有权处理原始作品，或原作品已处于公共领域。AI 改写不能完全规避版权风险，最终结果仍需人工审核。</p>
+          </div>
+
+          <p v-if="rwError" class="text-red-500 text-sm">{{ rwError }}</p>
+
+          <div class="flex items-center justify-between pt-1">
+            <button type="button" class="text-sm text-gray-500 hover:text-gray-300 transition-colors" @click="rwStep = 1">← 上一步</button>
+            <button
+              type="button"
+              :disabled="!rwCanSubmit"
+              class="btn-primary"
+              :class="{ 'opacity-50 cursor-not-allowed': !rwCanSubmit }"
+              @click="rwSubmit"
+            >{{ rwSubmitting ? '创建中...' : '创建改写项目 →' }}</button>
+          </div>
+        </div>
+      </template>
     </template>
   </div>
 </template>

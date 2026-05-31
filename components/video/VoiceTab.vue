@@ -18,6 +18,7 @@ const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(
 const narrationVoice = computed(() => novelStore.currentNovel?.narration_voice ?? '')
 const { subtitleEnabled, subtitleConfig } = useSubtitleConfig()
 
+const { guardAiProvider } = useAiProviderGuard()
 const generatingVoice = ref<Record<number, boolean>>({})
 const shotAudioUrls = ref<Record<number, string>>({})
 const batchVoiceGenerating = ref(false)
@@ -41,6 +42,7 @@ watch(shots, (list) => {
 }, { immediate: true })
 
 async function handleGenerateVoice(shot: StoryboardShot) {
+  if (!await guardAiProvider('TTS')) return
   if (generatingVoice.value[shot.id]) return
   generatingVoice.value[shot.id] = true
   const api = useVideoApi()
@@ -99,6 +101,7 @@ async function handleGenerateVoice(shot: StoryboardShot) {
 }
 
 async function handleGenerateAllVoice() {
+  if (!await guardAiProvider('TTS')) return
   if (shots.value.length === 0) { toast.error('没有分镜，无法生成配音'); return }
   if (batchVoiceGenerating.value) { toast.info('配音批量任务进行中…'); return }
   const missing = findCharsWithoutVoice()
@@ -188,6 +191,7 @@ async function handleDeleteSegment(shot: StoryboardShot, seg: ShotVoiceSegment) 
 }
 
 async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSegment) {
+  if (!await guardAiProvider('TTS')) return
   generatingSegmentVoice.value[seg.id] = true
   try {
     const api = useVideoApi()

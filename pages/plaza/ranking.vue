@@ -4,8 +4,8 @@ import type { Novel } from '~/types'
 definePageMeta({ auth: false })
 
 useHead({
-  title: 'InkFrame 排行榜',
-  meta: [{ name: 'description', content: 'InkFrame 小说排行榜' }],
+  title: '简影 排行榜',
+  meta: [{ name: 'description', content: '简影 小说排行榜' }],
 })
 
 const novelApi = usePublicNovelApi()

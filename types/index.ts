@@ -759,7 +759,7 @@ export interface RewriteProject {
   tenant_id: number
   novel_id: number
   name: string
-  level: 1 | 2 | 3
+  level: 1 | 2 | 3 | 4 | 5
   status: 'pending' | 'analyzing' | 'bible_ready' | 'rewriting' | 'reviewing' | 'completed' | 'failed'
   progress: number
   total_chapters: number
@@ -786,11 +786,14 @@ export interface RewriteBible {
   project_id: number
   new_world_name: string
   naming_style: string
-  new_char_names: string // JSON string: {oldName: newName}
+  new_char_names: string       // JSON: {oldName: newName}
   plot_transform: string
   props_transform: string
   voice_strategy: string
   style_guide: string
+  imagery_transform: string    // JSON: {originalSymbol: newSymbol}
+  forbidden_phrases: string    // JSON: string[]
+  forbidden_dialogues: string  // JSON: {pattern, excerpt, rewrite_guide}[]
   forbidden_elems: string
   created_at: string
   updated_at: string
@@ -804,17 +807,43 @@ export interface ChapterRewriteTask {
   status: 'pending' | 'rewriting' | 'reviewing' | 'completed' | 'failed'
   original_content: string
   rewritten_content: string
+  attempt_content?: string
   similarity_score: number
   lexical_sim: number
   structural_sim: number
+  semantic_sim: number         // 语义泄漏率：原始实体残留比例（越低越好）
   passed: boolean
   retry_count: number
   error_msg: string
   quality_score: number
   deai_applied: boolean
-  consistency_issues: string   // JSON array string, e.g. '["原著角色名残留：「xxx」"]'
+  consistency_issues: string   // JSON array string
   created_at: string
   updated_at: string
+}
+
+export interface ChapterComplianceItem {
+  chapter_no: number
+  passed: boolean
+  lexical_sim: number
+  structural_sim: number
+  semantic_sim: number
+  quality_score: number
+  rating: 'green' | 'yellow' | 'red'
+}
+
+export interface ComplianceReport {
+  project_id: number
+  level: number
+  total_chapters: number
+  done_chapters: number
+  passed_chapters: number
+  avg_lexical_sim: number
+  avg_structural_sim: number
+  avg_semantic_sim: number
+  avg_quality_score: number
+  overall_rating: 'green' | 'yellow' | 'red'
+  chapters: ChapterComplianceItem[]
 }
 
 // UI types
