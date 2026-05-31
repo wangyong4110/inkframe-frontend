@@ -72,7 +72,6 @@ npm run typecheck # Type check via vue-tsc
 
 ```env
 NUXT_PUBLIC_API_BASE=http://localhost:8080/api/v1
-NUXT_PUBLIC_WS_BASE=ws://localhost:8080
 ```
 
 ---
@@ -361,8 +360,7 @@ scp -r .output/public/* user@server:/var/www/inkframe/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NUXT_PUBLIC_API_BASE` | `http://localhost:8080/api/v1` | Backend API base URL (embedded in client bundle) |
-| `NUXT_PUBLIC_WS_BASE` | `ws://localhost:8080` | WebSocket base URL |
+| `NUXT_PUBLIC_API_BASE` | `http://localhost:8080/api/v1` | Backend API base URL (embedded in client bundle at build time) |
 | `PORT` | `3000` | SSR server listen port |
 | `HOST` | `0.0.0.0` | SSR server listen address |
 | `NODE_ENV` | `production` | Runtime environment |

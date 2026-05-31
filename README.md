@@ -72,7 +72,6 @@ npm run typecheck # vue-tsc 类型检查
 
 ```env
 NUXT_PUBLIC_API_BASE=http://localhost:8080/api/v1
-NUXT_PUBLIC_WS_BASE=ws://localhost:8080
 ```
 
 ---
@@ -360,8 +359,7 @@ scp -r .output/public/* user@server:/var/www/inkframe/
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `NUXT_PUBLIC_API_BASE` | `http://localhost:8080/api/v1` | 后端 API 基础地址（客户端可见） |
-| `NUXT_PUBLIC_WS_BASE` | `ws://localhost:8080` | WebSocket 基础地址 |
+| `NUXT_PUBLIC_API_BASE` | `http://localhost:8080/api/v1` | 后端 API 基础地址（构建时内嵌到客户端） |
 | `PORT` | `3000` | SSR 服务监听端口 |
 | `HOST` | `0.0.0.0` | SSR 服务监听地址 |
 | `NODE_ENV` | `production` | 运行环境 |
