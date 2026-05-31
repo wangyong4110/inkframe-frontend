@@ -75,6 +75,356 @@ NUXT_PUBLIC_API_BASE=http://localhost:8080/api/v1
 NUXT_PUBLIC_WS_BASE=ws://localhost:8080
 ```
 
+---
+
+## 部署指南
+
+### 一、本地开发环境
+
+**前置要求：** Node.js 18+（LTS），npm 9+
+
+```bash
+git clone <repo-url>
+cd inkframe-frontend
+npm install
+
+# 创建 .env 文件
+cp .env.example .env
+# 编辑 .env：
+# NUXT_PUBLIC_API_BASE=http://localhost:8080/api/v1
+# NUXT_PUBLIC_WS_BASE=ws://localhost:8080
+
+npm run dev  # → http://localhost:3000
+```
+
+> 注意：需确保后端服务运行在 8080 端口，或修改 `NUXT_PUBLIC_API_BASE` 指向实际后端地址。
+
+---
+
+### 二、生产构建（SSR 模式）
+
+Nuxt 3 默认使用 SSR（Node.js 服务端渲染）模式：
+
+```bash
+npm run build
+# 输出目录：.output/
+
+# 启动生产服务器
+node .output/server/index.mjs
+# 或使用 PM2：
+npm install -g pm2
+pm2 start .output/server/index.mjs --name inkframe-frontend
+pm2 save
+pm2 startup
+```
+
+生产环境变量配置：
+
+```bash
+NUXT_PUBLIC_API_BASE=https://api.yourdomain.com/api/v1
+NUXT_PUBLIC_WS_BASE=wss://api.yourdomain.com
+PORT=3000
+HOST=0.0.0.0
+```
+
+---
+
+### 三、静态生成（纯前端模式，推荐）
+
+本项目为 SPA 风格应用，可生成纯静态文件：
+
+```bash
+npm run generate
+# 输出目录：.output/public/（包含 HTML/JS/CSS 静态文件）
+```
+
+将 `.output/public/` 目录部署到任意静态托管服务（Nginx、CDN、Vercel、Netlify 等）即可。
+
+---
+
+### 四、Docker 部署
+
+#### SSR 模式 Dockerfile
+
+```dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+COPY . .
+ARG NUXT_PUBLIC_API_BASE=http://localhost:8080/api/v1
+ARG NUXT_PUBLIC_WS_BASE=ws://localhost:8080
+RUN npm run build
+
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=builder /app/.output ./.output
+ENV PORT=3000
+ENV HOST=0.0.0.0
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]
+```
+
+构建与运行命令：
+
+```bash
+docker build \
+  --build-arg NUXT_PUBLIC_API_BASE=https://api.yourdomain.com/api/v1 \
+  --build-arg NUXT_PUBLIC_WS_BASE=wss://api.yourdomain.com \
+  -t inkframe-frontend:latest .
+
+docker run -d \
+  --name inkframe-frontend \
+  -p 3000:3000 \
+  inkframe-frontend:latest
+```
+
+---
+
+### 五、Docker Compose 前后端联合部署（完整栈）
+
+```yaml
+version: "3.9"
+
+services:
+  frontend:
+    build:
+      context: ./inkframe-frontend
+      args:
+        NUXT_PUBLIC_API_BASE: https://api.yourdomain.com/api/v1
+        NUXT_PUBLIC_WS_BASE: wss://api.yourdomain.com
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  backend:
+    build: ./inkframe-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./inkframe-backend/config.yaml:/app/config.yaml
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: inkframe
+      MYSQL_USER: inkframe
+      MYSQL_PASSWORD: inkframe123
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+```
+
+---
+
+### 六、Nginx 配置（前后端同域反代）
+
+`nginx.conf` — 将 `/api/v1/` 转发到后端，其余请求转发到前端：
+
+```nginx
+# HTTP → HTTPS 重定向
+server {
+    listen 80;
+    server_name yourdomain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    client_max_body_size 100m;
+
+    # API 请求转发到后端
+    location /api/ {
+        proxy_pass         http://backend:8080;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # 健康检查
+    location /health {
+        proxy_pass http://backend:8080;
+        access_log off;
+    }
+
+    # 前端页面
+    location / {
+        proxy_pass         http://frontend:3000;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+    }
+}
+```
+
+> 使用此方案时，将 `NUXT_PUBLIC_API_BASE` 设为 `https://yourdomain.com/api/v1`，前后端共用同一域名，可彻底避免 CORS 问题。
+
+---
+
+### 七、静态文件 + Nginx（纯前端模式）
+
+若以静态文件方式部署：
+
+```bash
+npm run generate
+# 将 .output/public/ 上传到服务器
+```
+
+对应的 Nginx 配置：
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+    root /var/www/inkframe;
+    index index.html;
+
+    # SPA 路由回退
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API 代理
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+上传静态文件：
+
+```bash
+scp -r .output/public/* user@server:/var/www/inkframe/
+```
+
+---
+
+### 八、环境变量说明
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `NUXT_PUBLIC_API_BASE` | `http://localhost:8080/api/v1` | 后端 API 基础地址（客户端可见） |
+| `NUXT_PUBLIC_WS_BASE` | `ws://localhost:8080` | WebSocket 基础地址 |
+| `PORT` | `3000` | SSR 服务监听端口 |
+| `HOST` | `0.0.0.0` | SSR 服务监听地址 |
+| `NODE_ENV` | `production` | 运行环境 |
+
+> `NUXT_PUBLIC_` 前缀的变量会在构建时内嵌到客户端代码中，构建后无法在运行时覆盖（SSR 模式下服务端部分除外）。
+
+---
+
+### 九、PM2 生产进程管理
+
+```javascript
+// ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'inkframe-frontend',
+    script: '.output/server/index.mjs',
+    instances: 2,          // 或 'max'（按 CPU 核数自动设置）
+    exec_mode: 'cluster',
+    env_production: {
+      NODE_ENV: 'production',
+      PORT: 3000,
+      NUXT_PUBLIC_API_BASE: 'https://api.yourdomain.com/api/v1',
+    }
+  }]
+}
+```
+
+```bash
+pm2 start ecosystem.config.js --env production
+pm2 save && pm2 startup
+```
+
+---
+
+### 十、升级部署
+
+```bash
+git pull
+npm install
+npm run build
+
+# 重启 SSR 服务（PM2）
+pm2 restart inkframe-frontend
+
+# 或 Docker Compose 方式
+docker compose pull frontend
+docker compose up -d --no-deps --build frontend
+```
+
+---
+
+### 十一、常见部署问题
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| API 请求报 CORS 错误 | 前后端域名不同 | 前后端同域部署（Nginx 反代），或后端 CORS 配置允许前端域名 |
+| 页面刷新 404 | Nginx 未配置 SPA 路由回退 | 添加 `try_files $uri $uri/ /index.html` |
+| 图片/视频无法加载 | OSS CDN 域名未配置 | 确认 `config.yaml` 中 `storage.oss.base_url` 已正确设置 |
+| 构建时 `@volar/typescript` 报错 | Node.js 26 与 vue-tsc 兼容问题 | 改用 Node.js 20 LTS 进行构建 |
+| SSR 页面空白 | API 地址在服务端不可达 | 确认服务端环境中后端地址可访问（容器内使用服务名而非 localhost） |
+
+---
+
 ## 项目结构
 
 ```
