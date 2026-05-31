@@ -112,9 +112,9 @@ const features = [
   {
     icon: '✍️',
     title: '专业小说改写',
-    desc: '三级改写策略（文学精炼/结构重构/精神蒸馏），6维相似度检测，规避版权风险',
+    desc: '五级版权合规改写（字词润色→深度蒸馏），词法/结构/语义三维相似度检测，生成合规报告',
     iconBg: 'bg-emerald-500/20',
-    tags: ['版权安全', 'AI辅助'],
+    tags: ['版权合规', '独立作品', 'AI辅助'],
   },
   {
     icon: '👤',
@@ -136,7 +136,7 @@ const stats = [
   { value: '6+', label: 'AI 模型提供商' },
   { value: '100+', label: '章长篇支持' },
   { value: '4K', label: '视频输出质量' },
-  { value: '3', label: '级改写策略' },
+  { value: '5', label: '级版权合规改写' },
 ]
 </script>
 
@@ -228,6 +228,12 @@ const stats = [
             class="w-full sm:w-auto bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg shadow-violet-900/40 text-center"
           >
             立即创作 →
+          </NuxtLink>
+          <NuxtLink
+            to="/novel/create?tab=rewrite"
+            class="w-full sm:w-auto bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300 font-medium px-8 py-3.5 rounded-xl transition-colors border border-emerald-700/50 text-center"
+          >
+            改写小说
           </NuxtLink>
           <NuxtLink
             to="/plaza"
@@ -534,7 +540,7 @@ const stats = [
               </linearGradient>
             </defs>
           </svg>
-          <span>简影 &copy; 2025</span>
+          <span>简影 &copy; 2026</span>
         </div>
         <div class="flex gap-6 text-sm text-gray-500">
           <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>

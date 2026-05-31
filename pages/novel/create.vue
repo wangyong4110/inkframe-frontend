@@ -26,6 +26,7 @@ function isCoverUrl(v: string) {
 }
 
 const router = useRouter()
+const route = useRoute()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
 const { request } = useApi()
@@ -38,6 +39,11 @@ const showNoLLMModal = ref(false)
 const { getLLMCapableProviders } = useModelApi()
 
 onMounted(async () => {
+  if (route.query.tab === 'rewrite') {
+    step.value = 'rewrite-form'
+    rwStep.value = 1
+  }
+
   try {
     const resp = await getLLMCapableProviders()
     const list = (resp as any).data ?? []
