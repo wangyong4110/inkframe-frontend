@@ -162,8 +162,21 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <p v-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
-          <button type="submit" :disabled="emailLoading"
-            class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
+          <label class="flex items-start gap-2 cursor-pointer select-none">
+            <input type="checkbox" v-model="agreed"
+              class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
+                     accent-violet-500 cursor-pointer flex-shrink-0" />
+            <span class="text-xs text-gray-500 leading-relaxed">
+              我已阅读并同意
+              <NuxtLink to="/terms" target="_blank"
+                class="text-violet-400 hover:text-violet-300 transition-colors">《用户服务协议》</NuxtLink>
+              和
+              <NuxtLink to="/privacy" target="_blank"
+                class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
+            </span>
+          </label>
+          <button type="submit" :disabled="emailLoading || !agreed"
+            class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ emailLoading ? '登录中...' : '登 录' }}
           </button>
         </form>
@@ -187,14 +200,6 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             </div>
           </div>
           <p v-if="phoneError" class="text-red-400 text-xs">{{ phoneError }}</p>
-          <button type="submit" :disabled="phoneLoading"
-            class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
-            {{ phoneLoading ? '登录中...' : '登 录' }}
-          </button>
-        </form>
-
-        <!-- 协议同意 -->
-        <div class="mt-4">
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"
               class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
@@ -208,7 +213,11 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
                 class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
             </span>
           </label>
-        </div>
+          <button type="submit" :disabled="phoneLoading || !agreed"
+            class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl transition-colors">
+            {{ phoneLoading ? '登录中...' : '登 录' }}
+          </button>
+        </form>
 
         <!-- 第三方登录 -->
         <div class="mt-6">

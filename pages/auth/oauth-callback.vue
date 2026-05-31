@@ -5,8 +5,12 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 onMounted(() => {
-  const token = route.query.token as string | undefined
-  const expiresAt = route.query.expires_at as string | undefined
+  // Backend sends token via hash fragment (#token=xxx&expires_at=yyy) to prevent
+  // token leakage in server access logs and Referer headers.
+  const hashParams = new URLSearchParams(window.location.hash.slice(1))
+  const token = hashParams.get('token')
+  const expiresAt = hashParams.get('expires_at')
+  // Errors come via query string (e.g. ?error=oauth_failed)
   const error = route.query.error as string | undefined
 
   if (error || !token) {
