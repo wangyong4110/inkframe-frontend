@@ -84,11 +84,11 @@ onMounted(() => {
   if (sentinel.value) observer.observe(sentinel.value)
 })
 
-onUnmounted(() => observer?.disconnect())
-
-watch(sentinel, (el) => {
-  if (el && observer) observer.observe(el)
+onUnmounted(() => {
+  observer?.disconnect()
+  if (searchTimer) clearTimeout(searchTimer)
 })
+
 
 function formatDuration(secs?: number) {
   if (!secs) return ''

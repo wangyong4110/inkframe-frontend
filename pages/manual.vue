@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'default' })
+definePageMeta({ layout: 'default', auth: false })
 
 const { data: rawMd, error } = await useFetch<string>('/manual.md', { responseType: 'text' })
 

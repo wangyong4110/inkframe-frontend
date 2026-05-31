@@ -358,7 +358,7 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <RewriteAnalysisCard title="叙事声音指纹" icon="🎙" :data="parseJSON(analysis.voice_fingerprint)" />
                 <RewriteAnalysisCard title="场景架构" icon="🏗" :data="parseJSON(analysis.scene_architecture)" />
-                <RewriteAnalysisCard title="角色心理图谱" icon="🧠" :data="parseJSON(analysis.char_psych)" />
+                <RewriteAnalysisCard title="角色心理图谱" icon="🧠" :data="parseJSON(analysis.character_psych)" />
                 <RewriteAnalysisCard title="主题内核" icon="💡" :data="parseJSON(analysis.theme_core)" />
                 <RewriteAnalysisCard title="世界逻辑" icon="🌍" :data="parseJSON(analysis.world_logic)" />
                 <RewriteAnalysisCard title="高风险标志元素" icon="⚠️" :data="parseJSON(analysis.high_risk_markers)" :highlight="true" />
@@ -738,6 +738,13 @@ watch(activeTab, (tab) => {
   }
 })
 
+// Also load when project transitions to completed while user is already on the compliance tab
+watch(() => project.value?.status, (status) => {
+  if (status === 'completed' && activeTab.value === 'compliance') {
+    loadComplianceReport()
+  }
+})
+
 async function exportComplianceReport() {
   if (!complianceReport.value) return
   const r = complianceReport.value
@@ -773,25 +780,26 @@ const avgLexSim = computed(() => {
   if (!completedTasks.value.length) return 0
   return completedTasks.value.reduce((s, t) => s + t.lexical_sim, 0) / completedTasks.value.length
 })
+// Use pass-rate as primary indicator: "passed" already captures level-specific thresholds.
 const overallRatingEmoji = computed(() => {
   if (!completedTasks.value.length) return '—'
   const passRate = passedTasks.value.length / completedTasks.value.length
-  if (passRate >= 0.8 && avgLexSim.value < 0.20) return '🟢'
-  if (passRate < 0.6 || avgLexSim.value >= 0.35) return '🔴'
+  if (passRate >= 0.8) return '🟢'
+  if (passRate < 0.6) return '🔴'
   return '🟡'
 })
 const overallRatingLabel = computed(() => {
   if (!completedTasks.value.length) return '—'
   const passRate = passedTasks.value.length / completedTasks.value.length
-  if (passRate >= 0.8 && avgLexSim.value < 0.20) return '安全'
-  if (passRate < 0.6 || avgLexSim.value >= 0.35) return '风险'
+  if (passRate >= 0.8) return '安全'
+  if (passRate < 0.6) return '风险'
   return '注意'
 })
 const overallRatingColor = computed(() => {
   if (!completedTasks.value.length) return 'text-gray-400'
   const passRate = passedTasks.value.length / completedTasks.value.length
-  if (passRate >= 0.8 && avgLexSim.value < 0.20) return 'text-emerald-400'
-  if (passRate < 0.6 || avgLexSim.value >= 0.35) return 'text-red-400'
+  if (passRate >= 0.8) return 'text-emerald-400'
+  if (passRate < 0.6) return 'text-red-400'
   return 'text-amber-400'
 })
 
@@ -813,17 +821,20 @@ const imageryTransformMap = computed<Record<string, string>>(() => {
 })
 
 // ── Chapter compliance helpers ────────────────────────────────────────────────
+// Use `passed` as primary indicator: it already incorporates level-specific thresholds.
+// Fixed thresholds like 0.20/0.35 are wrong for level 1-3 where higher similarity is expected.
 function chapterComplianceEmoji(task: ChapterRewriteTask) {
-  if (task.passed && task.lexical_sim < 0.20) return '🟢'
-  if (!task.passed || task.lexical_sim >= 0.35) return '🔴'
+  if (task.passed) return '🟢'
+  // Distinguish copyright risk (too similar) from quality gap (too different)
+  // We approximate: if similarity_score > 0.5 it's likely too-similar rather than too-different
+  if (task.similarity_score > 0.5) return '🔴'
   return '🟡'
 }
 
 function chapterComplianceTitle(task: ChapterRewriteTask) {
-  if (task.passed && task.lexical_sim < 0.20) return '安全：词法相似度低，通过合规检测'
-  if (!task.passed) return '风险：未通过合规检测'
-  if (task.lexical_sim >= 0.35) return '风险：词法相似度过高'
-  return '注意：相似度偏高，请复查'
+  if (task.passed) return '合规通过：相似度在本级别目标范围内'
+  if (task.similarity_score > 0.5) return '风险：改写后与原文仍过于相似，存在版权风险'
+  return '注意：改写幅度超出预期，建议检查质量'
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -1047,7 +1058,7 @@ const analysisSummary = computed(() => {
   return [
     { icon: '🎙', label: '叙事声音', data: analysis.value.voice_fingerprint },
     { icon: '🏗', label: '场景架构', data: analysis.value.scene_architecture },
-    { icon: '🧠', label: '角色心理', data: analysis.value.char_psych },
+    { icon: '🧠', label: '角色心理', data: analysis.value.character_psych },
     { icon: '💡', label: '主题内核', data: analysis.value.theme_core },
     { icon: '🌍', label: '世界逻辑', data: analysis.value.world_logic },
     { icon: '⚠️', label: '高风险元素', data: analysis.value.high_risk_markers },

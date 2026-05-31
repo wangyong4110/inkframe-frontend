@@ -152,7 +152,7 @@ function formatDate(dateStr: string): string {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-white">小说项目</h1>
+        <h1 class="text-2xl font-bold text-white">项目</h1>
         <p class="mt-1 text-sm text-gray-400">
           管理你的所有小说创作项目
         </p>

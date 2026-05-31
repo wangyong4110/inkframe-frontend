@@ -77,6 +77,7 @@ const providerForm = ref({
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
   timeout: 0,      // 秒，0 = 使用默认值 300s
   concurrency: 0,  // 最大并发数，0 = 不限制
+  rate_limit: 0,   // 请求/分钟，0 = 不限制
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
@@ -115,8 +116,8 @@ const filteredProviderOptions = computed(() => {
 
 // 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
 const HARDCODED_NEEDS_SECRET_KEY = new Set([
-  'volcengine-visual', 'doubao-speech-v1',
-  'kling', 'kling-sfx', 'kling-tts', 'kling-image',
+  'volcengine-visual', 'volcengine-i2i', 'doubao-speech-v1',
+  'kling', 'kling-sfx', 'kling-tts', 'kling-image', 'kling-i2i',
 ])
 
 // 当前选中提供商是否需要 AK/SK 双密钥
@@ -166,6 +167,16 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-tts 共用）',
     skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
     skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
+  },
+  'volcengine-i2i': {
+    akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey（与 volcengine-visual 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
+    skHint: '即梦AI 图生图与文生图使用相同的 AK/SK，均通过 HMAC-SHA256 签名鉴权',
+  },
+  'kling-i2i': {
+    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-tts / kling-image 共用）',
+    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
+    skHint: '可灵图生图（kling-i2i）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'elevenlabs-sfx': {
     akLabel: 'API Key', akPlaceholder: 'ElevenLabs API Key（xi-api-key 鉴权，0.5~22 秒音效生成）',
@@ -255,6 +266,7 @@ watch(
 const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> = {
   llm:       { exclude: /tts|whisper|dall-e|embedding|text-embedding|image-gen|video|audio-gen/i },
   image:     { include: /dall|image|img|draw|flux|stable|wanx|seedream|visual|t2i|text.to.image/i },
+  img2img:   { include: /i2i|img2img|seededit|dreamo|seed3l|portrait|inpaint|edit|style|refine/i },
   voice:     { include: /tts|whisper|voice|audio|speech/i },
   video:     { include: /video|sora|kling|seedance/i },
   embedding: { include: /embed/i },
@@ -289,6 +301,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   azure:              'bg-sky-100     text-sky-700',
   ollama:             'bg-lime-100    text-lime-700',
   'volcengine-visual':'bg-amber-100   text-amber-700',
+  'volcengine-i2i':   'bg-amber-100   text-amber-700',
   seedance:           'bg-violet-100  text-violet-700',
   'doubao-speech':    'bg-teal-100    text-teal-700',
   'doubao-speech-v1': 'bg-teal-100    text-teal-700',
@@ -296,10 +309,57 @@ const PROVIDER_COLORS: Record<string, string> = {
   'kling-sfx':        'bg-fuchsia-100 text-fuchsia-700',
   'kling-tts':        'bg-fuchsia-100 text-fuchsia-700',
   'kling-image':      'bg-fuchsia-100 text-fuchsia-700',
+  'kling-i2i':        'bg-fuchsia-100 text-fuchsia-700',
   'elevenlabs-sfx':   'bg-green-100   text-green-700',
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
+}
+
+const PROVIDER_CONSOLE_URL: Record<string, string> = {
+  // LLM — 国际
+  openai:              'https://platform.openai.com/api-keys',
+  anthropic:           'https://console.anthropic.com/settings/keys',
+  google:              'https://aistudio.google.com/app/apikey',
+  xai:                 'https://console.x.ai',
+  mistral:             'https://console.mistral.ai/api-keys',
+  meta:                'https://llama.meta.com/docs/getting_started',
+  // LLM — 国内
+  doubao:              'https://console.volcengine.com/ark',
+  deepseek:            'https://platform.deepseek.com/api_keys',
+  qianwen:             'https://dashscope.console.aliyun.com/apiKey',
+  zhipu:               'https://open.bigmodel.cn/usercenter/apikeys',
+  moonshot:            'https://platform.moonshot.cn/console/api-keys',
+  baidu:               'https://qianfan.baidubce.com/qianfandev',
+  tencent:             'https://console.cloud.tencent.com/hunyuan',
+  yi:                  'https://platform.lingyiwanwu.com/apikeys',
+  // 图像生成
+  'volcengine-visual': 'https://console.volcengine.com/visual-intelligence',
+  'volcengine-i2i':    'https://console.volcengine.com/visual-intelligence',
+  // 视频 & 图像（可灵）
+  kling:               'https://klingai.com/dev-platform/personal-info',
+  'kling-sfx':         'https://klingai.com/dev-platform/personal-info',
+  'kling-tts':         'https://klingai.com/dev-platform/personal-info',
+  'kling-image':       'https://klingai.com/dev-platform/personal-info',
+  'kling-i2i':         'https://klingai.com/dev-platform/personal-info',
+  // 视频（Seedance/豆包）
+  seedance:            'https://console.volcengine.com/ark',
+  // 语音合成
+  'doubao-speech':     'https://console.volcengine.com/speech',
+  'doubao-speech-v1':  'https://console.volcengine.com/speech',
+  'baidu-tts':         'https://ai.baidu.com/tech/speech',
+  'minimax-tts':       'https://platform.minimax.chat/user-center/basic-information/interface-key',
+  'aliyun-tts':        'https://dashscope.console.aliyun.com/apiKey',
+  'tencent-tts':       'https://console.cloud.tencent.com/tts',
+  // 音效
+  'elevenlabs-sfx':    'https://elevenlabs.io/app/settings/api-keys',
+  freesound:           'https://freesound.org/api/apply',
+  'pixabay-sfx':       'https://pixabay.com/service/about/api',
+  'pixabay-bgm':       'https://pixabay.com/service/about/api',
+  jamendo:             'https://developer.jamendo.com/v3.0',
+}
+function providerConsoleUrl(name: string): string {
+  return PROVIDER_CONSOLE_URL[name.toLowerCase()] ?? ''
 }
 
 async function loadProviders() {
@@ -316,16 +376,16 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0 }
+  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
 function openEditProvider(p: ModelProvider) {
   editingProvider.value = p
-  const knownTypes = ['llm', 'image', 'video', 'voice', 'embedding', 'sfx']
+  const knownTypes = ['llm', 'image', 'img2img', 'video', 'voice', 'embedding', 'sfx']
   const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
   providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
-    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0 }
+    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0, rate_limit: p.rate_limit ?? 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -386,12 +446,13 @@ const expandedModels = ref<Set<number>>(new Set())
 const addModelForms = ref<Record<number, { name: string; tasks: string; saving: boolean }>>({})
 
 const TASK_TYPE_OPTIONS = [
-  { value: 'chapter',   label: 'LLM 生成' },
-  { value: 'image_gen', label: '图像生成' },
-  { value: 'video_gen', label: '视频生成' },
-  { value: 'voice_gen', label: '语音合成' },
-  { value: 'sfx_gen',   label: '文生音效' },
-  { value: 'embedding', label: '向量嵌入' },
+  { value: 'chapter',    label: 'LLM 生成' },
+  { value: 'image_gen',  label: '图像生成' },
+  { value: 'img2img_gen',label: '图生图' },
+  { value: 'video_gen',  label: '视频生成' },
+  { value: 'voice_gen',  label: '语音合成' },
+  { value: 'sfx_gen',    label: '文生音效' },
+  { value: 'embedding',  label: '向量嵌入' },
 ]
 
 async function toggleProviderModels(providerId: number) {
@@ -416,6 +477,7 @@ async function refreshProviderModels(providerId: number) {
 
 function openAddModelForm(providerId: number, providerType: string) {
   const defaultTask = providerType === 'image' ? 'image_gen'
+    : providerType === 'img2img' ? 'img2img_gen'
     : providerType === 'video' ? 'video_gen'
     : providerType === 'voice' ? 'voice_gen'
     : providerType === 'sfx' ? 'sfx_gen'
@@ -644,50 +706,10 @@ async function toggleModelBinding(modelId: number) {
   finally { bindSaving.value = false }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TAB 3 — 系统设置（并发度控制）
-// ═══════════════════════════════════════════════════════════════════════════
-const { listSettings, updateSetting } = useSystemSettingsApi()
-
-const imageConcurrency = ref(1)
-const videoConcurrency = ref(1)
-const settingsLoading = ref(false)
-const settingsSaving = ref<string | null>(null)
-
-async function loadSettings() {
-  settingsLoading.value = true
-  try {
-    const res = await listSettings()
-    const items = res.data ?? []
-    const img = items.find(s => s.key === 'image_concurrency')
-    const vid = items.find(s => s.key === 'video_concurrency')
-    if (img) imageConcurrency.value = Number(img.value) || 1
-    if (vid) videoConcurrency.value = Number(vid.value) || 1
-  } catch (e: any) {
-    toast.error('加载系统设置失败')
-  } finally {
-    settingsLoading.value = false
-  }
-}
-
-async function saveConcurrency(key: string, value: number) {
-  if (value < 1 || value > 20) { toast.error('并发数范围 1–20'); return }
-  settingsSaving.value = key
-  try {
-    await updateSetting(key, String(value))
-    toast.success('已保存')
-  } catch (e: any) {
-    toast.error(e?.message || '保存失败')
-  } finally {
-    settingsSaving.value = null
-  }
-}
-
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadProviderTemplates()
   loadProviders()
-  loadSettings()
   if (activeTab.value === 'mcp') loadMcpTools()
 })
 
@@ -811,14 +833,37 @@ watch(activeTab, (tab) => {
                 </span>
               </div>
               <div class="mt-1 flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-                <span v-if="p.type" class="font-medium uppercase tracking-wide">{{ p.type }}</span>
+                <span v-if="p.type" class="font-medium">{{
+                  p.type === 'llm' ? 'LLM'
+                  : p.type === 'image' ? '文生图'
+                  : p.type === 'img2img' ? '图生图'
+                  : p.type === 'video' ? '视频生成'
+                  : p.type === 'voice' ? '语音合成'
+                  : p.type === 'sfx' ? '文生音效'
+                  : p.type === 'embedding' ? '向量嵌入'
+                  : p.type
+                }}</span>
                 <span v-if="p.api_endpoint" class="font-mono truncate max-w-xs">{{ p.api_endpoint }}</span>
                 <span v-if="p.api_version">模型：<span class="font-mono">{{ p.api_version }}</span></span>
                 <span v-if="p.timeout" class="font-mono">超时 {{ p.timeout }}s</span>
                 <span v-if="p.concurrency" class="font-mono">并发 {{ p.concurrency }}</span>
+                <span v-if="p.rate_limit" class="font-mono">限速 {{ p.rate_limit }}/min</span>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
+              <a
+                v-if="providerConsoleUrl(p.name)"
+                :href="providerConsoleUrl(p.name)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1 text-gray-500 hover:text-primary-600"
+                title="前往官方控制台"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+                控制台
+              </a>
               <button class="btn-outline text-xs px-3 py-1.5" :disabled="testingId === p.id" @click="handleTestProvider(p.id)">
                 <span v-if="testingId === p.id" class="flex items-center gap-1">
                   <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
@@ -852,7 +897,7 @@ watch(activeTab, (tab) => {
             <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" @click="openEditProvider(p)">更改密钥</button>
           </div>
           <!-- 可灵系列：共用 API Key 提示 -->
-          <div v-if="['kling','kling-sfx','kling-tts','kling-image'].includes(p.name)" class="px-5 py-2 bg-fuchsia-50 dark:bg-fuchsia-900/10 border-t border-fuchsia-100 dark:border-fuchsia-800 flex items-center gap-2">
+          <div v-if="['kling','kling-sfx','kling-tts','kling-image','kling-i2i'].includes(p.name)" class="px-5 py-2 bg-fuchsia-50 dark:bg-fuchsia-900/10 border-t border-fuchsia-100 dark:border-fuchsia-800 flex items-center gap-2">
             <svg class="w-3.5 h-3.5 text-fuchsia-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
@@ -904,58 +949,6 @@ watch(activeTab, (tab) => {
               <button class="btn-ghost text-xs px-3 py-1.5" @click="closeAddModelForm(p.id)">取消</button>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- ── 调用并发控制 ─────────────────────────────────────────────── -->
-      <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-        <div class="mb-4">
-          <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300">调用并发控制</h2>
-          <p class="text-xs text-gray-500 mt-0.5">控制 AI 任务的最大同时执行数，避免超出提供商限流</p>
-        </div>
-        <div v-if="settingsLoading" class="py-6 text-center text-gray-400 text-sm">加载中…</div>
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          <!-- 图像生成并发度 -->
-          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-            <div class="mb-3">
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">图像生成并发度</h3>
-              <p class="text-xs text-gray-500 mt-0.5">同时进行图像生成的最大任务数（1–20）</p>
-            </div>
-            <div class="flex items-center gap-3">
-              <input v-model.number="imageConcurrency" type="number" min="1" max="20"
-                class="w-20 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              <input v-model.number="imageConcurrency" type="range" min="1" max="20" class="flex-1 accent-primary-500" />
-              <span class="w-6 text-sm font-medium text-gray-700 dark:text-gray-300 text-right">{{ imageConcurrency }}</span>
-            </div>
-            <div class="mt-3 flex justify-end">
-              <button class="btn-primary text-sm" :disabled="settingsSaving === 'image_concurrency'"
-                @click="saveConcurrency('image_concurrency', imageConcurrency)">
-                {{ settingsSaving === 'image_concurrency' ? '保存中…' : '保存' }}
-              </button>
-            </div>
-          </div>
-
-          <!-- 视频生成并发度 -->
-          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-            <div class="mb-3">
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">视频生成并发度</h3>
-              <p class="text-xs text-gray-500 mt-0.5">同时进行视频生成的最大任务数（1–20）</p>
-            </div>
-            <div class="flex items-center gap-3">
-              <input v-model.number="videoConcurrency" type="number" min="1" max="20"
-                class="w-20 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              <input v-model.number="videoConcurrency" type="range" min="1" max="20" class="flex-1 accent-primary-500" />
-              <span class="w-6 text-sm font-medium text-gray-700 dark:text-gray-300 text-right">{{ videoConcurrency }}</span>
-            </div>
-            <div class="mt-3 flex justify-end">
-              <button class="btn-primary text-sm" :disabled="settingsSaving === 'video_concurrency'"
-                @click="saveConcurrency('video_concurrency', videoConcurrency)">
-                {{ settingsSaving === 'video_concurrency' ? '保存中…' : '保存' }}
-              </button>
-            </div>
-          </div>
-
         </div>
       </div>
 
@@ -1088,7 +1081,8 @@ watch(activeTab, (tab) => {
                 </label>
                 <select v-if="!editingProvider" v-model="providerForm.type" class="input">
                   <option value="llm">LLM（语言模型）</option>
-                  <option value="image">图像生成</option>
+                  <option value="image">图像生成（文生图）</option>
+                  <option value="img2img">图生图</option>
                   <option value="video">视频生成</option>
                   <option value="voice">语音合成</option>
                   <option value="sfx">文生音效</option>
@@ -1109,7 +1103,21 @@ watch(activeTab, (tab) => {
                   <option value="" disabled>请选择供应商</option>
                   <option v-for="opt in filteredProviderOptions" :key="opt.name" :value="opt.name">{{ opt.label }}</option>
                 </select>
-                <p v-if="providerForm.name" class="mt-1 text-xs text-gray-400 font-mono">标识：{{ providerForm.name }}</p>
+                <div v-if="providerForm.name" class="mt-1 flex items-center justify-between">
+                  <p class="text-xs text-gray-400 font-mono">标识：{{ providerForm.name }}</p>
+                  <a
+                    v-if="providerConsoleUrl(providerForm.name)"
+                    :href="providerConsoleUrl(providerForm.name)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-xs text-primary-600 hover:text-primary-500 flex items-center gap-1"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    前往官网获取 API Key
+                  </a>
+                </div>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
@@ -1203,29 +1211,34 @@ watch(activeTab, (tab) => {
                   </p>
                 </div>
               </div>
-              <!-- 超时 + 并发度 -->
-              <div class="flex gap-4">
-                <div class="flex-1">
+              <!-- 超时 + 并发度 + 限速 -->
+              <div class="grid grid-cols-3 gap-3">
+                <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">请求超时（秒）</label>
-                  <div class="flex items-center gap-2">
-                    <input
-                      v-model.number="providerForm.timeout"
-                      type="number" min="0" step="30"
-                      class="input w-28 font-mono text-sm"
-                      placeholder="0" />
-                    <span class="text-xs text-gray-400 dark:text-gray-500">0 = 默认 300s</span>
-                  </div>
+                  <input
+                    v-model.number="providerForm.timeout"
+                    type="number" min="0" step="30"
+                    class="input font-mono text-sm"
+                    placeholder="0" />
+                  <p class="mt-0.5 text-xs text-gray-400">0 = 默认 300s</p>
                 </div>
-                <div class="flex-1">
+                <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大并发数</label>
-                  <div class="flex items-center gap-2">
-                    <input
-                      v-model.number="providerForm.concurrency"
-                      type="number" min="0" step="1"
-                      class="input w-28 font-mono text-sm"
-                      placeholder="0" />
-                    <span class="text-xs text-gray-400 dark:text-gray-500">0 = 不限制</span>
-                  </div>
+                  <input
+                    v-model.number="providerForm.concurrency"
+                    type="number" min="0" step="1"
+                    class="input font-mono text-sm"
+                    placeholder="0" />
+                  <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">限速（次/分）</label>
+                  <input
+                    v-model.number="providerForm.rate_limit"
+                    type="number" min="0" step="10"
+                    class="input font-mono text-sm"
+                    placeholder="0" />
+                  <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">

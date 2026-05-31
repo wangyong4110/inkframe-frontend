@@ -3,15 +3,23 @@
 // ============================================
 
 import { defineStore } from 'pinia'
-import type { 
-  Tenant, 
-  TenantUser, 
-  TenantProject, 
-  QuotaInfo, 
+import { getAuthToken } from '~/utils/auth'
+import type {
+  Tenant,
+  TenantUser,
+  TenantProject,
+  QuotaInfo,
   ProjectStats,
   CreateTenantRequest,
-  CreateProjectRequest 
+  CreateProjectRequest
 } from '~/types/tenant'
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken()
+  const base: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) base['Authorization'] = `Bearer ${token}`
+  return base
+}
 
 interface TenantState {
   // 当前租户
@@ -88,9 +96,8 @@ export const useTenantStore = defineStore('tenant', {
     async fetchTenants(page = 1, pageSize = 20) {
       this.tenantsLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants?page=${page}&page_size=${pageSize}`)
+        const response = await fetch(`/api/v1/tenants?page=${page}&page_size=${pageSize}`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.tenants = result.data.items
           this.totalTenants = result.data.total
@@ -101,13 +108,12 @@ export const useTenantStore = defineStore('tenant', {
         this.tenantsLoading = false
       }
     },
-    
+
     async fetchTenant(id: number) {
       this.tenantsLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants/${id}`)
+        const response = await fetch(`/api/v1/tenants/${id}`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.currentTenant = result.data
         }
@@ -115,13 +121,12 @@ export const useTenantStore = defineStore('tenant', {
         this.tenantsLoading = false
       }
     },
-    
+
     async fetchTenantByCode(code: string) {
       this.tenantsLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants/code/${code}`)
+        const response = await fetch(`/api/v1/tenants/code/${code}`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.currentTenant = result.data
         }
@@ -130,30 +135,28 @@ export const useTenantStore = defineStore('tenant', {
         this.tenantsLoading = false
       }
     },
-    
+
     async createTenant(data: CreateTenantRequest) {
       const response = await fetch('/api/v1/tenants', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(data),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.tenants.unshift(result.data)
         return result.data
       }
       throw new Error(result.error || '创建失败')
     },
-    
+
     async updateTenant(id: number, data: Partial<Tenant>) {
       const response = await fetch(`/api/v1/tenants/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(data),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         const index = this.tenants.findIndex(t => t.id === id)
         if (index !== -1) {
@@ -166,13 +169,13 @@ export const useTenantStore = defineStore('tenant', {
       }
       throw new Error(result.error || '更新失败')
     },
-    
+
     async deleteTenant(id: number) {
       const response = await fetch(`/api/v1/tenants/${id}`, {
         method: 'DELETE',
+        headers: authHeaders(),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.tenants = this.tenants.filter(t => t.id !== id)
         if (this.currentTenant?.id === id) {
@@ -180,24 +183,22 @@ export const useTenantStore = defineStore('tenant', {
         }
       }
     },
-    
+
     async fetchQuota(tenantId: number) {
-      const response = await fetch(`/api/v1/tenants/${tenantId}/quota`)
+      const response = await fetch(`/api/v1/tenants/${tenantId}/quota`, { headers: authHeaders() })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.quota = result.data
       }
     },
-    
+
     // ================== 成员管理 ==================
-    
+
     async fetchMembers(tenantId: number) {
       this.membersLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants/${tenantId}/members`)
+        const response = await fetch(`/api/v1/tenants/${tenantId}/members`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.members = result.data
         }
@@ -205,54 +206,51 @@ export const useTenantStore = defineStore('tenant', {
         this.membersLoading = false
       }
     },
-    
+
     async addMember(tenantId: number, data: { user_id: number; role?: string; nickname?: string }) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/members`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(data),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         await this.fetchMembers(tenantId)
         await this.fetchQuota(tenantId)
       }
     },
-    
+
     async removeMember(tenantId: number, userId: number) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/members/${userId}`, {
         method: 'DELETE',
+        headers: authHeaders(),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.members = this.members.filter(m => m.user_id !== userId)
         await this.fetchQuota(tenantId)
       }
     },
-    
+
     async updateMemberRole(tenantId: number, userId: number, role: string) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/members/${userId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ role }),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         await this.fetchMembers(tenantId)
       }
     },
-    
+
     // ================== 项目管理 ==================
-    
+
     async fetchProjects(tenantId: number) {
       this.projectsLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants/${tenantId}/projects`)
+        const response = await fetch(`/api/v1/tenants/${tenantId}/projects`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.projects = result.data
         }
@@ -260,13 +258,12 @@ export const useTenantStore = defineStore('tenant', {
         this.projectsLoading = false
       }
     },
-    
+
     async fetchProject(tenantId: number, projectId: number) {
       this.projectsLoading = true
       try {
-        const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}`)
+        const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}`, { headers: authHeaders() })
         const result = await response.json()
-        
         if (result.code === 0) {
           this.currentProject = result.data
           return result.data
@@ -275,15 +272,14 @@ export const useTenantStore = defineStore('tenant', {
         this.projectsLoading = false
       }
     },
-    
+
     async createProject(tenantId: number, data: CreateProjectRequest) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/projects`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(data),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.projects.unshift(result.data)
         await this.fetchQuota(tenantId)
@@ -291,15 +287,14 @@ export const useTenantStore = defineStore('tenant', {
       }
       throw new Error(result.error || '创建项目失败')
     },
-    
+
     async updateProject(tenantId: number, projectId: number, data: Partial<TenantProject>) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(data),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         const index = this.projects.findIndex(p => p.id === projectId)
         if (index !== -1) {
@@ -312,13 +307,13 @@ export const useTenantStore = defineStore('tenant', {
       }
       throw new Error(result.error || '更新失败')
     },
-    
+
     async deleteProject(tenantId: number, projectId: number) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}`, {
         method: 'DELETE',
+        headers: authHeaders(),
       })
       const result = await response.json()
-      
       if (result.code === 0) {
         this.projects = this.projects.filter(p => p.id !== projectId)
         if (this.currentProject?.id === projectId) {
@@ -327,11 +322,10 @@ export const useTenantStore = defineStore('tenant', {
         await this.fetchQuota(tenantId)
       }
     },
-    
+
     async fetchProjectStats(tenantId: number, projectId: number) {
-      const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}/stats`)
+      const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}/stats`, { headers: authHeaders() })
       const result = await response.json()
-      
       if (result.code === 0) {
         return result.data as ProjectStats
       }

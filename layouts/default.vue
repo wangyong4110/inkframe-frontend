@@ -13,9 +13,8 @@ onMounted(() => {
 
 const navItems = [
   { label: '首页', to: '/' },
-  { label: '创作台', to: '/novel' },
-  { label: '作品集', to: '/plaza' },
-  { label: '素材库', to: '/assets' },
+  { label: '项目', to: '/novel' },
+  { label: '素材', to: '/assets' },
   { label: '模型', to: '/model' },
 ]
 

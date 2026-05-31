@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import type { Novel, Video } from '~/types'
 
-definePageMeta({ layout: false })
+definePageMeta({ layout: false, auth: false })
 
 useHead({ title: '简影 - AI 小说转视频平台' })
 
@@ -209,10 +209,7 @@ const stats = [
 
         <!-- Headline -->
         <h1 class="text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-6 tracking-tight">
-          让每个故事都<br>
-          <span class="bg-gradient-to-r from-violet-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">
-            鲜活起来
-          </span>
+          让故事<span class="bg-gradient-to-r from-violet-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">鲜活起来</span>
         </h1>
 
         <!-- Subtext -->
@@ -228,12 +225,6 @@ const stats = [
             class="w-full sm:w-auto bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold px-8 py-3.5 rounded-xl transition-all shadow-lg shadow-violet-900/40 text-center"
           >
             立即创作 →
-          </NuxtLink>
-          <NuxtLink
-            to="/novel/create?tab=rewrite"
-            class="w-full sm:w-auto bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300 font-medium px-8 py-3.5 rounded-xl transition-colors border border-emerald-700/50 text-center"
-          >
-            改写小说
           </NuxtLink>
           <NuxtLink
             to="/plaza"

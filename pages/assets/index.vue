@@ -309,7 +309,7 @@ function formatSize(bytes?: number) {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-white">素材库</h1>
+        <h1 class="text-2xl font-bold text-white">素材</h1>
         <p class="text-sm text-gray-400 mt-0.5">管理个人素材，探索公共素材库</p>
       </div>
       <div class="flex items-center gap-3">

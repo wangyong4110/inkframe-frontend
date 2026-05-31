@@ -37,10 +37,13 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     setToken(token: string, expiresAt: string | number) {
       this.token = token
-      this.expiresAt =
-        typeof expiresAt === 'string'
-          ? new Date(expiresAt).getTime() / 1000
-          : expiresAt
+      if (typeof expiresAt === 'number') {
+        this.expiresAt = expiresAt
+      } else {
+        const ms = new Date(expiresAt).getTime()
+        // Fall back to 7-day expiry if the timestamp is invalid
+        this.expiresAt = isNaN(ms) ? Date.now() / 1000 + 86400 * 7 : ms / 1000
+      }
       if (typeof window !== 'undefined') {
         localStorage.setItem('auth_token', token)
         localStorage.setItem('auth_expires_at', String(this.expiresAt))

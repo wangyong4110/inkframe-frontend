@@ -41,6 +41,14 @@ export const useApi = () => {
     }
 
     if (!response.ok) {
+      if (response.status === 401) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('auth_expires_at')
+        }
+        await navigateTo('/auth/login')
+        throw new Error('Session expired')
+      }
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
       throw new Error(error.message || `HTTP error ${response.status}`)
     }

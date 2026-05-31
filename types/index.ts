@@ -465,6 +465,7 @@ export interface ModelProvider {
   is_active: boolean
   timeout?: number              // HTTP 超时秒数，0 或未设置表示使用默认值 300s
   concurrency?: number          // 最大并发调用数，0 或未设置表示不限制
+  rate_limit?: number           // 请求/分钟限速，0 或未设置表示不限制
   has_key?: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
   created_at?: string
@@ -774,7 +775,7 @@ export interface LiteraryAnalysis {
   project_id: number
   voice_fingerprint: string // JSON string
   scene_architecture: string
-  char_psych: string
+  character_psych: string
   theme_core: string
   world_logic: string
   high_risk_markers: string
