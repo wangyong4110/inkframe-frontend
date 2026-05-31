@@ -59,7 +59,8 @@ export const useAuthStore = defineStore('auth', {
       expires_at: string
     }) {
       this.token = resp.token
-      this.expiresAt = new Date(resp.expires_at).getTime() / 1000
+      const _ms = new Date(resp.expires_at).getTime()
+      this.expiresAt = isNaN(_ms) ? Math.floor(Date.now() / 1000) + 86400 * 7 : Math.floor(_ms / 1000)
       this.user = {
         id: resp.user_id,
         username: resp.username,

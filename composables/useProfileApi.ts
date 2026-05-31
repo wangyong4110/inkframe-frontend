@@ -23,5 +23,11 @@ export const useProfileApi = () => {
       body: JSON.stringify(data),
     })
 
-  return { updateProfile, changePassword }
+  const deleteAccount = (data: { password?: string }) =>
+    request<ApiResponse<{ deleted: boolean }>>('/auth/me', {
+      method: 'DELETE',
+      body: JSON.stringify(data),
+    })
+
+  return { updateProfile, changePassword, deleteAccount }
 }

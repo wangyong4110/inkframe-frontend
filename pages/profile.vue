@@ -101,6 +101,31 @@ async function changePassword() {
   }
 }
 
+// ── Account deletion ─────────────────────────────────────────────────────────
+const showDeleteModal = ref(false)
+const deletePassword = ref('')
+const deleteConfirmText = ref('')
+const deletingAccount = ref(false)
+const DELETE_CONFIRM_WORD = '确认注销'
+
+async function confirmDeleteAccount() {
+  if (deleteConfirmText.value !== DELETE_CONFIRM_WORD) {
+    toast.error(`请输入"${DELETE_CONFIRM_WORD}"以确认`)
+    return
+  }
+  deletingAccount.value = true
+  try {
+    await profileApi.deleteAccount({ password: deletePassword.value || undefined })
+    toast.success('账号已注销')
+    authStore.logout()
+    navigateTo('/auth/login')
+  } catch (e: any) {
+    toast.error(e.message || '注销失败')
+  } finally {
+    deletingAccount.value = false
+  }
+}
+
 // ── Reading history ───────────────────────────────────────────────────────────
 const readingHistory = ref<any[]>([])
 const readingHistoryTotal = ref(0)
@@ -503,5 +528,71 @@ const avatarInitial = computed(() =>
         </button>
       </div>
     </div>
+
+    <!-- ── Danger zone ─────────────────────────────────────────────────── -->
+    <div class="mt-6 p-5 rounded-2xl bg-red-950/20 border border-red-900/40">
+      <h2 class="text-base font-semibold text-red-400 mb-1">危险区域</h2>
+      <p class="text-sm text-gray-500 mb-4">注销账号后，所有数据将被永久删除且无法恢复。</p>
+      <button
+        @click="showDeleteModal = true"
+        class="px-4 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-700/50 text-sm text-red-400 hover:text-red-300 transition-colors"
+      >
+        注销账号
+      </button>
+    </div>
   </div>
+
+  <!-- ── Delete account modal ──────────────────────────────────────────── -->
+  <Teleport to="body">
+    <div
+      v-if="showDeleteModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+      @click.self="showDeleteModal = false"
+    >
+      <div class="w-full max-w-md bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl">
+        <h3 class="text-lg font-semibold text-red-400 mb-2">确认注销账号</h3>
+        <p class="text-sm text-gray-400 mb-5">此操作不可撤销，账号及所有相关数据将被永久删除。</p>
+
+        <!-- Password field (only if account has password) -->
+        <div class="mb-4">
+          <label class="block text-xs text-gray-500 mb-1.5">当前密码（如有）</label>
+          <input
+            v-model="deletePassword"
+            type="password"
+            placeholder="留空则跳过密码验证（仅限第三方登录账号）"
+            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-red-700"
+          />
+        </div>
+
+        <!-- Confirmation text -->
+        <div class="mb-5">
+          <label class="block text-xs text-gray-500 mb-1.5">
+            请输入 <span class="text-red-400 font-medium">{{ DELETE_CONFIRM_WORD }}</span> 以确认
+          </label>
+          <input
+            v-model="deleteConfirmText"
+            type="text"
+            :placeholder="DELETE_CONFIRM_WORD"
+            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-red-700"
+          />
+        </div>
+
+        <div class="flex gap-3 justify-end">
+          <button
+            @click="showDeleteModal = false"
+            class="px-4 py-2 rounded-xl border border-gray-700 text-sm text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            :disabled="deletingAccount || deleteConfirmText !== DELETE_CONFIRM_WORD"
+            @click="confirmDeleteAccount"
+            class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm text-white font-medium transition-colors"
+          >
+            {{ deletingAccount ? '注销中...' : '确认注销' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

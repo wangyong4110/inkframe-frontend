@@ -22,14 +22,11 @@ const {
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
-const showUnconfigured = ref(false)
 const filteredProviders = computed(() =>
-  showUnconfigured.value
-    ? providers.value
-    : providers.value.filter(p =>
-        p.name === 'ollama' ||  // Ollama 无需 API Key，始终显示
-        (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
-      )
+  providers.value.filter(p =>
+    p.name === 'ollama' ||
+    (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+  )
 )
 const listLoading = ref(false)
 const showProviderModal = ref(false)
@@ -731,15 +728,6 @@ watch(activeTab, (tab) => {
       </div>
       <template v-if="activeTab === 'providers'">
         <button
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          @click="showUnconfigured = !showUnconfigured"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
-          </svg>
-          {{ showUnconfigured ? '隐藏未配置' : '显示全部' }}
-        </button>
-        <button
           class="btn-primary flex items-center gap-1.5"
           @click="openAddProvider"
         >
@@ -811,8 +799,8 @@ watch(activeTab, (tab) => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
           </svg>
         </div>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1">{{ showUnconfigured ? '暂无提供商配置' : '暂无已配置的提供商' }}</h3>
-        <p class="text-sm text-gray-500 mb-6">{{ showUnconfigured ? '添加提供商后，AI 生成将优先使用您配置的密钥' : '点击「显示全部」查看未配置的提供商，或添加新提供商' }}</p>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1">暂无已配置的提供商</h3>
+        <p class="text-sm text-gray-500 mb-6">添加提供商后，AI 生成将优先使用您配置的密钥</p>
         <button class="btn-primary mx-auto" @click="openAddProvider">立即添加</button>
       </div>
 
@@ -904,35 +892,39 @@ watch(activeTab, (tab) => {
             <span class="text-xs text-fuchsia-700 dark:text-fuchsia-300">可灵四能力（视频/音效/语音/图像）共用同一对 Access Key + Secret Key · JWT（HS256）鉴权 · 端点 <code class="font-mono">https://api.klingai.com</code></span>
           </div>
 
-          <!-- Model list toggle -->
-          <div class="px-5 py-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <button class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" @click="toggleProviderModels(p.id)">
-              <svg class="w-3.5 h-3.5 transition-transform" :class="expandedModels.has(p.id) ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <!-- Model section header -->
+          <div class="px-5 py-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/30 dark:bg-gray-800/20">
+            <button class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" @click="toggleProviderModels(p.id)">
+              <svg class="w-3.5 h-3.5 transition-transform duration-150" :class="expandedModels.has(p.id) ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
               </svg>
-              模型列表
-              <span v-if="providerModels[p.id]?.length" class="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">{{ providerModels[p.id].length }}</span>
+              <span class="font-medium">模型</span>
+              <span v-if="providerModels[p.id]?.length" class="px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 font-mono">{{ providerModels[p.id].length }}</span>
+              <span v-else-if="providerModels[p.id]?.length === 0" class="text-gray-400 italic">暂无</span>
             </button>
-            <button v-if="expandedModels.has(p.id) && !addModelForms[p.id]" class="text-xs text-primary-600 hover:text-primary-700" @click="openAddModelForm(p.id, p.type)">
-              + 添加模型
+            <button v-if="expandedModels.has(p.id) && !addModelForms[p.id]" class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1" @click="openAddModelForm(p.id, p.type)">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              添加模型
             </button>
           </div>
 
           <!-- Model rows -->
-          <div v-if="expandedModels.has(p.id)" class="border-t border-gray-100 dark:border-gray-700">
-            <div v-if="!providerModels[p.id]?.length && !addModelForms[p.id]" class="px-5 py-3 text-xs text-gray-400 italic">
-              暂无模型，点击「添加模型」后即可在小说设置中选择
+          <div v-if="expandedModels.has(p.id)" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            <div v-if="!providerModels[p.id]?.length && !addModelForms[p.id]" class="px-5 py-4 text-xs text-gray-400 text-center italic">
+              暂无模型 · 点击「添加模型」后即可在项目设置中选用
             </div>
-            <div v-for="m in (providerModels[p.id] || [])" :key="m.id" class="px-5 py-2.5 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/30 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-              <span class="flex-1 text-sm font-mono text-gray-700 dark:text-gray-300">{{ m.name }}</span>
-              <span class="text-xs text-gray-400">
-                {{ Array.isArray(m.suitable_tasks) ? m.suitable_tasks.join(', ') : (m.suitable_tasks || '—') }}
-              </span>
-              <button class="text-xs text-red-400 hover:text-red-600" @click="handleDeleteModel(p.id, m.id)">删除</button>
+
+            <div v-for="m in (providerModels[p.id] || [])" :key="m.id"
+                 class="px-5 py-2.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+              <span class="flex-1 text-sm font-mono text-gray-800 dark:text-gray-200 truncate">{{ m.name }}</span>
+              <span v-if="m.suitable_tasks" class="text-xs text-gray-400 font-mono">{{ m.suitable_tasks }}</span>
+              <button class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1" @click="handleDeleteModel(p.id, m.id)">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
             </div>
 
             <!-- Inline add form -->
-            <div v-if="addModelForms[p.id]" class="px-5 py-3 bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-3">
+            <div v-if="addModelForms[p.id]" class="px-5 py-3 bg-primary-50/50 dark:bg-primary-900/10 flex items-center gap-3">
               <input
                 v-model="addModelForms[p.id].name"
                 type="text"
@@ -1061,24 +1053,19 @@ watch(activeTab, (tab) => {
       <Transition name="modal">
         <div v-if="showProviderModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.esc="showProviderModal = false">
           <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" @click="showProviderModal = false"/>
-          <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg">
-            <div class="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+            <div class="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between shrink-0">
               <div>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ editingProvider ? '编辑提供商' : '添加 AI 提供商' }}</h3>
-                <p class="text-sm text-gray-500 mt-0.5">{{ editingProvider ? '修改 API 密钥或端点配置' : '配置 API 密钥以使用该提供商' }}</p>
+                <p class="text-sm text-gray-500 mt-0.5">{{ editingProvider ? '修改凭证、端点或限流配置' : '配置凭证与端点，保存后在卡片中管理具体模型' }}</p>
               </div>
               <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" @click="showProviderModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
-            <div class="px-6 py-5 space-y-4">
+            <div class="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  <span class="inline-flex items-center gap-1.5">
-                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
-                    模型类型
-                  </span>
-                </label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型类型</label>
                 <select v-if="!editingProvider" v-model="providerForm.type" class="input">
                   <option value="llm">LLM（语言模型）</option>
                   <option value="image">图像生成（文生图）</option>
@@ -1092,11 +1079,8 @@ watch(activeTab, (tab) => {
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  <span class="inline-flex items-center gap-1.5">
-                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
-                    提供商 <span class="text-red-500">*</span>
-                    <span class="text-xs text-gray-400 font-normal">（唯一标识，创建后不可修改）</span>
-                  </span>
+                  提供商 <span class="text-red-500">*</span>
+                  <span class="text-xs text-gray-400 font-normal ml-1">（唯一标识，创建后不可修改）</span>
                 </label>
                 <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
                 <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
@@ -1162,7 +1146,7 @@ watch(activeTab, (tab) => {
               </div>
               <div>
                 <div class="flex items-center justify-between mb-1.5">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ credentialMeta.versionLabel || '默认模型' }}</label>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ credentialMeta.versionLabel || '默认模型名' }}</label>
                   <span v-if="fetchingModels" class="flex items-center gap-1 text-xs text-gray-400">
                     <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -1207,7 +1191,7 @@ watch(activeTab, (tab) => {
                   <input v-model="providerForm.api_version" type="text" class="input font-mono text-sm"
                     :placeholder="credentialMeta.versionPlaceholder || 'gpt-4o / claude-3-5-sonnet-20241022'" />
                   <p class="mt-1 text-xs text-gray-400">
-                    {{ credentialMeta.versionHint || '生成请求中未指定模型时使用此值，填写端点和 Key 后自动获取' }}
+                    {{ credentialMeta.versionHint || '未指定模型时的兜底默认值，不影响下方模型列表；填写端点和 Key 后自动获取' }}
                   </p>
                 </div>
               </div>
@@ -1251,7 +1235,11 @@ watch(activeTab, (tab) => {
                 <span class="text-sm text-gray-700 dark:text-gray-300">启用该提供商</span>
               </div>
             </div>
-            <div class="px-6 pb-6 pt-2 flex justify-end gap-3">
+            <div v-if="!editingProvider" class="mx-6 mb-0 mt-1 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex items-start gap-2 text-xs text-blue-700 dark:text-blue-300 shrink-0">
+              <svg class="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              保存后，点击供应商卡片底部「模型」展开区域，可添加该提供商支持的具体模型
+            </div>
+            <div class="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700 shrink-0">
               <button class="btn-outline" @click="showProviderModal = false">取消</button>
               <button class="btn-primary min-w-[80px]" :disabled="providerLoading" @click="submitProviderForm">
                 <span v-if="providerLoading" class="flex items-center gap-1.5">
@@ -1464,8 +1452,8 @@ watch(activeTab, (tab) => {
                     <p class="text-xs text-gray-400 font-mono truncate">{{ model.name }}</p>
                   </div>
                   <div class="flex items-center gap-1.5 shrink-0 text-xs text-gray-400">
-                    <span v-if="model.suitable_tasks?.length" class="truncate max-w-[100px]">
-                      {{ model.suitable_tasks.slice(0, 2).join(', ') }}
+                    <span v-if="model.suitable_tasks" class="truncate max-w-[100px]">
+                      {{ model.suitable_tasks }}
                     </span>
                     <span v-if="!model.is_available" class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">不可用</span>
                   </div>

@@ -1,5 +1,15 @@
 import { getAuthToken } from '~/utils/auth'
 
+// Prevents multiple concurrent redirects to the login page
+let redirectingToLogin = false
+
+async function handle401() {
+  if (redirectingToLogin) return
+  redirectingToLogin = true
+  try { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_expires_at') } catch {}
+  await navigateTo('/auth/login')
+}
+
 export const useApi = () => {
   const config = useRuntimeConfig()
   const apiBase = config.public.apiBase
@@ -42,11 +52,7 @@ export const useApi = () => {
 
     if (!response.ok) {
       if (response.status === 401) {
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('auth_token')
-          localStorage.removeItem('auth_expires_at')
-        }
-        await navigateTo('/auth/login')
+        await handle401()
         throw new Error('Session expired')
       }
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
@@ -80,6 +86,10 @@ export const useApi = () => {
     }
 
     if (!response.ok) {
+      if (response.status === 401) {
+        await handle401()
+        throw new Error('Session expired')
+      }
       throw new Error(`HTTP error ${response.status}`)
     }
 
@@ -103,6 +113,10 @@ export const useApi = () => {
     } finally {
       clearTimeout(timeoutId)
     }
+    if (res.status === 401) {
+      await handle401()
+      throw new Error('Session expired')
+    }
     const json = await res.json().catch(() => ({ message: 'Upload failed' }))
     if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)
     return json.data
@@ -122,6 +136,10 @@ export const useApi = () => {
       })
     } finally {
       clearTimeout(timeoutId)
+    }
+    if (res.status === 401) {
+      await handle401()
+      throw new Error('Session expired')
     }
     const json = await res.json().catch(() => ({ message: 'Upload failed' }))
     if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)

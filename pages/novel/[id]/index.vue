@@ -83,9 +83,15 @@ function isCoverUrl(v?: string): boolean {
   return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
 }
 
-function coverStyle(coverImage?: string): string {
+function coverStyle(coverImage?: string): Record<string, string> {
   if (isCoverUrl(coverImage)) {
-    return `background-image:url(${coverImage});background-size:cover;background-position:center`
+    // Wrap in quotes and escape embedded quotes/backslashes to prevent CSS injection
+    const safeUrl = coverImage!.replace(/['"\\]/g, encodeURIComponent)
+    return {
+      backgroundImage: `url("${safeUrl}")`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }
   }
   const gradients: Record<string, string> = {
     purple: 'linear-gradient(135deg,#8B5CF6,#3B82F6)',
@@ -99,8 +105,8 @@ function coverStyle(coverImage?: string): string {
     amber:  'linear-gradient(135deg,#F59E0B,#84CC16)',
     cyan:   'linear-gradient(135deg,#06B6D4,#10B981)',
   }
-  if (coverImage && gradients[coverImage]) return `background:${gradients[coverImage]}`
-  return 'background:linear-gradient(135deg,#8B5CF6,#3B82F6)'
+  const grad = (coverImage && gradients[coverImage]) ? gradients[coverImage] : 'linear-gradient(135deg,#8B5CF6,#3B82F6)'
+  return { background: grad }
 }
 
 async function onCoverFileChange(e: Event) {

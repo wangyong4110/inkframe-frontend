@@ -38,11 +38,13 @@ const phoneError = ref('')
 const agreed = ref(false)
 
 const sendCooldown = ref(0)
+const sendLoading = ref(false)
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
 
 async function sendPhoneCode() {
-  if (sendCooldown.value > 0) return
+  if (sendCooldown.value > 0 || sendLoading.value) return
   phoneError.value = ''
+  sendLoading.value = true
   try {
     await request('/auth/sms/send', {
       method: 'POST',
@@ -58,6 +60,8 @@ async function sendPhoneCode() {
     }, 1000)
   } catch (e: any) {
     phoneError.value = e.message || '发送失败'
+  } finally {
+    sendLoading.value = false
   }
 }
 
@@ -176,9 +180,9 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             <div class="flex gap-2">
               <input v-model="phoneForm.code" type="text" required placeholder="请输入验证码"
                 class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
-              <button type="button" :disabled="sendCooldown > 0" @click="sendPhoneCode"
+              <button type="button" :disabled="sendCooldown > 0 || sendLoading" @click="sendPhoneCode"
                 class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 text-gray-300 text-sm px-4 rounded-xl transition-colors whitespace-nowrap">
-                {{ sendCooldown > 0 ? `${sendCooldown}s` : '发送' }}
+                {{ sendCooldown > 0 ? `${sendCooldown}s` : sendLoading ? '发送中...' : '发送' }}
               </button>
             </div>
           </div>

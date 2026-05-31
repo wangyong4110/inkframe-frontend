@@ -3,12 +3,18 @@ const route = useRoute()
 const authStore = useAuthStore()
 const showUserMenu = ref(false)
 
+const handleDocClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
+}
+
 onMounted(() => {
   document.documentElement.classList.add('dark')
-  document.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement
-    if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
-  })
+  document.addEventListener('click', handleDocClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocClick)
 })
 
 const navItems = [

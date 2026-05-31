@@ -97,6 +97,9 @@ export const useTenantStore = defineStore('tenant', {
       this.tenantsLoading = true
       try {
         const response = await fetch(`/api/v1/tenants?page=${page}&page_size=${pageSize}`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.tenants = result.data.items
@@ -113,6 +116,9 @@ export const useTenantStore = defineStore('tenant', {
       this.tenantsLoading = true
       try {
         const response = await fetch(`/api/v1/tenants/${id}`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.currentTenant = result.data
@@ -126,6 +132,9 @@ export const useTenantStore = defineStore('tenant', {
       this.tenantsLoading = true
       try {
         const response = await fetch(`/api/v1/tenants/code/${code}`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.currentTenant = result.data
@@ -142,6 +151,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify(data),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.tenants.unshift(result.data)
@@ -156,6 +168,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify(data),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         const index = this.tenants.findIndex(t => t.id === id)
@@ -175,6 +190,9 @@ export const useTenantStore = defineStore('tenant', {
         method: 'DELETE',
         headers: authHeaders(),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.tenants = this.tenants.filter(t => t.id !== id)
@@ -186,6 +204,9 @@ export const useTenantStore = defineStore('tenant', {
 
     async fetchQuota(tenantId: number) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/quota`, { headers: authHeaders() })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.quota = result.data
@@ -198,6 +219,9 @@ export const useTenantStore = defineStore('tenant', {
       this.membersLoading = true
       try {
         const response = await fetch(`/api/v1/tenants/${tenantId}/members`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.members = result.data
@@ -213,6 +237,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify(data),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         await this.fetchMembers(tenantId)
@@ -225,6 +252,9 @@ export const useTenantStore = defineStore('tenant', {
         method: 'DELETE',
         headers: authHeaders(),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.members = this.members.filter(m => m.user_id !== userId)
@@ -238,6 +268,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify({ role }),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         await this.fetchMembers(tenantId)
@@ -250,6 +283,9 @@ export const useTenantStore = defineStore('tenant', {
       this.projectsLoading = true
       try {
         const response = await fetch(`/api/v1/tenants/${tenantId}/projects`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.projects = result.data
@@ -263,6 +299,9 @@ export const useTenantStore = defineStore('tenant', {
       this.projectsLoading = true
       try {
         const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}`, { headers: authHeaders() })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
         const result = await response.json()
         if (result.code === 0) {
           this.currentProject = result.data
@@ -279,6 +318,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify(data),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.projects.unshift(result.data)
@@ -294,6 +336,9 @@ export const useTenantStore = defineStore('tenant', {
         headers: authHeaders(),
         body: JSON.stringify(data),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         const index = this.projects.findIndex(p => p.id === projectId)
@@ -313,6 +358,9 @@ export const useTenantStore = defineStore('tenant', {
         method: 'DELETE',
         headers: authHeaders(),
       })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         this.projects = this.projects.filter(p => p.id !== projectId)
@@ -325,6 +373,9 @@ export const useTenantStore = defineStore('tenant', {
 
     async fetchProjectStats(tenantId: number, projectId: number) {
       const response = await fetch(`/api/v1/tenants/${tenantId}/projects/${projectId}/stats`, { headers: authHeaders() })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       const result = await response.json()
       if (result.code === 0) {
         return result.data as ProjectStats

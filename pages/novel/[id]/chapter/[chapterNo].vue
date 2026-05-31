@@ -8,6 +8,9 @@ const chapterNo = parseInt(route.params.chapterNo as string)
 if (isNaN(novelId)) {
   router.replace('/novel')
 }
+if (isNaN(chapterNo)) {
+  router.replace('/novel')
+}
 
 const chapterStore = useChapterStore()
 const novelStore = useNovelStore()
@@ -200,7 +203,7 @@ useUnsavedGuard(isDirty, '章节有未保存的修改，确认离开？')
 
 const { lastSavedAt, autoSaving, saveFailed } = useAutosave(
   () => doSave(),
-  [content, chapterTitle, outlineEditText],
+  [content, chapterTitle],
 )
 
 const autoSaveLabel = computed(() => {
@@ -1001,6 +1004,10 @@ async function fetchShotsForChapter() {
     loadingShots.value = false
   }
 }
+
+onUnmounted(() => {
+  chapterStore.stopGenPoll()
+})
 </script>
 
 <template>

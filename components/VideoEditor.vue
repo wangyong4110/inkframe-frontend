@@ -94,6 +94,7 @@ onUnmounted(() => {
 })
 
 watch(() => props.videoId, () => {
+  videoStore.stopStoryboardPoll()
   activeTab.value = 'script'
   load()
 })

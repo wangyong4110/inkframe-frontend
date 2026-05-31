@@ -493,7 +493,7 @@ export interface AIModel {
   quality: number
   cost_per_1k: number
   context_window: number
-  suitable_tasks: string[]
+  suitable_tasks?: string
 }
 
 export interface TaskModelConfig {
