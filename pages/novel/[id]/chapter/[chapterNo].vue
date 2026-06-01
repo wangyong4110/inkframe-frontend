@@ -24,6 +24,11 @@ const saving = ref(false)
 const isSaving = ref(false)
 const generating = ref(false)
 
+// ── 重新生成 ──────────────────────────────────────────────────────────────────
+const showRegenModal = ref(false)
+const regenPrompt = ref('')
+const regenerating = ref(false)
+
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
 type PageMode = 'outline' | 'write' | 'character' | 'scenes' | 'script'
 const pageMode = ref<PageMode>('outline')
@@ -443,6 +448,38 @@ async function handleGenerate() {
     toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
     generating.value = false
+  }
+}
+
+async function handleRegenerate() {
+  if (!chapter.value) return
+  showRegenModal.value = false
+  regenerating.value = true
+  try {
+    const opts: Record<string, any> = {}
+    if (regenPrompt.value.trim()) opts.prompt = regenPrompt.value.trim()
+    if (wordCountOverride.value > 0) opts.word_count = wordCountOverride.value
+    if (advMaxTokens.value > 0) opts.max_tokens = advMaxTokens.value
+    if (novel.value?.ai_model) opts.model = novel.value.ai_model
+    if (advTemperature.value > 0) opts.temperature = advTemperature.value
+    if (webSearchEnabled.value) opts.web_search = true
+    if (wikiSearchEnabled.value) opts.wiki_search = true
+    if (storyPatternEnabled.value) opts.use_story_pattern = true
+
+    const resp = await chapterApiForVersions.regenerateChapter(chapter.value.id, opts)
+    const { task_id } = resp as any
+    currentTaskId.value = task_id
+    toast.info('重新生成中，请稍候...')
+    const result = await chapterStore.pollChapterGenTask(novelId, task_id)
+    currentTaskId.value = null
+    previewModal.content = result.content || ''
+    previewModal.open = true
+    toast.success('重新生成完成，请预览后选择是否应用')
+    regenPrompt.value = ''
+  } catch (e: any) {
+    toast.error('重新生成失败：' + (e.message || '未知错误'))
+  } finally {
+    regenerating.value = false
   }
 }
 
@@ -1924,6 +1961,17 @@ onUnmounted(() => {
                 </div>
                 <div class="flex gap-2">
                   <button
+                    class="px-3 py-2.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
+                    :disabled="generating || regenerating"
+                    title="重新生成当前章节内容（会保存当前版本）"
+                    @click="showRegenModal = true"
+                  >
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    {{ regenerating ? '重新生成中...' : '重新生成' }}
+                  </button>
+                  <button
                     class="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
                     :disabled="generating"
                     @click="handleGenerate"
@@ -2606,4 +2654,31 @@ onUnmounted(() => {
       </div>
     </Transition>
   </Teleport>
+
+  <!-- 重新生成确认弹窗 -->
+  <div v-if="showRegenModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showRegenModal = false">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">重新生成章节内容</h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        当前内容将自动保存为版本历史，AI 将重新运行完整生成流程（场景大纲 → 正文 → 润色）。生成完成后可预览再决定是否应用。
+      </p>
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">额外指引（可选）</label>
+      <textarea
+        v-model="regenPrompt"
+        rows="3"
+        placeholder="例如：这一章要侧重冲突升级，结尾需要悬念..."
+        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+      />
+      <div class="flex gap-3 justify-end">
+        <button
+          class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          @click="showRegenModal = false"
+        >取消</button>
+        <button
+          class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+          @click="handleRegenerate"
+        >确认重新生成</button>
+      </div>
+    </div>
+  </div>
 </template>

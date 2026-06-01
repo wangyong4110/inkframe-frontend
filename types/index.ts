@@ -1208,3 +1208,33 @@ export interface NovelOutlineVersion {
   outline: string
   created_at: string
 }
+
+// ─── Outline Review ────────────────────────────────────────────────────────────
+
+export interface OutlineIssue {
+  dimension: 'structure' | 'pacing' | 'continuity' | 'character' | 'conflict' | 'hook'
+  severity: 'error' | 'warning' | 'info'
+  description: string
+  suggestion: string
+}
+
+export interface OutlineReview {
+  id: number
+  novel_id: number
+  chapter_id: number
+  chapter_no: number
+  status: 'pending' | 'reviewing' | 'passed' | 'warning' | 'failed'
+  overall_score: number
+  structure_score: number
+  pacing_score: number
+  continuity_score: number
+  character_score: number
+  conflict_score: number
+  hook_score: number
+  issues_json: string
+  highlights_json: string
+  suggestion: string
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}

@@ -56,6 +56,22 @@ export const useChapterApi = () => {
   const getVersionContent = (chapterId: number, versionId: number | string) =>
     request<ApiResponse<ChapterVersion>>(`/chapters/${chapterId}/versions/${versionId}/content`)
 
+  const regenerateChapter = (chapterId: number, options?: {
+    prompt?: string
+    word_count?: number
+    max_tokens?: number
+    model?: string
+    temperature?: number
+    timeout_seconds?: number
+    web_search?: boolean
+    wiki_search?: boolean
+    use_story_pattern?: boolean
+  }) =>
+    request<{ task_id: string; status: string; message: string }>(`/chapters/${chapterId}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    })
+
   return {
     getChapters,
     getChapter,
@@ -68,5 +84,6 @@ export const useChapterApi = () => {
     batchPublishChapters,
     getVersions,
     getVersionContent,
+    regenerateChapter,
   }
 }

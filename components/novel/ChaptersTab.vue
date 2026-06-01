@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Chapter } from '~/types'
+import type { Chapter, OutlineReview } from '~/types'
 
 const props = defineProps<{ novelId: number }>()
 
@@ -15,8 +15,146 @@ const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
 
-const { publishChapter, unpublishChapter } = useChapterApi()
+const { publishChapter, unpublishChapter, regenerateChapter } = useChapterApi()
 const { guardAiProvider } = useAiProviderGuard()
+
+// ── 大纲审查 ──────────────────────────────────────────────────────────────────
+const outlineReviewApi = useOutlineReviewApi()
+const outlineReviews = ref<Record<number, OutlineReview>>({}) // keyed by chapter_id
+const outlineReviewPanel = ref<{ open: boolean; review: OutlineReview | null; title: string }>({
+  open: false,
+  review: null,
+  title: '',
+})
+const batchReviewing = ref(false)
+const reviewingChapterId = ref<number | null>(null)
+const generatingChapterId = ref<number | null>(null)
+
+async function pollTask(taskId: string, onComplete: (result: any) => void) {
+  const taskApi = useTaskApi()
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000))
+    try {
+      const resp: any = await taskApi.getTask(taskId)
+      const task = resp?.data ?? resp
+      if (task?.status === 'completed') { onComplete(task?.result); break }
+      if (task?.status === 'failed') { throw new Error(task?.error || '任务失败') }
+    } catch (e) { throw e }
+  }
+}
+
+async function loadNovelReviews() {
+  try {
+    const reviews = await outlineReviewApi.listNovelReviews(props.novelId)
+    if (Array.isArray(reviews)) {
+      const map: Record<number, OutlineReview> = {}
+      for (const r of reviews) map[r.chapter_id] = r
+      outlineReviews.value = map
+    }
+  } catch { /* silent */ }
+}
+
+async function handleReviewChapter(chapter: Chapter, event: Event) {
+  event.stopPropagation()
+  if (!await guardAiProvider('LLM')) return
+  reviewingChapterId.value = chapter.id
+  try {
+    const resp: any = await outlineReviewApi.reviewChapter(chapter.id)
+    const taskId = resp?.task_id ?? resp?.data?.task_id
+    toast.info('大纲审查中，请稍候...')
+    await pollTask(taskId, (result: any) => {
+      if (result?.review) {
+        outlineReviews.value[chapter.id] = result.review
+        toast.success(`第${chapter.chapter_no}章审查完成`)
+      } else {
+        // Fetch the review after task completes
+        outlineReviewApi.getChapterReview(chapter.id).then((r: any) => {
+          if (r) outlineReviews.value[chapter.id] = r
+        }).catch(() => {})
+        toast.success(`第${chapter.chapter_no}章审查完成`)
+      }
+    })
+    // Always refresh after polling finishes
+    const r: any = await outlineReviewApi.getChapterReview(chapter.id)
+    if (r) outlineReviews.value[chapter.id] = r
+  } catch (e: any) {
+    toast.error('审查失败：' + (e.message || '未知错误'))
+  } finally {
+    reviewingChapterId.value = null
+  }
+}
+
+async function handleBatchReview(event: Event) {
+  event.stopPropagation()
+  if (!await guardAiProvider('LLM')) return
+  batchReviewing.value = true
+  try {
+    const resp: any = await outlineReviewApi.batchReviewNovel(props.novelId)
+    const taskId = resp?.task_id ?? resp?.data?.task_id
+    toast.info('批量审查已提交，正在后台处理...')
+    await pollTask(taskId, (result: any) => {
+      if (result?.reviews) {
+        const map: Record<number, OutlineReview> = { ...outlineReviews.value }
+        for (const r of result.reviews) map[r.chapter_id] = r
+        outlineReviews.value = map
+        toast.success(`批量审查完成，共审查 ${result.count ?? result.reviews.length} 章`)
+      } else {
+        toast.success('批量审查完成')
+      }
+    })
+    // Refresh all reviews after batch completes
+    await loadNovelReviews()
+  } catch (e: any) {
+    toast.error('批量审查失败：' + (e.message || '未知错误'))
+  } finally {
+    batchReviewing.value = false
+  }
+}
+
+function openReviewPanel(chapter: Chapter, event: Event) {
+  event.stopPropagation()
+  const review = outlineReviews.value[chapter.id]
+  if (review) {
+    outlineReviewPanel.value = { open: true, review, title: `第${chapter.chapter_no}章 ${chapter.title}` }
+  }
+}
+
+function reviewStatusBadge(chapterId: number) {
+  const r = outlineReviews.value[chapterId]
+  if (!r) return null
+  return {
+    passed: { label: '大纲通过', cls: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' },
+    warning: { label: '需改进', cls: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' },
+    failed: { label: '问题较多', cls: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' },
+    reviewing: { label: '审查中...', cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' },
+  }[r.status] ?? null
+}
+
+// ── 生成 / 重新生成章节 ────────────────────────────────────────────────────────
+async function handleGenerateOrRegenerate(chapter: Chapter, event: Event) {
+  event.stopPropagation()
+  if (!await guardAiProvider('LLM')) return
+  if (generatingChapterId.value !== null) return
+  generatingChapterId.value = chapter.id
+  try {
+    const resp: any = await regenerateChapter(chapter.id)
+    const taskId = resp?.task_id ?? resp?.data?.task_id
+    const verb = chapter.word_count > 0 ? '重新生成' : '生成'
+    toast.info(`${verb}中，请稍候...`)
+    await pollTask(taskId, async () => {
+      await chapterStore.fetchChapters(props.novelId)
+      toast.success(`第${chapter.chapter_no}章${verb}完成`)
+    })
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || '未知错误'))
+  } finally {
+    generatingChapterId.value = null
+  }
+}
+
+onMounted(() => {
+  loadNovelReviews()
+})
 
 const chapters = computed(() => chapterStore.chapters)
 const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
@@ -105,6 +243,17 @@ async function confirmDeleteChapter() {
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
       <div class="flex items-center gap-2">
+        <!-- 批量审查大纲 -->
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
+          :disabled="batchReviewing"
+          @click="handleBatchReview"
+        >
+          <svg class="w-4 h-4" :class="batchReviewing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          {{ batchReviewing ? '批量审查中...' : '批量审查大纲' }}
+        </button>
         <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
           <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -171,6 +320,16 @@ async function confirmDeleteChapter() {
             >
               {{ getStatusLabel(chapter.status) }}
             </span>
+            <!-- 大纲审查状态 -->
+            <button
+              v-if="reviewStatusBadge(chapter.id)"
+              class="text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer"
+              :class="reviewStatusBadge(chapter.id)!.cls"
+              :title="`综合评分 ${Math.round(outlineReviews[chapter.id]?.overall_score ?? 0)}`"
+              @click.stop="openReviewPanel(chapter, $event)"
+            >
+              {{ reviewStatusBadge(chapter.id)!.label }}
+            </button>
             <!-- 广场发布状态（独立于内容状态） -->
             <span
               v-if="chapter.is_published"
@@ -182,6 +341,33 @@ async function confirmDeleteChapter() {
               </svg>
               已发布
             </span>
+            <!-- 审查大纲按钮 -->
+            <button
+              class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40"
+              title="审查本章大纲"
+              :disabled="reviewingChapterId === chapter.id || chapter.status === 'generating'"
+              @click.stop="handleReviewChapter(chapter, $event)"
+            >
+              <svg v-if="reviewingChapterId === chapter.id" class="w-3 h-3 animate-spin inline mr-0.5" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              {{ reviewingChapterId === chapter.id ? '审查中' : '审查' }}
+            </button>
+            <!-- 立即生成 / 重新生成 -->
+            <button
+              class="text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40"
+              :class="chapter.word_count > 0 ? 'text-orange-500 dark:text-orange-400 hover:underline' : 'text-primary-600 dark:text-primary-400 hover:underline'"
+              :title="chapter.word_count > 0 ? '重新生成本章内容' : '立即生成本章内容'"
+              :disabled="generatingChapterId === chapter.id || chapter.status === 'generating'"
+              @click.stop="handleGenerateOrRegenerate(chapter, $event)"
+            >
+              <svg v-if="generatingChapterId === chapter.id || chapter.status === 'generating'" class="w-3 h-3 animate-spin inline mr-0.5" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              {{ generatingChapterId === chapter.id || chapter.status === 'generating' ? '生成中...' : (chapter.word_count > 0 ? '重新生成' : '立即生成') }}
+            </button>
             <!-- 发布/取消发布按钮（仅 completed 状态可用） -->
             <button
               v-if="chapter.status === 'completed'"
@@ -268,4 +454,14 @@ async function confirmDeleteChapter() {
       @confirm="confirmDeleteChapter"
     />
   </div>
+
+  <!-- 大纲审查详情面板 -->
+  <Teleport to="body">
+    <NovelOutlineReviewPanel
+      v-if="outlineReviewPanel.open"
+      :review="outlineReviewPanel.review"
+      :chapter-title="outlineReviewPanel.title"
+      @close="outlineReviewPanel.open = false"
+    />
+  </Teleport>
 </template>
