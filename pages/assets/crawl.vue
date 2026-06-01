@@ -18,7 +18,11 @@ const form = reactive({
   asset_type: 'image',
   license: '',
   limit: 20,
+  crawl_depth: 0,
+  url_pattern: '',
 })
+
+const isWebpage = computed(() => form.source === 'webpage')
 
 const sourceOptions = [
   { value: 'unsplash', label: 'Unsplash（图片）' },
@@ -28,6 +32,7 @@ const sourceOptions = [
   { value: 'bbc-sfx', label: 'BBC Sound Effects（音效，免费）' },
   { value: 'nasa', label: 'NASA Images（图片/视频）' },
   { value: 'wikimedia', label: 'Wikimedia Commons（图片）' },
+  { value: 'webpage', label: '自定义网页（HTML 解析）' },
 ]
 
 const licenseOptions = [
@@ -80,6 +85,8 @@ async function createJob() {
       asset_type: form.asset_type,
       license: form.license || undefined,
       limit: form.limit,
+      crawl_depth: form.crawl_depth,
+      url_pattern: form.url_pattern || undefined,
     })
     jobs.value.unshift(res.data)
     form.query = ''
@@ -157,18 +164,44 @@ onUnmounted(() => {
           </select>
         </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">搜索关键词</label>
-          <input v-model="form.query" type="text" placeholder="例如：古风建筑、战斗场面、史诗配乐..."
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ isWebpage ? '目标页面 URL' : '搜索关键词' }}
+          </label>
+          <input v-model="form.query" type="text"
+            :placeholder="isWebpage ? 'https://example.com/gallery' : '例如：古风建筑、战斗场面、史诗配乐...'"
             @keyup.enter="createJob"
             class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700" />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">授权过滤</label>
-          <select v-model="form.license"
-            class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700">
-            <option v-for="opt in licenseOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
-        </div>
+
+        <!-- Webpage-specific options -->
+        <template v-if="isWebpage">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">爬取深度</label>
+            <select v-model.number="form.crawl_depth"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700">
+              <option :value="0">单页（仅爬取目标 URL）</option>
+              <option :value="1">跟随链接（同域名的子页面）</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              链接过滤（正则，可选）
+            </label>
+            <input v-model="form.url_pattern" type="text" placeholder="例如：/gallery/|/photos/"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700" />
+          </div>
+        </template>
+
+        <template v-else>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">授权过滤</label>
+            <select v-model="form.license"
+              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700">
+              <option v-for="opt in licenseOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+        </template>
+
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大数量</label>
           <input v-model.number="form.limit" type="number" min="1" max="500"
@@ -176,8 +209,14 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- License notes -->
-      <div class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
+      <!-- Notes -->
+      <div v-if="isWebpage" class="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+        <p class="font-medium mb-1">网页爬取说明</p>
+        <p>从指定 HTML 页面提取 <code>img</code>/<code>video</code>/<code>audio</code> 标签及媒体链接，导入公共素材库。</p>
+        <p class="mt-1">爬取的素材版权未知（标记为 unknown），请自行确认使用权限后再商用。</p>
+        <p class="mt-1">深度=1 时最多跟随 30 个同域链接，总计不超过设定数量上限。</p>
+      </div>
+      <div v-else class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
         <p class="font-medium mb-1">版权合规说明</p>
         <p>所有爬取素材均来自版权安全来源（CC0/CC-BY/Unsplash/Pexels License），可免费用于商业用途。
           需要署名的素材在使用时会自动附带 attribution 信息。</p>
@@ -229,8 +268,9 @@ onUnmounted(() => {
               </div>
               <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
                 <span>来源：{{ job.source }}</span>
-                <span>类型：{{ job.asset_type }}</span>
+                <span v-if="job.asset_type">类型：{{ job.asset_type }}</span>
                 <span v-if="job.license">授权：{{ job.license }}</span>
+                <span v-if="job.source === 'webpage'">深度：{{ job.crawl_depth === 1 ? '跟随链接' : '单页' }}</span>
                 <span>上限：{{ job.limit }}</span>
               </div>
             </div>

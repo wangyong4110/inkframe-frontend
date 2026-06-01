@@ -1,11 +1,39 @@
 <script setup lang="ts">
 import type { Worldview } from '~/types'
+import { useDebounceFn } from '@vueuse/core'
 
 const props = defineProps<{ novelId: number }>()
 
 const toast = useToast()
 const novelStore = useNovelStore()
 const { guardAiProvider } = useAiProviderGuard()
+
+const searchWorldview = ref('')
+const debouncedSearchWorldview = ref('')
+
+watch(searchWorldview, useDebounceFn((val: string) => {
+  debouncedSearchWorldview.value = val
+}, 300))
+
+const worldviewSections = computed(() => {
+  if (!linkedWorldview.value) return []
+  const wv = linkedWorldview.value
+  const sections = [
+    { key: 'description', label: '概述', content: wv.description || '' },
+    { key: 'magic_system', label: '修炼/魔法体系', content: wv.magic_system || '' },
+    { key: 'geography', label: '地理环境', content: wv.geography || '' },
+    { key: 'history', label: '历史背景', content: wv.history || '' },
+    { key: 'culture', label: '文化风俗', content: wv.culture || '' },
+    { key: 'technology', label: '科技水平', content: wv.technology || '' },
+    { key: 'rules', label: '世界规则', content: wv.rules || '' },
+  ].filter(s => !!s.content)
+  if (!debouncedSearchWorldview.value) return sections
+  const q = debouncedSearchWorldview.value.toLowerCase()
+  return sections.filter(s =>
+    s.label.toLowerCase().includes(q) ||
+    s.content.toLowerCase().includes(q)
+  )
+})
 
 const novel = computed(() => novelStore.currentNovel)
 
@@ -125,37 +153,43 @@ async function linkWorldview(worldviewId: number | null) {
       </div>
 
       <template v-else-if="linkedWorldview">
-        <!-- 概述 -->
-        <div v-if="linkedWorldview.description" class="card p-4">
-          <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">概述</h4>
-          <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-4">{{ linkedWorldview.description }}</p>
-        </div>
+        <!-- Search -->
+        <input
+          v-model="searchWorldview"
+          placeholder="搜索世界观..."
+          class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+        />
 
-        <!-- 核心设定 2列 -->
-        <div class="grid gap-4 md:grid-cols-2">
-          <div v-if="linkedWorldview.magic_system" class="card p-4">
-            <h4 class="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">修炼/魔法体系</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.magic_system }}</p>
+        <!-- Filtered sections -->
+        <div v-if="worldviewSections.length === 0" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
+          无匹配内容
+        </div>
+        <div v-else>
+          <!-- 概述 (first section, full width) -->
+          <div v-if="worldviewSections[0]?.key === 'description'" class="card p-4 mb-4">
+            <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">概述</h4>
+            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-4">{{ worldviewSections[0].content }}</p>
           </div>
-          <div v-if="linkedWorldview.geography" class="card p-4">
-            <h4 class="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wider mb-2">地理环境</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.geography }}</p>
-          </div>
-          <div v-if="linkedWorldview.history" class="card p-4">
-            <h4 class="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-2">历史背景</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.history }}</p>
-          </div>
-          <div v-if="linkedWorldview.culture" class="card p-4">
-            <h4 class="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-2">文化风俗</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.culture }}</p>
-          </div>
-          <div v-if="linkedWorldview.technology" class="card p-4">
-            <h4 class="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2">科技水平</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.technology }}</p>
-          </div>
-          <div v-if="linkedWorldview.rules" class="card p-4">
-            <h4 class="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">世界规则</h4>
-            <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ linkedWorldview.rules }}</p>
+
+          <!-- 核心设定 2列 -->
+          <div class="grid gap-4 md:grid-cols-2">
+            <div
+              v-for="section in worldviewSections.filter(s => s.key !== 'description')"
+              :key="section.key"
+              class="card p-4"
+            >
+              <h4 class="text-xs font-semibold uppercase tracking-wider mb-2"
+                :class="{
+                  'text-purple-600 dark:text-purple-400': section.key === 'magic_system',
+                  'text-green-600 dark:text-green-400': section.key === 'geography',
+                  'text-amber-600 dark:text-amber-400': section.key === 'history',
+                  'text-rose-600 dark:text-rose-400': section.key === 'culture',
+                  'text-blue-600 dark:text-blue-400': section.key === 'technology',
+                  'text-gray-600 dark:text-gray-400': section.key === 'rules',
+                }"
+              >{{ section.label }}</h4>
+              <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-5">{{ section.content }}</p>
+            </div>
           </div>
         </div>
       </template>

@@ -963,6 +963,47 @@ export interface AssetCollection {
   updated_at: string
 }
 
+export interface Foreshadow {
+  id: number
+  novel_id: number
+  title: string
+  description?: string
+  planted_chapter_id?: number
+  payoff_chapter_id?: number
+  status: 'planted' | 'paid_off' | 'abandoned'
+  tags?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookSubscription {
+  id: number
+  tenant_id: number
+  url: string
+  events: string[]
+  is_active: boolean
+  fail_count: number
+  last_error?: string
+  created_at: string
+}
+
+export interface AuditLog {
+  id: number
+  tenant_id: number
+  user_id: number
+  action: string
+  entity_type: string
+  entity_id: number
+  ip_address?: string
+  user_agent?: string
+  detail?: Record<string, unknown>
+  created_at: string
+}
+
+export interface BatchDeleteRequest {
+  ids: number[]
+}
+
 export interface CrawlJob {
   id: number
   source: string
@@ -970,6 +1011,8 @@ export interface CrawlJob {
   asset_type: string
   license: string
   limit: number
+  crawl_depth?: number
+  url_pattern?: string
   status: string
   total_found: number
   imported: number
@@ -1138,4 +1181,22 @@ export interface AnalysisStatus {
   current_step?: string
   error?: string
   updated_at?: string
+}
+
+export interface KnowledgeBase {
+  id: number
+  type: string
+  title: string
+  content: string
+  tags?: string
+  novel_id?: number
+  created_at: string
+}
+
+export interface ChapterVersion {
+  id: number
+  chapter_id: number
+  content: string
+  change_type: string
+  created_at: string
 }

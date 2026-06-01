@@ -1075,7 +1075,7 @@ watch(activeTab, (tab) => {
                  class="px-5 py-2.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
               <span class="flex-1 text-sm font-mono text-gray-800 dark:text-gray-200 truncate">{{ m.name }}</span>
               <span v-if="m.suitable_tasks" class="text-xs text-gray-400 font-mono">{{ m.suitable_tasks }}</span>
-              <button class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1" @click="handleDeleteModel(p.id, m.id)">
+              <button class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1" aria-label="删除模型" @click="handleDeleteModel(p.id, m.id)">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -1392,7 +1392,7 @@ watch(activeTab, (tab) => {
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ editingProvider ? '编辑提供商' : '添加 AI 提供商' }}</h3>
                 <p class="text-sm text-gray-500 mt-0.5">{{ editingProvider ? '修改凭证、端点或限流配置' : '配置凭证与端点，保存后在卡片中管理具体模型' }}</p>
               </div>
-              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" @click="showProviderModal = false">
+              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="关闭" @click="showProviderModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -1600,7 +1600,7 @@ watch(activeTab, (tab) => {
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ editingTool ? '编辑 MCP 工具' : '添加 MCP 工具' }}</h3>
                 <p class="text-sm text-gray-500 mt-0.5">配置 MCP 服务端点，绑定后模型可调用该工具</p>
               </div>
-              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" @click="showMcpModal = false">
+              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="关闭" @click="showMcpModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -1744,7 +1744,7 @@ watch(activeTab, (tab) => {
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ bindingTool?.display_name }}</span>
                 </p>
               </div>
-              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" @click="showBindModal = false">
+              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="关闭" @click="showBindModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>

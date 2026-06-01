@@ -180,12 +180,19 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">邮箱</label>
             <input v-model="emailForm.email" type="email" required placeholder="请输入邮箱"
+              aria-label="邮箱"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">密码</label>
             <input v-model="emailForm.password" type="password" required placeholder="请输入密码"
+              aria-label="密码"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
+            <div class="text-right mt-1">
+              <NuxtLink to="/auth/forgot-password" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">
+                忘记密码？
+              </NuxtLink>
+            </div>
           </div>
           <!-- 邮箱未验证：醒目提示卡片 -->
           <div v-if="showResend && !resendDone" class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
@@ -206,7 +213,7 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             </button>
           </div>
           <!-- 普通登录错误 -->
-          <p v-else-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
+          <p v-else-if="emailError" class="text-red-400 text-xs" role="alert">{{ emailError }}</p>
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"
               class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
@@ -220,7 +227,7 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
                 class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
             </span>
           </label>
-          <button type="submit" :disabled="emailLoading || !agreed"
+          <button type="submit" :disabled="emailLoading || !agreed" aria-label="登录"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ emailLoading ? '登录中...' : '登 录' }}
           </button>
@@ -231,20 +238,23 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">手机号</label>
             <input v-model="phoneForm.phone" type="tel" required placeholder="请输入手机号"
+              aria-label="手机号"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">验证码</label>
             <div class="flex gap-2">
               <input v-model="phoneForm.code" type="text" required placeholder="请输入验证码"
+                aria-label="验证码"
                 class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
               <button type="button" :disabled="sendCooldown > 0 || sendLoading" @click="sendPhoneCode"
+                aria-label="发送验证码"
                 class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 text-gray-300 text-sm px-4 rounded-xl transition-colors whitespace-nowrap">
                 {{ sendCooldown > 0 ? `${sendCooldown}s` : sendLoading ? '发送中...' : '发送' }}
               </button>
             </div>
           </div>
-          <p v-if="phoneError" class="text-red-400 text-xs">{{ phoneError }}</p>
+          <p v-if="phoneError" class="text-red-400 text-xs" role="alert">{{ phoneError }}</p>
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"
               class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
@@ -258,7 +268,7 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
                 class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
             </span>
           </label>
-          <button type="submit" :disabled="phoneLoading || !agreed"
+          <button type="submit" :disabled="phoneLoading || !agreed" aria-label="登录"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ phoneLoading ? '登录中...' : '登 录' }}
           </button>

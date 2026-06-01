@@ -414,9 +414,10 @@ async function handleGenerate() {
     const temperature = advTemperature.value > 0 ? advTemperature.value : undefined
     const timeoutSeconds = advTimeoutSeconds.value > 0 ? advTimeoutSeconds.value : undefined
     const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined)
+    currentTaskId.value = task_id
     toast.info('AI 正在生成，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
-    content.value = result.content || ''
+    currentTaskId.value = null
     // Sync metadata returned from the generation task into the local chapter ref
     // and the chapter list so the sidebar word count / status reflects reality.
     const generatedWordCount = result.word_count ?? countWords(result.content || '')
@@ -434,7 +435,10 @@ async function handleGenerate() {
     // Update server timestamp so the next save uses the correct concurrency guard.
     serverUpdatedAt.value = (result as any)?.updated_at || serverUpdatedAt.value
     if (wordCountOverride.value > 0) chapterStore.wordCountGoal = wordCountOverride.value
-    toast.success('内容生成完成')
+    // Show preview modal instead of directly applying
+    previewModal.content = result.content || ''
+    previewModal.open = true
+    toast.success('内容生成完成，请预览后选择是否应用')
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
@@ -1057,8 +1061,164 @@ async function fetchShotsForChapter() {
   }
 }
 
+// ── 生成预览弹窗 ──────────────────────────────────────────────────────────────
+const previewModal = reactive({
+  open: false,
+  content: '',
+})
+
+const applyGenerated = () => {
+  content.value = previewModal.content
+  savedContent.value = savedContent.value // keep dirty
+  previewModal.open = false
+  toast.success('已应用生成内容')
+}
+
+// ── 取消生成 ──────────────────────────────────────────────────────────────────
+const currentTaskId = ref<string | null>(null)
+
+const cancelGeneration = async () => {
+  chapterStore.stopGenPoll()
+  if (currentTaskId.value) {
+    try {
+      const { request } = useApi()
+      await request(`/tasks/${currentTaskId.value}`, { method: 'DELETE' })
+    } catch { /* best-effort */ }
+    currentTaskId.value = null
+  }
+  generating.value = false
+  toast.info('已取消生成')
+}
+
+// ── 撤销/重做 ─────────────────────────────────────────────────────────────────
+const undoStack = ref<string[]>([])
+const redoStack = ref<string[]>([])
+const maxUndoSteps = 50
+const _undoPrevContent = ref('')
+
+const pushToUndo = (contentSnapshot: string) => {
+  undoStack.value.push(contentSnapshot)
+  if (undoStack.value.length > maxUndoSteps) {
+    undoStack.value.shift()
+  }
+  redoStack.value = []
+}
+
+const handleUndo = () => {
+  if (undoStack.value.length === 0) return
+  redoStack.value.push(content.value)
+  content.value = undoStack.value.pop()!
+}
+
+const handleRedo = () => {
+  if (redoStack.value.length === 0) return
+  undoStack.value.push(content.value)
+  content.value = redoStack.value.pop()!
+}
+
+let _undoTimer: ReturnType<typeof setTimeout> | null = null
+watch(content, (newVal, oldVal) => {
+  if (_undoTimer !== null) clearTimeout(_undoTimer)
+  _undoTimer = setTimeout(() => {
+    if (oldVal !== newVal) {
+      pushToUndo(oldVal)
+      _undoPrevContent.value = newVal
+    }
+    _undoTimer = null
+  }, 2000)
+})
+
+// ── 历史版本面板 ──────────────────────────────────────────────────────────────
+const showVersionHistory = ref(false)
+const versions = ref<import('~/types').ChapterVersion[]>([])
+const chapterApiForVersions = useChapterApi()
+
+const loadVersions = async () => {
+  if (!chapter.value) return
+  try {
+    const res = await chapterApiForVersions.getVersions(chapter.value.id)
+    versions.value = (res as any)?.data?.versions || []
+  } catch {
+    versions.value = []
+  }
+}
+
+const previewVersion = (v: import('~/types').ChapterVersion) => {
+  previewModal.content = v.content
+  previewModal.open = true
+}
+
+async function restoreVersion(version: import('~/types').ChapterVersion) {
+  if (!confirm(`确认恢复到 "${version.change_type === 'pre_rewrite' ? '改写前备份' : ('版本 ' + version.id)}"？当前内容将被替换。`)) return
+  try {
+    let versionContent: string | undefined
+    // Try dedicated version content endpoint; fall back to inline content
+    try {
+      const res = await useApi().request<any>(`/chapters/${chapter.value!.id}/versions/${version.id}/content`)
+      versionContent = res?.data?.content ?? res?.content
+    } catch {
+      versionContent = version.content
+    }
+    if (versionContent) {
+      // Push current content to undo stack before replacing
+      pushToUndo(content.value)
+      content.value = versionContent
+      // Auto-save after restore
+      await doSave()
+      toast.success('版本已恢复')
+    }
+  } catch (e) {
+    console.error('恢复版本失败', e)
+    toast.error('恢复版本失败')
+  }
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch {
+    return dateStr
+  }
+}
+
+watch(showVersionHistory, (open) => {
+  if (open) loadVersions()
+})
+
+// ── 键盘快捷键（撤销/重做） ─────────────────────────────────────────────────
+const handleUndoRedoKeydown = (e: KeyboardEvent) => {
+  if (pageMode.value !== 'write') return
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    handleUndo()
+  } else if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    e.preventDefault()
+    handleRedo()
+  }
+}
+
+// ── 离开页面守卫（生成进行中时提示） ─────────────────────────────────────────
+function setupUnloadGuard() {
+  const handler = (e: BeforeUnloadEvent) => {
+    if (currentTaskId.value) {
+      e.preventDefault()
+      e.returnValue = '正在生成章节内容，关闭页面将中断生成。确定要离开吗？'
+      return e.returnValue
+    }
+  }
+  window.addEventListener('beforeunload', handler)
+  onUnmounted(() => window.removeEventListener('beforeunload', handler))
+}
+
+setupUnloadGuard()
+
+onMounted(() => window.addEventListener('keydown', handleUndoRedoKeydown))
+
 onUnmounted(() => {
   chapterStore.stopGenPoll()
+  window.removeEventListener('keydown', handleUndoRedoKeydown)
 })
 </script>
 
@@ -1234,6 +1394,27 @@ onUnmounted(() => {
             <!-- 工具栏 -->
             <div class="flex-none border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
               <div class="max-w-2xl mx-auto px-8 py-1.5 flex items-center flex-wrap gap-0.5">
+                <!-- 撤销/重做 -->
+                <button
+                  :disabled="undoStack.length === 0"
+                  class="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30"
+                  title="撤销 (⌘Z)"
+                  @click="handleUndo"
+                >↩</button>
+                <button
+                  :disabled="redoStack.length === 0"
+                  class="p-1.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30"
+                  title="重做 (⌘⇧Z)"
+                  @click="handleRedo"
+                >↪</button>
+                <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
+                <!-- 历史版本 -->
+                <button
+                  class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs transition-colors"
+                  title="历史版本"
+                  @click="showVersionHistory = !showVersionHistory"
+                >📋 历史版本</button>
+                <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                 <!-- 查找 -->
                 <button
                   :class="['p-1.5 rounded text-gray-500 dark:text-gray-400 transition-colors', showFindBar ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800']"
@@ -1741,19 +1922,28 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
-                <button
-                  class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
-                  :disabled="generating"
-                  @click="handleGenerate"
-                >
-                  <svg v-if="generating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                  </svg>
-                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                  </svg>
-                  {{ generating ? '生成中...' : '立即生成' }}
-                </button>
+                <div class="flex gap-2">
+                  <button
+                    class="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
+                    :disabled="generating"
+                    @click="handleGenerate"
+                  >
+                    <svg v-if="generating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    {{ generating ? '生成中...' : '立即生成' }}
+                  </button>
+                  <button
+                    v-if="generating"
+                    class="px-3 py-2.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                    @click="cancelGeneration"
+                  >
+                    取消生成
+                  </button>
+                </div>
               </div>
 
               <!-- Quality report -->
@@ -2346,4 +2536,74 @@ onUnmounted(() => {
     @close="showReviewPanel = false"
     @content-updated="handleReviewContentUpdated"
   />
+
+  <!-- 生成预览弹窗 -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="previewModal.open" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold text-lg text-gray-900 dark:text-white">生成预览</h3>
+            <div class="flex gap-2">
+              <button
+                class="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors"
+                @click="applyGenerated"
+              >
+                使用此内容
+              </button>
+              <button
+                class="px-4 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                @click="previewModal.open = false"
+              >
+                放弃
+              </button>
+            </div>
+          </div>
+          <div class="overflow-y-auto p-6 text-sm leading-relaxed whitespace-pre-wrap flex-1 text-gray-800 dark:text-gray-200">
+            {{ previewModal.content }}
+          </div>
+          <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+            字数：{{ countWords(previewModal.content) }} 字
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 历史版本侧边栏 -->
+  <Teleport to="body">
+    <Transition name="slide-right">
+      <div v-if="showVersionHistory" class="fixed right-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-800 shadow-xl z-40 flex flex-col border-l border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="font-semibold text-gray-900 dark:text-white">历史版本</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showVersionHistory = false">✕</button>
+        </div>
+        <div class="overflow-y-auto flex-1 p-4 space-y-2">
+          <div v-if="versions.length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-8">暂无历史版本</div>
+          <div
+            v-for="v in versions"
+            :key="v.id"
+            class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <div class="cursor-pointer" @click="previewVersion(v)">
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ formatDate(v.created_at) }}</div>
+              <div class="text-sm mt-1 text-gray-800 dark:text-gray-200">{{ v.change_type === 'pre_rewrite' ? '改写前备份' : v.change_type }}</div>
+              <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">{{ countWords(v.content) }} 字</div>
+            </div>
+            <div class="flex gap-2 mt-2">
+              <button
+                @click="previewVersion(v)"
+                class="text-xs px-2 py-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+              >预览</button>
+              <button
+                @click="restoreVersion(v)"
+                aria-label="恢复此版本"
+                class="text-xs px-2 py-1 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+              >恢复</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>

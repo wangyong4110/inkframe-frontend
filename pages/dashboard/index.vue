@@ -34,9 +34,11 @@ const stats = ref<DashboardStats>({
   provider_health: [],
 })
 const loading = ref(false)
+const usingFallback = ref(false)
 
 const loadStats = async () => {
   loading.value = true
+  usingFallback.value = false
   try {
     const res = await request<any>('/dashboard/stats')
     stats.value = { ...stats.value, ...(res?.data || res) }
@@ -47,6 +49,7 @@ const loadStats = async () => {
     }
     stats.value.novel_count = novelStore.pagination.total || novelStore.novels.length
     stats.value.chapter_count = novelStore.totalChapters
+    usingFallback.value = true
   } finally {
     loading.value = false
   }
@@ -126,6 +129,13 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
+    <!-- Fallback warning banner -->
+    <div v-if="usingFallback"
+         class="mb-4 px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-700 dark:text-yellow-400"
+         role="alert">
+      统计数据可能不是最新的（无法连接服务器）
+    </div>
+
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>

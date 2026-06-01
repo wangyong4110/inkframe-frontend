@@ -164,6 +164,7 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             <label class="block text-sm font-medium text-gray-400 mb-1">{{ field.label }}</label>
             <input v-model="(emailForm as any)[field.model]" :type="field.type" :required="field.required"
               :placeholder="field.placeholder" :minlength="field.model === 'password' ? 8 : undefined"
+              :aria-label="field.label"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <label class="flex items-start gap-2 cursor-pointer select-none">
@@ -176,8 +177,8 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               <NuxtLink to="/privacy" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
             </span>
           </label>
-          <p v-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
-          <button type="submit" :disabled="emailLoading || !agreed"
+          <p v-if="emailError" class="text-red-400 text-xs" role="alert">{{ emailError }}</p>
+          <button type="submit" :disabled="emailLoading || !agreed" aria-label="注册"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ emailLoading ? '注册中...' : '注 册' }}
           </button>
@@ -188,19 +189,23 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">昵称</label>
             <input v-model="phoneForm.nickname" type="text" placeholder="请输入昵称（选填）"
+              aria-label="昵称"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">手机号</label>
             <input v-model="phoneForm.phone" type="tel" required placeholder="请输入手机号"
+              aria-label="手机号"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-1">验证码</label>
             <div class="flex gap-2">
               <input v-model="phoneForm.code" type="text" required placeholder="请输入验证码"
+                aria-label="验证码"
                 class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
               <button type="button" :disabled="sendCooldown > 0" @click="sendPhoneCode"
+                aria-label="发送验证码"
                 class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 text-gray-300 text-sm px-4 rounded-xl transition-colors whitespace-nowrap">
                 {{ sendCooldown > 0 ? `${sendCooldown}s` : '发送' }}
               </button>
@@ -216,8 +221,8 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
               <NuxtLink to="/privacy" target="_blank" class="text-violet-400 hover:text-violet-300 transition-colors">《隐私政策》</NuxtLink>
             </span>
           </label>
-          <p v-if="phoneError" class="text-red-400 text-xs">{{ phoneError }}</p>
-          <button type="submit" :disabled="phoneLoading || !agreed"
+          <p v-if="phoneError" class="text-red-400 text-xs" role="alert">{{ phoneError }}</p>
+          <button type="submit" :disabled="phoneLoading || !agreed" aria-label="注册"
             class="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-colors">
             {{ phoneLoading ? '注册中...' : '注 册' }}
           </button>

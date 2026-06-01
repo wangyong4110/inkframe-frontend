@@ -16,7 +16,7 @@ const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 
-const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'plot_points', 'scene_anchors', 'dramatic', 'settings'])
+const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'plot_points', 'scene_anchors', 'dramatic', 'knowledge', 'foreshadow', 'settings'])
 const initialTab = route.query.tab as string
 const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
@@ -64,6 +64,8 @@ const tabs = [
   { key: 'plot_points', label: '剧情点', icon: 'flag' },
   { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
   { key: 'dramatic', label: '戏剧张力', icon: 'zap' },
+  { key: 'knowledge', label: '知识库', icon: 'database' },
+  { key: 'foreshadow', label: '伏笔', icon: 'bookmark' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -161,6 +163,24 @@ async function doGenerateCover() {
     toast.error('AI 封面生成失败：' + (err.message || ''))
   } finally {
     coverGenerating.value = false
+  }
+}
+
+// ── Export ──────────────────────────────────────────────────────────────────
+const { requestBlob } = useApi()
+async function exportNovel() {
+  try {
+    const blob = await requestBlob(`/novels/${novelId}/export?format=txt`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${novel.value?.title ?? 'novel'}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e: any) {
+    toast.error('导出失败：' + (e.message || ''))
   }
 }
 
@@ -503,6 +523,16 @@ onMounted(async () => {
               </svg>
               导入章节
             </NuxtLink>
+            <button
+              @click="exportNovel"
+              aria-label="导出小说"
+              class="btn-secondary"
+            >
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              导出TXT
+            </button>
           </div>
         </div>
       </div>
@@ -630,6 +660,8 @@ onMounted(async () => {
     <NovelPlotPointsTab v-else-if="activeTab === 'plot_points'" :novel-id="novelId" />
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />
     <NovelDramaticTab v-else-if="activeTab === 'dramatic'" :novel-id="novelId" />
+    <NovelKnowledgeTab v-else-if="activeTab === 'knowledge'" :novel-id="novelId" />
+    <NovelForeshadowTab v-else-if="activeTab === 'foreshadow'" :novel-id="novelId" />
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />
   </div>
 

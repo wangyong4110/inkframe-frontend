@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { Tenant } from '~/types/tenant'
+import type { Tenant, TenantUser } from '~/types/tenant'
 
 const tenantStore = useTenantStore()
+const authStore = useAuthStore()
 const toast = useToast()
 
 // Fetch tenants on mount
@@ -11,10 +12,73 @@ onMounted(() => {
 
 const showCreateModal = ref(false)
 const showQuotaModal = ref(false)
+const showMembersModal = ref(false)
 const quotaLoading = ref(false)
 const selectedTenant = ref<Tenant | null>(null)
 const createError = ref('')
 let quotaRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+// ── Member management ─────────────────────────────────────────────────────────
+const inviteEmail = ref('')
+const inviteRole = ref<'member' | 'admin'>('member')
+const inviteLoading = ref(false)
+const inviteError = ref('')
+const inviteSuccess = ref(false)
+
+// Determine current user's role in the selected tenant
+const currentUserMembership = computed<TenantUser | undefined>(() =>
+  tenantStore.members.find(m => m.user_id === authStore.user?.id)
+)
+const isOwner = computed(() => currentUserMembership.value?.role === 'owner')
+const isAdmin = computed(() =>
+  authStore.user?.role === 'admin' ||
+  ['owner', 'admin'].includes(currentUserMembership.value?.role ?? '')
+)
+
+async function openMembersModal(tenant: Tenant) {
+  selectedTenant.value = tenant
+  inviteEmail.value = ''
+  inviteRole.value = 'member'
+  inviteError.value = ''
+  inviteSuccess.value = false
+  showMembersModal.value = true
+  try {
+    await tenantStore.fetchMembers(tenant.id)
+  } catch {
+    toast.error('加载成员列表失败')
+  }
+}
+
+async function invite() {
+  inviteError.value = ''
+  inviteSuccess.value = false
+  if (!inviteEmail.value.trim()) {
+    inviteError.value = '请输入邮箱'
+    return
+  }
+  if (!selectedTenant.value) return
+  inviteLoading.value = true
+  try {
+    await tenantStore.inviteMember(selectedTenant.value.id, inviteEmail.value.trim(), inviteRole.value)
+    inviteSuccess.value = true
+    inviteEmail.value = ''
+  } catch (e: any) {
+    inviteError.value = e?.message || '邀请失败'
+  } finally {
+    inviteLoading.value = false
+  }
+}
+
+async function removeMember(userId: number) {
+  if (!selectedTenant.value) return
+  if (!confirm('确认移除该成员？')) return
+  try {
+    await tenantStore.removeMember(selectedTenant.value.id, userId)
+    toast.success('已移除成员')
+  } catch (e: any) {
+    toast.error(e?.message || '移除成员失败')
+  }
+}
 
 const quotaWarning = computed(() => {
   const q = tenantStore.quota
@@ -272,9 +336,15 @@ function formatStorage(mb: number): string {
               <button class="btn-ghost text-sm" :disabled="quotaLoading" @click="viewQuota(tenant)">
                 {{ quotaLoading && selectedTenant?.id === tenant.id ? '加载中…' : '查看配额' }}
               </button>
-              <NuxtLink :to="`/tenant/${tenant.id}`" class="btn-outline text-sm">
-                管理
-              </NuxtLink>
+              <button
+                class="btn-outline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="!isAdmin"
+                :title="isAdmin ? '管理成员' : '仅管理员可管理成员'"
+                aria-label="管理成员"
+                @click="isAdmin && openMembersModal(tenant)"
+              >
+                管理成员
+              </button>
             </div>
           </div>
           <div class="mt-3 grid grid-cols-3 gap-4 text-sm">
@@ -395,6 +465,112 @@ function formatStorage(mb: number): string {
         </div>
         <div class="mt-6 flex justify-end">
           <button class="btn-outline" @click="showQuotaModal = false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Member Management Modal -->
+    <div v-if="showMembersModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="fixed inset-0 bg-black/50" @click="showMembersModal = false"></div>
+      <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            成员管理 — {{ selectedTenant?.name }}
+          </h3>
+          <button
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded"
+            aria-label="关闭"
+            @click="showMembersModal = false"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="tenantStore.membersLoading" class="py-6 text-center">
+          <div class="w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        </div>
+
+        <!-- Member List -->
+        <div v-else>
+          <div v-if="tenantStore.members.length" class="space-y-3 mb-6">
+            <div
+              v-for="member in tenantStore.members"
+              :key="member.user_id"
+              class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+                  {{ (member.nickname || String(member.user_id)).charAt(0).toUpperCase() }}
+                </div>
+                <div>
+                  <span class="font-medium text-gray-900 dark:text-white text-sm">
+                    {{ member.nickname || `用户 #${member.user_id}` }}
+                  </span>
+                  <span
+                    class="ml-2 text-xs px-2 py-0.5 rounded-full"
+                    :class="member.role === 'owner'
+                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                      : member.role === 'admin'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-300'"
+                  >
+                    {{ member.role === 'owner' ? '所有者' : member.role === 'admin' ? '管理员' : member.role === 'viewer' ? '观察者' : '成员' }}
+                  </span>
+                </div>
+              </div>
+              <button
+                v-if="member.role !== 'owner' && isAdmin"
+                aria-label="移除成员"
+                class="text-red-500 hover:text-red-700 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 rounded px-1"
+                @click="removeMember(member.user_id)"
+              >
+                移除
+              </button>
+            </div>
+          </div>
+          <div v-else class="text-gray-500 dark:text-gray-400 text-sm mb-4 py-4 text-center">
+            暂无成员
+          </div>
+
+          <!-- Invite Form -->
+          <div v-if="isAdmin" class="border-t border-gray-200 dark:border-gray-600 pt-4">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">邀请新成员</p>
+            <div class="flex gap-2">
+              <input
+                v-model="inviteEmail"
+                type="email"
+                placeholder="输入邮箱邀请成员"
+                aria-label="邀请成员邮箱"
+                class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                @keyup.enter="invite"
+              />
+              <select
+                v-model="inviteRole"
+                aria-label="邀请角色"
+                class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="member">成员</option>
+                <option value="admin">管理员</option>
+              </select>
+              <button
+                :disabled="inviteLoading"
+                aria-label="发送邀请"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 whitespace-nowrap"
+                @click="invite"
+              >
+                {{ inviteLoading ? '邀请中...' : '邀请' }}
+              </button>
+            </div>
+            <p v-if="inviteError" class="mt-2 text-red-500 text-sm" role="alert">{{ inviteError }}</p>
+            <p v-if="inviteSuccess" class="mt-2 text-green-500 text-sm">邀请已发送</p>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <button class="btn-outline" @click="showMembersModal = false">关闭</button>
         </div>
       </div>
     </div>

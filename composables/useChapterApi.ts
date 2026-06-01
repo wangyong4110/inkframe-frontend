@@ -1,4 +1,4 @@
-import type { Chapter, ApiResponse, CreateChapterForm } from '~/types'
+import type { Chapter, ApiResponse, CreateChapterForm, ChapterVersion } from '~/types'
 
 export const useChapterApi = () => {
   const { request } = useApi()
@@ -50,6 +50,12 @@ export const useChapterApi = () => {
   const batchPublishChapters = (novelId: number) =>
     request<ApiResponse<{ published_count: number }>>(`/novels/${novelId}/chapters/batch-publish`, { method: 'POST' })
 
+  const getVersions = (chapterId: number) =>
+    request<ApiResponse<{ versions: ChapterVersion[] }>>(`/chapters/${chapterId}/versions`)
+
+  const getVersionContent = (chapterId: number, versionId: number | string) =>
+    request<ApiResponse<ChapterVersion>>(`/chapters/${chapterId}/versions/${versionId}/content`)
+
   return {
     getChapters,
     getChapter,
@@ -60,5 +66,7 @@ export const useChapterApi = () => {
     publishChapter,
     unpublishChapter,
     batchPublishChapters,
+    getVersions,
+    getVersionContent,
   }
 }

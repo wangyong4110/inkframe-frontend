@@ -215,6 +215,20 @@ export const useTenantStore = defineStore('tenant', {
       }
     },
 
+    async inviteMember(tenantId: number, email: string, role: string) {
+      const { request } = useApi()
+      const result: any = await request(`/tenants/${tenantId}/members/invite`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      })
+      if (result.code === 0) {
+        await this.fetchMembers(tenantId)
+        await this.fetchQuota(tenantId)
+        return result.data
+      }
+      throw new Error(result.error || result.message || '邀请失败')
+    },
+
     async updateMemberRole(tenantId: number, userId: number, role: string) {
       const { request } = useApi()
       const result: any = await request(`/tenants/${tenantId}/members/${userId}`, {

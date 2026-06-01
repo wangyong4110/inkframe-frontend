@@ -2,7 +2,6 @@
 import type { StoryboardShot, VideoQualityTier } from '~/types'
 import { SHOT_STATUS_LABELS, SHOT_STATUS_COLORS, QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
-import { getAuthToken } from '~/utils/auth'
 import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
@@ -616,20 +615,16 @@ function shotKlingMode(shot: StoryboardShot): 'pro' | 'std' {
 }
 
 async function exportSubtitles() {
+  const { requestBlob } = useApi()
   try {
-    const response = await fetch(`/api/v1/videos/${props.videoId}/subtitles/export`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${getAuthToken() || ''}`,
-      },
-    })
-    if (!response.ok) throw new Error('导出失败')
-    const blob = await response.blob()
+    const blob = await requestBlob(`/videos/${props.videoId}/subtitles/export`, { method: 'POST' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `video_${props.videoId}_subtitles.ass`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
     toast.success('字幕已导出')
   } catch (e: any) {
@@ -1117,6 +1112,18 @@ defineExpose({ loadVideoProviders: async () => {
                 {{ tag }}
               </span>
             </div>
+            <!-- Failed status: error detail + retry button -->
+            <div v-if="shot.status === 'failed'" class="mt-2 flex items-start gap-2">
+              <p v-if="shot.error_message" class="text-xs text-red-500 mt-1 truncate flex-1" :title="shot.error_message">
+                {{ shot.error_message }}
+              </p>
+              <button
+                class="text-xs py-0.5 px-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
+                @click="handleGenerateShot(shot)"
+              >
+                重试
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1163,7 +1170,7 @@ defineExpose({ loadVideoProviders: async () => {
                 <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
               <template v-if="shot.image_url">
-                <img :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
+                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
                 <button
                   v-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"
@@ -1302,6 +1309,7 @@ defineExpose({ loadVideoProviders: async () => {
                 <img
                   v-if="characterById.get(charId)?.portrait"
                   :src="characterById.get(charId)!.portrait"
+                  loading="lazy"
                   class="w-3 h-3 rounded-full object-cover"
                 />
                 {{ characterById.get(charId)?.name || charId }}

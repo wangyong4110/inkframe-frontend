@@ -71,6 +71,7 @@ async function handleGenerateVoice(shot: StoryboardShot) {
     }
 
     // 2. 加载并重新生成所有语音片段
+    invalidateSegmentCache(shot.id)
     await loadSegments(shot)
     const segs = shotSegments.value[shot.id] || []
     for (const seg of segs) {
@@ -129,13 +130,27 @@ async function batchFillSubtitles() {
   }
 }
 
+// Cache for voice segments: key = shotId, value = segments array.
+// Avoids re-fetching every time the user opens the segment panel or switches tabs.
+const segmentCache = reactive(new Map<number, ShotVoiceSegment[]>())
+
+function invalidateSegmentCache(shotId: number) {
+  segmentCache.delete(shotId)
+}
+
 async function loadSegments(shot: StoryboardShot) {
   if (loadingSegments.value[shot.id]) return
+  if (segmentCache.has(shot.id)) {
+    shotSegments.value[shot.id] = segmentCache.get(shot.id)!
+    return
+  }
   loadingSegments.value[shot.id] = true
   try {
     const api = useVideoApi()
     const res = await api.listVoiceSegments(props.videoId, shot.id)
-    shotSegments.value[shot.id] = res.data ?? []
+    const data = res.data ?? []
+    shotSegments.value[shot.id] = data
+    segmentCache.set(shot.id, data)
   } catch {
     shotSegments.value[shot.id] = []
   } finally {
@@ -159,6 +174,7 @@ async function handleAppendSegment(shot: StoryboardShot) {
     const api = useVideoApi()
     const res = await api.appendVoiceSegment(props.videoId, shot.id, { text })
     shotSegments.value[shot.id] = [...(shotSegments.value[shot.id] || []), res.data!]
+    invalidateSegmentCache(shot.id)
     newSegmentText.value[shot.id] = ''
   } catch (e: any) {
     toast.error('添加片段失败：' + (e.message || ''))
@@ -172,6 +188,7 @@ async function handleInsertSegment(shot: StoryboardShot, afterSeqNo: number) {
   try {
     const api = useVideoApi()
     await api.insertVoiceSegment(props.videoId, shot.id, afterSeqNo, { text })
+    invalidateSegmentCache(shot.id)
     await loadSegments(shot)
     delete newSegmentText.value[key]
     insertAfterSeqNo.value[shot.id] = null
@@ -185,6 +202,7 @@ async function handleDeleteSegment(shot: StoryboardShot, seg: ShotVoiceSegment) 
     const api = useVideoApi()
     await api.deleteVoiceSegment(props.videoId, shot.id, seg.id)
     shotSegments.value[shot.id] = (shotSegments.value[shot.id] || []).filter(s => s.id !== seg.id)
+    invalidateSegmentCache(shot.id)
   } catch (e: any) {
     toast.error('删除片段失败：' + (e.message || ''))
   }
@@ -202,6 +220,7 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
       useTaskStore().trackTask(taskId, async (task) => {
         generatingSegmentVoice.value[seg.id] = false
         if (task.status === 'completed') {
+          invalidateSegmentCache(shot.id)
           await loadSegments(shot)
           await videoStore.fetchStoryboard(props.videoId)
           toast.success(`片段 ${seg.seq_no} 配音已完成`)
@@ -211,6 +230,7 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
       })
     } else {
       generatingSegmentVoice.value[seg.id] = false
+      invalidateSegmentCache(shot.id)
       await loadSegments(shot)
       await videoStore.fetchStoryboard(props.videoId)
       toast.success(`片段 ${seg.seq_no} 配音已完成`)
@@ -499,7 +519,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         <div class="flex items-start gap-3">
           <!-- Thumbnail -->
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
+            <img v-if="shot.image_url" :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
             <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
           </div>
           <!-- Header -->

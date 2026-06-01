@@ -129,6 +129,7 @@ const aiForm = reactive({
   target_word_count: 0,
   target_chapters: 0,
   cover_image: 'ai', // 默认使用 AI 生成封面
+  prompt_language: 'zh',
 })
 const aiLoading = ref(false)
 const aiLoadingMsg = ref('创建中...')
@@ -145,6 +146,7 @@ async function submitAI() {
       title: aiForm.title.trim(),
       description: aiForm.description.trim(),
       genre: aiForm.genre,
+      prompt_language: aiForm.prompt_language,
     }
     // 'ai' 特殊值：先不传 cover_image，创建后调用 AI 生成
     if (aiForm.cover_image !== 'ai') body.cover_image = aiForm.cover_image
@@ -846,6 +848,21 @@ async function rwSubmit() {
             />
             <span class="absolute bottom-2.5 right-3 text-xs text-gray-400 pointer-events-none">{{ aiForm.description.length }} 字</span>
           </div>
+        </div>
+
+        <!-- AI 创作语言 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            AI 创作语言
+          </label>
+          <select
+            v-model="aiForm.prompt_language"
+            aria-label="AI创作语言"
+            class="select select-bordered w-full text-sm"
+          >
+            <option value="zh">中文（默认）</option>
+            <option value="en">English</option>
+          </select>
         </div>
 
         <!-- 目标规模 2 列 -->
