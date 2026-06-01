@@ -12,6 +12,7 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 export function useAiProviderGuard() {
   const state = useState<GuardState>('ai-provider-guard', () => ({ show: false, type: 'LLM' }))
   const modelApi = useModelApi()
+  const toast = useToast()
 
   async function checkProvider(type: ProviderType): Promise<boolean> {
     const now = Date.now()
@@ -26,7 +27,9 @@ export function useAiProviderGuard() {
       checkCache.set(type, { result, ts: now })
       return result
     } catch {
-      return true // fail-open on network/API error
+      // fail-closed on network/API error — cannot confirm provider is configured
+      toast.error('无法验证 AI 配置，操作已取消')
+      return false
     }
   }
 

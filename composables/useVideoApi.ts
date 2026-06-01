@@ -283,6 +283,12 @@ export const useVideoApi = () => {
   const deleteShot = (videoId: number, shotId: number) =>
     request<void>(`/videos/${videoId}/shots/${shotId}`, { method: 'DELETE' })
 
+  const reorderShot = (videoId: number, fromShotId: number, toShotId: number) =>
+    request<ApiResponse<{ from_shot_no: number; to_shot_no: number }>>(`/videos/${videoId}/shots/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ from_shot_id: fromShotId, to_shot_id: toShotId }),
+    })
+
   const setShotCharacters = (videoId: number, shotId: number, characterIds: number[]) =>
     request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/characters`, {
       method: 'PUT',
@@ -416,6 +422,7 @@ export const useVideoApi = () => {
     insertShot,
     copyShot,
     deleteShot,
+    reorderShot,
     setShotCharacters,
     listVoiceSegments,
     appendVoiceSegment,

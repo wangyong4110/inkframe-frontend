@@ -1,7 +1,8 @@
 import type { ApiResponse } from '~/types'
 
+// Panel-specific analysis status shape (task-based, includes step + warnings)
 export interface AnalysisStatus {
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress: number
   step: string
   error?: string
@@ -17,5 +18,8 @@ export const useAnalysisApi = () => {
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
 
-  return { startAnalysis }
+  const getAnalysisStatus = (novelId: number) =>
+    request<ApiResponse<AnalysisStatus>>(`/novels/${novelId}/analysis/status`)
+
+  return { startAnalysis, getAnalysisStatus }
 }

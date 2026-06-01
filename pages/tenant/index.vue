@@ -2,6 +2,7 @@
 import type { Tenant } from '~/types/tenant'
 
 const tenantStore = useTenantStore()
+const toast = useToast()
 
 // Fetch tenants on mount
 onMounted(() => {
@@ -10,8 +11,44 @@ onMounted(() => {
 
 const showCreateModal = ref(false)
 const showQuotaModal = ref(false)
+const quotaLoading = ref(false)
 const selectedTenant = ref<Tenant | null>(null)
 const createError = ref('')
+let quotaRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+const quotaWarning = computed(() => {
+  const q = tenantStore.quota
+  if (!q) return null
+  const usedUsers = q.users.used
+  const maxUsers = q.users.limit
+  if (maxUsers > 0 && usedUsers >= maxUsers) {
+    return `用户数量已达上限（${usedUsers}/${maxUsers}），无法继续添加成员`
+  }
+  if (maxUsers > 0 && usedUsers >= maxUsers * 0.9) {
+    return `用户数量接近上限（${usedUsers}/${maxUsers}），请联系管理员扩容`
+  }
+  const usedProjects = q.projects.used
+  const maxProjects = q.projects.limit
+  if (maxProjects > 0 && usedProjects >= maxProjects) {
+    return `项目数量已达上限（${usedProjects}/${maxProjects}），无法创建新项目`
+  }
+  return null
+})
+
+watch(showQuotaModal, (open) => {
+  if (open) {
+    quotaRefreshTimer = setInterval(async () => {
+      if (selectedTenant.value) {
+        try { await tenantStore.fetchQuota(selectedTenant.value.id) } catch {}
+      }
+    }, 60000)
+  } else {
+    if (quotaRefreshTimer) {
+      clearInterval(quotaRefreshTimer)
+      quotaRefreshTimer = null
+    }
+  }
+})
 
 const createForm = ref({
   name: '',
@@ -55,10 +92,17 @@ function getStatusLabel(status: string): string {
   return labels[status] || status
 }
 
-function viewQuota(tenant: Tenant) {
+async function viewQuota(tenant: Tenant) {
   selectedTenant.value = tenant
-  tenantStore.fetchQuota(tenant.id)
-  showQuotaModal.value = true
+  quotaLoading.value = true
+  try {
+    await tenantStore.fetchQuota(tenant.id)
+    showQuotaModal.value = true
+  } catch (e: any) {
+    toast.error('加载配额失败')
+  } finally {
+    quotaLoading.value = false
+  }
 }
 
 async function handleCreate() {
@@ -225,8 +269,8 @@ function formatStorage(mb: number): string {
               <span class="px-2 py-1 text-xs font-medium rounded-full" :class="getStatusColor(tenant.status)">
                 {{ getStatusLabel(tenant.status) }}
               </span>
-              <button class="btn-ghost text-sm" @click="viewQuota(tenant)">
-                查看配额
+              <button class="btn-ghost text-sm" :disabled="quotaLoading" @click="viewQuota(tenant)">
+                {{ quotaLoading && selectedTenant?.id === tenant.id ? '加载中…' : '查看配额' }}
               </button>
               <NuxtLink :to="`/tenant/${tenant.id}`" class="btn-outline text-sm">
                 管理
@@ -297,6 +341,10 @@ function formatStorage(mb: number): string {
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {{ selectedTenant?.name }} - 配额详情
         </h3>
+        <!-- Quota over-limit warning -->
+        <div v-if="quotaWarning" class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg text-sm text-red-700 dark:text-red-300">
+          ⚠ {{ quotaWarning }}
+        </div>
         <div v-if="tenantStore.quota" class="space-y-4">
           <!-- Projects -->
           <div>
@@ -317,13 +365,14 @@ function formatStorage(mb: number): string {
           <div>
             <div class="flex items-center justify-between mb-2">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">用户数</span>
-              <span class="text-sm text-gray-500">
+              <span class="text-sm" :class="tenantStore.userUsage >= 100 ? 'text-red-600 dark:text-red-400 font-semibold' : tenantStore.userUsage >= 90 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500'">
                 {{ tenantStore.quota.users.used }} / {{ tenantStore.quota.users.limit }}
               </span>
             </div>
             <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
-                class="h-full bg-blue-500 rounded-full"
+                class="h-full rounded-full transition-all"
+                :class="tenantStore.userUsage >= 100 ? 'bg-red-500' : tenantStore.userUsage >= 90 ? 'bg-orange-400' : 'bg-blue-500'"
                 :style="{ width: `${Math.min(100, tenantStore.userUsage)}%` }"
               ></div>
             </div>

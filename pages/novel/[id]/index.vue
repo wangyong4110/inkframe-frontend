@@ -22,12 +22,38 @@ const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
 const descExpanded = ref(false)
 
+// ── Tab staleness tracking ────────────────────────────────────────────────────
+const tabLastFetchedAt: Record<string, number> = {}
+const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
+
+function fetchTabData(tab: string) {
+  switch (tab) {
+    case 'chapters': chapterStore.fetchChapters(novelId); break
+    case 'characters': characterStore.fetchCharacters(novelId); break
+    case 'scene_anchors': sceneAnchorStore.fetchAnchors(novelId); break
+    // worldview, items, plot_points, dramatic, settings manage their own data
+  }
+  tabLastFetchedAt[tab] = Date.now()
+}
+
 function switchTab(key: string) {
   activeTab.value = key
   router.replace({ query: { ...route.query, tab: key } })
   nextTick(() => {
     tabSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
+  // Background refresh if tab data is stale
+  const lastFetch = tabLastFetchedAt[key]
+  if (!lastFetch || Date.now() - lastFetch > STALE_THRESHOLD) {
+    fetchTabData(key)
+  }
+}
+
+// ── Visibility change: refetch active tab data when user returns to this tab ──
+const onVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    fetchTabData(activeTab.value)
+  }
 }
 
 const tabs = [
@@ -215,8 +241,24 @@ const analysisPoll = usePollWithBackoff({
       toast.error('AI 分析失败：' + (task.error || '未知错误'))
     }
   },
+  onError: () => {
+    // If polling stops due to timeout (maxElapsedMs reached), notify the user.
+  },
   initialDelay: 2000,
   maxDelay: 15000,
+  maxElapsedMs: 10 * 60 * 1000,
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  analysisPoll.stop()
+})
+
+// Notify user when analysis polling stops without completing.
+watch(analysisPoll.isPolling, (nowPolling) => {
+  if (!nowPolling && analysisStatus.value && analysisStatus.value.status !== 'completed' && analysisStatus.value.status !== 'failed' && analysisStatus.value.status !== 'cancelled') {
+    toast.warning('AI 分析轮询已停止，请手动刷新查看最新状态')
+  }
 })
 
 async function triggerAnalysis(source?: string) {
@@ -235,19 +277,47 @@ async function triggerAnalysis(source?: string) {
   }
 }
 
-onMounted(async () => {
+async function loadNovelData(id: number) {
   loading.value = true
   try {
     await Promise.all([
-      novelStore.fetchNovel(novelId),
-      chapterStore.fetchChapters(novelId),
-      characterStore.fetchCharacters(novelId),
-      videoStore.fetchVideos({ novel_id: novelId }),
-      sceneAnchorStore.fetchAnchors(novelId),
+      novelStore.fetchNovel(id),
+      chapterStore.fetchChapters(id),
+      characterStore.fetchCharacters(id),
+      videoStore.fetchVideos({ novel_id: id }),
+      sceneAnchorStore.fetchAnchors(id),
     ])
   } finally {
     loading.value = false
   }
+}
+
+// Clean up novel-specific store state when navigating between different novels
+// (e.g. via browser back/forward or sidebar links) without a full page reload.
+watch(() => route.params.id, async (newId, oldId) => {
+  if (newId === oldId) return
+  const parsed = parseInt(newId as string)
+  if (isNaN(parsed)) return
+  // Stop any in-progress analysis poll for the previous novel.
+  analysisPoll.stop()
+  analysisTaskId.value = ''
+  analysisStatus.value = null
+  // Reset novel-specific store data so stale content from the old novel is not shown.
+  chapterStore.clearForNovel(parsed)
+  characterStore.clearForNovel(parsed)
+  videoStore.videos = []
+  novelStore.currentNovel = null
+  await loadNovelData(parsed)
+}, { immediate: false })
+
+onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  // Clear stale data from a previously viewed novel before loading
+  chapterStore.clearForNovel(novelId)
+  characterStore.clearForNovel(novelId)
+  await loadNovelData(novelId)
+  // Mark initial tab as fetched so it won't immediately re-fetch on first switchTab
+  tabLastFetchedAt[activeTab.value] = Date.now()
   // Auto-trigger analysis when coming from the import/create page.
   if (route.query.analysis_task_id) {
     const existingTaskId = route.query.analysis_task_id as string
@@ -276,6 +346,11 @@ onMounted(async () => {
           analysisStatus.value = status
           useTaskStore().trackTask(storedTaskId)
           analysisPoll.start()
+        } else if (status.status === 'failed') {
+          // Keep the failed status visible so user can retry; clear localStorage
+          analysisTaskId.value = ''
+          analysisStatus.value = status
+          localStorage.removeItem(`analysis_task_${novelId}`)
         } else {
           localStorage.removeItem(`analysis_task_${novelId}`)
         }

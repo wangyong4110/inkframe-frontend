@@ -106,12 +106,14 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    logout() {
+    async logout() {
       // Reset other stores first to clear tenant-scoped data
       const videoStore = useVideoStore()
       const novelStore = useNovelStore()
       const taskStore = useTaskStore()
 
+      // Stop any active storyboard polling before resetting
+      videoStore.stopStoryboardPoll()
       videoStore.$reset()
       novelStore.$reset()
       taskStore.$reset()
@@ -125,7 +127,7 @@ export const useAuthStore = defineStore('auth', {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('auth_expires_at')
       }
-      navigateTo('/auth/login')
+      await navigateTo('/auth/login')
     },
 
     mockLogin() {

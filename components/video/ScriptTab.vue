@@ -223,6 +223,34 @@ function scheduleRefresh() {
   }, 300)
 }
 
+// ── Drag-to-reorder (script mode only) ──
+const dragShotId = ref<number | null>(null)
+
+function onDragStart(e: DragEvent, shotId: number) {
+  dragShotId.value = shotId
+  e.dataTransfer?.setData('text/plain', String(shotId))
+}
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+async function onDrop(e: DragEvent, targetShotId: number) {
+  e.preventDefault()
+  if (!dragShotId.value || dragShotId.value === targetShotId) {
+    dragShotId.value = null
+    return
+  }
+  const fromId = dragShotId.value
+  dragShotId.value = null
+  try {
+    await videoApi.reorderShot(props.videoId, fromId, targetShotId)
+    scheduleRefresh()
+  } catch (e: any) {
+    toast.error('排序失败：' + (e?.message || ''))
+  }
+}
+
 function startEdit(shot: StoryboardShot) {
   editingId.value = shot.id
   editForm.value = {
@@ -885,7 +913,15 @@ defineExpose({ loadVideoProviders: async () => {
       <!-- Script mode (not confirmed): text-focused cards -->
       <template v-if="!isScriptConfirmed">
         <template v-for="shot in pagedShots" :key="shot.id">
-        <div class="card overflow-hidden">
+        <div
+          class="card overflow-hidden"
+          :class="dragShotId === shot.id ? 'opacity-40' : ''"
+          :draggable="editingId !== shot.id"
+          @dragstart="onDragStart($event, shot.id)"
+          @dragover="onDragOver"
+          @drop="onDrop($event, shot.id)"
+          @dragend="dragShotId = null"
+        >
           <!-- Editing mode -->
           <div v-if="editingId === shot.id" class="p-4 space-y-3">
             <div class="flex items-center justify-between mb-1">

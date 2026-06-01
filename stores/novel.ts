@@ -157,6 +157,19 @@ export const useNovelStore = defineStore('novel', {
 
         if (this.currentNovel?.id === id) {
           this.currentNovel = null
+
+          // Clear dependent store state so stale data from the deleted novel is not
+          // visible if the user navigates to another novel page in the same session.
+          // Imported inside the action to avoid circular module dependencies.
+          const { useChapterStore } = await import('~/stores/chapter')
+          const { useCharacterStore } = await import('~/stores/character')
+          const chapterStore = useChapterStore()
+          chapterStore.chapters = []
+          chapterStore.currentChapter = null
+
+          const characterStore = useCharacterStore()
+          characterStore.characters = []
+          characterStore.currentCharacter = null
         }
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)

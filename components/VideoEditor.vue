@@ -28,11 +28,11 @@ const productionEnabled = computed(() => isScriptConfirmed.value && shots.value.
 
 const TABS = computed(() => [
   { key: 'script',   label: '分镜脚本', locked: false },
-  { key: 'voice',    label: '配音字幕', locked: !productionEnabled.value },
-  { key: 'bgm',      label: '背景音乐', locked: !productionEnabled.value },
-  { key: 'sfx',      label: '音效',     locked: !productionEnabled.value },
-  { key: 'timeline', label: '时间线',   locked: !productionEnabled.value },
-  { key: 'export',   label: '导出',     locked: !productionEnabled.value },
+  { key: 'voice',    label: '配音字幕', locked: false },
+  { key: 'bgm',      label: '背景音乐', locked: false },
+  { key: 'sfx',      label: '音效',     locked: false },
+  { key: 'timeline', label: '时间线',   locked: false },
+  { key: 'export',   label: '导出',     locked: false },
 ])
 
 // ──────── Tab component refs (for cross-tab data access) ────────
@@ -170,21 +170,29 @@ watch(activeTab, async (tab) => {
     // Voice segments + audio URL map
     const segMap: Record<number, ShotVoiceSegment[]> = { ..._shotSegments.value }
     const audioMap: Record<number, string> = { ..._shotAudioUrls.value }
-    await Promise.all(shots.value.map(async (shot) => {
+    const voiceResults = await Promise.allSettled(shots.value.map(async (shot) => {
       const res = await listVoiceSegments(props.videoId, shot.id).catch(() => null)
       if (res) segMap[shot.id] = res?.data ?? []
       if (shot.audio_url && !audioMap[shot.id]) audioMap[shot.id] = shot.audio_url
     }))
+    const voiceFailed = voiceResults.filter(r => r.status === 'rejected')
+    if (voiceFailed.length > 0) {
+      console.warn('Some voice segment loads failed:', voiceFailed)
+    }
     if (version !== tabSwitchVersion) return
     _shotSegments.value  = segMap
     _shotAudioUrls.value = audioMap
 
     // SFX items
     const sfxMap: Record<number, ShotSFXItem[]> = { ..._sfxItems.value }
-    await Promise.all(shots.value.map(async (shot) => {
+    const sfxResults = await Promise.allSettled(shots.value.map(async (shot) => {
       const res = await listShotSFXItems(props.videoId, shot.id).catch(() => null)
       if (res) sfxMap[shot.id] = res?.data ?? []
     }))
+    const sfxFailed = sfxResults.filter(r => r.status === 'rejected')
+    if (sfxFailed.length > 0) {
+      console.warn('Some SFX item loads failed:', sfxFailed)
+    }
     if (version !== tabSwitchVersion) return
     _sfxItems.value = sfxMap
   }
@@ -266,8 +274,16 @@ defineExpose({ activeTab, generateStoryboard })
     />
 
     <!-- ══ Production Tabs (with optional sidebar in standalone mode) ══════ -->
+    <!-- Placeholder shown when storyboard is not yet ready -->
+    <div v-if="isProductionTab && !tabLoading && !productionEnabled" class="flex flex-col items-center justify-center py-16 text-center">
+      <svg class="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+      </svg>
+      <p class="text-sm text-gray-500 dark:text-gray-400">请先在「分镜脚本」页生成并确认分镜</p>
+    </div>
+
     <div
-      v-if="isProductionTab && !tabLoading"
+      v-if="isProductionTab && !tabLoading && productionEnabled"
       :class="standalone ? 'flex min-h-0 -mt-4' : ''"
     >
       <!-- Standalone mode: sidebar slot divs — rendered FIRST in DOM so that Teleport targets

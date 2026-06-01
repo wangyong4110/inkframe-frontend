@@ -90,6 +90,21 @@ export const useModelApi = () => {
   const getProviderTemplates = () =>
     request<ApiResponse<ProviderTemplate[]>>('/model-providers/templates')
 
+  const testModelPrompt = (data: { provider_id: number; prompt: string }) =>
+    request<ApiResponse<{ content: string; tokens: number; latency_ms: number }>>('/models/test-prompt', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const getTaskMappings = () =>
+    request<ApiResponse<Record<string, number | null>>>('/models/task-mappings')
+
+  const updateTaskMapping = (data: { task_type: string; provider_id: number | null }) =>
+    request<ApiResponse<{ ok: boolean }>>('/models/task-mappings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
   return {
     getProviders,
     getCapableProviders,
@@ -106,5 +121,8 @@ export const useModelApi = () => {
     testProvider,
     fetchProviderModels,
     getProviderTemplates,
+    testModelPrompt,
+    getTaskMappings,
+    updateTaskMapping,
   }
 }

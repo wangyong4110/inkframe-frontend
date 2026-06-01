@@ -10,6 +10,8 @@ interface ChapterState {
   qualityReport: QualityReport | null
   wordCountGoal: number
   _genPollStop: (() => void) | null
+  _genPollTimer: ReturnType<typeof setTimeout> | null
+  _currentNovelId: number | null
 }
 
 export const useChapterStore = defineStore('chapter', {
@@ -22,6 +24,8 @@ export const useChapterStore = defineStore('chapter', {
     qualityReport: null,
     wordCountGoal: 3000,
     _genPollStop: null,
+    _genPollTimer: null,
+    _currentNovelId: null,
   }),
 
   getters: {
@@ -153,19 +157,37 @@ export const useChapterStore = defineStore('chapter', {
 
     async pollChapterGenTask(novelId: number, taskId: string): Promise<Chapter> {
       const { request } = useApi()
+
+      // Cancel any previous poll before starting a new one
+      this.stopGenPoll()
+
       return new Promise((resolve, reject) => {
-        let aborted = false
-        this._genPollStop = () => { aborted = true }
+        const abortController = new AbortController()
+
+        const cleanup = () => {
+          this._genPollStop = null
+          if (this._genPollTimer !== null) {
+            clearTimeout(this._genPollTimer)
+            this._genPollTimer = null
+          }
+        }
+
+        this._genPollStop = () => {
+          abortController.abort()
+          cleanup()
+        }
 
         const poll = async () => {
-          if (aborted) return
+          if (abortController.signal.aborted) return
+          this._genPollTimer = null
           try {
-            const res: any = await request(`/tasks/${taskId}`)
+            const res: any = await request(`/tasks/${taskId}`, { signal: abortController.signal })
+            if (abortController.signal.aborted) return
             const task = res?.data ?? res
             const chapter: Chapter = task.data?.chapter ?? task.chapter
             if (task.status === 'completed' && chapter) {
               this.generating = false
-              this._genPollStop = null
+              cleanup()
               const index = this.chapters.findIndex(c => c.chapter_no === chapter.chapter_no)
               if (index !== -1) {
                 this.chapters[index] = chapter
@@ -176,28 +198,33 @@ export const useChapterStore = defineStore('chapter', {
               resolve(chapter)
             } else if (task.status === 'failed') {
               this.generating = false
-              this._genPollStop = null
+              cleanup()
               this.error = task.error || 'Chapter generation failed'
               reject(new Error(this.error || 'Chapter generation failed'))
             } else {
-              setTimeout(poll, 3000)
+              this._genPollTimer = setTimeout(poll, 3000)
             }
           } catch (e: any) {
+            if (abortController.signal.aborted) return
             this.generating = false
-            this._genPollStop = null
+            cleanup()
             reject(e)
           }
         }
-        setTimeout(poll, 2000)
+
+        this._genPollTimer = setTimeout(poll, 2000)
       })
     },
 
     stopGenPoll() {
       if (this._genPollStop) {
         this._genPollStop()
-        this._genPollStop = null
-        this.generating = false
+        // _genPollStop clears itself via cleanup()
+      } else if (this._genPollTimer !== null) {
+        clearTimeout(this._genPollTimer)
+        this._genPollTimer = null
       }
+      this.generating = false
     },
 
     async deleteChapter(novelId: number, chapterNo: number) {
@@ -241,9 +268,29 @@ export const useChapterStore = defineStore('chapter', {
       this.wordCountGoal = goal
     },
 
+    // Partially update a chapter in the chapters list by id (e.g. after generation
+    // completes) without refetching the full list from the server.
+    updateChapterInList(update: { id: number; [key: string]: any }) {
+      const idx = this.chapters.findIndex(c => c.id === update.id)
+      if (idx !== -1) {
+        Object.assign(this.chapters[idx], update)
+      }
+    },
+
     clearCurrentChapter() {
       this.currentChapter = null
       this.qualityReport = null
+    },
+
+    // Clear store data when switching to a different novel to prevent stale content
+    // from the previous novel being briefly visible on the next novel's page.
+    clearForNovel(novelId: number) {
+      if (this._currentNovelId !== novelId) {
+        this.chapters = []
+        this.currentChapter = null
+        this.qualityReport = null
+        this._currentNovelId = novelId
+      }
     },
   },
 })

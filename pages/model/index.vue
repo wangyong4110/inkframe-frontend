@@ -5,7 +5,7 @@ import type { ModelProvider, AIModel, McpTool } from '~/types'
 const toast = useToast()
 
 // ── tabs ────────────────────────────────────────────────────────────────────
-const activeTab = ref<'providers' | 'mcp'>('providers')
+const activeTab = ref<'providers' | 'mcp' | 'test' | 'mapping'>('providers')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TAB 1 — 模型提供商 (unchanged logic)
@@ -431,7 +431,8 @@ function toggleReveal(id: number) {
 }
 function maskKey(key?: string) {
   if (!key || key === '****') return '—'
-  return key.length <= 8 ? '****' : key
+  // Fixed-length mask — does not reveal actual key length
+  return '••••••••••••••••'
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -705,6 +706,140 @@ async function toggleModelBinding(modelId: number) {
   finally { bindSaving.value = false }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TAB 3 — 模型测试 & A/B 对比
+// ═══════════════════════════════════════════════════════════════════════════
+const { testModelPrompt, getTaskMappings, updateTaskMapping } = useModelApi()
+
+// ── Single model test panel ──────────────────────────────────────────────────
+const testPanel = reactive({
+  open: false,
+  provider: null as ModelProvider | null,
+  prompt: '写一句话介绍人工智能。',
+  loading: false,
+  result: '',
+  error: '',
+  stats: null as { latency_ms: number; tokens: number } | null,
+})
+
+function openTestPanel(p: ModelProvider) {
+  testPanel.provider = p
+  testPanel.open = true
+  testPanel.result = ''
+  testPanel.error = ''
+  testPanel.stats = null
+}
+
+async function runModelTest() {
+  if (!testPanel.provider) return
+  testPanel.loading = true
+  testPanel.result = ''
+  testPanel.error = ''
+  testPanel.stats = null
+  try {
+    const res = await testModelPrompt({
+      provider_id: testPanel.provider.id,
+      prompt: testPanel.prompt,
+    })
+    const d = (res as any).data
+    testPanel.result = d?.content || ''
+    testPanel.stats = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
+  } catch (err: any) {
+    testPanel.error = err?.message || '测试失败'
+  } finally {
+    testPanel.loading = false
+  }
+}
+
+// ── A/B comparison ────────────────────────────────────────────────────────────
+const abTest = reactive({
+  modelA: null as number | null,
+  modelB: null as number | null,
+  prompt: '写一段300字的武侠小说开篇。',
+  loading: false,
+  resultA: '',
+  resultB: '',
+  errorA: '',
+  errorB: '',
+  statsA: null as { latency_ms: number; tokens: number } | null,
+  statsB: null as { latency_ms: number; tokens: number } | null,
+})
+
+async function runABTest() {
+  if (!abTest.modelA || !abTest.modelB) {
+    toast.error('请选择两个模型')
+    return
+  }
+  abTest.loading = true
+  abTest.resultA = ''
+  abTest.resultB = ''
+  abTest.errorA = ''
+  abTest.errorB = ''
+  abTest.statsA = null
+  abTest.statsB = null
+
+  const [resA, resB] = await Promise.allSettled([
+    testModelPrompt({ provider_id: abTest.modelA, prompt: abTest.prompt }),
+    testModelPrompt({ provider_id: abTest.modelB, prompt: abTest.prompt }),
+  ])
+
+  if (resA.status === 'fulfilled') {
+    const d = (resA.value as any).data
+    abTest.resultA = d?.content || ''
+    abTest.statsA = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
+  } else {
+    abTest.errorA = (resA as any).reason?.message || '失败'
+  }
+  if (resB.status === 'fulfilled') {
+    const d = (resB.value as any).data
+    abTest.resultB = d?.content || ''
+    abTest.statsB = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
+  } else {
+    abTest.errorB = (resB as any).reason?.message || '失败'
+  }
+  abTest.loading = false
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAB 4 — 任务-模型映射
+// ═══════════════════════════════════════════════════════════════════════════
+const taskTypeLabels: Record<string, string> = {
+  chapter_generation:    '章节生成',
+  character_extraction:  '角色提取',
+  storyboard_generation: '分镜生成',
+  image_generation:      '图像生成',
+  tts:                   'TTS语音',
+  translation:           '翻译',
+}
+
+const taskMappings = ref<Record<string, number | null>>({})
+const taskMappingLoading = ref(false)
+const taskMappingSaving = ref<Record<string, boolean>>({})
+
+const loadTaskMappings = async () => {
+  taskMappingLoading.value = true
+  try {
+    const res = await getTaskMappings()
+    taskMappings.value = (res as any).data || {}
+  } catch {
+    // ignore — backend may not have this endpoint yet
+  } finally {
+    taskMappingLoading.value = false
+  }
+}
+
+async function saveTaskMapping(taskType: string, providerId: number | null) {
+  taskMappingSaving.value = { ...taskMappingSaving.value, [taskType]: true }
+  try {
+    await updateTaskMapping({ task_type: taskType, provider_id: providerId || null })
+    toast.success('映射已更新')
+  } catch {
+    toast.error('保存失败')
+  } finally {
+    taskMappingSaving.value = { ...taskMappingSaving.value, [taskType]: false }
+  }
+}
+
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadProviderTemplates()
@@ -714,6 +849,7 @@ onMounted(() => {
 
 watch(activeTab, (tab) => {
   if (tab === 'mcp' && mcpTools.value.length === 0 && !mcpLoading.value) loadMcpTools()
+  if (tab === 'mapping') loadTaskMappings()
 })
 </script>
 
@@ -774,6 +910,24 @@ watch(activeTab, (tab) => {
           <span v-if="mcpTools.length > 0" class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">
             {{ mcpTools.length }}
           </span>
+        </button>
+        <button
+          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
+          :class="activeTab === 'test'
+            ? 'border-primary-500 text-primary-600'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+          @click="activeTab = 'test'"
+        >
+          生成测试
+        </button>
+        <button
+          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
+          :class="activeTab === 'mapping'
+            ? 'border-primary-500 text-primary-600'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+          @click="activeTab = 'mapping'"
+        >
+          任务映射
         </button>
       </nav>
     </div>
@@ -861,6 +1015,7 @@ watch(activeTab, (tab) => {
                 </span>
                 <span v-else>测试连接</span>
               </button>
+              <button class="btn-ghost text-xs px-3 py-1.5 text-blue-600 hover:text-blue-700" @click="openTestPanel(p); activeTab = 'test'">生成测试</button>
               <button class="btn-ghost text-xs px-3 py-1.5" @click="openEditProvider(p)">编辑</button>
               <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" :disabled="p.tenant_id === 0" @click="handleDeleteProvider(p.id)">删除</button>
             </div>
@@ -1045,6 +1200,182 @@ watch(activeTab, (tab) => {
             </span>
           </div>
         </div>
+      </div>
+    </template>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 3: 生成测试 & A/B 对比                                           -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="activeTab === 'test'">
+      <!-- Single model test panel -->
+      <div class="card p-6 mb-6">
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">模型生成测试</h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">选择提供商</label>
+          <select
+            v-model="testPanel.provider"
+            class="input"
+          >
+            <option :value="null" disabled>请选择提供商</option>
+            <option v-for="p in filteredProviders" :key="p.id" :value="p">
+              {{ p.display_name || p.name }}
+            </option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">测试提示词</label>
+          <textarea
+            v-model="testPanel.prompt"
+            class="input h-24 resize-none"
+            placeholder="输入测试提示词..."
+          />
+        </div>
+        <div class="flex gap-2 mb-4">
+          <button
+            class="btn-primary"
+            :disabled="testPanel.loading || !testPanel.provider"
+            @click="runModelTest"
+          >
+            <svg v-if="testPanel.loading" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {{ testPanel.loading ? '生成中...' : '发送' }}
+          </button>
+          <button
+            v-if="testPanel.result || testPanel.error"
+            class="btn-ghost"
+            @click="testPanel.result = ''; testPanel.error = ''; testPanel.stats = null"
+          >
+            清除
+          </button>
+        </div>
+        <div v-if="testPanel.result" class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ testPanel.result }}</div>
+        <div v-if="testPanel.error" class="mt-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-4 py-3">{{ testPanel.error }}</div>
+        <div v-if="testPanel.stats" class="mt-2 flex items-center gap-4 text-xs text-gray-400">
+          <span>耗时: <span class="font-mono text-gray-600 dark:text-gray-300">{{ testPanel.stats.latency_ms }}ms</span></span>
+          <span>Tokens: <span class="font-mono text-gray-600 dark:text-gray-300">{{ testPanel.stats.tokens }}</span></span>
+        </div>
+      </div>
+
+      <!-- A/B Test Panel -->
+      <div class="card p-6">
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">A/B 模型对比</h3>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型 A</label>
+            <select v-model="abTest.modelA" class="input">
+              <option :value="null" disabled>请选择</option>
+              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">{{ p.display_name || p.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型 B</label>
+            <select v-model="abTest.modelB" class="input">
+              <option :value="null" disabled>请选择</option>
+              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">{{ p.display_name || p.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">对比提示词</label>
+          <textarea v-model="abTest.prompt" class="input h-20 resize-none" placeholder="测试提示词..." />
+        </div>
+        <button
+          class="btn-primary mb-6"
+          :disabled="abTest.loading || !abTest.modelA || !abTest.modelB"
+          @click="runABTest"
+        >
+          <svg v-if="abTest.loading" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          {{ abTest.loading ? '对比中...' : '开始对比' }}
+        </button>
+
+        <div v-if="abTest.resultA || abTest.resultB || abTest.errorA || abTest.errorB" class="grid grid-cols-2 gap-4">
+          <!-- Model A result -->
+          <div class="bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800 p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                模型 A — {{ filteredProviders.find(p => p.id === abTest.modelA)?.display_name || '—' }}
+              </span>
+              <span v-if="abTest.statsA" class="text-xs text-blue-500 font-mono">{{ abTest.statsA.latency_ms }}ms · {{ abTest.statsA.tokens }}tok</span>
+            </div>
+            <div v-if="abTest.resultA" class="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ abTest.resultA }}</div>
+            <div v-if="abTest.errorA" class="text-sm text-red-500">{{ abTest.errorA }}</div>
+          </div>
+          <!-- Model B result -->
+          <div class="bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-800 p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                模型 B — {{ filteredProviders.find(p => p.id === abTest.modelB)?.display_name || '—' }}
+              </span>
+              <span v-if="abTest.statsB" class="text-xs text-emerald-500 font-mono">{{ abTest.statsB.latency_ms }}ms · {{ abTest.statsB.tokens }}tok</span>
+            </div>
+            <div v-if="abTest.resultB" class="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ abTest.resultB }}</div>
+            <div v-if="abTest.errorB" class="text-sm text-red-500">{{ abTest.errorB }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 4: 任务-模型映射                                                  -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="activeTab === 'mapping'">
+      <div class="card p-6">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">任务-模型映射</h3>
+            <p class="text-xs text-gray-400 mt-1">为每种任务类型指定默认提供商，更改后立即生效</p>
+          </div>
+          <button class="btn-ghost text-sm" :disabled="taskMappingLoading" @click="loadTaskMappings">
+            <svg class="w-4 h-4" :class="taskMappingLoading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="taskMappingLoading" class="space-y-4">
+          <div v-for="i in 6" :key="i" class="animate-pulse flex items-center gap-4">
+            <div class="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            <div class="h-9 flex-1 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+          </div>
+        </div>
+
+        <div v-else class="space-y-4">
+          <div
+            v-for="(label, taskType) in taskTypeLabels"
+            :key="taskType"
+            class="flex items-center gap-4"
+          >
+            <span class="w-36 text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">{{ label }}</span>
+            <select
+              v-model="taskMappings[taskType as string]"
+              class="flex-1 input text-sm"
+              :disabled="taskMappingSaving[taskType as string]"
+              @change="saveTaskMapping(taskType as string, taskMappings[taskType as string] ?? null)"
+            >
+              <option :value="null">使用默认</option>
+              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">
+                {{ p.display_name || p.name }}
+              </option>
+            </select>
+            <svg
+              v-if="taskMappingSaving[taskType as string]"
+              class="w-4 h-4 animate-spin text-primary-500 shrink-0"
+              fill="none" viewBox="0 0 24 24"
+            >
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+          </div>
+        </div>
+
+        <p class="text-xs text-gray-400 mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
+          "使用默认"表示由系统自动选择优先级最高的可用提供商。映射仅影响对应任务类型的后续生成请求。
+        </p>
       </div>
     </template>
 

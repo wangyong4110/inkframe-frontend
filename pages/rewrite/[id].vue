@@ -508,8 +508,20 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="ch in complianceReport.chapters" :key="ch.chapter_no" class="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
-                  <td class="px-4 py-2.5 text-sm text-white">第 {{ ch.chapter_no }} 章</td>
+                <tr
+                  v-for="ch in complianceReport.chapters"
+                  :key="ch.chapter_no"
+                  class="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors cursor-pointer"
+                  :title="getTaskByChapterNo(ch.chapter_no) ? '点击查看原文对比' : ''"
+                  @click="jumpToChapterComparison(ch.chapter_no)"
+                >
+                  <td class="px-4 py-2.5 text-sm text-white flex items-center gap-1.5">
+                    第 {{ ch.chapter_no }} 章
+                    <svg v-if="getTaskByChapterNo(ch.chapter_no)" class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                  </td>
                   <td class="px-4 py-2.5 text-base">{{ ch.rating === 'green' ? '🟢' : ch.rating === 'yellow' ? '🟡' : '🔴' }}</td>
                   <td class="px-4 py-2.5 text-xs" :class="ch.lexical_sim < 0.20 ? 'text-emerald-400' : ch.lexical_sim < 0.35 ? 'text-amber-400' : 'text-red-400'">{{ (ch.lexical_sim * 100).toFixed(1) }}%</td>
                   <td class="px-4 py-2.5 text-xs" :class="ch.structural_sim < 0.25 ? 'text-emerald-400' : ch.structural_sim < 0.40 ? 'text-amber-400' : 'text-red-400'">{{ (ch.structural_sim * 100).toFixed(1) }}%</td>
@@ -718,9 +730,11 @@ async function cancelActiveTask() {
 // ── Compliance report ─────────────────────────────────────────────────────────
 const complianceReport = ref<ComplianceReport | null>(null)
 const complianceLoading = ref(false)
+let _complianceReportInFlight = false
 
 async function loadComplianceReport() {
-  if (complianceReport.value || complianceLoading.value) return
+  if (complianceReport.value || complianceLoading.value || _complianceReportInFlight) return
+  _complianceReportInFlight = true
   complianceLoading.value = true
   try {
     const res = await apiGetComplianceReport(projectId)
@@ -729,6 +743,7 @@ async function loadComplianceReport() {
     complianceReport.value = null
   } finally {
     complianceLoading.value = false
+    _complianceReportInFlight = false
   }
 }
 
@@ -945,6 +960,19 @@ async function doStartRewriting() {
 
 function openComparison(task: ChapterRewriteTask) {
   comparisonTask.value = task
+}
+
+function getTaskByChapterNo(chapterNo: number): ChapterRewriteTask | undefined {
+  return chapterTasks.value.find(t => t.chapter_no === chapterNo && t.status === 'completed')
+}
+
+function jumpToChapterComparison(chapterNo: number) {
+  const task = getTaskByChapterNo(chapterNo)
+  if (task) {
+    comparisonTask.value = task
+  } else {
+    toast.info(`第 ${chapterNo} 章数据暂不可用`)
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

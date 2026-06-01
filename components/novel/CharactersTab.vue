@@ -75,8 +75,8 @@ async function handleAICharacters() {
       toast.success('角色已生成/更新')
     })
   } catch (e: any) {
-    generatingCharacters.value = false
     toast.error('生成失败：' + (e.message || ''))
+    generatingCharacters.value = false
   }
 }
 
@@ -103,7 +103,12 @@ async function handleBatchCharacterImages(force = false) {
 }
 
 async function createCharacter() {
-  if (!newCharacterForm.value.name.trim()) return
+  const trimmedName = newCharacterForm.value.name.trim()
+  if (!trimmedName) return
+  if (characters.value.some(c => c.name === trimmedName)) {
+    toast.warning(`角色「${trimmedName}」已存在`)
+    return
+  }
   savingCharacter.value = true
   try {
     await characterStore.createCharacter(props.novelId, {
@@ -311,7 +316,7 @@ async function confirmDeleteCharacter() {
     <ConfirmDialog
       v-model="showDeleteConfirm"
       title="删除角色"
-      :description="`确认删除角色「${characterToDelete?.name || ''}」？此操作不可撤销。`"
+      :description="`确认删除角色「${characterToDelete?.name || ''}」？该角色在章节快照中的历史记录将无法关联显示。此操作不可撤销。`"
       variant="danger"
       confirm-text="确认删除"
       @confirm="confirmDeleteCharacter"

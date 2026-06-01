@@ -6,6 +6,7 @@ interface CharacterState {
   currentCharacter: Character | null
   loading: boolean
   error: string | null
+  _currentNovelId: number | null
 }
 
 export const useCharacterStore = defineStore('character', {
@@ -14,6 +15,7 @@ export const useCharacterStore = defineStore('character', {
     currentCharacter: null,
     loading: false,
     error: null,
+    _currentNovelId: null,
   }),
 
   getters: {
@@ -168,6 +170,16 @@ export const useCharacterStore = defineStore('character', {
     clearCharacters() {
       this.characters = []
       this.currentCharacter = null
+    },
+
+    // Clear store data when switching to a different novel to prevent stale content
+    // from the previous novel being briefly visible on the next novel's page.
+    clearForNovel(novelId: number) {
+      if (this._currentNovelId !== novelId) {
+        this.characters = []
+        this.currentCharacter = null
+        this._currentNovelId = novelId
+      }
     },
   },
 })

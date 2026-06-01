@@ -870,6 +870,16 @@ onUnmounted(() => {
   if (_controlsHideTimer) clearTimeout(_controlsHideTimer)
   // Also stop any active playback timer
   if (timelineTimer.value) { clearInterval(timelineTimer.value); timelineTimer.value = null }
+  // Clear image cache to free memory
+  _recImgCache.clear()
+  // Stop all media elements this component may have started
+  const mediaEls = document.querySelectorAll('video, audio')
+  mediaEls.forEach(el => {
+    if (el instanceof HTMLMediaElement) {
+      el.pause()
+      el.src = ''
+    }
+  })
 })
 
 // ──────── Publish drawer open state (managed here, drawer rendered by PublishDrawer child) ────────

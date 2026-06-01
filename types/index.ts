@@ -768,7 +768,7 @@ export interface RewriteProject {
   progress: number
   total_chapters: number
   done_chapters: number
-  error_msg: string
+  error_msg?: string
   created_at: string
   updated_at: string
 }
@@ -1129,4 +1129,13 @@ export interface ChapterIgnoredIssue {
   issue_hash: string
   note: string
   created_at: string
+}
+
+export interface AnalysisStatus {
+  novel_id?: number
+  status: 'not_started' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  current_step?: string
+  error?: string
+  updated_at?: string
 }

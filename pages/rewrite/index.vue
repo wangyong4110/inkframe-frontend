@@ -17,6 +17,23 @@ const creating = ref(false)
 const novels = ref<{ id: number; title: string }[]>([])
 const createForm = ref({ novel_id: 0, name: '', level: 3 as 1 | 2 | 3 | 4 | 5 })
 
+const ACTIVE_STATUSES = new Set(['pending', 'analyzing', 'bible_ready', 'rewriting'])
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPollingIfNeeded() {
+  const hasActive = projects.value.some(p => ACTIVE_STATUSES.has(p.status))
+  if (hasActive && !pollTimer) {
+    pollTimer = setInterval(async () => {
+      await fetchProjects()
+      const stillActive = projects.value.some(p => ACTIVE_STATUSES.has(p.status))
+      if (!stillActive && pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+    }, 5000)
+  }
+}
+
 const LEVELS = [
   { value: 1, label: '微调', desc: '仅调整表述，保留原文95%以上内容' },
   { value: 2, label: '轻改', desc: '修改人名、地名，适度调整情节' },
@@ -46,12 +63,14 @@ const STATUS_COLORS: Record<RewriteProject['status'], string> = {
 }
 
 async function fetchProjects() {
+  if (loading.value) return
   loading.value = true
   try {
     const res = await listProjects(page.value, pageSize)
     const data = (res as any)?.data ?? res
     projects.value = data?.items ?? []
     total.value = data?.total ?? 0
+    startPollingIfNeeded()
   } catch (e: any) {
     toast.error('加载失败：' + (e.message || ''))
   } finally {
@@ -116,6 +135,13 @@ function formatDate(dateStr: string) {
 onMounted(() => {
   fetchProjects()
   fetchNovels()
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>
 
@@ -199,11 +225,11 @@ onMounted(() => {
     </div>
 
     <div v-if="total > pageSize" class="mt-6 flex justify-center gap-2">
-      <button class="btn-outline text-sm" :disabled="page <= 1" @click="page--; fetchProjects()">上一页</button>
+      <button class="btn-outline text-sm" :disabled="page <= 1 || loading" @click="page--; fetchProjects()">上一页</button>
       <span class="flex items-center text-sm text-gray-500 dark:text-gray-400 px-2">
         第 {{ page }} 页 / 共 {{ Math.ceil(total / pageSize) }} 页
       </span>
-      <button class="btn-outline text-sm" :disabled="page * pageSize >= total" @click="page++; fetchProjects()">下一页</button>
+      <button class="btn-outline text-sm" :disabled="page * pageSize >= total || loading" @click="page++; fetchProjects()">下一页</button>
     </div>
 
     <!-- 创建对话框 -->

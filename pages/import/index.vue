@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import type { CrawlProgress } from '~/composables/useCrawlApi'
+import type { CrawlProgress, CrawlConfig } from '~/composables/useCrawlApi'
+import { defaultCrawlConfig } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
 
 const router = useRouter()
 const route = useRoute()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
-const { getCrawlStatus } = useCrawlApi()
+const { getCrawlStatus, resumeCrawl } = useCrawlApi()
 const { getNovels, getNovel } = useNovelApi()
 
 // 导入状态
@@ -58,9 +59,11 @@ onMounted(async () => {
 
 // 爬取进度
 const crawlStatus = ref<CrawlProgress | null>(null)
+const crawlNovelId = ref<number | null>(null)
 const crawlPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
 function startCrawlPoll(novelId: number) {
+  crawlNovelId.value = novelId
   crawlPollTimer.value = setInterval(async () => {
     try {
       const res = await getCrawlStatus(novelId)
@@ -83,7 +86,54 @@ function stopCrawlPoll() {
   }
 }
 
+async function handlePauseCrawl() {
+  if (!crawlNovelId.value) return
+  try {
+    // Resume/pause is a toggle — calling resume on a running crawl is a no-op server-side;
+    // the UI treats the status returned from the next poll as the source of truth.
+    await resumeCrawl(crawlNovelId.value)
+  } catch (_) {}
+}
+
+// ETA in human-readable form
+const crawlETA = computed(() => {
+  const s = crawlStatus.value
+  if (!s || s.elapsed_secs <= 0 || s.done <= 0 || s.total <= s.done) return null
+  const secsPerChapter = s.elapsed_secs / s.done
+  const remaining = (s.total - s.done) * secsPerChapter
+  if (remaining < 60) return `约 ${Math.ceil(remaining)} 秒`
+  if (remaining < 3600) return `约 ${Math.ceil(remaining / 60)} 分钟`
+  return `约 ${(remaining / 3600).toFixed(1)} 小时`
+})
+
+const crawlSpeedLabel = computed(() => {
+  const s = crawlStatus.value
+  if (!s || s.speed_cps <= 0) return null
+  const kb = s.speed_cps / 1024
+  return kb >= 1 ? `${kb.toFixed(1)} KB/s` : `${Math.round(s.speed_cps)} B/s`
+})
+
+const crawlBytesLabel = computed(() => {
+  const b = crawlStatus.value?.bytes_downloaded ?? 0
+  if (b === 0) return null
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / 1024 / 1024).toFixed(2)} MB`
+})
+
 onUnmounted(() => stopCrawlPoll())
+
+// 高级爬取配置
+const showAdvancedConfig = ref(false)
+const crawlConfig = ref<CrawlConfig>(defaultCrawlConfig())
+
+const delayOptions = [
+  { label: '500 ms', value: 500 },
+  { label: '1 秒', value: 1000 },
+  { label: '2 秒 (推荐)', value: 2000 },
+  { label: '3 秒', value: 3000 },
+  { label: '5 秒', value: 5000 },
+]
 
 // 表单数据
 const importForm = ref({
@@ -179,7 +229,11 @@ async function handleImport() {
       })
       result = await response.json()
     } else {
-      const body: Record<string, unknown> = { url: importForm.value.url, site_name: importForm.value.siteName }
+      const body: Record<string, unknown> = {
+        url: importForm.value.url,
+        site_name: importForm.value.siteName,
+        config: crawlConfig.value,
+      }
       if (novelId) body.novel_id = novelId
       const response = await fetch(`${apiBase}/import/novel/crawl`, {
         method: 'POST',
@@ -225,6 +279,9 @@ function reset() {
   importProgress.value = 0
   importError.value = ''
   crawlStatus.value = null
+  crawlNovelId.value = null
+  crawlConfig.value = defaultCrawlConfig()
+  showAdvancedConfig.value = false
   // 非锁定模式才清空手动追加状态
   if (!lockedNovelId.value) {
     appendMode.value = false
@@ -379,7 +436,7 @@ function reset() {
         <h3 class="font-semibold text-gray-900 dark:text-white">爬取小说</h3>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说页面 URL</label>
-          <input v-model="importForm.url" type="url" class="input" placeholder="https://www.qidian.com/xxx" />
+          <input v-model="importForm.url" type="url" class="input" placeholder="https://www.qidian.com/book/xxxxx/" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">站点名称（可选）</label>
@@ -390,6 +447,113 @@ function reset() {
             <option value="zongheng">纵横中文网</option>
             <option value="qimao">七猫小说</option>
           </select>
+        </div>
+
+        <!-- 高级配置（可折叠） -->
+        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            @click="showAdvancedConfig = !showAdvancedConfig"
+          >
+            <span class="flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              高级爬取配置
+            </span>
+            <svg class="w-4 h-4 transition-transform" :class="showAdvancedConfig ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          <div v-if="showAdvancedConfig" class="px-4 pb-4 pt-2 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-200 dark:border-gray-700">
+            <!-- 并发数 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                并发章节数：{{ crawlConfig.concurrency }}
+              </label>
+              <input
+                v-model.number="crawlConfig.concurrency"
+                type="range" min="1" max="5" step="1"
+                class="w-full accent-primary-500"
+              />
+              <div class="flex justify-between text-xs text-gray-400 mt-0.5">
+                <span>1（稳定）</span><span>3</span><span>5（快速）</span>
+              </div>
+            </div>
+
+            <!-- 请求间隔 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">请求间隔</label>
+              <select v-model.number="crawlConfig.delay_ms" class="input text-sm">
+                <option v-for="o in delayOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </div>
+
+            <!-- UA 轮换 -->
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                class="relative w-10 h-5 rounded-full transition-colors"
+                :class="crawlConfig.ua_rotation ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                @click="crawlConfig.ua_rotation = !crawlConfig.ua_rotation"
+              >
+                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                  :class="crawlConfig.ua_rotation ? 'left-5' : 'left-0.5'" />
+              </div>
+              <span class="text-sm text-gray-700 dark:text-gray-300">User-Agent 轮换</span>
+            </label>
+
+            <!-- 自动识别编码 -->
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                class="relative w-10 h-5 rounded-full transition-colors"
+                :class="crawlConfig.detect_charset ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                @click="crawlConfig.detect_charset = !crawlConfig.detect_charset"
+              >
+                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                  :class="crawlConfig.detect_charset ? 'left-5' : 'left-0.5'" />
+              </div>
+              <span class="text-sm text-gray-700 dark:text-gray-300">自动识别编码（GBK等）</span>
+            </label>
+
+            <!-- 跳过付费章节 -->
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                class="relative w-10 h-5 rounded-full transition-colors"
+                :class="crawlConfig.skip_vip_chaps ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                @click="crawlConfig.skip_vip_chaps = !crawlConfig.skip_vip_chaps"
+              >
+                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                  :class="crawlConfig.skip_vip_chaps ? 'left-5' : 'left-0.5'" />
+              </div>
+              <span class="text-sm text-gray-700 dark:text-gray-300">跳过付费章节</span>
+            </label>
+
+            <!-- 响应缓存 -->
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                class="relative w-10 h-5 rounded-full transition-colors"
+                :class="crawlConfig.cache_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                @click="crawlConfig.cache_enabled = !crawlConfig.cache_enabled"
+              >
+                <div class="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                  :class="crawlConfig.cache_enabled ? 'left-5' : 'left-0.5'" />
+              </div>
+              <span class="text-sm text-gray-700 dark:text-gray-300">磁盘缓存（断点续爬更快）</span>
+            </label>
+
+            <!-- 代理 -->
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">代理地址（可选）</label>
+              <input
+                v-model="crawlConfig.proxy_url"
+                type="url"
+                class="input text-sm"
+                placeholder="http://127.0.0.1:7890 或 socks5://..."
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -436,33 +600,96 @@ function reset() {
     </div>
 
     <!-- Crawl Progress Panel -->
-    <div v-if="crawlStatus" class="card p-6">
-      <h3 class="font-semibold text-gray-900 dark:text-white mb-3">后台爬取进度</h3>
-      <div class="mb-2 flex justify-between text-sm text-gray-600 dark:text-gray-400">
-        <span>{{ crawlStatus.current || '正在爬取...' }}</span>
-        <span>{{ crawlStatus.done }} / {{ crawlStatus.total }} 章</span>
+    <div v-if="crawlStatus" class="card p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900 dark:text-white">后台爬取进度</h3>
+        <button
+          v-if="crawlStatus.status === 'running'"
+          class="btn-secondary text-xs py-1 px-3"
+          @click="handlePauseCrawl"
+        >
+          暂停
+        </button>
+        <button
+          v-else-if="crawlStatus.status === 'paused' && crawlNovelId"
+          class="btn-primary text-xs py-1 px-3"
+          @click="resumeCrawl(crawlNovelId!)"
+        >
+          继续
+        </button>
       </div>
-      <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-        <div
-          class="h-full transition-all duration-500"
-          :class="crawlStatus.status === 'failed' ? 'bg-red-500' : crawlStatus.status === 'completed' ? 'bg-green-500' : 'bg-primary-500'"
-          :style="{ width: `${crawlStatus.total > 0 ? Math.round((crawlStatus.done / crawlStatus.total) * 100) : 0}%` }"
-        />
+
+      <!-- 当前章节 -->
+      <div class="text-sm text-gray-600 dark:text-gray-400 truncate">
+        {{ crawlStatus.current || '准备中...' }}
       </div>
-      <div class="mt-2 flex justify-between items-center">
+
+      <!-- 进度条 -->
+      <div>
+        <div class="mb-1 flex justify-between text-sm">
+          <span class="font-medium text-gray-700 dark:text-gray-200">
+            {{ crawlStatus.done }} / {{ crawlStatus.total }} 章
+          </span>
+          <span class="text-gray-500">
+            {{ crawlStatus.total > 0 ? Math.round((crawlStatus.done / crawlStatus.total) * 100) : 0 }}%
+          </span>
+        </div>
+        <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all duration-500"
+            :class="{
+              'bg-red-500': crawlStatus.status === 'failed',
+              'bg-green-500': crawlStatus.status === 'completed',
+              'bg-yellow-400': crawlStatus.status === 'paused',
+              'bg-primary-500': crawlStatus.status === 'running',
+            }"
+            :style="{ width: `${crawlStatus.total > 0 ? Math.round((crawlStatus.done / crawlStatus.total) * 100) : 0}%` }"
+          />
+        </div>
+      </div>
+
+      <!-- 统计数据行 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 mb-0.5">失败</div>
+          <div class="text-sm font-semibold" :class="crawlStatus.failed > 0 ? 'text-red-500' : 'text-gray-700 dark:text-gray-200'">
+            {{ crawlStatus.failed }}
+          </div>
+        </div>
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 mb-0.5">已下载</div>
+          <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            {{ crawlBytesLabel ?? '—' }}
+          </div>
+        </div>
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 mb-0.5">速度</div>
+          <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            {{ crawlSpeedLabel ?? '—' }}
+          </div>
+        </div>
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+          <div class="text-xs text-gray-500 mb-0.5">预计剩余</div>
+          <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            {{ crawlETA ?? '—' }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 状态 + 提示 -->
+      <div class="flex justify-between items-center text-xs">
         <span
-          class="text-xs"
           :class="{
-            'text-yellow-600': crawlStatus.status === 'running',
-            'text-green-600': crawlStatus.status === 'completed',
-            'text-red-600': crawlStatus.status === 'failed',
+            'text-yellow-600 dark:text-yellow-400': crawlStatus.status === 'running',
+            'text-green-600 dark:text-green-400': crawlStatus.status === 'completed',
+            'text-red-500': crawlStatus.status === 'failed',
             'text-gray-500': crawlStatus.status === 'paused',
           }"
         >
           {{ { running: '爬取中', paused: '已暂停', completed: '爬取完成', failed: '部分失败' }[crawlStatus.status] }}
-          {{ crawlStatus.failed > 0 ? `（${crawlStatus.failed} 章失败）` : '' }}
+          <template v-if="crawlStatus.pages_visited > 0">· {{ crawlStatus.pages_visited }} 页已访问</template>
         </span>
-        <span class="text-xs text-gray-500">章节内容将在爬取完成后自动生成 AI 摘要</span>
+        <span class="text-gray-400">完成后自动生成 AI 摘要</span>
       </div>
     </div>
   </div>

@@ -202,11 +202,19 @@ function handleFileDrop(e: DragEvent) {
 const CHUNK_THRESHOLD = 5 * 1024 * 1024  // 5 MB — 超过此大小走分片上传
 const CHUNK_SIZE      = 2 * 1024 * 1024  // 2 MB / 片
 
+// Visual upload delay indicator: show "上传中，请稍候..." after 10s
+let fileUploadSlowTimer: ReturnType<typeof setTimeout> | null = null
+const fileUploadSlow = ref(false)
+
 async function uploadFile() {
   if (!selectedFile.value) { fileError.value = '请选择文件'; return }
   fileError.value = ''
   fileUploading.value = true
+  fileUploadSlow.value = false
   fileProgress.value = 5
+
+  // Show slow-upload indicator after 10 seconds
+  fileUploadSlowTimer = setTimeout(() => { fileUploadSlow.value = true }, 10_000)
 
   try {
     let taskId: string
@@ -234,7 +242,14 @@ async function uploadFile() {
     await pollImportTask(taskId)
   } catch (e: any) {
     fileError.value = e.message || '上传失败'
+  } finally {
+    // ALWAYS reset uploading state, even on timeout/abort/error
     fileUploading.value = false
+    fileUploadSlow.value = false
+    if (fileUploadSlowTimer !== null) {
+      clearTimeout(fileUploadSlowTimer)
+      fileUploadSlowTimer = null
+    }
   }
 }
 
@@ -990,7 +1005,10 @@ async function rwSubmit() {
         <!-- 上传进度 -->
         <div v-if="fileUploading" class="space-y-2">
           <div class="flex justify-between text-sm text-gray-600 dark:text-gray-300">
-            <span>{{ fileProgress < 50 ? '上传中...' : '解析导入中...' }}</span>
+            <span class="flex items-center gap-1.5">
+              <span v-if="fileUploadSlow" class="inline-block w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              {{ fileProgress < 50 ? (fileUploadSlow ? '上传中，请稍候...' : '上传中...') : '解析导入中...' }}
+            </span>
             <span>{{ fileProgress }}%</span>
           </div>
           <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">

@@ -144,8 +144,9 @@ onMounted(async () => {
     voiceModels.value = res.data ?? []
     // If saved voice_id is not in the fetched list, show custom input
     checkCustom(voiceId.value)
-  } catch {
+  } catch (e: any) {
     voiceModelsLoadFailed.value = true
+    toast.error('音色模型加载失败：' + (e?.message || ''))
   } finally {
     voiceModelsLoading.value = false
   }

@@ -21,6 +21,7 @@ const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 
 const saving = ref(false)
+const isSaving = ref(false)
 const generating = ref(false)
 
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
@@ -140,6 +141,9 @@ const chapterTitle = ref('')
 // to avoid reactivity timing issues with the Pinia store.
 const savedContent = ref('')
 const savedTitle = ref('')
+// Tracks the server-side updated_at timestamp for optimistic concurrency detection.
+// TODO (backend): implement 409 conflict response when expected_updated_at mismatches.
+const serverUpdatedAt = ref('')
 const prompt = ref('')
 const wordCountOverride = ref(0)
 
@@ -168,6 +172,8 @@ onMounted(async () => {
     chapterTitle.value = chapter.value?.title || ''
     savedContent.value = content.value
     savedTitle.value = chapterTitle.value
+    // Record the server timestamp for optimistic concurrency detection on save.
+    serverUpdatedAt.value = (chapter.value as any)?.updated_at || ''
   }
   // 仅在用户未手动设置时，用小说配置推算字数目标
   if (wordCountOverride.value === 0) {
@@ -333,24 +339,54 @@ function closeFind() {
 watch(findText, () => computeFindMatches())
 
 async function doSave() {
+  if (isSaving.value) return // prevent concurrent saves
   if (!chapter.value) throw new Error('章节未加载，请刷新后重试')
-  // Snapshot values BEFORE the await so savedContent/savedTitle reflect what was
-  // actually sent to the server, not what the user may have typed during the request.
-  const snapshotContent = content.value
-  const snapshotTitle = chapterTitle.value
-  const updates: Record<string, any> = {
-    title: snapshotTitle,
-    content: snapshotContent,
-    word_count: countWords(snapshotContent),
+  isSaving.value = true
+  try {
+    // Snapshot values BEFORE the await so savedContent/savedTitle reflect what was
+    // actually sent to the server, not what the user may have typed during the request.
+    const snapshotContent = content.value
+    const snapshotTitle = chapterTitle.value
+    const updates: Record<string, any> = {
+      title: snapshotTitle,
+      content: snapshotContent,
+      word_count: countWords(snapshotContent),
+    }
+    if (outlineEditMode.value) {
+      updates.outline = outlineEditText.value
+    }
+    // Optimistic concurrency: include the last known server timestamp so the backend
+    // can detect if another tab/session modified the chapter in the meantime.
+    // TODO (backend): return HTTP 409 when expected_updated_at mismatches the DB value.
+    if (serverUpdatedAt.value) {
+      updates.expected_updated_at = serverUpdatedAt.value
+    }
+    let saved: any
+    try {
+      saved = await chapterStore.updateChapter(novelId, chapter.value.chapter_no, updates)
+    } catch (e: any) {
+      // Handle 409 conflict: another session modified this chapter.
+      if (e?.message?.includes('409') || e?.status === 409) {
+        const overwrite = window.confirm('该章节已被其他标签页修改，是否覆盖？（取消则丢弃当前修改）')
+        if (!overwrite) return
+        // Force save without the concurrency guard.
+        const { expected_updated_at: _unused, ...forceUpdates } = updates
+        saved = await chapterStore.updateChapter(novelId, chapter.value.chapter_no, forceUpdates)
+      } else {
+        throw e
+      }
+    }
+    // Update saved baseline to what was actually persisted, not current (potentially
+    // newer) content — this keeps isDirty accurate when user types during the request.
+    savedContent.value = snapshotContent
+    savedTitle.value = snapshotTitle
+    // Keep the server timestamp in sync for the next save cycle.
+    if (saved && (saved as any)?.updated_at) {
+      serverUpdatedAt.value = (saved as any).updated_at
+    }
+  } finally {
+    isSaving.value = false
   }
-  if (outlineEditMode.value) {
-    updates.outline = outlineEditText.value
-  }
-  await chapterStore.updateChapter(novelId, chapter.value.chapter_no, updates)
-  // Update saved baseline to what was actually persisted, not current (potentially
-  // newer) content — this keeps isDirty accurate when user types during the request.
-  savedContent.value = snapshotContent
-  savedTitle.value = snapshotTitle
 }
 
 async function handleSave() {
@@ -381,6 +417,22 @@ async function handleGenerate() {
     toast.info('AI 正在生成，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
     content.value = result.content || ''
+    // Sync metadata returned from the generation task into the local chapter ref
+    // and the chapter list so the sidebar word count / status reflects reality.
+    const generatedWordCount = result.word_count ?? countWords(result.content || '')
+    if (chapterStore.currentChapter) {
+      chapterStore.currentChapter.word_count = generatedWordCount
+      if (result.status) chapterStore.currentChapter.status = result.status
+    }
+    if (result.id) {
+      chapterStore.updateChapterInList({
+        id: result.id,
+        word_count: generatedWordCount,
+        ...(result.status ? { status: result.status } : {}),
+      })
+    }
+    // Update server timestamp so the next save uses the correct concurrency guard.
+    serverUpdatedAt.value = (result as any)?.updated_at || serverUpdatedAt.value
     if (wordCountOverride.value > 0) chapterStore.wordCountGoal = wordCountOverride.value
     toast.success('内容生成完成')
   } catch (e: any) {

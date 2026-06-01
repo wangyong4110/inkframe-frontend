@@ -10,6 +10,9 @@ export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], de
   watch(watchSources, () => {
     if (timer) clearTimeout(timer)
     timer = setTimeout(async () => {
+      // Skip if a manual save is already in progress (saveFn itself is a no-op when
+      // isSaving is true, but checking autoSaving avoids stacking autosave attempts)
+      if (autoSaving.value) return
       autoSaving.value = true
       saveFailed.value = false
       try {

@@ -9,6 +9,7 @@ useHead({
 })
 
 const novelApi = usePublicNovelApi()
+const toast = useToast()
 
 type Gender = 'male' | 'female'
 type RankType = 'hot' | 'new' | 'completed' | 'favorites' | 'updated'
@@ -33,8 +34,9 @@ async function loadRanking() {
   try {
     const res = await novelApi.getNovelRanking(rankType.value, gender.value)
     items.value = res?.data?.items ?? []
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
+    toast.error('加载失败：' + (e?.message || '未知错误'))
   } finally {
     loading.value = false
   }
