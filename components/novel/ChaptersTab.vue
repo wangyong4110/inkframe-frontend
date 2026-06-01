@@ -202,8 +202,10 @@ async function handleGenerateOutline() {
   if (!novelStore.currentNovel) return
   generatingOutline.value = true
   try {
-    await novelStore.generateOutline(props.novelId, 10)
-    toast.success('大纲生成完成')
+    const result = await novelStore.generateOutline(props.novelId, 10)
+    await chapterStore.fetchChapters(props.novelId)
+    const count = result?.chapters?.length ?? 0
+    toast.success(count > 0 ? `大纲生成完成，共 ${count} 章` : '大纲生成完成')
   } catch (e: any) {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
   } finally {

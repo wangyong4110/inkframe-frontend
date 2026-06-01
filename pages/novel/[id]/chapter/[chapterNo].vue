@@ -467,7 +467,7 @@ async function handleRegenerate() {
     if (storyPatternEnabled.value) opts.use_story_pattern = true
 
     const resp = await chapterApiForVersions.regenerateChapter(chapter.value.id, opts)
-    const { task_id } = resp as any
+    const task_id = (resp as any)?.data?.task_id ?? (resp as any)?.task_id
     currentTaskId.value = task_id
     toast.info('重新生成中，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
