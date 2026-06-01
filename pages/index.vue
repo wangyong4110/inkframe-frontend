@@ -7,10 +7,8 @@ definePageMeta({ layout: false, auth: false })
 useHead({ title: '简影 - AI 小说转视频平台' })
 
 const authStore = useAuthStore()
-const { getNovels } = useNovelApi()
 const platformApi = usePlatformApi()
 const publicNovelApi = usePublicNovelApi()
-const recentNovels = ref<Novel[]>([])
 const hotVideos = ref<Video[]>([])
 const hotNovels = ref<Novel[]>([])
 
@@ -26,39 +24,8 @@ onMounted(async () => {
   } catch {
     // non-fatal
   }
-
-  if (authStore.isLoggedIn) {
-    try {
-      const response = await getNovels({ page: 1, page_size: 5 })
-      recentNovels.value = response.data.items || []
-    } catch {
-      // non-fatal
-    }
-  }
 })
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  if (days < 30) return `${Math.floor(days / 7)}周前`
-  return `${Math.floor(days / 30)}月前`
-}
-
-function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    planning: '规划中',
-    writing: '创作中',
-    paused: '已暂停',
-    completed: '已完成',
-    archived: '已归档',
-  }
-  return labels[status] || status
-}
 
 const pipeline = [
   {
@@ -439,74 +406,6 @@ const stats = [
                 </span>
                 <span v-if="n.genre" class="text-indigo-500">{{ ({ fantasy:'奇幻', xianxia:'仙侠', urban:'都市', scifi:'科幻', romance:'言情', mystery:'悬疑', historical:'历史' } as Record<string,string>)[n.genre] ?? n.genre }}</span>
               </div>
-            </div>
-          </NuxtLink>
-        </div>
-      </div>
-    </section>
-
-    <!-- Dashboard Section (logged-in users only) -->
-    <section v-if="authStore.isLoggedIn" class="py-16 px-6">
-      <div class="max-w-7xl mx-auto">
-        <div class="flex items-center justify-between mb-8">
-          <h2 class="text-xl font-bold text-white">最近创作</h2>
-          <NuxtLink to="/novel" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
-            查看全部 →
-          </NuxtLink>
-        </div>
-
-        <!-- Empty state -->
-        <div
-          v-if="recentNovels.length === 0"
-          class="text-center py-16 bg-gray-900 rounded-2xl border border-gray-800"
-        >
-          <div class="text-4xl mb-4">✍️</div>
-          <h3 class="text-lg font-semibold text-white mb-2">还没有作品</h3>
-          <p class="text-gray-400 text-sm mb-6">开始你的第一部 AI 小说创作</p>
-          <NuxtLink
-            to="/novel/create"
-            class="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors inline-block"
-          >
-            创作第一部
-          </NuxtLink>
-        </div>
-
-        <!-- Novel grid -->
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <!-- Create new card -->
-          <NuxtLink
-            to="/novel/create"
-            class="bg-gray-900 border-2 border-dashed border-gray-700 hover:border-violet-500/50 rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-colors group min-h-40"
-          >
-            <div class="w-10 h-10 bg-gray-800 group-hover:bg-violet-500/20 rounded-xl flex items-center justify-center text-2xl transition-colors text-gray-400 group-hover:text-violet-400">
-              +
-            </div>
-            <span class="text-sm text-gray-500 group-hover:text-violet-400 transition-colors font-medium">新建小说</span>
-          </NuxtLink>
-
-          <!-- Recent novel cards -->
-          <NuxtLink
-            v-for="novel in recentNovels"
-            :key="novel.id"
-            :to="`/novel/${novel.id}`"
-            class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors group"
-          >
-            <div class="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center text-sm mb-3">📖</div>
-            <h3 class="font-semibold text-white text-sm mb-1 group-hover:text-violet-300 transition-colors line-clamp-1">
-              {{ novel.title }}
-            </h3>
-            <p class="text-xs text-gray-500 mb-3 line-clamp-2">
-              {{ novel.description || novel.genre || '无简介' }}
-            </p>
-            <div class="flex items-center justify-between text-xs text-gray-500">
-              <div class="flex items-center gap-2">
-                <span>{{ novel.chapter_count || 0 }} 章</span>
-                <span>·</span>
-                <span :class="novel.status === 'completed' ? 'text-emerald-400' : 'text-blue-400'">
-                  {{ getStatusLabel(novel.status) }}
-                </span>
-              </div>
-              <span>{{ formatDate(novel.updated_at) }}</span>
             </div>
           </NuxtLink>
         </div>

@@ -11,10 +11,15 @@ const activeTab = ref<'password' | 'phone'>('password')
 const emailForm = reactive({ email: '', password: '' })
 const emailLoading = ref(false)
 const emailError = ref('')
+const showResend = ref(false)   // 邮箱未验证时显示重发按钮
+const resendLoading = ref(false)
+const resendDone = ref(false)
 
 async function loginWithEmail() {
   if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
   emailError.value = ''
+  showResend.value = false
+  resendDone.value = false
   emailLoading.value = true
   try {
     const data = await request<any>('/auth/login', {
@@ -25,9 +30,29 @@ async function loginWithEmail() {
     authStore.setFromAuthResponse(resp)
     router.push('/')
   } catch (e: any) {
-    emailError.value = e.message || '登录失败'
+    const msg: string = e.message || '登录失败'
+    emailError.value = msg
+    if (msg.toLowerCase().includes('not verified') || msg.includes('未验证')) {
+      showResend.value = true
+    }
   } finally {
     emailLoading.value = false
+  }
+}
+
+async function resendVerificationEmail() {
+  resendLoading.value = true
+  try {
+    await request('/auth/email-verification/resend', {
+      method: 'POST',
+      body: JSON.stringify({ email: emailForm.email }),
+    })
+    resendDone.value = true
+  } catch {
+    // 静默处理
+    resendDone.value = true
+  } finally {
+    resendLoading.value = false
   }
 }
 
@@ -161,7 +186,17 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             <input v-model="emailForm.password" type="password" required placeholder="请输入密码"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
-          <p v-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
+          <div v-if="emailError" class="space-y-1">
+            <p class="text-red-400 text-xs">{{ emailError }}</p>
+            <template v-if="showResend">
+              <p v-if="resendDone" class="text-green-400 text-xs">验证邮件已重新发送，请查收收件箱。</p>
+              <button v-else type="button" :disabled="resendLoading"
+                class="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50 transition-colors underline"
+                @click="resendVerificationEmail">
+                {{ resendLoading ? '发送中...' : '重新发送验证邮件' }}
+              </button>
+            </template>
+          </div>
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"
               class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500

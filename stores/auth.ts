@@ -55,6 +55,8 @@ export const useAuthStore = defineStore('auth', {
       user_id: number
       tenant_id: number
       username: string
+      nickname?: string
+      email?: string
       role: string
       expires_at: string
     }) {
@@ -64,9 +66,9 @@ export const useAuthStore = defineStore('auth', {
       this.user = {
         id: resp.user_id,
         username: resp.username,
-        nickname: resp.username,
+        nickname: resp.nickname || resp.username,
         avatar: '',
-        email: '',
+        email: resp.email || '',
         role: resp.role,
       }
       this.tenantId = resp.tenant_id

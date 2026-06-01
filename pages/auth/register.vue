@@ -17,6 +17,7 @@ const emailForm = reactive({
 })
 const emailLoading = ref(false)
 const emailError = ref('')
+const emailPendingVerify = ref(false) // 注册成功，等待邮箱验证
 
 async function registerWithEmail() {
   if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
@@ -28,8 +29,14 @@ async function registerWithEmail() {
       body: JSON.stringify(emailForm),
     })
     const resp = data.data ?? data
-    authStore.setFromAuthResponse(resp)
-    router.push('/')
+    if (resp.token) {
+      // 未开启邮箱验证，直接登录
+      authStore.setFromAuthResponse(resp)
+      router.push('/')
+    } else {
+      // 开启了邮箱验证，等待用户点击验证邮件
+      emailPendingVerify.value = true
+    }
   } catch (e: any) {
     emailError.value = e.message || '注册失败'
   } finally {
@@ -126,8 +133,21 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
           >手机号注册</button>
         </div>
 
+        <!-- 邮箱注册：等待验证提示 -->
+        <div v-if="activeTab === 'email' && emailPendingVerify" class="py-6 text-center space-y-4">
+          <div class="text-4xl">📬</div>
+          <p class="text-white font-semibold">验证邮件已发送</p>
+          <p class="text-sm text-gray-400 leading-relaxed">
+            请查收发送至 <span class="text-violet-400">{{ emailForm.email }}</span> 的验证邮件，<br>
+            点击邮件中的链接完成验证后即可登录。
+          </p>
+          <NuxtLink to="/auth/login" class="inline-block mt-2 text-sm text-violet-400 hover:text-violet-300 transition-colors">
+            前往登录
+          </NuxtLink>
+        </div>
+
         <!-- 邮箱注册 Tab -->
-        <form v-if="activeTab === 'email'" @submit.prevent="registerWithEmail" class="space-y-4">
+        <form v-else-if="activeTab === 'email'" @submit.prevent="registerWithEmail" class="space-y-4">
           <div v-for="field in [
             { label: '用户名', model: 'username', type: 'text', placeholder: '请输入用户名', required: true },
             { label: '邮箱',   model: 'email',    type: 'email', placeholder: '请输入邮箱', required: true },
