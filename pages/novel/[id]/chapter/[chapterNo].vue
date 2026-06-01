@@ -712,6 +712,22 @@ const parsedSceneOutline = computed<SceneOutlineItem[]>(() => {
   }
 })
 
+interface ChapterEndStateChar { name: string; location: string; state: string; last_action: string }
+interface ChapterEndState { characters: ChapterEndStateChar[]; scene_end: string; pending_action: string; opening_hint: string }
+
+const parsedEndState = computed<ChapterEndState | null>(() => {
+  if (!chapter.value?.chapter_end_state) return null
+  try { return JSON.parse(chapter.value.chapter_end_state) } catch { return null }
+})
+
+const parsedReaderExpectations = computed<string[]>(() => {
+  if (!chapter.value?.reader_expectations) return []
+  try {
+    const parsed = JSON.parse(chapter.value.reader_expectations)
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+})
+
 function switchToCharacter() {
   pageMode.value = 'character'
   if (chapterItems.value.length === 0) fetchChapterItems()
@@ -1313,6 +1329,21 @@ onUnmounted(() => {
         <!-- ─ 大纲模式 ─ -->
         <div v-if="pageMode === 'outline'" class="h-full overflow-auto">
           <div class="max-w-2xl mx-auto px-8 py-10">
+
+            <!-- ⚠️ 连贯性异常警告 -->
+            <div
+              v-if="chapter?.continuity_blocked"
+              class="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+            >
+              <svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <div>
+                <p class="text-sm font-medium text-red-700 dark:text-red-400">连贯性检查发现严重问题</p>
+                <p class="text-xs text-red-600 dark:text-red-500 mt-1">本章角色状态、位置或世界观与前章存在冲突，AI 连贯性检查已标记。建议进行深度审查或重新生成。</p>
+              </div>
+            </div>
+
             <!-- Header row -->
             <div class="flex items-start justify-between mb-6">
               <div>
@@ -1377,6 +1408,61 @@ onUnmounted(() => {
                   {{ generatingOutline ? 'AI 生成中...' : '立即生成' }}
                 </button>
               </div>
+            </div>
+
+            <!-- 章末衔接锚点（chapter_end_state）-->
+            <div v-if="parsedEndState" class="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">章末衔接锚点</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">· 下章将从此状态直接接续</span>
+              </div>
+              <div class="px-4 py-3 space-y-2">
+                <p v-if="parsedEndState.scene_end" class="text-xs text-gray-500 dark:text-gray-400">
+                  <span class="font-medium text-gray-600 dark:text-gray-300">场景：</span>{{ parsedEndState.scene_end }}
+                </p>
+                <div v-if="parsedEndState.characters?.length" class="space-y-1">
+                  <div
+                    v-for="c in parsedEndState.characters"
+                    :key="c.name"
+                    class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs"
+                  >
+                    <span class="font-medium text-gray-700 dark:text-gray-300">{{ c.name }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">📍 {{ c.location }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">💭 {{ c.state }}</span>
+                    <span class="text-gray-500 dark:text-gray-400 italic">「{{ c.last_action }}」</span>
+                  </div>
+                </div>
+                <p v-if="parsedEndState.pending_action" class="text-xs text-amber-600 dark:text-amber-400">
+                  <span class="font-medium">⚡ 未完成动作：</span>{{ parsedEndState.pending_action }}
+                </p>
+                <p v-if="parsedEndState.opening_hint" class="text-xs text-indigo-600 dark:text-indigo-400">
+                  <span class="font-medium">➤ 下章接续建议：</span>{{ parsedEndState.opening_hint }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 读者悬念（reader_expectations）-->
+            <div v-if="parsedReaderExpectations.length" class="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                <svg class="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">读者悬念</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">· 下章生成时优先回应</span>
+              </div>
+              <ol class="px-4 py-3 space-y-1">
+                <li
+                  v-for="(exp, i) in parsedReaderExpectations"
+                  :key="i"
+                  class="text-xs text-gray-600 dark:text-gray-400 flex gap-2"
+                >
+                  <span class="font-medium text-violet-500 flex-shrink-0">{{ i + 1 }}.</span>
+                  <span>{{ exp }}</span>
+                </li>
+              </ol>
             </div>
 
             <div class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">

@@ -403,6 +403,12 @@ async function confirmDeleteChapter() {
             >
               {{ getStatusLabel(chapter.status) }}
             </span>
+            <!-- 连贯性问题警告 -->
+            <span
+              v-if="chapter.continuity_blocked"
+              class="px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              title="连贯性检查发现严重问题：角色状态、位置或世界观与前章存在冲突，建议进入章节详情页审查"
+            >连贯性异常</span>
             <!-- 自动审查质量状态 -->
             <span
               v-if="chapter.quality_status === 'low'"
