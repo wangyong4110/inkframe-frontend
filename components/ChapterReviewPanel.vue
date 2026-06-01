@@ -364,11 +364,12 @@ defineExpose({ startReview, reviewing })
                       <li v-for="s in reviewResult.strengths" :key="s" class="text-xs text-green-700 dark:text-green-300 leading-snug">• {{ s }}</li>
                     </ul>
                   </div>
-                  <div v-if="reviewResult.weaknesses?.length" class="rounded-xl p-3 bg-amber-50 dark:bg-amber-900/20 space-y-1">
+                  <div v-if="reviewResult.weaknesses?.length" class="rounded-xl p-3 bg-amber-50 dark:bg-amber-900/20 space-y-2">
                     <p class="text-xs font-semibold text-amber-700 dark:text-amber-400">不足</p>
-                    <ul class="space-y-0.5">
-                      <li v-for="w in reviewResult.weaknesses" :key="w" class="text-xs text-amber-700 dark:text-amber-300 leading-snug">• {{ w }}</li>
-                    </ul>
+                    <div v-for="w in reviewResult.weaknesses" :key="w.issue" class="space-y-0.5">
+                      <p class="text-xs text-amber-700 dark:text-amber-300 leading-snug font-medium">• {{ w.issue }}</p>
+                      <p v-if="w.suggestion" class="text-xs text-amber-600 dark:text-amber-400 leading-snug pl-3 opacity-85">↳ {{ w.suggestion }}</p>
+                    </div>
                   </div>
                 </div>
 

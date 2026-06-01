@@ -7,7 +7,6 @@ const router = useRouter()
 const toast = useToast()
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
-const taskStore = useTaskStore()
 
 const generatingOutline = ref(false)
 const chapterPage = ref(1)
@@ -27,7 +26,8 @@ const outlineReviewPanel = ref<{ open: boolean; review: OutlineReview | null; ti
   review: null,
   title: '',
 })
-const batchReviewing = ref(false)
+const showBatchPanel = ref(false)
+const batchPanelMounted = ref(false)
 const reviewingChapterId = ref<number | null>(null)
 const generatingChapterId = ref<number | null>(null)
 
@@ -85,28 +85,10 @@ async function handleReviewChapter(chapter: Chapter, event: Event) {
   }
 }
 
-async function handleBatchReview(event: Event) {
+function handleBatchReview(event: Event) {
   event.stopPropagation()
-  if (!await guardAiProvider('LLM')) return
-  batchReviewing.value = true
-  try {
-    const resp: any = await outlineReviewApi.batchReviewNovel(props.novelId)
-    const taskId = resp?.task_id ?? resp?.data?.task_id
-    toast.info('批量审查已提交，正在后台处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      batchReviewing.value = false
-      if (task?.status === 'failed') {
-        toast.error('批量审查失败：' + (task.error || '未知错误'))
-        return
-      }
-      await loadNovelReviews()
-      const result = task?.result as any
-      toast.success(`批量审查完成，共审查 ${result?.count ?? result?.reviews?.length ?? 0} 章`)
-    })
-  } catch (e: any) {
-    batchReviewing.value = false
-    toast.error('批量审查失败：' + (e.message || '未知错误'))
-  }
+  batchPanelMounted.value = true
+  showBatchPanel.value = true
 }
 
 function openReviewPanel(chapter: Chapter, event: Event) {
@@ -284,6 +266,12 @@ async function confirmDeleteChapter() {
             </svg>
             {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
           </button>
+          <button class="btn-secondary text-sm" @click="handleBatchReview">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+            </svg>
+            AI 批量审查大纲
+          </button>
           <NuxtLink
             :to="`/novel/${novelId}/chapter/new`"
             class="btn-primary"
@@ -295,17 +283,6 @@ async function confirmDeleteChapter() {
           </NuxtLink>
         </div>
       </div>
-      <!-- 批量审查大纲 — 全宽虚线 ghost 按钮 -->
-      <button
-        class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:text-primary-600 dark:hover:text-primary-400 hover:border-primary-400 dark:hover:border-primary-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        :disabled="batchReviewing"
-        @click="handleBatchReview"
-      >
-        <svg class="w-4 h-4" :class="batchReviewing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-        </svg>
-        {{ batchReviewing ? '批量审查中...' : 'AI 批量审查大纲' }}
-      </button>
     </div>
 
     <div v-if="chapterStore.loading" class="space-y-3">
@@ -512,7 +489,7 @@ async function confirmDeleteChapter() {
     />
   </div>
 
-  <!-- 大纲审查详情面板 -->
+  <!-- 单章大纲审查详情面板 -->
   <Teleport to="body">
     <NovelOutlineReviewPanel
       v-if="outlineReviewPanel.open"
@@ -521,4 +498,14 @@ async function confirmDeleteChapter() {
       @close="outlineReviewPanel.open = false"
     />
   </Teleport>
+
+  <!-- 批量大纲审查面板（懒挂载，首次打开后保持 alive） -->
+  <NovelBatchOutlineReviewPanel
+    v-if="batchPanelMounted"
+    :novel-id="novelId"
+    :chapters="chapters"
+    :visible="showBatchPanel"
+    @close="showBatchPanel = false"
+    @reviewed="loadNovelReviews"
+  />
 </template>

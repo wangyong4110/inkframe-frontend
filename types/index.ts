@@ -1130,6 +1130,11 @@ export interface IgnoredSuggestion {
 
 // ─── Chapter AI Review ──────────────────────────────────────────────────────
 
+export interface WeaknessItem {
+  issue: string
+  suggestion: string
+}
+
 export interface ParagraphFeedback {
   index: number
   orig_text: string
@@ -1150,7 +1155,7 @@ export interface ChapterReview {
   visual_potential: number
   summary: string
   strengths: string[]
-  weaknesses: string[]
+  weaknesses: WeaknessItem[]
   global_suggestions: string[]
   paragraph_feedback: ParagraphFeedback[]
   record_id?: number

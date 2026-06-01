@@ -1,74 +1,102 @@
 <template>
   <div class="space-y-4">
+    <!-- Header -->
     <div class="flex items-center justify-between">
       <h3 class="text-lg font-semibold text-gray-900 dark:text-white">伏笔管理</h3>
       <div class="flex gap-2">
         <button
-          @click="showUnfulfilledOnly = !showUnfulfilledOnly"
-          :class="['btn btn-sm', showUnfulfilledOnly ? 'btn-warning' : 'btn-ghost']"
-          aria-label="只显示未兑现"
-        >
-          {{ showUnfulfilledOnly ? '只看未兑现' : '全部' }}
-        </button>
-        <button
           @click="handleAIExtract"
           :disabled="extracting"
-          class="btn btn-sm btn-secondary"
+          class="btn-secondary text-sm"
           aria-label="AI 提取伏笔"
         >
-          <svg v-if="extracting" class="animate-spin w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24">
+          <svg v-if="extracting" class="animate-spin w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
           </svg>
-          <svg v-else class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
           {{ extracting ? '提取中...' : 'AI 提取' }}
         </button>
-        <button @click="openCreate" aria-label="添加伏笔" class="btn btn-sm btn-primary">
-          + 添加伏笔
+        <button @click="openCreate" aria-label="添加伏笔" class="btn-primary text-sm">
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          新建伏笔
         </button>
       </div>
     </div>
 
-    <div v-if="loading" class="text-center py-8 text-gray-400">加载中...</div>
-    <div v-else-if="displayList.length === 0" class="text-center py-8 text-gray-400">
-      暂无伏笔记录
+    <!-- Stats + Filter tabs -->
+    <div v-if="!loading && items.length > 0" class="flex items-center justify-between">
+      <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+        <span class="font-medium text-gray-700 dark:text-gray-300">{{ items.length }} 条伏笔</span>
+        <span class="text-yellow-600 dark:text-yellow-400">{{ plantedCount }} 未兑现</span>
+        <span class="text-green-600 dark:text-green-400">{{ paidCount }} 已兑现</span>
+        <span v-if="abandonedCount > 0" class="text-gray-400">{{ abandonedCount }} 已放弃</span>
+      </div>
+      <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 text-xs">
+        <button
+          v-for="tab in statusTabs" :key="tab.value"
+          @click="statusFilter = tab.value"
+          :class="[
+            'px-2.5 py-1 transition-colors',
+            statusFilter === tab.value
+              ? 'bg-primary-600 text-white'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+          ]"
+        >{{ tab.label }}<span v-if="tab.count > 0" class="ml-1 opacity-70">{{ tab.count }}</span></button>
+      </div>
+    </div>
+
+    <!-- List -->
+    <div v-if="loading" class="text-center py-8 text-gray-400 text-sm">加载中…</div>
+    <div v-else-if="items.length === 0" class="card p-8 text-center">
+      <p class="text-gray-500 dark:text-gray-400 text-sm mb-3">还没有伏笔记录，点击"新建伏笔"或让 AI 自动提取</p>
+      <button @click="openCreate" class="btn-primary text-sm mx-auto">新建伏笔</button>
+    </div>
+    <div v-else-if="displayList.length === 0" class="text-center py-6 text-gray-400 text-sm">
+      该状态下暂无伏笔
     </div>
     <div v-else class="space-y-2">
       <div
         v-for="item in displayList"
         :key="item.id"
-        class="flex items-start justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+        class="flex items-stretch bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-soft transition-shadow"
       >
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-medium text-gray-900 dark:text-white truncate">{{ item.title }}</span>
-            <span
-              :class="['text-xs px-2 py-0.5 rounded-full', statusClass(item.status)]"
-            >{{ statusLabel(item.status) }}</span>
+        <!-- Status stripe -->
+        <div class="w-1 shrink-0" :class="statusStripe(item.status)" />
+        <!-- Content -->
+        <div class="flex-1 flex items-center justify-between px-3 py-2.5 min-w-0 gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-gray-900 dark:text-white truncate">
+                {{ item.title || '（无标题）' }}
+              </span>
+              <span class="text-xs px-1.5 py-0.5 rounded-full shrink-0" :class="statusClass(item.status)">
+                {{ statusLabel(item.status) }}
+              </span>
+            </div>
+            <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
+              {{ item.description }}
+            </p>
           </div>
-          <p v-if="item.description" class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-            {{ item.description }}
-          </p>
-        </div>
-        <div class="flex gap-1 ml-2 flex-shrink-0">
-          <button
-            v-if="item.status === 'planted'"
-            @click="markPaidOff(item)"
-            aria-label="标记已兑现"
-            class="text-xs px-2 py-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900 rounded"
-          >✓ 兑现</button>
-          <button
-            @click="editItem(item)"
-            aria-label="编辑"
-            class="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900 rounded"
-          >编辑</button>
-          <button
-            @click="deleteItem(item.id)"
-            aria-label="删除"
-            class="text-xs px-2 py-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900 rounded"
-          >删除</button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button
+              v-if="item.status === 'planted'"
+              @click="markPaidOff(item)"
+              class="text-xs px-2 py-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/40 rounded transition-colors"
+            >✓ 兑现</button>
+            <button
+              @click="editItem(item)"
+              class="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/40 rounded transition-colors"
+            >编辑</button>
+            <button
+              @click="deleteItem(item.id)"
+              class="text-xs px-2 py-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/40 rounded transition-colors"
+            >删除</button>
+          </div>
         </div>
       </div>
     </div>
@@ -206,7 +234,7 @@ const { guardAiProvider } = useAiProviderGuard()
 const loading = ref(false)
 const extracting = ref(false)
 const items = ref<Foreshadow[]>([])
-const showUnfulfilledOnly = ref(false)
+const statusFilter = ref<'all' | 'planted' | 'paid_off' | 'abandoned'>('all')
 const showModal = ref(false)
 const editingItem = ref<Foreshadow | null>(null)
 const saving = ref(false)
@@ -214,16 +242,35 @@ const modalError = ref('')
 
 const form = reactive({ title: '', description: '', status: 'planted' as Foreshadow['status'] })
 
-const displayList = computed(() =>
-  showUnfulfilledOnly.value ? items.value.filter(i => i.status === 'planted') : items.value
-)
+const plantedCount = computed(() => items.value.filter(i => i.status === 'planted').length)
+const paidCount = computed(() => items.value.filter(i => i.status === 'paid_off').length)
+const abandonedCount = computed(() => items.value.filter(i => i.status === 'abandoned').length)
+
+const statusTabs = computed(() => [
+  { value: 'all' as const, label: '全部', count: items.value.length },
+  { value: 'planted' as const, label: '未兑现', count: plantedCount.value },
+  { value: 'paid_off' as const, label: '已兑现', count: paidCount.value },
+  { value: 'abandoned' as const, label: '已放弃', count: abandonedCount.value },
+])
+
+const displayList = computed(() => {
+  const filtered = statusFilter.value === 'all' ? items.value : items.value.filter(i => i.status === statusFilter.value)
+  const order: Record<string, number> = { planted: 0, paid_off: 1, abandoned: 2 }
+  return [...filtered].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
+})
 
 function statusLabel(s: string) {
   return s === 'planted' ? '未兑现' : s === 'paid_off' ? '已兑现' : '已放弃'
 }
 function statusClass(s: string) {
-  return s === 'planted' ? 'bg-yellow-100 text-yellow-800' :
-         s === 'paid_off' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+  return s === 'planted'
+    ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+    : s === 'paid_off'
+    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+}
+function statusStripe(s: string) {
+  return s === 'planted' ? 'bg-yellow-400' : s === 'paid_off' ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
 }
 
 async function load() {
