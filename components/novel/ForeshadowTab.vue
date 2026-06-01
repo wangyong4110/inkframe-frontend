@@ -10,6 +10,21 @@
         >
           {{ showUnfulfilledOnly ? '只看未兑现' : '全部' }}
         </button>
+        <button
+          @click="handleAIExtract"
+          :disabled="extracting"
+          class="btn btn-sm btn-secondary"
+          aria-label="AI 提取伏笔"
+        >
+          <svg v-if="extracting" class="animate-spin w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          {{ extracting ? '提取中...' : 'AI 提取' }}
+        </button>
         <button @click="openCreate" aria-label="添加伏笔" class="btn btn-sm btn-primary">
           + 添加伏笔
         </button>
@@ -185,8 +200,11 @@ import { useForeshadowApi } from '~/composables/useForeshadowApi'
 
 const props = defineProps<{ novelId: number }>()
 const foreshadowApi = useForeshadowApi()
+const toast = useToast()
+const { guardAiProvider } = useAiProviderGuard()
 
 const loading = ref(false)
+const extracting = ref(false)
 const items = ref<Foreshadow[]>([])
 const showUnfulfilledOnly = ref(false)
 const showModal = ref(false)
@@ -249,6 +267,21 @@ async function saveItem() {
     modalError.value = e?.message ?? '保存失败'
   } finally {
     saving.value = false
+  }
+}
+
+async function handleAIExtract() {
+  if (!await guardAiProvider('LLM')) return
+  extracting.value = true
+  try {
+    const res = await foreshadowApi.aiExtract(props.novelId) as any
+    const count = res?.total ?? res?.foreshadows?.length ?? 0
+    await load()
+    toast.success(`AI 提取完成，共生成 ${count} 条伏笔`)
+  } catch (e: any) {
+    toast.error('AI 提取失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    extracting.value = false
   }
 }
 

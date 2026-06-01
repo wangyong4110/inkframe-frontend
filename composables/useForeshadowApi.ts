@@ -25,5 +25,10 @@ export function useForeshadowApi() {
 
     remove: (novelId: number, id: number) =>
       request(`/novels/${novelId}/foreshadows/${id}`, { method: 'DELETE' }),
+
+    aiExtract: (novelId: number) =>
+      request<{ foreshadows: Foreshadow[]; total: number }>(`/novels/${novelId}/foreshadows/extract`, {
+        method: 'POST',
+      }),
   }
 }
