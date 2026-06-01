@@ -419,6 +419,48 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
       </div>
     </div>
 
+    <!-- ③b 自动审查配置 -->
+    <div class="card p-6 space-y-4">
+      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">自动审查优化</h3>
+      <p class="text-xs text-gray-400 dark:text-gray-500">章节生成完成后，自动执行 AI 深度审查并应用修改建议，提升内容质量。</p>
+
+      <!-- 审查轮次 -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">审查轮次</label>
+        <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+          <button
+            v-for="opt in [{ value: 0, label: '关闭' }, { value: 1, label: '1 轮' }, { value: 2, label: '2 轮' }, { value: 3, label: '3 轮' }]"
+            :key="opt.value"
+            type="button"
+            class="flex-1 py-1.5 text-xs transition-colors"
+            :class="(novel?.auto_review_rounds ?? 0) === opt.value
+              ? 'bg-primary-500 text-white font-medium'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+            @click="novelStore.updateNovel(novelId, { auto_review_rounds: opt.value })"
+          >{{ opt.label }}</button>
+        </div>
+        <p class="mt-1 text-xs text-gray-400">每轮包含一次 AI 深度审查 + 自动应用段落级优化建议（约 2-4 分钟/轮）</p>
+      </div>
+
+      <!-- 提前停止阈值 -->
+      <div v-if="(novel?.auto_review_rounds ?? 0) > 0">
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+          提前停止分数：<span class="text-primary-500 font-semibold">{{ novel?.auto_review_min_score ?? 80 }}</span> 分
+        </label>
+        <input
+          type="range" min="60" max="95" step="5"
+          :value="novel?.auto_review_min_score ?? 80"
+          class="w-full h-2 rounded-lg appearance-none cursor-pointer accent-primary-500"
+          @change="(e) => novelStore.updateNovel(novelId, { auto_review_min_score: parseInt((e.target as HTMLInputElement).value) })"
+        />
+        <div class="flex justify-between mt-1 text-xs text-gray-400">
+          <span>60（宽松）</span>
+          <span>95（严格）</span>
+        </div>
+        <p class="mt-1 text-xs text-gray-400">评分达到此分数时提前结束，无需跑满所有轮次</p>
+      </div>
+    </div>
+
     <!-- ④ 视频配置 -->
     <div class="card p-6 space-y-4">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">视频配置</h3>

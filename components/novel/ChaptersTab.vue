@@ -331,6 +331,12 @@ async function confirmDeleteChapter() {
             >
               {{ getStatusLabel(chapter.status) }}
             </span>
+            <!-- 自动审查质量状态 -->
+            <span
+              v-if="chapter.quality_status === 'low'"
+              class="px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+              title="自动审查后质量偏低，建议手动深度审查"
+            >质量偏低</span>
             <!-- 大纲审查状态 -->
             <button
               v-if="reviewStatusBadge(chapter.id)"

@@ -22,6 +22,8 @@ export interface Novel {
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
   prompt_language?: string  // AI提示词语言：zh（中文，默认）/ en（英文）
+  auto_review_rounds?: number    // 生成后自动审查轮次：0=关闭，1-3=开启
+  auto_review_min_score?: number // 提前停止阈值（0-100），默认80
   reference_style?: string  // 参考作品
   channel?: string
   target_word_count?: number
@@ -117,6 +119,8 @@ export interface Chapter {
   is_published?: boolean
   published_at?: string
   quality_score?: number
+  quality_status?: 'ok' | 'low'  // 质量评级：ok=正常，low=需改善
+  quality_issues?: string          // 质量问题 JSON 摘要
   like_count?: number
   created_at: string
   updated_at: string

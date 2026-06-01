@@ -2100,6 +2100,20 @@ onUnmounted(() => {
                 </div>
               </div>
 
+              <!-- 自动审查状态提示 -->
+              <div
+                v-if="chapter?.quality_status === 'low'"
+                class="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700"
+              >
+                <svg class="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-amber-700 dark:text-amber-300">自动审查：质量偏低</p>
+                  <p class="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">经过自动优化后仍未达到评分阈值，建议手动深度审查</p>
+                </div>
+              </div>
+
               <!-- AI 深度审查入口 -->
               <button
                 class="w-full py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 border border-dashed border-primary-300 dark:border-primary-600 rounded-lg transition-colors hover:border-primary-400 flex items-center justify-center gap-1.5"
