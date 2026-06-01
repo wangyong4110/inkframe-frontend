@@ -112,7 +112,7 @@ async function loginWithPhone() {
 
 // OAuth登录
 async function oauthLogin(provider: string) {
-  if (!agreed.value) return
+  if (!agreed.value) { toast.error('请先阅读并同意用户协议和隐私政策'); return }
   try {
     const state = Math.random().toString(36).slice(2)
     const data = await request<any>(`/auth/oauth/${provider}/url?state=${state}`)

@@ -15,6 +15,8 @@ export interface Novel {
   video_model?: string    // 视频生成模型
   tts_model?: string      // 语音合成模型
   temperature?: number
+  top_p?: number
+  top_k?: number
   max_tokens?: number
   timeout_seconds?: number  // 默认超时（秒），0=使用系统默认(180s)
   style_prompt?: string
@@ -649,6 +651,7 @@ export interface SceneAnchor {
   description: string
   ref_image_url: string
   ref_image_locked_at?: string
+  prompt_lock?: string
   usage_count: number
   avg_cons_score: number
   parent_anchor_id?: number

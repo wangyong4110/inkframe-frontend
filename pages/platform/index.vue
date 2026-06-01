@@ -12,6 +12,7 @@ useHead({
 })
 
 const platformApi = usePlatformApi()
+const toast = useToast()
 
 const sort = ref<'hot' | 'latest'>('hot')
 const searchInput = ref('')
@@ -56,8 +57,9 @@ async function loadVideos() {
       videos.value.push(...res.data.items)
       total.value = res.data.total
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
+    toast.error('操作失败：' + (e?.message || '未知错误'))
   } finally {
     loading.value = false
   }

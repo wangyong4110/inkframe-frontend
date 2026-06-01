@@ -469,7 +469,9 @@ async function refreshProviderModels(providerId: number) {
   try {
     const res = await getModels({ provider_id: providerId })
     providerModels.value = { ...providerModels.value, [providerId]: ((res as any).data as AIModel[]) || [] }
-  } catch {}
+  } catch (e: any) {
+    toast.error('操作失败：' + (e?.message || '未知错误'))
+  }
 }
 
 function openAddModelForm(providerId: number, providerType: string) {
