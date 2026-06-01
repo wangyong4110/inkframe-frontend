@@ -303,6 +303,21 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
     <div class="card p-6 space-y-4">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">创作风格</h3>
 
+      <!-- 核心主题 -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+          核心主题
+          <span class="ml-1 text-gray-400 font-normal">（全书叙事意图，如"信任比力量更难获得"——指导所有场景的深层意义）</span>
+        </label>
+        <input
+          type="text"
+          :value="novel?.core_theme ?? ''"
+          class="input text-sm"
+          placeholder="用一句话描述全书想表达的核心主题，留空则不约束主题方向…"
+          @change="(e) => novelStore.updateNovel(novelId, { core_theme: (e.target as HTMLInputElement).value })"
+        />
+      </div>
+
       <div>
         <div class="flex items-center justify-between mb-1.5">
           <label class="text-xs font-medium text-gray-500 dark:text-gray-400">写作风格预设</label>

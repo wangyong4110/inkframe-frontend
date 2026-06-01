@@ -24,6 +24,7 @@ export interface Novel {
   prompt_language?: string  // AI提示词语言：zh（中文，默认）/ en（英文）
   auto_review_rounds?: number    // 生成后自动审查轮次：0=关闭，1-3=开启
   auto_review_min_score?: number // 提前停止阈值（0-100），默认80
+  core_theme?: string  // 全书核心主题（如"信任比力量更难获得"）
   reference_style?: string  // 参考作品
   channel?: string
   target_word_count?: number
@@ -160,6 +161,10 @@ export interface Character {
   name: string
   role: CharacterRole
   description?: string       // 统一描述（外貌、性格、背景、说话风格等）
+  inner_conflict?: string    // 内在矛盾
+  core_desire?: string       // 核心渴望
+  arc_design?: string        // 弧光设计 JSON
+  current_arc_stage?: string // 当前弧光阶段（起点/考验/最低点/转折/终点）
   visual_prompt?: string     // 英文图像生成提示词
   three_view_sheet?: string  // 三合一参考图（combined sheet）
   face_closeup?: string      // 面部特写图
