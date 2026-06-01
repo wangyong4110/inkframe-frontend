@@ -1200,3 +1200,11 @@ export interface ChapterVersion {
   change_type: string
   created_at: string
 }
+
+export interface NovelOutlineVersion {
+  id: number
+  novel_id: number
+  version: number
+  outline: string
+  created_at: string
+}

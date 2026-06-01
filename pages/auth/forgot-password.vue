@@ -41,7 +41,9 @@
             />
           </div>
 
-          <div v-if="error" class="text-red-400 text-xs" role="alert">{{ error }}</div>
+          <div v-if="error" class="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-700" role="alert">
+            {{ error }}
+          </div>
 
           <button
             @click="submit"

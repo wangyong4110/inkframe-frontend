@@ -76,10 +76,12 @@ onMounted(fetchItems)
       <input
         v-model="searchQuery"
         placeholder="搜索知识库..."
+        aria-label="搜索知识库"
         class="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
       <button
         class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 transition-colors"
+        aria-label="新增知识条目"
         @click="showAddForm = !showAddForm"
       >
         + 添加
@@ -137,7 +139,7 @@ onMounted(fetchItems)
           <div class="font-medium text-sm text-gray-900 dark:text-white">{{ item.title }}</div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{{ item.content }}</div>
         </div>
-        <button class="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 shrink-0 text-sm" @click="deleteItem(item.id)">✕</button>
+        <button class="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 shrink-0 text-sm" aria-label="删除知识条目" @click="deleteItem(item.id)">✕</button>
       </div>
     </div>
 

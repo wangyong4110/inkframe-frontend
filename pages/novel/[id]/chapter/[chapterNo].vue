@@ -1154,8 +1154,8 @@ async function restoreVersion(version: import('~/types').ChapterVersion) {
     let versionContent: string | undefined
     // Try dedicated version content endpoint; fall back to inline content
     try {
-      const res = await useApi().request<any>(`/chapters/${chapter.value!.id}/versions/${version.id}/content`)
-      versionContent = res?.data?.content ?? res?.content
+      const res = await chapterApiForVersions.getVersionContent(chapter.value!.id, version.id)
+      versionContent = (res as any)?.data?.content ?? (res as any)?.content
     } catch {
       versionContent = version.content
     }
