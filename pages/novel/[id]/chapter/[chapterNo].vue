@@ -495,21 +495,6 @@ async function handleCheckQuality() {
   }
 }
 
-// ── 导入内容 ──────────────────────────────────────────────────────────────────
-const showImportPanel = ref(false)
-const importText = ref('')
-
-function handleImportContent() {
-  const text = importText.value.trim()
-  if (!text) return
-  if (content.value && !confirm('导入将替换当前编辑中的内容，确认继续？')) return
-  const wordCount = countWords(text)
-  content.value = text
-  importText.value = ''
-  showImportPanel.value = false
-  toast.success(`已导入 ${wordCount.toLocaleString()} 字`)
-}
-
 // ── 质量改进 ──────────────────────────────────────────────────────────────────
 const checking = ref(false)
 const refining = ref(false)
@@ -1886,6 +1871,40 @@ onUnmounted(() => {
                       placeholder="3000"
                     />
                   </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                      自动审查 <span class="font-normal text-gray-400">（轮）</span>
+                    </label>
+                    <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 h-[38px]">
+                      <button
+                        v-for="n in [0, 1, 2, 3]"
+                        :key="n"
+                        type="button"
+                        class="flex-1 text-xs transition-colors"
+                        :class="(novel?.auto_review_rounds ?? 0) === n
+                          ? 'bg-primary-500 text-white font-medium'
+                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                        :title="n === 0 ? '关闭自动审查' : `生成后自动执行 ${n} 轮 AI 审查优化`"
+                        @click="novelStore.updateNovel(novelId, { auto_review_rounds: n })"
+                      >{{ n === 0 ? '关' : n }}</button>
+                    </div>
+                  </div>
+                </div>
+                <!-- 质量阈值 -->
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                    质量阈值 <span class="font-normal text-gray-400">（0=不限，达到即停止）</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    :value="novel?.auto_review_min_score ?? 80"
+                    class="input text-sm"
+                    placeholder="80"
+                    @change="(e) => novelStore.updateNovel(novelId, { auto_review_min_score: parseInt((e.target as HTMLInputElement).value) || 0 })"
+                  />
                 </div>
                 <!-- 高级参数 -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -2125,31 +2144,6 @@ onUnmounted(() => {
                 AI 深度审查
               </button>
 
-              <!-- Import panel -->
-              <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
-                <button
-                  class="w-full flex items-center justify-between py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  @click="showImportPanel = !showImportPanel"
-                >
-                  <span>导入文本</span>
-                  <svg class="w-3 h-3 transition-transform" :class="showImportPanel ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                  </svg>
-                </button>
-                <div v-if="showImportPanel" class="mt-2 space-y-2">
-                  <textarea
-                    v-model="importText"
-                    rows="6"
-                    class="input text-xs resize-none"
-                    placeholder="粘贴章节正文，点击导入后将替换当前内容..."
-                  />
-                  <button
-                    :disabled="!importText.trim()"
-                    class="w-full py-1.5 text-xs font-medium bg-gray-600 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg transition-colors"
-                    @click="handleImportContent"
-                  >导入</button>
-                </div>
-              </div>
             </div>
           </template>
 

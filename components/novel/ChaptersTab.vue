@@ -15,7 +15,7 @@ const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
 
-const { publishChapter, unpublishChapter, regenerateChapter } = useChapterApi()
+const { publishChapter, unpublishChapter, regenerateChapter, batchGenerateChapters } = useChapterApi()
 const { guardAiProvider } = useAiProviderGuard()
 
 // ── 大纲审查 ──────────────────────────────────────────────────────────────────
@@ -30,6 +30,68 @@ const showBatchPanel = ref(false)
 const batchPanelMounted = ref(false)
 const reviewingChapterId = ref<number | null>(null)
 const generatingChapterId = ref<number | null>(null)
+
+// ── 批量生成章节正文 ────────────────────────────────────────────────────────────
+const showBatchGenModal = ref(false)
+const batchGenSkipExisting = ref(true)
+const batchGenRunning = ref(false)
+const batchGenProgress = ref(0)
+const batchGenTitle = ref('')
+const batchGenTotal = ref(0)
+
+async function pollTaskWithProgress(
+  taskId: string,
+  onProgress: (p: number, title: string) => void,
+  onComplete: (result: any) => void,
+) {
+  const taskApi = useTaskApi()
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000))
+    try {
+      const resp: any = await taskApi.getTask(taskId)
+      const task = resp?.data ?? resp
+      if (task?.progress !== undefined) onProgress(task.progress, task.title ?? '')
+      if (task?.status === 'completed') { onComplete(task?.data ?? task?.result); break }
+      if (task?.status === 'failed') { throw new Error(task?.error || '任务失败') }
+    } catch (e) { throw e }
+  }
+}
+
+async function handleBatchGenerate() {
+  if (!await guardAiProvider('LLM')) return
+  showBatchGenModal.value = false
+  batchGenRunning.value = true
+  batchGenProgress.value = 0
+  batchGenTitle.value = '正在准备...'
+  try {
+    const resp: any = await batchGenerateChapters(props.novelId, { skip_existing: batchGenSkipExisting.value })
+    const taskId = resp?.task_id ?? resp?.data?.task_id
+    batchGenTotal.value = resp?.total ?? resp?.data?.total ?? 0
+    await pollTaskWithProgress(
+      taskId,
+      (p, title) => {
+        batchGenProgress.value = p
+        if (title) batchGenTitle.value = title
+      },
+      async (result) => {
+        await chapterStore.fetchChapters(props.novelId)
+        const generated = result?.generated ?? 0
+        const failed = result?.failed ?? 0
+        if (failed > 0) {
+          toast.warning(`批量生成完成：成功 ${generated} 章，失败 ${failed} 章`)
+        } else {
+          toast.success(`批量生成完成，共生成 ${generated} 章`)
+        }
+      },
+    )
+  } catch (e: any) {
+    toast.error('批量生成失败：' + (e.message || '未知错误'))
+  } finally {
+    batchGenRunning.value = false
+    batchGenProgress.value = 0
+    batchGenTitle.value = ''
+  }
+}
 
 async function pollTask(taskId: string, onComplete: (result: any) => void) {
   const taskApi = useTaskApi()
@@ -258,6 +320,16 @@ async function confirmDeleteChapter() {
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
         <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="batchGenRunning" @click="showBatchGenModal = true">
+            <svg v-if="batchGenRunning" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+            </svg>
+            {{ batchGenRunning ? batchGenTitle || '生成中...' : '生成小说内容' }}
+          </button>
           <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
             <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -516,4 +588,86 @@ async function confirmDeleteChapter() {
     @close="showBatchPanel = false"
     @reviewed="loadNovelReviews"
   />
+
+  <!-- 批量生成章节内容：配置弹窗 -->
+  <Teleport to="body">
+    <div
+      v-if="showBatchGenModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      @click.self="showBatchGenModal = false"
+    >
+      <div class="bg-[#1a1f2e] border border-white/10 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+        <h3 class="text-lg font-semibold text-white mb-1">生成小说内容</h3>
+        <p class="text-sm text-gray-400 mb-5">
+          将严格参照章节大纲、角色、世界观及伏笔信息，顺序生成所有章节正文。每章完成后再开始下一章，保证叙事连贯性。
+        </p>
+
+        <div class="space-y-4">
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input
+              v-model="batchGenSkipExisting"
+              type="checkbox"
+              class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+            />
+            <div>
+              <span class="text-sm font-medium text-gray-200">跳过已有内容的章节</span>
+              <p class="text-xs text-gray-500 mt-0.5">只生成空白章节；取消勾选将重新生成所有章节</p>
+            </div>
+          </label>
+
+          <div class="bg-amber-900/20 border border-amber-700/30 rounded-lg px-4 py-3 text-xs text-amber-300 leading-relaxed">
+            <strong>注意：</strong>批量生成为顺序执行，章节较多时耗时较长。生成过程中可关闭此对话框，任务将在后台继续运行，完成后页面自动刷新。
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6">
+          <button class="btn-ghost text-sm" @click="showBatchGenModal = false">取消</button>
+          <button class="btn-primary text-sm" @click="handleBatchGenerate">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            开始生成
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量生成进度悬浮条 -->
+    <Transition name="slide-up">
+      <div
+        v-if="batchGenRunning"
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1f2e] border border-white/10 rounded-xl shadow-2xl px-5 py-4 flex items-center gap-4 min-w-[360px] max-w-lg"
+      >
+        <svg class="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+        <div class="flex-1 min-w-0">
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-sm text-gray-200 truncate">{{ batchGenTitle || '批量生成中...' }}</span>
+            <span class="text-xs text-gray-400 ml-2 flex-shrink-0">{{ batchGenProgress }}%</span>
+          </div>
+          <div class="w-full bg-gray-700 rounded-full h-1.5">
+            <div
+              class="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+              :style="{ width: batchGenProgress + '%' }"
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
+
+
+<style scoped>
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+}
+</style>
