@@ -52,8 +52,14 @@ export const useApi = () => {
 
     if (!response.ok) {
       if (response.status === 401) {
+        const errorBody = await response.json().catch(() => ({} as any))
+        const msg: string = errorBody?.message || errorBody?.data?.message || ''
+        // 认证接口（登录/注册等）的 401 是"凭证错误"，不应跳转到登录页
+        if (endpoint.startsWith('/auth/')) {
+          throw new Error(msg || 'Invalid credentials')
+        }
         await handle401()
-        throw new Error('Session expired')
+        throw new Error(msg || 'Session expired')
       }
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
       throw new Error(error.message || `HTTP error ${response.status}`)

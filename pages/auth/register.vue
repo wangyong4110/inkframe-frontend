@@ -4,6 +4,7 @@ definePageMeta({ layout: false, auth: false })
 const authStore = useAuthStore()
 const router = useRouter()
 const { request } = useApi()
+const toast = useToast()
 
 const activeTab = ref<'email' | 'phone'>('email')
 const agreed = ref(false)
@@ -36,6 +37,7 @@ async function registerWithEmail() {
     } else {
       // 开启了邮箱验证，等待用户点击验证邮件
       emailPendingVerify.value = true
+      toast.success(`验证邮件已发送至 ${emailForm.email}，请查收邮箱并点击链接完成验证`)
     }
   } catch (e: any) {
     emailError.value = e.message || '注册失败'
@@ -223,4 +225,5 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
       </div>
     </div>
   </div>
+  <AppToast />
 </template>

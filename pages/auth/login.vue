@@ -4,6 +4,7 @@ definePageMeta({ layout: false, auth: false })
 const authStore = useAuthStore()
 const router = useRouter()
 const { request } = useApi()
+const toast = useToast()
 
 const activeTab = ref<'password' | 'phone'>('password')
 
@@ -47,12 +48,12 @@ async function resendVerificationEmail() {
       method: 'POST',
       body: JSON.stringify({ email: emailForm.email }),
     })
-    resendDone.value = true
   } catch {
-    // 静默处理
-    resendDone.value = true
+    // 静默处理（后端防枚举，无论成功与否均视为已发送）
   } finally {
     resendLoading.value = false
+    resendDone.value = true
+    toast.success(`验证邮件已发送至 ${emailForm.email}，请查收邮箱并点击链接完成验证`)
   }
 }
 
@@ -186,17 +187,26 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             <input v-model="emailForm.password" type="password" required placeholder="请输入密码"
               class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
           </div>
-          <div v-if="emailError" class="space-y-1">
-            <p class="text-red-400 text-xs">{{ emailError }}</p>
-            <template v-if="showResend">
-              <p v-if="resendDone" class="text-green-400 text-xs">验证邮件已重新发送，请查收收件箱。</p>
-              <button v-else type="button" :disabled="resendLoading"
-                class="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50 transition-colors underline"
-                @click="resendVerificationEmail">
-                {{ resendLoading ? '发送中...' : '重新发送验证邮件' }}
-              </button>
-            </template>
+          <!-- 邮箱未验证：醒目提示卡片 -->
+          <div v-if="showResend && !resendDone" class="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center mt-0.5">
+                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-amber-300">邮箱尚未完成验证</p>
+                <p class="text-xs text-amber-400/70 mt-0.5 leading-relaxed">请查收注册邮件并点击验证链接，或重新发送验证邮件</p>
+              </div>
+            </div>
+            <button type="button" :disabled="resendLoading" @click="resendVerificationEmail"
+              class="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-gray-900 text-sm font-medium py-2 rounded-lg transition-colors">
+              {{ resendLoading ? '发送中...' : '重新发送验证邮件' }}
+            </button>
           </div>
+          <!-- 普通登录错误 -->
+          <p v-else-if="emailError" class="text-red-400 text-xs">{{ emailError }}</p>
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"
               class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500
@@ -305,4 +315,5 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
       </div>
     </div>
   </div>
+  <AppToast />
 </template>
