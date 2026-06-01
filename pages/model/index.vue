@@ -78,7 +78,12 @@ const providerForm = ref({
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
-type ProviderOption = { name: string; label: string; endpoint: string; needsSecretKey: boolean; noApiKey?: boolean; staticModels?: string[]; type?: string }
+type ProviderOption = {
+  name: string; label: string; endpoint: string; needsSecretKey: boolean
+  noApiKey?: boolean; staticModels?: string[]; type?: string
+  needsApiVersion?: boolean; deploymentBased?: boolean
+  apiVersionHint?: string; configHint?: string
+}
 const PROVIDER_OPTIONS = ref<ProviderOption[]>([
   { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
 ])
@@ -89,13 +94,17 @@ async function loadProviderTemplates() {
     const templates = res.data ?? []
     PROVIDER_OPTIONS.value = [
       ...templates.map((t: any) => ({
-        name:           t.name,
-        label:          t.display_name,
-        endpoint:       t.api_endpoint,
-        needsSecretKey: t.needs_secret_key,
-        noApiKey:       t.no_api_key ?? false,
-        staticModels:   t.static_models,
-        type:           t.type,
+        name:             t.name,
+        label:            t.display_name,
+        endpoint:         t.api_endpoint,
+        needsSecretKey:   t.needs_secret_key,
+        noApiKey:         t.no_api_key ?? false,
+        staticModels:     t.static_models,
+        type:             t.type,
+        needsApiVersion:  t.needs_api_version ?? false,
+        deploymentBased:  t.deployment_based ?? false,
+        apiVersionHint:   t.api_version_hint ?? '',
+        configHint:       t.config_hint ?? '',
       })),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
     ]
@@ -132,6 +141,13 @@ type CredentialMeta = {
   versionLabel?: string; versionPlaceholder?: string; versionHint?: string
 }
 const CREDENTIAL_META: Record<string, CredentialMeta> = {
+  azure: {
+    akLabel: 'API Key', akPlaceholder: 'Azure OpenAI API 密钥（Azure 门户 → 密钥和端点）',
+    skLabel: '', skPlaceholder: '', skHint: '',
+    versionLabel: 'API Version',
+    versionPlaceholder: '2025-01-01-preview',
+    versionHint: 'Azure REST API 版本，如 2025-01-01-preview；端点格式：https://<资源名>.openai.azure.com/openai；下方模型名需与 Azure 门户中的「部署名」完全一致',
+  },
   'volcengine-visual': {
     akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
     skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
@@ -208,6 +224,10 @@ function onProviderSelect() {
   if (!opt || opt.name === 'custom') return
   // 切换供应商时始终更新端点为该供应商的默认值，用户可在下方输入框中覆盖
   providerForm.value.api_endpoint = opt.endpoint
+  // 若有 apiVersionHint（如 Azure），自动填充 api_version 默认值
+  if (opt.apiVersionHint && !providerForm.value.api_version) {
+    providerForm.value.api_version = opt.apiVersionHint
+  }
   // 若提供商有静态模型列表，直接填充（无需再请求 /models 接口）
   if (opt.staticModels && opt.staticModels.length > 0) {
     providerModelList.value = opt.staticModels
@@ -1446,6 +1466,17 @@ watch(activeTab, (tab) => {
                 <input v-model="providerForm.api_endpoint" type="url" class="input font-mono text-sm"
                   :placeholder="selectedProviderEndpoint || 'https://api.example.com/v1'" />
                 <p class="mt-1 text-xs text-gray-400">已预填供应商默认端点，如需使用代理或自定义地址可直接修改</p>
+              </div>
+              <!-- Azure OpenAI 配置说明 -->
+              <div v-if="providerForm.name === 'azure'" class="rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-700 px-3 py-2.5 flex items-start gap-2">
+                <svg class="w-4 h-4 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div class="text-xs text-sky-700 dark:text-sky-300 space-y-1">
+                  <div><span class="font-medium">端点：</span><code class="font-mono bg-sky-100 dark:bg-sky-800 px-1 rounded">https://&lt;资源名&gt;.openai.azure.com/openai</code></div>
+                  <div><span class="font-medium">API Version：</span>填写 Azure REST API 版本，如 <code class="font-mono bg-sky-100 dark:bg-sky-800 px-1 rounded">2025-01-01-preview</code></div>
+                  <div><span class="font-medium">模型名：</span>在下方模型列表中填写 Azure 门户「Deployments」中的<span class="font-medium">部署名</span>（如 <code class="font-mono bg-sky-100 dark:bg-sky-800 px-1 rounded">gpt-4o</code>），需与 Azure 控制台完全一致</div>
+                </div>
               </div>
               <!-- Ollama 无 Key 提示 -->
               <div v-if="isNoKeyProvider" class="rounded-lg bg-lime-50 dark:bg-lime-900/20 border border-lime-200 dark:border-lime-700 px-3 py-2.5 flex items-start gap-2">

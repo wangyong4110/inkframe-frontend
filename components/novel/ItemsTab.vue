@@ -18,6 +18,7 @@ const showDeleteConfirm = ref(false)
 const itemToDelete = ref<Item | null>(null)
 const extractingItems = ref(false)
 const batchGeneratingItemImages = ref(false)
+const showBatchItemMenu = ref(false)
 const newItemForm = ref({ name: '', description: '' })
 const savingItem = ref(false)
 
@@ -139,9 +140,9 @@ async function confirmDeleteItem() {
 <template>
   <div class="space-y-4">
     <!-- 工具栏 -->
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">物品列表</h2>
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex items-center gap-2">
         <button class="btn-secondary text-sm" :disabled="extractingItems" @click="handleAIItems">
           <svg v-if="extractingItems" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -152,37 +153,51 @@ async function confirmDeleteItem() {
           </svg>
           {{ extractingItems ? 'AI 提取中...' : (items.length > 0 ? 'AI 更新物品' : 'AI 提取物品') }}
         </button>
-        <button
-          class="btn-secondary text-sm"
-          :disabled="batchGeneratingItemImages || items.length === 0"
-          title="批量为所有物品生成图片（跳过已有图片的物品）"
-          @click="handleBatchItemImages(false)"
-        >
-          <svg v-if="batchGeneratingItemImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-          </svg>
-          {{ batchGeneratingItemImages ? '生成中...' : '批量生成图片' }}
-        </button>
-        <button
-          class="btn-secondary text-sm"
-          :disabled="batchGeneratingItemImages || items.length === 0"
-          title="按当前画面风格强制重新生成所有物品图片（风格变更后使用）"
-          @click="handleBatchItemImages(true)"
-        >
-          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-          </svg>
-          按新风格重新生成
-        </button>
+        <!-- 批量生成图片（分裂按钮） -->
+        <div class="relative inline-flex">
+          <button
+            class="btn-secondary text-sm rounded-r-none border-r border-gray-300 dark:border-gray-600"
+            :disabled="batchGeneratingItemImages || items.length === 0"
+            title="批量为所有物品生成图片（跳过已有图片的物品）"
+            @click="handleBatchItemImages(false)"
+          >
+            <svg v-if="batchGeneratingItemImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            {{ batchGeneratingItemImages ? '生成中...' : '批量生成图片' }}
+          </button>
+          <button
+            class="btn-secondary text-sm rounded-l-none px-2"
+            :disabled="batchGeneratingItemImages || items.length === 0"
+            title="更多选项"
+            @click="showBatchItemMenu = !showBatchItemMenu"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <div v-if="showBatchItemMenu" class="fixed inset-0 z-10" @click="showBatchItemMenu = false" />
+          <div v-if="showBatchItemMenu" class="absolute right-0 top-full mt-1 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg min-w-max">
+            <button
+              class="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+              @click="showBatchItemMenu = false; handleBatchItemImages(true)"
+            >
+              <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              全量重新生成
+            </button>
+          </div>
+        </div>
         <button class="btn-primary text-sm" @click="showItemModal = true">
           <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          添加物品
+          新建物品
         </button>
       </div>
     </div>
