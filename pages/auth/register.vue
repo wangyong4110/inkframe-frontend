@@ -19,6 +19,7 @@ const emailForm = reactive({
 const emailLoading = ref(false)
 const emailError = ref('')
 const emailPendingVerify = ref(false) // 注册成功，等待邮箱验证
+const emailVerifyExpiresIn = ref('') // 验证链接有效时长，来自服务端
 
 async function registerWithEmail() {
   if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
@@ -36,6 +37,7 @@ async function registerWithEmail() {
       router.push('/')
     } else {
       // 开启了邮箱验证，等待用户点击验证邮件
+      emailVerifyExpiresIn.value = resp.expires_in || ''
       emailPendingVerify.value = true
       toast.success(`验证邮件已发送至 ${emailForm.email}，请查收邮箱并点击链接完成验证`)
     }
@@ -142,6 +144,9 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
           <p class="text-sm text-gray-400 leading-relaxed">
             请查收发送至 <span class="text-violet-400">{{ emailForm.email }}</span> 的验证邮件，<br>
             点击邮件中的链接完成验证后即可登录。
+          </p>
+          <p v-if="emailVerifyExpiresIn" class="text-xs text-gray-500">
+            链接 <span class="text-amber-400">{{ emailVerifyExpiresIn }}</span>内有效
           </p>
           <NuxtLink to="/auth/login" class="inline-block mt-2 text-sm text-violet-400 hover:text-violet-300 transition-colors">
             前往登录

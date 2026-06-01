@@ -6,17 +6,33 @@ const route = useRoute()
 const router = useRouter()
 const videoStore = useVideoStore()
 
-// ── 系统配置（FFmpeg 路径）────────────────────────────────────────────────────
+// ── 系统配置（FFmpeg 路径 + 视频默认参数）───────────────────────────────────
 const { request } = useApi()
 const toast = useToast()
 const ffmpegPath = ref('')
 const ffmpegSaving = ref(false)
 
+// 视频默认参数
+const defaultResolution = ref('1080p')
+const defaultFps = ref('30')
+const defaultAspectRatio = ref('16:9')
+const consistencyWeight = ref(80)
+const videoDefaultsSaving = ref(false)
+
 async function loadSystemSettings() {
   try {
     const res = await request<{ key: string; value: string }[]>('/system/settings')
-    const ffmpeg = res.find(s => s.key === 'ffmpeg_path')
-    if (ffmpeg) ffmpegPath.value = ffmpeg.value
+    const find = (key: string) => res.find(s => s.key === key)?.value
+    const ffmpeg = find('ffmpeg_path')
+    if (ffmpeg) ffmpegPath.value = ffmpeg
+    const res_val = find('video_default_resolution')
+    if (res_val) defaultResolution.value = res_val
+    const fps_val = find('video_default_fps')
+    if (fps_val) defaultFps.value = fps_val
+    const ar_val = find('video_default_aspect_ratio')
+    if (ar_val) defaultAspectRatio.value = ar_val
+    const cw_val = find('video_consistency_weight')
+    if (cw_val) consistencyWeight.value = parseInt(cw_val) || 80
   } catch {}
 }
 
@@ -35,7 +51,88 @@ async function saveFFmpegPath() {
   }
 }
 
+async function saveVideoDefaults() {
+  videoDefaultsSaving.value = true
+  try {
+    await Promise.all([
+      request('/system/settings/video_default_resolution', {
+        method: 'PUT',
+        body: JSON.stringify({ value: defaultResolution.value, description: '视频默认分辨率' }),
+      }),
+      request('/system/settings/video_default_fps', {
+        method: 'PUT',
+        body: JSON.stringify({ value: defaultFps.value, description: '视频默认帧率' }),
+      }),
+      request('/system/settings/video_default_aspect_ratio', {
+        method: 'PUT',
+        body: JSON.stringify({ value: defaultAspectRatio.value, description: '视频默认宽高比' }),
+      }),
+      request('/system/settings/video_consistency_weight', {
+        method: 'PUT',
+        body: JSON.stringify({ value: String(consistencyWeight.value), description: '角色一致性权重' }),
+      }),
+    ])
+    toast.success('默认设置已保存')
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    videoDefaultsSaving.value = false
+  }
+}
+
 onMounted(() => loadSystemSettings())
+
+// 视频模板定义
+const VIDEO_TEMPLATES = [
+  {
+    name: '标准短视频',
+    desc: '适用于社交媒体分享',
+    icon: 'smartphone',
+    resolution: '1080p',
+    fps: '30',
+    aspectRatio: '9:16',
+    mode: 'slideshow' as const,
+    qualityTier: 'preview' as const,
+  },
+  {
+    name: '电影风格',
+    desc: '16:9 宽屏电影效果',
+    icon: 'film',
+    resolution: '1080p',
+    fps: '24',
+    aspectRatio: '16:9',
+    mode: 'video' as const,
+    qualityTier: 'final' as const,
+  },
+  {
+    name: '快速预览',
+    desc: '快速生成预览版本',
+    icon: 'eye',
+    resolution: '720p',
+    fps: '30',
+    aspectRatio: '16:9',
+    mode: 'slideshow' as const,
+    qualityTier: 'draft' as const,
+  },
+  {
+    name: '高清长片',
+    desc: '4K 高清长视频',
+    icon: 'sparkles',
+    resolution: '4k',
+    fps: '60',
+    aspectRatio: '16:9',
+    mode: 'video' as const,
+    qualityTier: 'final' as const,
+  },
+]
+
+function applyTemplate(tpl: typeof VIDEO_TEMPLATES[0]) {
+  createForm.value.aspect_ratio = tpl.aspectRatio
+  createForm.value.mode = tpl.mode
+  createForm.value.quality_tier = tpl.qualityTier
+  showCreateModal.value = true
+  toast.success(`已应用模板「${tpl.name}」，请填写标题后创建`)
+}
 
 const activeTab = ref('list')
 const showCreateModal = ref(false)
@@ -307,12 +404,9 @@ async function createVideo() {
 
     <!-- Templates -->
     <div v-if="activeTab === 'templates'" class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <div v-for="template in [
-        { name: '标准短视频', desc: '适用于社交媒体分享', icon: 'smartphone' },
-        { name: '电影风格', desc: '16:9 宽屏电影效果', icon: 'film' },
-        { name: '快速预览', desc: '快速生成预览版本', icon: 'eye' },
-        { name: '高清长片', desc: '4K 高清长视频', icon: 'sparkles' },
-      ]" :key="template.name" class="card p-6 hover:shadow-medium transition-shadow cursor-pointer">
+      <div v-for="template in VIDEO_TEMPLATES" :key="template.name"
+        class="card p-6 hover:shadow-medium transition-shadow cursor-pointer"
+        @click="applyTemplate(template)">
         <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
           <svg class="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -331,9 +425,9 @@ async function createVideo() {
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             默认分辨率
           </label>
-          <select class="input">
+          <select v-model="defaultResolution" class="input">
             <option value="720p">720p (1280x720)</option>
-            <option value="1080p" selected>1080p (1920x1080)</option>
+            <option value="1080p">1080p (1920x1080)</option>
             <option value="4k">4K (3840x2160)</option>
           </select>
         </div>
@@ -341,18 +435,18 @@ async function createVideo() {
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             默认帧率
           </label>
-          <select class="input">
+          <select v-model="defaultFps" class="input">
             <option value="24">24 fps (电影)</option>
             <option value="30">30 fps (标准)</option>
-            <option value="60" selected>60 fps (流畅)</option>
+            <option value="60">60 fps (流畅)</option>
           </select>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             默认宽高比
           </label>
-          <select class="input">
-            <option value="16:9" selected>16:9 (宽屏)</option>
+          <select v-model="defaultAspectRatio" class="input">
+            <option value="16:9">16:9 (宽屏)</option>
             <option value="9:16">9:16 (竖屏)</option>
             <option value="1:1">1:1 (方形)</option>
             <option value="4:3">4:3 (传统)</option>
@@ -363,13 +457,15 @@ async function createVideo() {
             角色一致性权重
           </label>
           <div class="flex items-center space-x-2">
-            <input type="range" min="0" max="100" value="80" class="flex-1" />
-            <span class="text-sm text-gray-500 w-12">80%</span>
+            <input v-model.number="consistencyWeight" type="range" min="0" max="100" class="flex-1" />
+            <span class="text-sm text-gray-500 w-12">{{ consistencyWeight }}%</span>
           </div>
         </div>
       </div>
       <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <button class="btn-primary">保存设置</button>
+        <button class="btn-primary" :disabled="videoDefaultsSaving" @click="saveVideoDefaults">
+          {{ videoDefaultsSaving ? '保存中…' : '保存设置' }}
+        </button>
       </div>
 
       <!-- FFmpeg 配置 -->

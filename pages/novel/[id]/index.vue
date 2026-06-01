@@ -16,7 +16,7 @@ const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 
-const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'plot_points', 'scene_anchors', 'settings'])
+const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'plot_points', 'scene_anchors', 'dramatic', 'settings'])
 const initialTab = route.query.tab as string
 const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
@@ -37,6 +37,7 @@ const tabs = [
   { key: 'worldview', label: '世界观', icon: 'globe' },
   { key: 'plot_points', label: '剧情点', icon: 'flag' },
   { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
+  { key: 'dramatic', label: '戏剧张力', icon: 'zap' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -553,6 +554,7 @@ onMounted(async () => {
     <NovelWorldviewTab v-else-if="activeTab === 'worldview'" :novel-id="novelId" />
     <NovelPlotPointsTab v-else-if="activeTab === 'plot_points'" :novel-id="novelId" />
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />
+    <NovelDramaticTab v-else-if="activeTab === 'dramatic'" :novel-id="novelId" />
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />
   </div>
 
