@@ -7,6 +7,7 @@ const router = useRouter()
 const toast = useToast()
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
+const taskStore = useTaskStore()
 
 const generatingOutline = ref(false)
 const chapterPage = ref(1)
@@ -92,22 +93,19 @@ async function handleBatchReview(event: Event) {
     const resp: any = await outlineReviewApi.batchReviewNovel(props.novelId)
     const taskId = resp?.task_id ?? resp?.data?.task_id
     toast.info('批量审查已提交，正在后台处理...')
-    await pollTask(taskId, (result: any) => {
-      if (result?.reviews) {
-        const map: Record<number, OutlineReview> = { ...outlineReviews.value }
-        for (const r of result.reviews) map[r.chapter_id] = r
-        outlineReviews.value = map
-        toast.success(`批量审查完成，共审查 ${result.count ?? result.reviews.length} 章`)
-      } else {
-        toast.success('批量审查完成')
+    taskStore.trackTask(taskId, async (task) => {
+      batchReviewing.value = false
+      if (task?.status === 'failed') {
+        toast.error('批量审查失败：' + (task.error || '未知错误'))
+        return
       }
+      await loadNovelReviews()
+      const result = task?.result as any
+      toast.success(`批量审查完成，共审查 ${result?.count ?? result?.reviews?.length ?? 0} 章`)
     })
-    // Refresh all reviews after batch completes
-    await loadNovelReviews()
   } catch (e: any) {
-    toast.error('批量审查失败：' + (e.message || '未知错误'))
-  } finally {
     batchReviewing.value = false
+    toast.error('批量审查失败：' + (e.message || '未知错误'))
   }
 }
 
@@ -272,40 +270,42 @@ async function confirmDeleteChapter() {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
-          <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-          </svg>
-          {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
-        </button>
-        <!-- 批量审查大纲 -->
-        <button
-          class="btn-secondary text-sm"
-          :disabled="batchReviewing"
-          @click="handleBatchReview"
-        >
-          <svg class="w-4 h-4 mr-1.5" :class="batchReviewing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-          </svg>
-          {{ batchReviewing ? '批量审查中...' : '批量审查大纲' }}
-        </button>
-        <NuxtLink
-          :to="`/novel/${novelId}/chapter/new`"
-          class="btn-primary"
-        >
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          新建章节
-        </NuxtLink>
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
+            <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
+          </button>
+          <NuxtLink
+            :to="`/novel/${novelId}/chapter/new`"
+            class="btn-primary"
+          >
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            新建章节
+          </NuxtLink>
+        </div>
       </div>
+      <!-- 批量审查大纲 — 全宽虚线 ghost 按钮 -->
+      <button
+        class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:text-primary-600 dark:hover:text-primary-400 hover:border-primary-400 dark:hover:border-primary-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="batchReviewing"
+        @click="handleBatchReview"
+      >
+        <svg class="w-4 h-4" :class="batchReviewing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+        </svg>
+        {{ batchReviewing ? '批量审查中...' : 'AI 批量审查大纲' }}
+      </button>
     </div>
 
     <div v-if="chapterStore.loading" class="space-y-3">
@@ -391,15 +391,6 @@ async function confirmDeleteChapter() {
               </svg>
               <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
-              </svg>
-            </button>
-            <button
-              class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="删除章节"
-              @click="requestDeleteChapter(chapter, $event)"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
