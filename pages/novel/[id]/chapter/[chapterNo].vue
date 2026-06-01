@@ -132,6 +132,22 @@ async function handleCreateStoryboard() {
 const chapter = computed(() => chapterStore.currentChapter)
 const novel = computed(() => novelStore.currentNovel)
 const characters = computed(() => characterStore.characters)
+
+const autoReviewEnabled = computed(() => (novel.value?.auto_review_rounds ?? 0) > 0)
+async function toggleAutoReview() {
+  try {
+    await novelStore.updateNovel(novelId, { auto_review_rounds: autoReviewEnabled.value ? 0 : 1 })
+  } catch (e: any) {
+    toast.error('保存失败：' + (e?.message || '请检查后端服务是否正常'))
+  }
+}
+async function updateNovelField(data: Record<string, unknown>) {
+  try {
+    await novelStore.updateNovel(novelId, data as any)
+  } catch (e: any) {
+    toast.error('保存失败：' + (e?.message || ''))
+  }
+}
 const qualityReport = computed(() => chapterStore.qualityReport)
 const progress = computed(() => {
   const goal = chapterStore.wordCountGoal
@@ -1857,54 +1873,69 @@ onUnmounted(() => {
                     placeholder="添加额外的创作指导..."
                   />
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-                      字数目标 <span class="font-normal text-gray-400">（0=默认）</span>
-                    </label>
-                    <input
-                      v-model.number="wordCountOverride"
-                      type="number"
-                      min="0"
-                      step="500"
-                      class="input text-sm"
-                      placeholder="3000"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-                      自动审查 <span class="font-normal text-gray-400">（轮）</span>
-                    </label>
-                    <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 h-[38px]">
-                      <button
-                        v-for="n in [0, 1, 2, 3]"
-                        :key="n"
-                        type="button"
-                        class="flex-1 text-xs transition-colors"
-                        :class="(novel?.auto_review_rounds ?? 0) === n
-                          ? 'bg-primary-500 text-white font-medium'
-                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                        :title="n === 0 ? '关闭自动审查' : `生成后自动执行 ${n} 轮 AI 审查优化`"
-                        @click="novelStore.updateNovel(novelId, { auto_review_rounds: n })"
-                      >{{ n === 0 ? '关' : n }}</button>
-                    </div>
-                  </div>
-                </div>
-                <!-- 质量阈值 -->
+                <!-- 字数目标 -->
                 <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-                    质量阈值 <span class="font-normal text-gray-400">（0=不限，达到即停止）</span>
+                    字数目标 <span class="font-normal text-gray-400">（0=默认）</span>
                   </label>
                   <input
+                    v-model.number="wordCountOverride"
                     type="number"
                     min="0"
-                    max="100"
-                    step="1"
-                    :value="novel?.auto_review_min_score ?? 80"
+                    step="500"
                     class="input text-sm"
-                    placeholder="80"
-                    @change="(e) => novelStore.updateNovel(novelId, { auto_review_min_score: parseInt((e.target as HTMLInputElement).value) || 0 })"
+                    placeholder="3000"
                   />
+                </div>
+                <!-- 自动审查优化 -->
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                  <div class="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800/50">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">自动审查优化</span>
+                    <button
+                      type="button"
+                      class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none"
+                      :class="autoReviewEnabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'"
+                      @click="toggleAutoReview"
+                    >
+                      <span
+                        class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                        :class="autoReviewEnabled ? 'translate-x-4' : 'translate-x-1'"
+                      />
+                    </button>
+                  </div>
+                  <div v-if="autoReviewEnabled" class="px-3 py-2.5 space-y-2.5 border-t border-gray-100 dark:border-gray-700">
+                    <div class="grid grid-cols-2 gap-3 items-end">
+                      <div>
+                        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">轮数上限</label>
+                        <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 h-[32px]">
+                          <button
+                            v-for="n in [1, 2, 3]"
+                            :key="n"
+                            type="button"
+                            class="flex-1 text-xs transition-colors"
+                            :class="(novel?.auto_review_rounds ?? 1) === n
+                              ? 'bg-primary-500 text-white font-medium'
+                              : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            :title="`生成后自动执行 ${n} 轮 AI 审查优化`"
+                            @click="updateNovelField({ auto_review_rounds: n })"
+                          >{{ n }}</button>
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">质量阈值 <span class="text-gray-400">（0=不限）</span></label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          :value="novel?.auto_review_min_score ?? 80"
+                          class="input text-xs h-[32px]"
+                          placeholder="80"
+                          @change="(e) => updateNovelField({ auto_review_min_score: parseInt((e.target as HTMLInputElement).value) || 0 })"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <!-- 高级参数 -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
