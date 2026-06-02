@@ -1962,7 +1962,7 @@ onUnmounted(() => {
                 <!-- 字数目标 -->
                 <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-                    字数目标 <span class="font-normal text-gray-400">（0=默认）</span>
+                    字数目标 <span class="font-normal text-gray-400">（0=默认，单章）</span>
                   </label>
                   <input
                     v-model.number="wordCountOverride"
@@ -1972,6 +1972,14 @@ onUnmounted(() => {
                     class="input text-sm"
                     placeholder="3000"
                   />
+                  <p v-if="wordCountOverride > 0" class="mt-1 text-xs text-gray-400">
+                    <template v-if="advMaxTokens > 0">
+                      Max Tokens={{ advMaxTokens }} 时可生成约 {{ Math.floor(advMaxTokens / 1.3 * 0.8).toLocaleString() }} 字
+                    </template>
+                    <template v-else>
+                      建议范围 500–8000；更长需同步调高 Max Tokens
+                    </template>
+                  </p>
                 </div>
                 <!-- 自动审查优化 -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
