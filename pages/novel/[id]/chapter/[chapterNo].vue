@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { PlotPoint } from '~/types'
+import type { PlotPoint, ChapterVersion } from '~/types'
+import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 
 const route = useRoute()
 const router = useRouter()
@@ -167,6 +168,18 @@ const savedTitle = ref('')
 const serverUpdatedAt = ref('')
 const prompt = ref('')
 const wordCountOverride = ref(0)
+
+// 检测当前章是否为最终章（最大章节号 或 已达目标章节数）
+const isLastChapter = computed(() => {
+  const no = chapter.value?.chapter_no ?? 0
+  if (!no) return false
+  const target = novel.value?.target_chapters ?? 0
+  if (target > 0 && no >= target) return true
+  const maxNo = chapterStore.chapters.length > 0
+    ? Math.max(...chapterStore.chapters.map(c => c.chapter_no))
+    : 0
+  return maxNo > 0 && no >= maxNo
+})
 
 // 根据小说设置推算单章字数目标（万字 → 字，除以章节数）
 function computeDefaultWordCount(n: typeof novel.value): number {
@@ -434,7 +447,7 @@ async function handleGenerate() {
     const maxTokens = advMaxTokens.value > 0 ? advMaxTokens.value : undefined
     const temperature = advTemperature.value > 0 ? advTemperature.value : undefined
     const timeoutSeconds = advTimeoutSeconds.value > 0 ? advTimeoutSeconds.value : undefined
-    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined)
+    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined, isLastChapter.value || undefined)
     currentTaskId.value = task_id
     toast.info('AI 正在生成，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
@@ -1184,8 +1197,17 @@ watch(content, (newVal, oldVal) => {
 
 // ── 历史版本面板 ──────────────────────────────────────────────────────────────
 const showVersionHistory = ref(false)
-const versions = ref<import('~/types').ChapterVersion[]>([])
+const versions = ref<ChapterVersion[]>([])
 const chapterApiForVersions = useChapterApi()
+
+const changeTypeLabel: Record<string, string> = {
+  generation: 'AI 生成',
+  manual_edit: '手动编辑',
+  ai_revision: 'AI 修改',
+  rollback: '回滚',
+  pre_rewrite: '改写前备份',
+  chapter_review: '审查后改进',
+}
 
 const loadVersions = async () => {
   if (!chapter.value) return
@@ -1197,27 +1219,30 @@ const loadVersions = async () => {
   }
 }
 
-const previewVersion = (v: import('~/types').ChapterVersion) => {
+const previewVersion = (v: ChapterVersion) => {
   previewModal.content = v.content
   previewModal.open = true
 }
 
-async function restoreVersion(version: import('~/types').ChapterVersion) {
-  if (!confirm(`确认恢复到 "${version.change_type === 'pre_rewrite' ? '改写前备份' : ('版本 ' + version.id)}"？当前内容将被替换。`)) return
+async function fetchVersionContent(v: ChapterVersion): Promise<string> {
+  if (v.content) return v.content
   try {
-    let versionContent: string | undefined
-    // Try dedicated version content endpoint; fall back to inline content
-    try {
-      const res = await chapterApiForVersions.getVersionContent(chapter.value!.id, version.id)
-      versionContent = (res as any)?.data?.content ?? (res as any)?.content
-    } catch {
-      versionContent = version.content
-    }
+    const res = await chapterApiForVersions.getVersionContent(chapter.value!.id, v.id)
+    return (res as any)?.data?.content ?? (res as any)?.content ?? ''
+  } catch {
+    return ''
+  }
+}
+
+async function restoreVersion(version: ChapterVersion) {
+  const label = changeTypeLabel[version.change_type] ?? version.change_type
+  const no = version.version_no ? `v${version.version_no}` : `#${version.id}`
+  if (!confirm(`确认恢复到 "${label} ${no}"？当前内容将被替换。`)) return
+  try {
+    const versionContent = await fetchVersionContent(version)
     if (versionContent) {
-      // Push current content to undo stack before replacing
       pushToUndo(content.value)
       content.value = versionContent
-      // Auto-save after restore
       await doSave()
       toast.success('版本已恢复')
     }
@@ -1225,6 +1250,70 @@ async function restoreVersion(version: import('~/types').ChapterVersion) {
     console.error('恢复版本失败', e)
     toast.error('恢复版本失败')
   }
+}
+
+// ── 版本对比 ───────────────────────────────────────────────────────────────
+interface DiffVersion { id: number | 'current'; label: string; content: string }
+
+const showDiffModal = ref(false)
+const diffLeftId = ref<number | 'current'>('current')
+const diffRightId = ref<number | 'current'>('current')
+const diffLoading = ref(false)
+const diffLeftContent = ref('')
+const diffRightContent = ref('')
+
+const diffVersionOptions = computed((): DiffVersion[] => {
+  const opts: DiffVersion[] = [{ id: 'current', label: '当前版本', content: content.value }]
+  for (const v of versions.value) {
+    const no = v.version_no ? `v${v.version_no}` : `#${v.id}`
+    const lbl = changeTypeLabel[v.change_type] ?? v.change_type
+    opts.push({ id: v.id, label: `${no} ${lbl} · ${formatDate(v.created_at)}`, content: v.content })
+  }
+  return opts
+})
+
+const diffRows = computed(() => computeParaDiff(diffLeftContent.value, diffRightContent.value))
+const diffSummary = computed(() => diffStats(diffRows.value))
+
+async function resolveVersionContent(id: number | 'current'): Promise<string> {
+  if (id === 'current') return content.value
+  const v = versions.value.find(ver => ver.id === id)
+  return v ? await fetchVersionContent(v) : ''
+}
+
+async function openDiff(v: ChapterVersion) {
+  showDiffModal.value = true
+  diffLeftId.value = 'current'
+  diffRightId.value = v.id
+  diffLoading.value = true
+  diffLeftContent.value = content.value
+  diffRightContent.value = await fetchVersionContent(v)
+  diffLoading.value = false
+}
+
+async function refreshDiff() {
+  diffLoading.value = true
+  const [l, r] = await Promise.all([
+    resolveVersionContent(diffLeftId.value),
+    resolveVersionContent(diffRightId.value),
+  ])
+  diffLeftContent.value = l
+  diffRightContent.value = r
+  diffLoading.value = false
+}
+
+watch([diffLeftId, diffRightId], () => { if (showDiffModal.value) refreshDiff() })
+
+async function applyDiffVersion(side: 'left' | 'right') {
+  const c = side === 'left' ? diffLeftContent.value : diffRightContent.value
+  const id = side === 'left' ? diffLeftId.value : diffRightId.value
+  const ver = diffVersionOptions.value.find(o => o.id === id)
+  if (!c || !confirm(`确认应用"${ver?.label ?? '选中版本'}"的内容？当前内容将被替换。`)) return
+  pushToUndo(content.value)
+  content.value = c
+  await doSave()
+  showDiffModal.value = false
+  toast.success('已应用版本内容')
 }
 
 function formatDate(dateStr: string): string {
@@ -1239,6 +1328,7 @@ function formatDate(dateStr: string): string {
 
 watch(showVersionHistory, (open) => {
   if (open) loadVersions()
+  else { showDiffModal.value = false }
 })
 
 // ── 键盘快捷键（撤销/重做） ─────────────────────────────────────────────────
@@ -2120,19 +2210,26 @@ onUnmounted(() => {
                   </template>
                   <!-- 无内容：立即生成 -->
                   <template v-else>
-                    <button
-                      class="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
-                      :disabled="generating"
-                      @click="handleGenerate"
-                    >
-                      <svg v-if="generating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                      </svg>
-                      <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                      </svg>
-                      {{ generating ? '生成中...' : '立即生成' }}
-                    </button>
+                    <div class="flex-1 flex flex-col gap-1">
+                      <span v-if="isLastChapter" class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zm7-10a1 1 0 01.707.293l4 4a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l8-8A1 1 0 0112 2z" clip-rule="evenodd"/></svg>
+                        最终章模式 — 将自动收束全部故事线
+                      </span>
+                      <button
+                        class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium disabled:opacity-60 text-white rounded-lg transition-colors"
+                        :class="isLastChapter ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary-600 hover:bg-primary-700'"
+                        :disabled="generating"
+                        @click="handleGenerate"
+                      >
+                        <svg v-if="generating" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        {{ generating ? '生成中...' : '立即生成' }}
+                      </button>
+                    </div>
                   </template>
                   <button
                     v-if="generating"
@@ -2765,29 +2862,136 @@ onUnmounted(() => {
           <h3 class="font-semibold text-gray-900 dark:text-white">历史版本</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showVersionHistory = false">✕</button>
         </div>
-        <div class="overflow-y-auto flex-1 p-4 space-y-2">
+        <div class="overflow-y-auto flex-1 p-3 space-y-2">
           <div v-if="versions.length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-8">暂无历史版本</div>
+          <!-- 当前版本卡片 -->
+          <div v-if="versions.length > 0" class="p-3 border-2 border-primary-400 dark:border-primary-500 rounded-lg bg-primary-50 dark:bg-primary-900/20">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold text-primary-600 dark:text-primary-400 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-800 rounded">当前</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ countWords(content) }} 字</span>
+            </div>
+            <div class="text-xs text-gray-400 dark:text-gray-500">编辑中</div>
+          </div>
+          <!-- 历史版本列表 -->
           <div
             v-for="v in versions"
             :key="v.id"
-            class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
           >
-            <div class="cursor-pointer" @click="previewVersion(v)">
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ formatDate(v.created_at) }}</div>
-              <div class="text-sm mt-1 text-gray-800 dark:text-gray-200">{{ v.change_type === 'pre_rewrite' ? '改写前备份' : v.change_type }}</div>
-              <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">{{ countWords(v.content) }} 字</div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-mono font-semibold text-gray-500 dark:text-gray-400 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                {{ v.version_no ? `v${v.version_no}` : `#${v.id}` }}
+              </span>
+              <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ changeTypeLabel[v.change_type] ?? v.change_type }}</span>
             </div>
-            <div class="flex gap-2 mt-2">
+            <div v-if="v.change_description" class="text-xs text-gray-500 dark:text-gray-400 mb-1 line-clamp-2">{{ v.change_description }}</div>
+            <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
+              <span>{{ countWords(v.content) }} 字</span>
+              <span>{{ formatDate(v.created_at) }}</span>
+            </div>
+            <div class="flex gap-1 mt-2">
               <button
                 @click="previewVersion(v)"
-                class="text-xs px-2 py-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                class="flex-1 text-xs px-2 py-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
               >预览</button>
               <button
+                @click="openDiff(v)"
+                class="flex-1 text-xs px-2 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded transition-colors"
+              >对比</button>
+              <button
                 @click="restoreVersion(v)"
-                aria-label="恢复此版本"
-                class="text-xs px-2 py-1 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded"
+                class="flex-1 text-xs px-2 py-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded transition-colors"
               >恢复</button>
             </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 版本对比弹窗 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="showDiffModal" class="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
+        <!-- 顶部工具栏 -->
+        <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0">
+          <h2 class="font-semibold text-gray-900 dark:text-white mr-2">版本对比</h2>
+          <!-- 左侧选择 -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">左侧</span>
+            <select
+              v-model="diffLeftId"
+              class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
+            >
+              <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+            </select>
+          </div>
+          <span class="text-gray-400 dark:text-gray-600">→</span>
+          <!-- 右侧选择 -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">右侧</span>
+            <select
+              v-model="diffRightId"
+              class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
+            >
+              <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+            </select>
+          </div>
+          <!-- 统计 -->
+          <div class="flex items-center gap-2 ml-auto text-xs">
+            <span class="px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">-{{ diffSummary.removed }} 段</span>
+            <span class="px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">+{{ diffSummary.added }} 段</span>
+            <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">={{ diffSummary.same }} 段</span>
+          </div>
+          <!-- 应用按钮 -->
+          <button
+            @click="applyDiffVersion('right')"
+            class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors ml-2"
+          >应用右侧版本</button>
+          <button
+            @click="applyDiffVersion('left')"
+            class="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+          >应用左侧版本</button>
+          <button
+            @click="showDiffModal = false"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 ml-1 text-lg leading-none"
+          >✕</button>
+        </div>
+        <!-- 列头 -->
+        <div class="grid grid-cols-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div class="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            {{ diffVersionOptions.find(o => o.id === diffLeftId)?.label ?? '左侧' }}
+          </div>
+          <div class="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800">
+            {{ diffVersionOptions.find(o => o.id === diffRightId)?.label ?? '右侧' }}
+          </div>
+        </div>
+        <!-- 加载中 -->
+        <div v-if="diffLoading" class="flex-1 flex items-center justify-center">
+          <span class="text-sm text-gray-400 dark:text-gray-500">加载中…</span>
+        </div>
+        <!-- Diff 内容 -->
+        <div v-else class="flex-1 overflow-y-auto">
+          <div
+            v-for="(row, idx) in diffRows"
+            :key="idx"
+            class="grid grid-cols-2 border-b border-gray-100 dark:border-gray-800"
+            :class="{
+              'bg-red-50 dark:bg-red-950/30': row.type === 'removed',
+              'bg-green-50 dark:bg-green-950/30': row.type === 'added',
+            }"
+          >
+            <div
+              class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 border-r border-gray-100 dark:border-gray-800 leading-relaxed whitespace-pre-wrap"
+              :class="{ 'line-through text-red-600 dark:text-red-400': row.type === 'removed', 'text-gray-300 dark:text-gray-600 select-none': row.type === 'added' }"
+            >{{ row.type === 'added' ? '' : row.left }}</div>
+            <div
+              class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap"
+              :class="{ 'text-green-700 dark:text-green-300 font-medium': row.type === 'added', 'text-gray-300 dark:text-gray-600 select-none': row.type === 'removed' }"
+            >{{ row.type === 'removed' ? '' : row.right }}</div>
+          </div>
+          <div v-if="diffRows.length === 0 && !diffLoading" class="py-12 text-center text-sm text-gray-400 dark:text-gray-500">
+            两个版本内容完全相同
           </div>
         </div>
       </div>

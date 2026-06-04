@@ -35,6 +35,7 @@ export const useChapterApi = () => {
     web_search?: boolean
     wiki_search?: boolean
     use_story_pattern?: boolean
+    is_standalone?: boolean
   }) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/generate`, {
       method: 'POST',

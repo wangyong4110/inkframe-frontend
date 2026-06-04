@@ -163,20 +163,38 @@ async function handleApplyDiffs() {
   }
   applyingDiffs.value = true
   try {
-    // delete action sends empty string as new_content; backend treats empty = remove paragraph
-    // orig_text enables content-based fallback matching in case indices shifted
-    const diffs = selected.map(d => ({ index: d.index, new_content: d.action === 'delete' ? '' : d.suggested_rewrite, orig_text: d.orig_text ?? '' }))
-    const recordId = reviewResult.value?.record_id
-    const res = await api.applyDiffs(props.chapterId, diffs, recordId)
-    const count = res.data?.updated_paragraphs ?? 0
+    // Build review hints from weaknesses + selected paragraph issues
+    const weaknesses = (reviewResult.value?.weaknesses ?? []).map(w =>
+      w.suggestion ? `${w.issue}（改进方向：${w.suggestion}）` : w.issue
+    )
+    const paragraphIssues = selected.map(d => {
+      const issueStr = d.issues.join('；')
+      return d.suggestion ? `段落${d.index}：${issueStr}（建议：${d.suggestion}）` : `段落${d.index}：${issueStr}`
+    })
+
+    const res = await api.regenerateWithReview(props.chapterId, {
+      weaknesses,
+      paragraph_issues: paragraphIssues,
+    })
+    const taskId = res.data?.task_id
+    if (!taskId) throw new Error('未获取到生成任务 ID')
+
     showDiffModal.value = false
-    toast.success(`已应用 ${count} 处段落改写，正在重新审查…`)
-    await loadHistory()
-    emit('content-updated')
-    startReview()
+    toast.info('AI 正在根据审查反馈重新生成章节，请稍候…')
+
+    useTaskStore().trackTask(taskId, async (task) => {
+      applyingDiffs.value = false
+      if (task.status === 'completed') {
+        toast.success('章节已根据审查反馈重新生成')
+        await loadHistory()
+        emit('content-updated')
+        startReview()
+      } else {
+        toast.error((task as any).error || '重新生成失败，请稍后重试')
+      }
+    })
   } catch (e: any) {
-    toast.error(e.message || '应用失败')
-  } finally {
+    toast.error(e.message || '重新生成失败')
     applyingDiffs.value = false
   }
 }
@@ -613,11 +631,12 @@ defineExpose({ startReview, reviewing })
           </div>
           <!-- Footer -->
           <div class="flex items-center justify-between px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <span class="text-sm text-gray-500 dark:text-gray-400">
-              将修改 {{ diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length }} 处段落
-            </span>
+            <div class="text-sm text-gray-500 dark:text-gray-400 space-y-0.5">
+              <p>已选 {{ diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length }} 处问题</p>
+              <p class="text-xs text-gray-400">将结合不足和选中建议重新生成全章</p>
+            </div>
             <div class="flex items-center gap-2">
-              <button class="btn-outline text-sm" @click="showDiffModal = false">取消</button>
+              <button class="btn-outline text-sm" :disabled="applyingDiffs" @click="showDiffModal = false">取消</button>
               <button
                 class="btn-primary text-sm"
                 :disabled="applyingDiffs || diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length === 0"
@@ -626,7 +645,10 @@ defineExpose({ startReview, reviewing })
                 <svg v-if="applyingDiffs" class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {{ applyingDiffs ? '应用中…' : `确认应用选中 (${diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length} 处)` }}
+                <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                {{ applyingDiffs ? 'AI 生成中…' : `确认应用选中 (${diffItems.filter(d => d.selected && (d.action === 'delete' || !!d.suggested_rewrite)).length} 处)` }}
               </button>
             </div>
           </div>

@@ -188,12 +188,12 @@ function handleImageStyleSelect(styleId: string) {
 }
 
 async function confirmDeleteNovel() {
-  closeDeleteConfirm()
+  deleteConfirmStep.value = 3
   try {
     await novelStore.deleteNovel(props.novelId)
-    toast.success('项目已删除')
     router.push('/novel')
   } catch (e: any) {
+    closeDeleteConfirm()
     toast.error('删除失败：' + (e.message || '未知错误'))
   }
 }
@@ -642,7 +642,7 @@ async function confirmDeleteNovel() {
     <Teleport to="body">
       <Transition name="dialog">
         <div v-if="showDeleteNovelConfirm" class="fixed inset-0 z-[9998] flex items-center justify-center">
-          <div class="fixed inset-0 bg-black/50" @click="closeDeleteConfirm" />
+          <div class="fixed inset-0 bg-black/50" @click="deleteConfirmStep < 3 && closeDeleteConfirm()" />
           <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
 
             <!-- Step 1: risk warning -->
@@ -680,6 +680,28 @@ async function confirmDeleteNovel() {
                   class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
                   @click="deleteConfirmStep = 2"
                 >我已了解风险，继续</button>
+              </div>
+            </template>
+
+            <!-- Step 3: deleting in progress -->
+            <template v-else-if="deleteConfirmStep === 3">
+              <div class="flex flex-col items-center justify-center py-6 gap-4">
+                <div class="relative w-16 h-16">
+                  <svg class="w-16 h-16 animate-spin text-red-200 dark:text-red-900" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                  </svg>
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </div>
+                </div>
+                <div class="text-center">
+                  <p class="text-base font-medium text-gray-800 dark:text-gray-100">正在删除项目…</p>
+                  <p class="text-sm text-gray-400 mt-1">请勿关闭页面</p>
+                </div>
               </div>
             </template>
 

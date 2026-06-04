@@ -126,7 +126,7 @@ export const useChapterStore = defineStore('chapter', {
       }
     },
 
-    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number, model?: string, temperature?: number, timeoutSeconds?: number, wordCount?: number, webSearch?: boolean, wikiSearch?: boolean, useStoryPattern?: boolean) {
+    async generateChapter(novelId: number, chapterNo: number, prompt?: string, maxTokens?: number, model?: string, temperature?: number, timeoutSeconds?: number, wordCount?: number, webSearch?: boolean, wikiSearch?: boolean, useStoryPattern?: boolean, isStandalone?: boolean) {
       this.generating = true
       this.error = null
 
@@ -143,6 +143,7 @@ export const useChapterStore = defineStore('chapter', {
           web_search: webSearch || undefined,
           wiki_search: wikiSearch || undefined,
           use_story_pattern: useStoryPattern || undefined,
+          is_standalone: isStandalone || undefined,
         })
         // Backend returns 202 { data: { task_id } } — do NOT overwrite currentChapter
         const taskId: string = (response as any).data?.task_id

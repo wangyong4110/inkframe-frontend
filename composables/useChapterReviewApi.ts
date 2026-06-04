@@ -30,6 +30,15 @@ export const useChapterReviewApi = () => {
       body: JSON.stringify({ diffs, ...(recordId ? { record_id: recordId } : {}) }),
     })
 
+  const regenerateWithReview = (
+    id: number,
+    hints: { weaknesses: string[]; paragraph_issues: string[] },
+  ) =>
+    request<ApiResponse<{ task_id: string }>>(`/chapters/${id}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify({ review_hints: hints }),
+    })
+
   const listIgnoredIssues = (id: number) =>
     request<ApiResponse<ChapterIgnoredIssue[]>>(`/chapters/${id}/ignored-issues`)
 
@@ -50,6 +59,7 @@ export const useChapterReviewApi = () => {
     getReviewRecord,
     rollbackReview,
     applyDiffs,
+    regenerateWithReview,
     listIgnoredIssues,
     ignoreIssue,
     unignoreIssue,

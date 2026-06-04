@@ -1216,8 +1216,12 @@ export interface KnowledgeBase {
 export interface ChapterVersion {
   id: number
   chapter_id: number
+  version_no: number
   content: string
   change_type: string
+  change_description?: string
+  quality_score?: number
+  consistency_score?: number
   created_at: string
 }
 
