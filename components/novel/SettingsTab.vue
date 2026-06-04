@@ -12,7 +12,24 @@ const styleApi = useStyleApi()
 const novel = computed(() => novelStore.currentNovel)
 
 const showDeleteNovelConfirm = ref(false)
-const showDirPicker = ref(false)
+const deleteConfirmInput = ref('')
+const deleteConfirmStep = ref(1)
+
+function openDeleteConfirm() {
+  deleteConfirmInput.value = ''
+  deleteConfirmStep.value = 1
+  showDeleteNovelConfirm.value = true
+}
+
+function closeDeleteConfirm() {
+  showDeleteNovelConfirm.value = false
+  deleteConfirmInput.value = ''
+  deleteConfirmStep.value = 1
+}
+
+const deleteConfirmMatch = computed(() =>
+  deleteConfirmInput.value.trim() === (novel.value?.title ?? '')
+)
 
 // AI model lists per task type (loaded async; silently ignored if API unavailable)
 const availableModels = ref<AIModel[]>([])
@@ -171,6 +188,7 @@ function handleImageStyleSelect(styleId: string) {
 }
 
 async function confirmDeleteNovel() {
+  closeDeleteConfirm()
   try {
     await novelStore.deleteNovel(props.novelId)
     toast.success('项目已删除')
@@ -180,13 +198,7 @@ async function confirmDeleteNovel() {
   }
 }
 
-async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration' | 'kling_pro_for_action') {
-  const currentValue = novel.value?.[field]
-  // Default for kling_pro_for_action is true, others default to false
-  const defaultValue = field === 'kling_pro_for_action' ? true : false
-  const newValue = currentValue === undefined ? !defaultValue : !currentValue
-  await novelStore.updateNovel(props.novelId, { [field]: newValue })
-}
+
 </script>
 
 <template>
@@ -303,21 +315,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
     <div class="card p-6 space-y-4">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">创作风格</h3>
 
-      <!-- 核心主题 -->
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-          核心主题
-          <span class="ml-1 text-gray-400 font-normal">（全书叙事意图，如"信任比力量更难获得"——指导所有场景的深层意义）</span>
-        </label>
-        <input
-          type="text"
-          :value="novel?.core_theme ?? ''"
-          class="input text-sm"
-          placeholder="用一句话描述全书想表达的核心主题，留空则不约束主题方向…"
-          @change="(e) => novelStore.updateNovel(novelId, { core_theme: (e.target as HTMLInputElement).value })"
-        />
-      </div>
-
       <div>
         <div class="flex items-center justify-between mb-1.5">
           <label class="text-xs font-medium text-gray-500 dark:text-gray-400">写作风格预设</label>
@@ -387,36 +384,9 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
           </p>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+      <div class="pt-2 border-t border-gray-100 dark:border-gray-700">
         <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">创意度</label>
-            <span class="text-xs text-gray-400">{{ novel?.temperature ?? 0.7 }}</span>
-          </div>
-          <input type="range" :value="novel?.temperature ?? 0.7" min="0" max="2" step="0.1"
-            class="w-full accent-primary-500"
-            @change="(e) => novelStore.updateNovel(novelId, { temperature: parseFloat((e.target as HTMLInputElement).value) })" />
-          <div class="flex justify-between text-xs text-gray-400 mt-0.5">
-            <span>确定</span><span>均衡</span><span>创意</span>
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">每章最大 Tokens</label>
-          <input type="number" :value="novel?.max_tokens ?? 0" class="input" min="0" max="32000" step="512"
-            @change="(e) => novelStore.updateNovel(novelId, { max_tokens: parseInt((e.target as HTMLInputElement).value) })" />
-          <p class="mt-1 text-xs text-gray-400">
-            <template v-if="(novel?.max_tokens ?? 0) > 0">≈ {{ Math.round((novel!.max_tokens) * 0.75) }} 中文字</template>
-            <template v-else>0 = 不限制（由模型自身决定）</template>
-          </p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">超时时间（秒）</label>
-          <input type="number" :value="novel?.timeout_seconds ?? 0" class="input" min="0" max="600" step="30"
-            @change="(e) => novelStore.updateNovel(novelId, { timeout_seconds: parseInt((e.target as HTMLInputElement).value) })" />
-          <p class="mt-1 text-xs text-gray-400">0 = 系统默认（300秒）</p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">提示词语言</label>
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">AI 提示词</label>
           <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <button
               v-for="lang in [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]"
@@ -434,49 +404,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
       </div>
     </div>
 
-    <!-- ③b 自动审查配置 -->
-    <div class="card p-6 space-y-4">
-      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">自动审查优化</h3>
-      <p class="text-xs text-gray-400 dark:text-gray-500">章节生成完成后，自动执行 AI 深度审查并应用修改建议。满足以下任意一个条件时自动停止。</p>
-
-      <!-- 条件1：审查轮次上限 -->
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-          条件1：轮数上限
-        </label>
-        <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-          <button
-            v-for="opt in [{ value: 0, label: '关闭' }, { value: 1, label: '1 轮' }, { value: 2, label: '2 轮' }, { value: 3, label: '3 轮' }]"
-            :key="opt.value"
-            type="button"
-            class="flex-1 py-1.5 text-xs transition-colors"
-            :class="(novel?.auto_review_rounds ?? 0) === opt.value
-              ? 'bg-primary-500 text-white font-medium'
-              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
-            @click="novelStore.updateNovel(novelId, { auto_review_rounds: opt.value })"
-          >{{ opt.label }}</button>
-        </div>
-        <p class="mt-1 text-xs text-gray-400">最多执行 N 轮 AI 深度审查 + 自动优化（约 2–4 分钟/轮）</p>
-      </div>
-
-      <!-- 条件2：质量分数阈值 -->
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-          条件2：质量阈值（0 = 不限，只按轮数控制）
-        </label>
-        <input
-          type="number"
-          min="0"
-          max="100"
-          step="1"
-          :value="novel?.auto_review_min_score ?? 80"
-          class="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-          placeholder="80"
-          @change="(e) => novelStore.updateNovel(novelId, { auto_review_min_score: parseInt((e.target as HTMLInputElement).value) || 0 })"
-        />
-        <p class="mt-1 text-xs text-gray-400">评分达到此分数时立即停止，无需跑满所有轮次</p>
-      </div>
-    </div>
 
     <!-- ④ 视频配置 -->
     <div class="card p-6 space-y-4">
@@ -507,34 +434,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
         </div>
       </div>
 
-      <!-- 素材导出路径 -->
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">素材导出路径</label>
-        <div class="flex gap-2">
-          <input
-            type="text"
-            class="input flex-1"
-            placeholder="如 /output/assets 或留空使用默认路径"
-            :value="novel?.asset_export_path ?? ''"
-            @change="(e) => novelStore.updateNovel(novelId, { asset_export_path: (e.target as HTMLInputElement).value })"
-          />
-          <button
-            type="button"
-            class="shrink-0 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1.5 text-sm"
-            @click="showDirPicker = true"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>
-            浏览
-          </button>
-        </div>
-        <p class="text-xs text-gray-400 mt-1">生成的图片、音频等素材文件的保存位置</p>
-      </div>
-
-      <DirPicker
-        v-model="showDirPicker"
-        :initial-path="novel?.asset_export_path || '/'"
-        @select="(path) => novelStore.updateNovel(novelId, { asset_export_path: path })"
-      />
 
       <div class="grid grid-cols-2 gap-4">
         <div>
@@ -544,15 +443,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
             <option value="720p">720p (1280×720)</option>
             <option value="1080p">1080p (1920×1080)</option>
             <option value="4K">4K (3840×2160)</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">默认帧率</label>
-          <select :value="novel?.video_fps ?? 30" class="input"
-            @change="(e) => novelStore.updateNovel(novelId, { video_fps: parseInt((e.target as HTMLSelectElement).value) })">
-            <option :value="24">24 fps（电影）</option>
-            <option :value="30">30 fps（标准）</option>
-            <option :value="60">60 fps（流畅）</option>
           </select>
         </div>
         <div>
@@ -605,18 +495,6 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
                 <span class="font-medium">{{ r.label }}</span>
               </button>
             </div>
-          </div>
-        </div>
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">角色一致性权重</label>
-            <span class="text-xs text-gray-400">{{ Math.round((novel?.char_consistency_weight ?? 1) * 100) }}%</span>
-          </div>
-          <input type="range" :value="novel?.char_consistency_weight ?? 1" min="0" max="1" step="0.05"
-            class="w-full accent-primary-500"
-            @change="(e) => novelStore.updateNovel(novelId, { char_consistency_weight: parseFloat((e.target as HTMLInputElement).value) })" />
-          <div class="flex justify-between text-xs text-gray-400 mt-0.5">
-            <span>自由</span><span>平衡</span><span>严格</span>
           </div>
         </div>
       </div>
@@ -749,142 +627,7 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
         </div>
       </div>
 
-      <!-- 色彩调色 -->
-      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
-        <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">色彩调色（Color Grading）</h4>
-        <div class="space-y-3">
-          <div>
-            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">调色预设</label>
-            <select
-              :value="novel?.color_grade ?? 'none'"
-              class="w-full border rounded px-3 py-1.5 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              @change="(e) => novelStore.updateNovel(novelId, { color_grade: (e.target as HTMLSelectElement).value })"
-            >
-              <option value="none">无（原色）</option>
-              <option value="cinematic">电影感（Cinematic）</option>
-              <option value="warm">暖色调</option>
-              <option value="cool">冷色调</option>
-              <option value="teal_orange">青橙（Teal & Orange）</option>
-              <option value="vintage">复古</option>
-              <option value="noir">黑白（Noir）</option>
-            </select>
-          </div>
-          <div v-if="(novel?.color_grade ?? 'none') !== 'none' && (novel?.color_grade ?? 'none') !== 'noir'">
-            <label class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-              <span>对比度</span>
-              <span>{{ ((novel?.contrast_level ?? 0) >= 0 ? '+' : '') + ((novel?.contrast_level ?? 0) * 100).toFixed(0) }}%</span>
-            </label>
-            <input
-              type="range"
-              :value="novel?.contrast_level ?? 0"
-              min="-1"
-              max="1"
-              step="0.05"
-              class="w-full h-1 accent-blue-500"
-              @change="(e) => novelStore.updateNovel(novelId, { contrast_level: parseFloat((e.target as HTMLInputElement).value) })"
-            />
-          </div>
-          <div v-if="(novel?.color_grade ?? 'none') !== 'noir'">
-            <label class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-              <span>饱和度</span>
-              <span>{{ ((novel?.saturation ?? 1) * 100).toFixed(0) }}%</span>
-            </label>
-            <input
-              type="range"
-              :value="novel?.saturation ?? 1"
-              min="0"
-              max="2"
-              step="0.05"
-              class="w-full h-1 accent-blue-500"
-              @change="(e) => novelStore.updateNovel(novelId, { saturation: parseFloat((e.target as HTMLInputElement).value) })"
-            />
-          </div>
-        </div>
-      </div>
 
-      <!-- 镜头特效 -->
-      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
-          镜头特效（Lens FX）
-        </h3>
-        <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">胶片颗粒</label>
-              <p class="text-xs text-gray-500 dark:text-gray-400">模拟35mm胶片的自然颗粒感</p>
-            </div>
-            <button
-              type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-              :class="novel?.film_grain ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-              @click="toggleFX('film_grain')"
-            >
-              <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
-                :class="novel?.film_grain ? 'translate-x-6' : 'translate-x-1'"
-              />
-            </button>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头暗角</label>
-              <p class="text-xs text-gray-500 dark:text-gray-400">四角渐暗，增强画面聚焦感</p>
-            </div>
-            <button
-              type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-              :class="novel?.vignette ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-              @click="toggleFX('vignette')"
-            >
-              <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
-                :class="novel?.vignette ? 'translate-x-6' : 'translate-x-1'"
-              />
-            </button>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">色差效果</label>
-              <p class="text-xs text-gray-500 dark:text-gray-400">模拟镜头边缘的色彩偏移，增加电影质感</p>
-            </div>
-            <button
-              type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-              :class="novel?.chromatic_aberration ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-              @click="toggleFX('chromatic_aberration')"
-            >
-              <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
-                :class="novel?.chromatic_aberration ? 'translate-x-6' : 'translate-x-1'"
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Kling AI 质量模式 -->
-      <div class="border-t pt-4 mt-4 border-gray-100 dark:border-gray-700">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-3">
-          AI 视频质量
-        </h3>
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">动作场景专业模式</label>
-            <p class="text-xs text-gray-500 dark:text-gray-400">战斗/史诗镜头自动使用 Kling Pro 模式（消耗更多配额）</p>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-            :class="novel?.kling_pro_for_action !== false ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-            @click="toggleFX('kling_pro_for_action')"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
-              :class="novel?.kling_pro_for_action !== false ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
-        </div>
-      </div>
 
     </div>
 
@@ -892,17 +635,98 @@ async function toggleFX(field: 'film_grain' | 'vignette' | 'chromatic_aberration
     <div class="card p-6 border border-red-100 dark:border-red-900/40">
       <h3 class="text-sm font-semibold text-red-500 uppercase tracking-wider mb-3">危险区</h3>
       <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">删除项目将永久移除所有章节、角色和相关数据，此操作不可撤销。</p>
-      <button class="btn-error" @click="showDeleteNovelConfirm = true">删除项目</button>
+      <button class="btn-error" @click="openDeleteConfirm">删除项目</button>
     </div>
 
-    <!-- Delete novel confirm -->
-    <ConfirmDialog
-      v-model="showDeleteNovelConfirm"
-      title="删除项目"
-      description="此操作不可撤销，将删除所有章节和角色数据。"
-      variant="danger"
-      confirm-text="确认删除"
-      @confirm="confirmDeleteNovel"
-    />
+    <!-- Delete novel confirm (two-step) -->
+    <Teleport to="body">
+      <Transition name="dialog">
+        <div v-if="showDeleteNovelConfirm" class="fixed inset-0 z-[9998] flex items-center justify-center">
+          <div class="fixed inset-0 bg-black/50" @click="closeDeleteConfirm" />
+          <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+
+            <!-- Step 1: risk warning -->
+            <template v-if="deleteConfirmStep === 1">
+              <div class="flex items-center gap-3 mb-4">
+                <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center">
+                  <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">删除项目「{{ novel?.title }}」？</h3>
+              </div>
+              <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">此操作 <strong class="text-red-600">不可撤销</strong>，以下所有数据将被永久删除：</p>
+              <ul class="space-y-1.5 mb-5">
+                <li v-for="item in [
+                  '全部章节内容及版本历史',
+                  '角色、物品、世界观设定',
+                  '故事板与视频镜头',
+                  '审查记录与弧线摘要',
+                  '场景锚点与参考图',
+                ]" :key="item" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                  <svg class="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                  {{ item }}
+                </li>
+              </ul>
+              <div class="flex justify-end gap-3">
+                <button
+                  class="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  @click="closeDeleteConfirm"
+                >取消</button>
+                <button
+                  class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+                  @click="deleteConfirmStep = 2"
+                >我已了解风险，继续</button>
+              </div>
+            </template>
+
+            <!-- Step 2: type name to confirm -->
+            <template v-else>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">最终确认</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                请输入项目名称 <strong class="text-gray-800 dark:text-gray-200">{{ novel?.title }}</strong> 以确认删除：
+              </p>
+              <input
+                v-model="deleteConfirmInput"
+                type="text"
+                class="input w-full mb-5"
+                placeholder="输入项目名称"
+                autofocus
+                @keydown.enter="deleteConfirmMatch && confirmDeleteNovel()"
+              />
+              <div class="flex justify-end gap-3">
+                <button
+                  class="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  @click="closeDeleteConfirm"
+                >取消</button>
+                <button
+                  class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  :class="deleteConfirmMatch
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'"
+                  :disabled="!deleteConfirmMatch"
+                  @click="deleteConfirmMatch && confirmDeleteNovel()"
+                >确认删除</button>
+              </div>
+            </template>
+
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.dialog-enter-active,
+.dialog-leave-active {
+  transition: opacity 0.2s ease;
+}
+.dialog-enter-from,
+.dialog-leave-to {
+  opacity: 0;
+}
+</style>

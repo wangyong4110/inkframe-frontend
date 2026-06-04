@@ -850,19 +850,23 @@ async function rwSubmit() {
           </div>
         </div>
 
-        <!-- AI 创作语言 -->
+        <!-- 提示词语言 -->
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            AI 创作语言
+            AI 提示词
           </label>
-          <select
-            v-model="aiForm.prompt_language"
-            aria-label="AI创作语言"
-            class="select select-bordered w-full text-sm"
-          >
-            <option value="zh">中文（默认）</option>
-            <option value="en">English</option>
-          </select>
+          <div class="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+            <button
+              v-for="lang in [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]"
+              :key="lang.value"
+              type="button"
+              class="flex-1 py-2 text-sm transition-colors"
+              :class="aiForm.prompt_language === lang.value
+                ? 'bg-purple-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'"
+              @click="aiForm.prompt_language = lang.value"
+            >{{ lang.label }}</button>
+          </div>
         </div>
 
         <!-- 目标规模 2 列 -->
