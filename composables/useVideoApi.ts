@@ -217,14 +217,11 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
-  const exportCapcut = (id: number, embedMedia = false) =>
-    requestBlob(`/videos/${id}/export/capcut${embedMedia ? '?embed_media=true' : ''}`)
+  const exportCapcut = (id: number) =>
+    requestBlob(`/videos/${id}/export/capcut`)
 
-  const exportVideo = (id: number, format: string, embedMedia = false) => {
-    const supportsEmbed = format === 'capcut' || format === 'broll'
-    const query = supportsEmbed && embedMedia ? '?embed_media=true' : ''
-    return requestBlob(`/videos/${id}/export/${format}${query}`)
-  }
+  const exportVideo = (id: number, format: string) =>
+    requestBlob(`/videos/${id}/export/${format}`)
 
   const reviewStoryboard = (id: number, provider?: string, previousScore?: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/review`, {
