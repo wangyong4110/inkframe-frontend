@@ -56,13 +56,16 @@ async function handleBatchGenerate() {
   }
 }
 
+// ── 嵌入素材开关（capcut / broll 共用） ──────────────
+const embedMedia = ref(false)
+
 // ── 剪映草稿导出 ────────────────────────────────────
 const exportingCapcut = ref(false)
 async function handleCapcut() {
   exportingCapcut.value = true
   try {
     const api = useVideoApi()
-    const blob = await api.exportVideo(props.videoId, 'capcut')
+    const blob = await api.exportVideo(props.videoId, 'capcut', embedMedia.value)
     triggerDownload(blob, `${video.value?.title || 'video'}_capcut.zip`)
     toast.success('剪映草稿导出成功，解压后在剪映中选择「本地草稿」导入')
   } catch (e: any) {
@@ -78,7 +81,7 @@ async function handleBrollDraft() {
   exportingBroll.value = true
   try {
     const api = useVideoApi()
-    const blob = await api.exportVideo(props.videoId, 'broll')
+    const blob = await api.exportVideo(props.videoId, 'broll', embedMedia.value)
     triggerDownload(blob, `${video.value?.title || 'video'}_broll.zip`)
     toast.success('B 剪草稿导出成功，解压后在剪映中选择「本地草稿」导入')
   } catch (e: any) {
@@ -188,7 +191,17 @@ function triggerDownload(blob: Blob, filename: string) {
 
     <!-- ② 主要导出动作 -->
     <div class="card p-4 space-y-3">
-      <h3 class="font-semibold text-gray-900 dark:text-white">快速导出</h3>
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900 dark:text-white">快速导出</h3>
+        <label class="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            v-model="embedMedia"
+            type="checkbox"
+            class="w-3.5 h-3.5 rounded accent-blue-500"
+          />
+          <span class="text-xs text-gray-500 dark:text-gray-400">嵌入素材</span>
+        </label>
+      </div>
 
       <!-- 剪映草稿（首选） -->
       <button
