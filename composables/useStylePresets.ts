@@ -263,6 +263,14 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     preview_colors: ['#8B7355', '#C4A882', '#E8D5B7'],
   },
   {
+    id: 'real_person',
+    name: '真人画风',
+    description: '照片级真实人像，皮肤质感细腻、五官立体，接近专业人像摄影棚效果',
+    tags: ['真人', '人像摄影', '超写实'],
+    art_style: 'real_person',
+    preview_colors: ['#D4A574', '#C08050', '#8B5E3C'],
+  },
+  {
     id: 'ink_painting',
     name: '水墨中国风',
     description: '水墨丹青，意境悠远，适合古典仙侠武侠等东方题材',

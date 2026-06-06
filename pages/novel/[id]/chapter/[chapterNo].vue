@@ -1768,7 +1768,8 @@ onUnmounted(() => {
                   </div>
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ char.name }}</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ char.role }}</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ { protagonist: '主角', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
+                    <p v-if="char.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">{{ char.description }}</p>
                   </div>
                   <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -1783,16 +1784,20 @@ onUnmounted(() => {
                 <div
                   v-for="char in minorCharacters"
                   :key="char.id"
-                  class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                  class="flex items-center gap-4 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
                   @click="router.push(`/character/${char.id}`)"
                 >
-                  <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                    <span class="text-xs font-bold text-gray-500 dark:text-gray-400">{{ char.name.charAt(0) }}</span>
+                  <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                    <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+                    <span v-else class="text-base font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
                   </div>
                   <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ char.name }}</p>
-                    <p v-if="char.description" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ char.description }}</p>
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ char.name }}</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ { protagonist: '主角', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
                   </div>
+                  <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
                 </div>
               </div>
             </div>
