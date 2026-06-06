@@ -221,7 +221,7 @@ async function regenerateShotSFX(shot: StoryboardShot) {
 // ── 音频试听 ──────────────────────────────────────────────────────────────────
 function onAudioError() {
   if (sfxLoadingId.value !== null || sfxPlayingId.value !== null)
-    toast.error('音效播放出错，链接可能已失效')
+    toast.error('音效链接已失效，请点击 ↻ 重新生成该镜头音效')
   sfxPlayingId.value = null
   sfxLoadingId.value = null
 }

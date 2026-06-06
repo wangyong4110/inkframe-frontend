@@ -215,10 +215,16 @@ async function preview() {
     audioEl.value?.load()
     audioEl.value?.play()
   } catch (e: any) {
-    errorMsg.value = e.message
+    audioUrl.value = ''
+    errorMsg.value = e.message || '试听失败，请检查语音合成配置'
   } finally {
     previewing.value = false
   }
+}
+
+function onAudioError() {
+  audioUrl.value = ''
+  errorMsg.value = '音频加载失败，请重新生成试听'
 }
 
 function speedLabel(v: number) {
@@ -405,7 +411,7 @@ defineExpose({
 
     <!-- Audio player -->
     <div v-if="audioUrl" class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
-      <audio ref="audioEl" controls :src="audioUrl" class="w-full h-8" />
+      <audio ref="audioEl" controls :src="audioUrl" class="w-full h-8" @error="onAudioError" />
     </div>
 
     <p v-if="errorMsg" class="text-xs text-red-500">{{ errorMsg }}</p>
