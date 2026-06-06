@@ -856,9 +856,10 @@ const scriptMaxTokens = advMaxTokens
 const scriptTemperature = advTemperature
 const scriptTimeoutSeconds = advTimeoutSeconds
 const pacingOptions = [
-  { value: 'slow' as const, label: '慢' },
+  { value: 'auto'   as const, label: '自动' },
+  { value: 'slow'   as const, label: '慢' },
   { value: 'normal' as const, label: '标准' },
-  { value: 'fast' as const, label: '快' },
+  { value: 'fast'   as const, label: '快' },
 ]
 const durationOptions = [
   { value: 0,   label: '自动' },
@@ -876,7 +877,7 @@ const scriptCustomDurationMins = ref(5)
 watch(scriptCustomDurationMins, (v) => {
   scriptTargetDuration.value = Math.max(0, Math.round(v * 60))
 })
-const scriptAvgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[scriptPacing.value] ?? 5))
+const scriptAvgShotDur = computed(() => ({ auto: 5, slow: 8, normal: 5, fast: 3 }[scriptPacing.value] ?? 5))
 const scriptEstimatedShots = computed(() =>
   scriptTargetDuration.value > 0
     ? Math.max(3, Math.round(scriptTargetDuration.value / scriptAvgShotDur.value))
@@ -895,7 +896,7 @@ async function handleGenerateScript() {
   if (!await guardAiProvider('LLM')) return
   if (!chapter.value) return
   const prompt = scriptUserPrompt.value || undefined
-  const pacing = scriptPacing.value !== 'normal' ? scriptPacing.value : undefined
+  const pacing = (scriptPacing.value !== 'normal' && scriptPacing.value !== 'auto') ? scriptPacing.value : undefined
   const duration = scriptTargetDuration.value || undefined
   const maxTokens = scriptMaxTokens.value || undefined
   const temperature = scriptTemperature.value || undefined

@@ -187,6 +187,35 @@ export interface Character {
 
 export type CharacterRole = 'protagonist' | 'antagonist' | 'supporting' | 'minor'
 
+// CharacterLook 角色形象（不同时期的外观版本）
+export interface CharacterLook {
+  id: number
+  character_id: number
+  novel_id: number
+  label: string         // 形象名称，如"少年时期""成年装束""伪装后"
+  chapter_from: number  // 起始章节（含），0 表示从头
+  chapter_to: number    // 结束章节（含），0 表示无限延伸
+  is_default: boolean   // 兜底形象
+  sort_order: number
+  description?: string  // 外观描述（中文）
+  visual_prompt?: string // AI 图像生成英文 Prompt
+  three_view_sheet?: string
+  face_closeup?: string
+  portrait?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateCharacterLookForm {
+  label: string
+  chapter_from: number
+  chapter_to: number
+  is_default?: boolean
+  sort_order?: number
+  description?: string
+  visual_prompt?: string
+}
+
 // Worldview types
 export interface Worldview {
   id: number

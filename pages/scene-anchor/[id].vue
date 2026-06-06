@@ -35,6 +35,8 @@ const form = ref({
 })
 
 const generatingRefImage = ref(false)
+const uploadingRefImage = ref(false)
+const refImageFileInput = ref<HTMLInputElement | null>(null)
 
 // 对话式编辑
 interface EditMessage {
@@ -132,6 +134,23 @@ async function handleGenerateRefImage() {
     toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
     generatingRefImage.value = false
+  }
+}
+
+async function handleUploadRefImage(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  uploadingRefImage.value = true
+  try {
+    const res = await api.uploadRefImage(anchorId, file)
+    if (anchor.value && res.anchor) anchor.value = res.anchor
+    else if (anchor.value) anchor.value = { ...anchor.value, ref_image_url: res.url }
+    toast.success('参考图已上传并锁定')
+  } catch (e: any) {
+    toast.error('上传失败：' + (e.message || '未知错误'))
+  } finally {
+    uploadingRefImage.value = false
+    if (refImageFileInput.value) refImageFileInput.value.value = ''
   }
 }
 
@@ -352,22 +371,46 @@ function goBack() {
                 <span>未锁定（生成后自动锁定）</span>
               </div>
 
-              <button
-                class="btn-primary text-sm"
-                :disabled="generatingRefImage"
-                @click="handleGenerateRefImage"
-              >
-                <svg v-if="generatingRefImage" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-                <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-                {{ generatingRefImage ? 'AI 生成中…' : (anchor?.ref_image_url ? '重新生成' : 'AI 生成参考图') }}
-              </button>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  class="btn-primary text-sm"
+                  :disabled="generatingRefImage || uploadingRefImage"
+                  @click="handleGenerateRefImage"
+                >
+                  <svg v-if="generatingRefImage" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  {{ generatingRefImage ? 'AI 生成中…' : (anchor?.ref_image_url ? '重新生成' : 'AI 生成参考图') }}
+                </button>
 
-              <p class="text-xs text-gray-400">AI 将根据图片生成提示词生成参考图，生成完成后自动锁定。</p>
+                <button
+                  class="btn-secondary text-sm"
+                  :disabled="generatingRefImage || uploadingRefImage"
+                  @click="refImageFileInput?.click()"
+                >
+                  <svg v-if="uploadingRefImage" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  {{ uploadingRefImage ? '上传中…' : '上传参考图' }}
+                </button>
+                <input
+                  ref="refImageFileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  class="hidden"
+                  @change="handleUploadRefImage"
+                />
+              </div>
+
+              <p class="text-xs text-gray-400">AI 将根据图片生成提示词生成参考图，生成完成后自动锁定；或手动上传图片作为参考图。</p>
             </div>
           </div>
         </div>

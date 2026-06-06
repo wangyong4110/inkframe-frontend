@@ -1,4 +1,4 @@
-import type { Character, ApiResponse, CreateCharacterForm } from '~/types'
+import type { Character, CharacterLook, CreateCharacterLookForm, ApiResponse, CreateCharacterForm } from '~/types'
 
 export const useCharacterApi = () => {
   const { request, requestMultipart } = useApi()
@@ -45,6 +45,12 @@ export const useCharacterApi = () => {
   const uploadPortrait = (id: number, file: File) =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
+  const uploadCharacterImage = (id: number, file: File, type: 'portrait' | 'three_view' | 'face_closeup') =>
+    requestMultipart<{ url: string; character: Character }>(`/characters/${id}/image/upload?type=${type}`, file)
+
+  const uploadLookImage = (characterId: number, lookId: number, file: File, type: 'portrait' | 'three_view' | 'face_closeup') =>
+    requestMultipart<{ url: string; look: CharacterLook }>(`/characters/${characterId}/looks/${lookId}/upload?type=${type}`, file)
+
   const previewVoice = (id: number, params?: {
     text?: string
     voice_id?: string
@@ -72,6 +78,40 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ provider: provider ?? '', force }),
     })
 
+  // ── CharacterLook ─────────────────────────────────────────────────────────
+  const listLooks = (characterId: number) =>
+    request<ApiResponse<{ looks: CharacterLook[]; total: number }>>(`/characters/${characterId}/looks`)
+
+  const createLook = (characterId: number, data: CreateCharacterLookForm) =>
+    request<ApiResponse<CharacterLook>>(`/characters/${characterId}/looks`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const updateLook = (characterId: number, lookId: number, data: Partial<CharacterLook>) =>
+    request<ApiResponse<CharacterLook>>(`/characters/${characterId}/looks/${lookId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
+  const deleteLook = (characterId: number, lookId: number) =>
+    request<void>(`/characters/${characterId}/looks/${lookId}`, { method: 'DELETE' })
+
+  const getActiveLook = (characterId: number, chapterNo: number) =>
+    request<ApiResponse<{ look: CharacterLook | null }>>(`/characters/${characterId}/looks/active?chapter_no=${chapterNo}`)
+
+  const generateLookPrompt = (characterId: number, description: string) =>
+    request<ApiResponse<{ visual_prompt: string }>>(`/characters/${characterId}/looks/generate-prompt`, {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    })
+
+  const generateLookImages = (characterId: number, lookId: number, type: 'three_view' | 'face_closeup' | 'portrait', provider?: string) =>
+    request<ApiResponse<CharacterLook>>(`/characters/${characterId}/looks/${lookId}/images`, {
+      method: 'POST',
+      body: JSON.stringify({ type, provider: provider ?? '' }),
+    })
+
   return {
     getCharacters,
     getCharacter,
@@ -82,8 +122,17 @@ export const useCharacterApi = () => {
     generateThreeView,
     generateFaceCloseup,
     uploadPortrait,
+    uploadCharacterImage,
+    uploadLookImage,
     previewVoice,
     aiBatchGenerate,
     batchGenerateImages,
+    listLooks,
+    createLook,
+    updateLook,
+    deleteLook,
+    getActiveLook,
+    generateLookPrompt,
+    generateLookImages,
   }
 }

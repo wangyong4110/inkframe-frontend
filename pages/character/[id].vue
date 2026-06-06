@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CharacterLook, CreateCharacterLookForm } from '~/types'
+
 const characterStore = useCharacterStore()
 const novelStore = useNovelStore()
 const route = useRoute()
@@ -7,6 +9,7 @@ const toast = useToast()
 const { url: lightboxUrl } = useImageLightbox()
 const { editImage } = useImageEditApi()
 const { guardAiProvider } = useAiProviderGuard()
+const characterApi = useCharacterApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -56,7 +59,161 @@ const tabs = [
   { key: 'profile', label: '角色档案' },
   { key: 'images', label: '视觉设计' },
   { key: 'voice', label: '配音设置' },
+  { key: 'looks', label: '形象管理' },
 ]
+
+// ── 形象管理状态 ────────────────────────────────────────────────────────────────
+const looks = ref<CharacterLook[]>([])
+const loadingLooks = ref(false)
+const showLookForm = ref(false)
+const editingLook = ref<CharacterLook | null>(null)
+const generatingLookPrompt = ref(false)
+const generatingLookImage = ref<number | null>(null) // look id being generated
+const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string }>({
+  label: '',
+  chapter_from: 1,
+  chapter_to: 0,
+  is_default: false,
+  sort_order: 0,
+  description: '',
+  visual_prompt: '',
+})
+
+async function fetchLooks() {
+  if (!characterId) return
+  loadingLooks.value = true
+  try {
+    const res = await characterApi.listLooks(characterId)
+    looks.value = (res as any)?.data?.looks ?? (res as any)?.looks ?? []
+  } catch (e: any) {
+    toast.error('加载形象列表失败：' + (e.message || ''))
+  } finally {
+    loadingLooks.value = false
+  }
+}
+
+function openLookForm(look?: CharacterLook) {
+  if (look) {
+    editingLook.value = look
+    lookForm.value = {
+      label: look.label,
+      chapter_from: look.chapter_from,
+      chapter_to: look.chapter_to,
+      is_default: look.is_default,
+      sort_order: look.sort_order,
+      description: look.description ?? '',
+      visual_prompt: look.visual_prompt ?? '',
+    }
+  } else {
+    editingLook.value = null
+    lookForm.value = { label: '', chapter_from: 1, chapter_to: 0, is_default: false, sort_order: 0, description: '', visual_prompt: '' }
+  }
+  showLookForm.value = true
+}
+
+async function handleGenerateLookPrompt() {
+  if (!lookForm.value.description) {
+    toast.error('请先填写外观描述')
+    return
+  }
+  if (!await guardAiProvider('LLM')) return
+  generatingLookPrompt.value = true
+  try {
+    const res = await characterApi.generateLookPrompt(characterId, lookForm.value.description)
+    const prompt = (res as any)?.data?.visual_prompt ?? (res as any)?.visual_prompt ?? ''
+    lookForm.value.visual_prompt = prompt
+    toast.success('视觉提示词已生成')
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || ''))
+  } finally {
+    generatingLookPrompt.value = false
+  }
+}
+
+async function handleSaveLook() {
+  if (!lookForm.value.label) {
+    toast.error('请填写形象名称')
+    return
+  }
+  try {
+    if (editingLook.value) {
+      const updateData: Record<string, unknown> = {
+        label: lookForm.value.label,
+        chapter_from: lookForm.value.chapter_from,
+        chapter_to: lookForm.value.chapter_to,
+        is_default: lookForm.value.is_default,
+        sort_order: lookForm.value.sort_order,
+        description: lookForm.value.description,
+        visual_prompt: lookForm.value.visual_prompt,
+      }
+      await characterApi.updateLook(characterId, editingLook.value.id, updateData)
+      toast.success('形象已更新')
+    } else {
+      await characterApi.createLook(characterId, lookForm.value)
+      toast.success('形象已创建')
+    }
+    showLookForm.value = false
+    await fetchLooks()
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  }
+}
+
+async function handleDeleteLook(look: CharacterLook) {
+  if (!confirm(`确认删除形象「${look.label}」？`)) return
+  try {
+    await characterApi.deleteLook(characterId, look.id)
+    toast.success('形象已删除')
+    await fetchLooks()
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+async function handleGenerateLookImage(look: CharacterLook, type: 'three_view' | 'face_closeup') {
+  if (!await guardAiProvider('IMAGE')) return
+  generatingLookImage.value = look.id
+  try {
+    await characterApi.generateLookImages(characterId, look.id, type, selectedImageProvider.value || undefined)
+    toast.success('图像生成完成')
+    await fetchLooks()
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || ''))
+  } finally {
+    generatingLookImage.value = null
+  }
+}
+
+const uploadingLookImage = ref<number | null>(null) // look id being uploaded
+const lookImageFileInput = ref<HTMLInputElement | null>(null)
+const pendingLookUpload = ref<{ look: CharacterLook; type: 'portrait' | 'three_view' | 'face_closeup' } | null>(null)
+
+function triggerLookUpload(look: CharacterLook, type: 'portrait' | 'three_view' | 'face_closeup') {
+  pendingLookUpload.value = { look, type }
+  lookImageFileInput.value?.click()
+}
+
+async function handleLookImageUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || !pendingLookUpload.value) return
+  const { look, type } = pendingLookUpload.value
+  uploadingLookImage.value = look.id
+  try {
+    await characterApi.uploadLookImage(characterId, look.id, file, type)
+    toast.success('图片已上传')
+    await fetchLooks()
+  } catch (err: any) {
+    toast.error('上传失败：' + (err.message || ''))
+  } finally {
+    uploadingLookImage.value = null
+    pendingLookUpload.value = null
+    if (lookImageFileInput.value) lookImageFileInput.value.value = ''
+  }
+}
+
+watch(activeTab, (val) => {
+  if (val === 'looks' && looks.value.length === 0) fetchLooks()
+})
 
 useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
 
@@ -415,6 +572,176 @@ function getRoleLabel(role: string): string {
         ref="voicePanelRef"
         :character="characterStore.currentCharacter"
         @update="(data) => characterStore.patchCurrentCharacter(data)"
+      />
+    </div>
+
+    <!-- 形象管理 Tab -->
+    <div v-if="activeTab === 'looks'" class="space-y-4">
+      <!-- 顶部操作栏 -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100">角色形象时间线</h3>
+          <p class="text-sm text-gray-500 mt-0.5">管理角色在不同章节区间的外观形象，生成分镜图像时自动匹配当前章节对应的形象。</p>
+        </div>
+        <button class="btn-primary text-sm" @click="openLookForm()">+ 新建形象</button>
+      </div>
+
+      <!-- 空状态 -->
+      <div v-if="loadingLooks" class="text-center text-gray-400 py-12">加载中…</div>
+      <div v-else-if="looks.length === 0" class="card p-8 text-center text-gray-400">
+        <p class="text-4xl mb-3">🎭</p>
+        <p class="font-medium">暂无形象</p>
+        <p class="text-sm mt-1">点击「新建形象」为角色创建不同时期的外观版本</p>
+      </div>
+
+      <!-- 形象列表（时间线视图） -->
+      <div v-else class="space-y-3">
+        <div
+          v-for="look in looks"
+          :key="look.id"
+          class="card p-4 flex gap-4 items-start"
+        >
+          <!-- 缩略图 -->
+          <div class="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+            <img
+              v-if="look.portrait || look.face_closeup"
+              :src="look.portrait || look.face_closeup"
+              class="w-full h-full object-cover"
+            />
+            <span v-else class="text-2xl text-gray-300">🎭</span>
+          </div>
+
+          <!-- 信息 -->
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-gray-800 dark:text-gray-100">{{ look.label }}</span>
+              <span v-if="look.is_default" class="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">默认</span>
+              <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
+                第 {{ look.chapter_from }} 章
+                {{ look.chapter_to > 0 ? `— 第 ${look.chapter_to} 章` : '起（无限延伸）' }}
+              </span>
+            </div>
+            <p v-if="look.description" class="text-sm text-gray-500 mt-1 line-clamp-2">{{ look.description }}</p>
+            <p v-if="look.visual_prompt" class="text-xs text-gray-400 mt-1 line-clamp-1 font-mono">{{ look.visual_prompt }}</p>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-2 mt-2 flex-wrap">
+              <button
+                class="btn-secondary text-xs py-1 px-2"
+                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                @click="handleGenerateLookImage(look, 'face_closeup')"
+              >
+                {{ generatingLookImage === look.id ? '生成中…' : 'AI 生成头像' }}
+              </button>
+              <button
+                class="btn-secondary text-xs py-1 px-2"
+                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                @click="handleGenerateLookImage(look, 'three_view')"
+              >
+                {{ generatingLookImage === look.id ? '生成中…' : 'AI 三视图' }}
+              </button>
+              <button
+                class="btn-secondary text-xs py-1 px-2"
+                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                @click="triggerLookUpload(look, 'portrait')"
+              >
+                {{ uploadingLookImage === look.id ? '上传中…' : '上传头像' }}
+              </button>
+              <button
+                class="btn-secondary text-xs py-1 px-2"
+                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                @click="triggerLookUpload(look, 'three_view')"
+              >
+                {{ uploadingLookImage === look.id ? '上传中…' : '上传三视图' }}
+              </button>
+              <button class="btn-secondary text-xs py-1 px-2" @click="openLookForm(look)">编辑</button>
+              <button class="text-xs text-red-500 hover:text-red-700 py-1 px-2" @click="handleDeleteLook(look)">删除</button>
+            </div>
+          </div>
+
+          <!-- 三视图缩略图 -->
+          <div v-if="look.three_view_sheet" class="w-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+            <img :src="look.three_view_sheet" class="w-full h-auto object-cover" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 新建/编辑形象弹窗 -->
+      <div v-if="showLookForm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showLookForm = false" />
+        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
+          <h3 class="font-semibold text-gray-800 dark:text-gray-100 text-lg">
+            {{ editingLook ? '编辑形象' : '新建形象' }}
+          </h3>
+
+          <!-- 形象名称 -->
+          <div>
+            <label class="label">形象名称 <span class="text-red-500">*</span></label>
+            <input v-model="lookForm.label" class="input" placeholder="如：少年时期、伪装成书生、觉醒后" />
+          </div>
+
+          <!-- 章节范围 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label">起始章节</label>
+              <input v-model.number="lookForm.chapter_from" type="number" min="1" class="input" placeholder="1" />
+            </div>
+            <div>
+              <label class="label">结束章节（0=无限）</label>
+              <input v-model.number="lookForm.chapter_to" type="number" min="0" class="input" placeholder="0" />
+            </div>
+          </div>
+
+          <!-- 默认形象 -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input v-model="lookForm.is_default" type="checkbox" class="rounded" />
+            <span class="text-sm text-gray-700 dark:text-gray-300">设为默认形象（无章节匹配时使用）</span>
+          </label>
+
+          <!-- 外观描述 -->
+          <div>
+            <label class="label">外观描述（中文）</label>
+            <textarea
+              v-model="lookForm.description"
+              class="input h-20 resize-none"
+              placeholder="描述该时期的外貌特征，如服装、发型、特殊标志等"
+            />
+          </div>
+
+          <!-- 视觉提示词 -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="label mb-0">AI 图像提示词（英文）</label>
+              <button
+                class="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                :disabled="generatingLookPrompt || !lookForm.description"
+                @click="handleGenerateLookPrompt"
+              >
+                {{ generatingLookPrompt ? '生成中…' : '✨ AI 生成' }}
+              </button>
+            </div>
+            <textarea
+              v-model="lookForm.visual_prompt"
+              class="input h-20 resize-none font-mono text-xs"
+              placeholder="English visual prompt for AI image generation…"
+            />
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="flex justify-end gap-3 pt-2">
+            <button class="btn-secondary" @click="showLookForm = false">取消</button>
+            <button class="btn-primary" @click="handleSaveLook">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 隐藏文件输入（形象图片上传） -->
+      <input
+        ref="lookImageFileInput"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        class="hidden"
+        @change="handleLookImageUpload"
       />
     </div>
   </div>

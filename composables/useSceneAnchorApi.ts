@@ -9,7 +9,7 @@ import type {
 export type { SceneAnchor, SceneAnchorType, CreateSceneAnchorPayload, UpdateSceneAnchorPayload, ConsistencyLog }
 
 export function useSceneAnchorApi() {
-  const { request } = useApi()
+  const { request, requestMultipart } = useApi()
 
   async function getSceneAnchor(id: number): Promise<SceneAnchor> {
     const res: { code: number; data: SceneAnchor } = await request(`/scene-anchors/${id}`)
@@ -109,6 +109,13 @@ export function useSceneAnchorApi() {
     return res.data
   }
 
+  async function uploadRefImage(anchorId: number, file: File): Promise<{ url: string; anchor: SceneAnchor }> {
+    return requestMultipart<{ url: string; anchor: SceneAnchor }>(
+      `/scene-anchors/${anchorId}/ref-image/upload`,
+      file,
+    )
+  }
+
   return {
     getSceneAnchor,
     listSceneAnchors,
@@ -123,5 +130,6 @@ export function useSceneAnchorApi() {
     lockRefImage,
     getConsistencyLogs,
     batchGenerateRefImages,
+    uploadRefImage,
   }
 }

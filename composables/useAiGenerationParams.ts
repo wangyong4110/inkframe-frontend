@@ -8,7 +8,7 @@
  */
 
 interface AiGenParamsCookie {
-  pacing?: 'slow' | 'normal' | 'fast'
+  pacing?: 'auto' | 'slow' | 'normal' | 'fast'
   targetDuration?: number
   maxTokens?: number
   temperature?: number
@@ -25,7 +25,7 @@ export const useAiGenerationParams = () => {
   })
 
   // ── Working refs — initialized from cookie, fall back to sensible defaults ──
-  const pacing            = ref<'slow' | 'normal' | 'fast'>(cookie.value?.pacing ?? 'normal')
+  const pacing            = ref<'auto' | 'slow' | 'normal' | 'fast'>(cookie.value?.pacing ?? 'auto')
   const targetDuration    = ref<number>(cookie.value?.targetDuration ?? 0)
   const advMaxTokens      = ref<number>(cookie.value?.maxTokens ?? 0)
   const advTemperature    = ref<number>(cookie.value?.temperature ?? 0)
@@ -62,7 +62,7 @@ export const useAiGenerationParams = () => {
   } | null | undefined) {
     if (!video) return
     if (cookie.value?.pacing === undefined)
-      pacing.value = (video.pacing as 'slow' | 'normal' | 'fast') ?? 'normal'
+      pacing.value = (video.pacing as 'auto' | 'slow' | 'normal' | 'fast') ?? 'auto'
     if (cookie.value?.targetDuration === undefined)
       targetDuration.value = video.target_duration ?? 0
   }
