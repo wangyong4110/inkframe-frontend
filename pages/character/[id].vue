@@ -63,7 +63,8 @@ useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
 watch(character, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
-  if (characterId) {
+  if (!characterId) return
+  try {
     await characterStore.fetchCharacter(characterId)
     const c = characterStore.currentCharacter
     const novelIdToFetch = c?.novel_id ?? novelId
@@ -83,6 +84,8 @@ onMounted(async () => {
     }
     await nextTick()
     isDirty.value = false
+  } catch (e: any) {
+    toast.error('角色加载失败：' + (e.message || '请检查网络或刷新页面'))
   }
 })
 

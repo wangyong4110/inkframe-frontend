@@ -24,6 +24,8 @@ const savingCharacter = ref(false)
 
 const characters = computed(() => characterStore.characters)
 
+onMounted(() => characterStore.fetchCharacters(props.novelId))
+
 function openCharacterImage(character: Character) {
   const src = character.three_view_sheet || character.portrait || ''
   if (!src) return
