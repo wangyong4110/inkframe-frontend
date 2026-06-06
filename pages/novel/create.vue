@@ -302,49 +302,51 @@ async function chunkedUpload(file: File): Promise<string> {
   return taskId
 }
 
-async function pollImportTask(taskId: string) {
-  const maxWait = 15 * 60 * 1000 // 15 分钟超时（大文件导入）
-  const interval = 1500
-  const start = Date.now()
+function pollImportTask(taskId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const maxWait = 15 * 60 * 1000 // 15 分钟超时（大文件导入）
+    const interval = 1500
+    const start = Date.now()
 
-  const tick = async () => {
-    if (Date.now() - start > maxWait) {
-      fileError.value = '导入超时，请检查文件是否过大'
-      fileUploading.value = false
-      return
-    }
-    try {
-      const res = await fetch(`${apiBase}/tasks/${taskId}`, { headers: getAuthHeader() })
-      const data = await res.json()
-      const task = data.data
-      if (!task) { setTimeout(tick, interval); return }
-      const taskData = task.data ?? {}
+    const tick = async () => {
+      if (Date.now() - start > maxWait) {
+        fileError.value = '导入超时，请检查文件是否过大'
+        resolve()
+        return
+      }
+      try {
+        const res = await fetch(`${apiBase}/tasks/${taskId}`, { headers: getAuthHeader() })
+        const data = await res.json()
+        const task = data.data
+        if (!task) { setTimeout(tick, interval); return }
+        const taskData = task.data ?? {}
 
-      if (task.status === 'completed') {
-        fileProgress.value = 100
-        fileUploading.value = false
-        if (taskData.novel_id) {
-          // 若后端已启动分析，直接跟踪已有任务；否则让详情页触发分析
-          const q = taskData.analysis_task_id
-            ? `analysis_task_id=${taskData.analysis_task_id}`
-            : 'analyze=1'
-          router.push(`/novel/${taskData.novel_id}?${q}`)
+        if (task.status === 'completed') {
+          fileProgress.value = 100
+          if (taskData.novel_id) {
+            // 若后端已启动分析，直接跟踪已有任务；否则让详情页触发分析
+            const q = taskData.analysis_task_id
+              ? `analysis_task_id=${taskData.analysis_task_id}`
+              : 'analyze=1'
+            await router.push(`/novel/${taskData.novel_id}?${q}`)
+          } else {
+            fileError.value = '导入完成但未返回小说ID'
+          }
+          resolve()
+        } else if (task.status === 'failed') {
+          fileError.value = task.error || taskData.message || '导入失败'
+          resolve()
         } else {
-          fileError.value = '导入完成但未返回小说ID'
+          // running/pending — keep polling, animate progress 50→90
+          fileProgress.value = Math.min(90, fileProgress.value + 2)
+          setTimeout(tick, interval)
         }
-      } else if (task.status === 'failed') {
-        fileError.value = task.error || taskData.message || '导入失败'
-        fileUploading.value = false
-      } else {
-        // running/pending — keep polling, animate progress 50→90
-        fileProgress.value = Math.min(90, fileProgress.value + 2)
+      } catch {
         setTimeout(tick, interval)
       }
-    } catch {
-      setTimeout(tick, interval)
     }
-  }
-  setTimeout(tick, interval)
+    setTimeout(tick, interval)
+  })
 }
 
 // ── Screen 3b: 爬取小说 ────────────────────────────────────────────────────────
