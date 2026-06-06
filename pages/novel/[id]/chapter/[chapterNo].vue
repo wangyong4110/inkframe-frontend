@@ -597,13 +597,26 @@ function countWords(text: string): number {
   return text.length
 }
 
-// Fix 5: Replace inline filter calls with computed properties
-const mainCharacters = computed(() => characters.value.filter((c: any) => c.role !== 'minor'))
-const minorCharacters = computed(() => characters.value.filter((c: any) => c.role === 'minor'))
+// Filter helpers: when chapter content exists, only show items whose name appears in the text.
+function appearsInContent(name: string): boolean {
+  if (!content.value) return true
+  return content.value.includes(name)
+}
+
+const mainCharacters = computed(() =>
+  characters.value.filter((c: any) => c.role !== 'minor' && appearsInContent(c.name)),
+)
+const minorCharacters = computed(() =>
+  characters.value.filter((c: any) => c.role === 'minor' && appearsInContent(c.name)),
+)
 
 function getActiveCharacters(): any[] {
   return mainCharacters.value
 }
+
+const chapterAnchors = computed(() =>
+  anchors.value.filter((a: any) => appearsInContent(a.name)),
+)
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
 const generatingOutline = ref(false)
@@ -1872,12 +1885,12 @@ onUnmounted(() => {
               </div>
 
               <!-- 锚点列表 -->
-              <div v-if="anchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
+              <div v-if="chapterAnchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
                 暂无场景锚点，点击「新建场景」创建，或从右侧 AI 助手中提取
               </div>
               <div class="space-y-3">
                 <div
-                  v-for="anchor in anchors"
+                  v-for="anchor in chapterAnchors"
                   :key="anchor.id"
                   class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                 >

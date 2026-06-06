@@ -16,6 +16,13 @@ const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 
+// Clear stale store data synchronously (before any child components mount)
+// so children never see data from a previously-visited novel.
+if (!isNaN(novelId)) {
+  chapterStore.clearForNovel(novelId)
+  characterStore.clearForNovel(novelId)
+}
+
 const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'scene_anchors', 'knowledge', 'foreshadow', 'settings'])
 const initialTab = route.query.tab as string
 const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
@@ -330,9 +337,6 @@ watch(() => route.params.id, async (newId, oldId) => {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
-  // Clear stale data from a previously viewed novel before loading
-  chapterStore.clearForNovel(novelId)
-  characterStore.clearForNovel(novelId)
   await loadNovelData(novelId)
   // Mark initial tab as fetched so it won't immediately re-fetch on first switchTab
   tabLastFetchedAt[activeTab.value] = Date.now()
