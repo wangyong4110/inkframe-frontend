@@ -238,7 +238,7 @@ export const useVideoApi = () => {
       body: JSON.stringify({ ...review, ...(provider ? { provider } : {}) }),
     })
 
-  const applyStoryboardDiffs = (id: number, diffs: Array<{ shot_id?: number; shot_no: number; narration?: string; description?: string }>, recordId?: number) =>
+  const applyStoryboardDiffs = (id: number, diffs: Array<{ shot_no: number; fields: Record<string, string> }>, recordId?: number) =>
     request<ApiResponse<{ updated_shots: number }>>(`/videos/${id}/storyboard/optimize/apply`, {
       method: 'POST',
       body: JSON.stringify({ diffs, ...(recordId ? { record_id: recordId } : {}) }),

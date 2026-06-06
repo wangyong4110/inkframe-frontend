@@ -1121,12 +1121,14 @@ export interface ShotReviewFeedback {
   suggestion: string
   severity: 'info' | 'warning' | 'error'
   suggested_narration?: string
+  suggested_dialogue?: string
   suggested_description?: string
 }
 
 export interface ShotInsertSuggestion {
   after_shot_no: number
   narration: string
+  dialogue?: string
   description: string
   duration: number
   shot_size?: string

@@ -27,6 +27,7 @@ const shots = computed(() => videoStore.storyboard)
 type DiffItem = {
   shot_no: number
   orig_narration: string; suggested_narration: string; has_narration_diff: boolean
+  orig_dialogue: string; suggested_dialogue: string; has_dialogue_diff: boolean
   orig_description: string; suggested_description: string; has_description_diff: boolean
   issues: string[]; severity: 'info' | 'warning' | 'error'
   suggestion?: string   // 结构性建议文本（无可应用文字改动时展示）
@@ -281,13 +282,17 @@ function openHistoryDiffModal(record: ReviewRecord) {
   for (const fb of (record.review.shot_feedback ?? [])) {
     const shot = shotMap.get(fb.shot_no)
     const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
+    const hasDial = !!fb.suggested_dialogue && fb.suggested_dialogue !== (shot?.dialogue ?? '')
     const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
-    if (!hasNarr && !hasDesc) continue
+    if (!hasNarr && !hasDial && !hasDesc) continue
     items.push({
       shot_no: fb.shot_no,
       orig_narration: shot?.narration ?? '',
       suggested_narration: fb.suggested_narration ?? '',
       has_narration_diff: hasNarr,
+      orig_dialogue: shot?.dialogue ?? '',
+      suggested_dialogue: fb.suggested_dialogue ?? '',
+      has_dialogue_diff: hasDial,
       orig_description: shot?.description ?? '',
       suggested_description: fb.suggested_description ?? '',
       has_description_diff: hasDesc,
@@ -309,19 +314,23 @@ function openDiffModal() {
   for (const fb of reviewResult.value.shot_feedback) {
     const shot = shotMap.get(fb.shot_no)
     const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
+    const hasDial = !!fb.suggested_dialogue && fb.suggested_dialogue !== (shot?.dialogue ?? '')
     const hasDesc = !!fb.suggested_description && fb.suggested_description !== (shot?.description ?? '')
     items.push({
       shot_no: fb.shot_no,
       orig_narration: shot?.narration ?? '',
       suggested_narration: fb.suggested_narration ?? '',
       has_narration_diff: hasNarr,
+      orig_dialogue: shot?.dialogue ?? '',
+      suggested_dialogue: fb.suggested_dialogue ?? '',
+      has_dialogue_diff: hasDial,
       orig_description: shot?.description ?? '',
       suggested_description: fb.suggested_description ?? '',
       has_description_diff: hasDesc,
       issues: fb.issues,
       severity: fb.severity,
-      suggestion: (!hasNarr && !hasDesc) ? ((fb as any).suggestion ?? '') : undefined,
-      selected: hasNarr || hasDesc,
+      suggestion: (!hasNarr && !hasDial && !hasDesc) ? ((fb as any).suggestion ?? '') : undefined,
+      selected: hasNarr || hasDial || hasDesc,
       record_id: reviewResult.value.record_id,
     })
   }
@@ -343,11 +352,16 @@ async function handleApplyDiffs() {
   try {
     const api = useVideoApi()
     const recordId = selected[0]?.record_id
-    const res = await api.applyStoryboardDiffs(props.videoId, selected.map(d => ({
-      shot_no: d.shot_no,
-      ...(d.has_narration_diff ? { narration: d.suggested_narration } : {}),
-      ...(d.has_description_diff ? { description: d.suggested_description } : {}),
-    })), recordId)
+    const res = await api.applyStoryboardDiffs(props.videoId, selected.map(d => {
+      const fields: Record<string, string> = {}
+      if (d.has_narration_diff && d.suggested_narration != null) fields.narration = d.suggested_narration
+      if (d.has_dialogue_diff && d.suggested_dialogue != null) {
+        fields.dialogue = d.suggested_dialogue
+        fields.narration = '' // 对白镜头清空旁白
+      }
+      if (d.has_description_diff && d.suggested_description != null) fields.description = d.suggested_description
+      return { shot_no: d.shot_no, fields }
+    }), recordId)
     const count = res.data?.updated_shots ?? 0
     applyResult.value = { count }
     toast.success(`已应用 ${count} 处修改，正在重新评分…`)
@@ -798,6 +812,10 @@ defineExpose({ startReview, reviewing })
                     <div v-if="fb.suggested_narration" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                       <div class="text-xs font-medium text-green-600 dark:text-green-400 mb-0.5">建议旁白改为</div>
                       <div class="text-xs text-gray-700 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded p-1.5">{{ fb.suggested_narration }}</div>
+                    </div>
+                    <div v-if="fb.suggested_dialogue" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                      <div class="text-xs font-medium text-blue-600 dark:text-blue-400 mb-0.5">建议改为对白</div>
+                      <div class="text-xs text-gray-700 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20 rounded p-1.5">{{ fb.suggested_dialogue }}</div>
                     </div>
                     <div v-if="fb.suggested_description" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                       <div class="text-xs font-medium text-green-600 dark:text-green-400 mb-0.5">建议画面描述改为</div>
