@@ -166,6 +166,8 @@ export interface Character {
   uuid: string
   name: string
   role: CharacterRole
+  gender?: string            // male / female / neutral
+  age?: string               // 如 "16" / "约25岁" / "少年"
   description?: string       // 统一描述（外貌、性格、背景、说话风格等）
   inner_conflict?: string    // 内在矛盾
   core_desire?: string       // 核心渴望

@@ -19,6 +19,7 @@ if (isNaN(characterId)) {
 
 const activeTab = ref('profile')
 const saving = ref(false)
+const reanalyzing = ref(false)
 const voicePanelRef = ref<{ getVoiceData: () => Record<string, unknown> } | null>(null)
 const isDirty = ref(false)
 const generatingThreeView = ref(false)
@@ -48,6 +49,8 @@ const selectedImageProvider = computed(() => novelStore.currentNovel?.image_mode
 const character = ref({
   name: '',
   role: 'protagonist' as string,
+  gender: '' as string,
+  age: '' as string,
   description: '',       // 统一描述：外貌、性格、背景、说话风格等
   visual_prompt: '',     // 英文图像生成提示词
   portrait: '',
@@ -232,6 +235,8 @@ onMounted(async () => {
       character.value = {
         name: c.name ?? '',
         role: c.role ?? 'protagonist',
+        gender: (c as any).gender ?? '',
+        age: (c as any).age ?? '',
         description: c.description ?? '',
         visual_prompt: (c as any).visual_prompt ?? '',
         portrait: c.portrait ?? '',
@@ -257,6 +262,33 @@ async function handleSave() {
     toast.error('保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
+  }
+}
+
+async function handleReanalyze() {
+  reanalyzing.value = true
+  try {
+    const res = await characterApi.reanalyzeCharacter(characterId)
+    if (res.data) {
+      const d = res.data as any
+      character.value.description = d.description ?? character.value.description
+      character.value.visual_prompt = d.visual_prompt ?? character.value.visual_prompt
+      character.value.gender = d.gender ?? character.value.gender
+      character.value.age = d.age ?? character.value.age
+      // 同步配音字段到 store，让配音设置 tab 实时反映 AI 推荐结果
+      characterStore.patchCurrentCharacter({
+        voice_id: d.voice_id,
+        voice_style: d.voice_style,
+        voice_language: d.voice_language,
+        voice_speed: d.voice_speed,
+      })
+      isDirty.value = false
+      toast.success('角色信息已重新分析')
+    }
+  } catch (e: any) {
+    toast.error('重新分析失败：' + (e.message || ''))
+  } finally {
+    reanalyzing.value = false
   }
 }
 
@@ -406,17 +438,22 @@ function getRoleLabel(role: string): string {
           </svg>
         </button>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-            {{ character.name || '加载中...' }}
-          </h1>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+              {{ character.name || '加载中...' }}
+            </h1>
+            <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="getRoleColor(character.role)">
+              {{ getRoleLabel(character.role) }}
+            </span>
+          </div>
           <p class="text-sm text-gray-500 dark:text-gray-400">角色编辑器</p>
         </div>
       </div>
       <div class="flex items-center space-x-2">
-        <span class="px-3 py-1 text-sm font-medium rounded-full" :class="getRoleColor(character.role)">
-          {{ getRoleLabel(character.role) }}
-        </span>
-        <button class="btn-primary" :disabled="saving" @click="handleSave">
+        <button class="btn-secondary" :disabled="reanalyzing || saving" @click="handleReanalyze">
+          {{ reanalyzing ? '分析中...' : '重新分析' }}
+        </button>
+        <button class="btn-primary" :disabled="saving || reanalyzing" @click="handleSave">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>
@@ -457,6 +494,19 @@ function getRoleLabel(role: string): string {
             <option value="supporting">配角</option>
             <option value="minor">路人</option>
           </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">性别</label>
+          <select v-model="character.gender" class="input">
+            <option value="">未设置</option>
+            <option value="male">男</option>
+            <option value="female">女</option>
+            <option value="neutral">中性</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">年龄</label>
+          <input v-model="character.age" type="text" class="input" placeholder="如：16 / 约25岁 / 少年 / 中年" />
         </div>
       </div>
 

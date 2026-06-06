@@ -112,6 +112,9 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ type, provider: provider ?? '' }),
     })
 
+  const reanalyzeCharacter = (id: number) =>
+    request<ApiResponse<Character>>(`/characters/${id}/reanalyze`, { method: 'POST' })
+
   return {
     getCharacters,
     getCharacter,
@@ -134,5 +137,6 @@ export const useCharacterApi = () => {
     getActiveLook,
     generateLookPrompt,
     generateLookImages,
+    reanalyzeCharacter,
   }
 }
