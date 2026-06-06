@@ -4,7 +4,7 @@ export const useItemApi = () => {
   const { request, requestMultipart } = useApi()
 
   const listItems = (novelId: number) =>
-    request<ApiResponse<Item[]>>(`/novels/${novelId}/items`)
+    request<ApiResponse<{ items: Item[]; total: number; page: number; page_size: number }>>(`/novels/${novelId}/items`)
 
   const createItem = (novelId: number, data: Partial<Item>) =>
     request<ApiResponse<Item>>(`/novels/${novelId}/items`, {

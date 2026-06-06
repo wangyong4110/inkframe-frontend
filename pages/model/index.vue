@@ -22,17 +22,21 @@ const {
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
-// 显示所有系统 provider（含未配置的，以便用户填写 API Key）+ 已配置的租户私有 provider
 const filteredProviders = computed(() =>
   providers.value.filter(p =>
-    p.tenant_id === 0 ||            // 系统 provider：全部显示
-    p.name === 'ollama' ||          // Ollama 无需 key
+    p.name === 'ollama' ||
     (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
   )
 )
-const isProviderConfigured = (p: ModelProvider) =>
-  p.name === 'ollama' ||
-  (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+
+// 尚未配置密钥的系统级语音/音效供应商，引导用户直接编辑而非新建
+const unconfiguredVoiceProviders = computed(() =>
+  providers.value.filter(p =>
+    p.tenant_id === 0 &&
+    (p.type === 'voice' || p.type === 'tts' || p.type === 'sfx') &&
+    !(p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
+  )
+)
 const listLoading = ref(false)
 const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
@@ -1000,9 +1004,6 @@ watch(activeTab, (tab) => {
                 <span class="px-1.5 py-0.5 text-xs rounded-full font-medium" :class="p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
                   {{ p.is_active ? '已启用' : '已禁用' }}
                 </span>
-                <span v-if="!isProviderConfigured(p)" class="px-1.5 py-0.5 text-xs rounded-full font-medium bg-amber-100 text-amber-700">
-                  未配置 API Key
-                </span>
               </div>
               <div class="mt-1 flex items-center gap-4 text-xs text-gray-500 flex-wrap">
                 <span v-if="p.type" class="font-medium">{{
@@ -1125,6 +1126,35 @@ watch(activeTab, (tab) => {
               </button>
               <button class="btn-ghost text-xs px-3 py-1.5" @click="closeAddModelForm(p.id)">取消</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 待配置语音/音效供应商提示 -->
+      <div v-if="unconfiguredVoiceProviders.length > 0" class="mt-6">
+        <div class="flex items-center gap-2 mb-3">
+          <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+          </svg>
+          <span class="text-sm font-medium text-amber-700 dark:text-amber-400">可用的语音合成供应商（尚未配置密钥）</span>
+          <span class="text-xs text-gray-400">点击「配置」填写 API Key 后即可在角色配音中选择音色</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div
+            v-for="p in unconfiguredVoiceProviders" :key="p.id"
+            class="flex items-center gap-3 rounded-xl border border-dashed border-amber-200 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/10 px-4 py-3"
+          >
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0" :class="providerColor(p.name)">
+              {{ (p.display_name || p.name).charAt(0).toUpperCase() }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ p.display_name || p.name }}</div>
+              <div class="text-xs text-gray-400 font-mono">{{ p.name }}</div>
+            </div>
+            <button
+              class="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+              @click="openEditProvider(p)"
+            >配置</button>
           </div>
         </div>
       </div>

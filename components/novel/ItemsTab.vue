@@ -26,7 +26,7 @@ async function fetchItems() {
   itemsLoading.value = true
   try {
     const resp = await itemApi.listItems(props.novelId)
-    items.value = (resp as any).data ?? []
+    items.value = resp.data?.items ?? []
   } catch (e: any) {
     toast.error('加载道具失败：' + (e?.message || '未知错误'))
   } finally {
