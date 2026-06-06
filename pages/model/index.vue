@@ -22,12 +22,17 @@ const {
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
+// 显示所有系统 provider（含未配置的，以便用户填写 API Key）+ 已配置的租户私有 provider
 const filteredProviders = computed(() =>
   providers.value.filter(p =>
-    p.name === 'ollama' ||
+    p.tenant_id === 0 ||            // 系统 provider：全部显示
+    p.name === 'ollama' ||          // Ollama 无需 key
     (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
   )
 )
+const isProviderConfigured = (p: ModelProvider) =>
+  p.name === 'ollama' ||
+  (p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
 const listLoading = ref(false)
 const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
@@ -994,6 +999,9 @@ watch(activeTab, (tab) => {
                 <span v-else class="px-1.5 py-0.5 text-xs rounded bg-violet-50 text-violet-600 border border-violet-200">租户私有</span>
                 <span class="px-1.5 py-0.5 text-xs rounded-full font-medium" :class="p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
                   {{ p.is_active ? '已启用' : '已禁用' }}
+                </span>
+                <span v-if="!isProviderConfigured(p)" class="px-1.5 py-0.5 text-xs rounded-full font-medium bg-amber-100 text-amber-700">
+                  未配置 API Key
                 </span>
               </div>
               <div class="mt-1 flex items-center gap-4 text-xs text-gray-500 flex-wrap">

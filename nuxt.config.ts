@@ -25,6 +25,7 @@ export default defineNuxtConfig({
         { name: 'description', content: '基于AI的智能小说创作平台，支持小说生成、视频制作、多模型管理' },
       ],
       link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
       ],
     },
