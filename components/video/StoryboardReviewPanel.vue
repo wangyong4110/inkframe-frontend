@@ -47,9 +47,38 @@ const applyResult = ref<{ count: number } | null>(null)
 // ── Structural changes (insert / delete) ──
 const applyingInserts = ref(false)
 const applyingDeletes = ref(false)
-// Track which individual inserts/deletes have already been applied this session
-const appliedInsertIndexes = ref<Set<number>>(new Set())
-const appliedDeleteShotNos = ref<Set<number>>(new Set())
+
+// Applied state keyed by record_id — same review's suggestions cannot be applied twice
+const appliedInsertsByRecord = ref(new Map<number, Set<number>>())
+const appliedDeletesByRecord = ref(new Map<number, Set<number>>())
+
+const currentRecordId = computed(() => reviewResult.value?.record_id)
+
+const appliedInsertIndexes = computed((): Set<number> => {
+  const rid = currentRecordId.value
+  return rid != null ? (appliedInsertsByRecord.value.get(rid) ?? new Set()) : new Set()
+})
+
+const appliedDeleteShotNos = computed((): Set<number> => {
+  const rid = currentRecordId.value
+  return rid != null ? (appliedDeletesByRecord.value.get(rid) ?? new Set()) : new Set()
+})
+
+function markInsertApplied(idx: number) {
+  const rid = currentRecordId.value
+  if (rid == null) return
+  const s = new Set(appliedInsertsByRecord.value.get(rid) ?? [])
+  s.add(idx)
+  appliedInsertsByRecord.value = new Map(appliedInsertsByRecord.value).set(rid, s)
+}
+
+function markDeleteApplied(shotNo: number) {
+  const rid = currentRecordId.value
+  if (rid == null) return
+  const s = new Set(appliedDeletesByRecord.value.get(rid) ?? [])
+  s.add(shotNo)
+  appliedDeletesByRecord.value = new Map(appliedDeletesByRecord.value).set(rid, s)
+}
 
 async function handleApplyInsert(ins: ShotInsertSuggestion, idx: number) {
   if (appliedInsertIndexes.value.has(idx)) return
@@ -57,7 +86,7 @@ async function handleApplyInsert(ins: ShotInsertSuggestion, idx: number) {
   try {
     const api = useVideoApi()
     await api.applyReviewInserts(props.videoId, [ins])
-    appliedInsertIndexes.value = new Set([...appliedInsertIndexes.value, idx])
+    markInsertApplied(idx)
     toast.success(`已在镜头 #${ins.after_shot_no} 后插入新镜头`)
     await videoStore.fetchStoryboard(props.videoId)
   } catch (e: any) {
@@ -76,8 +105,7 @@ async function handleApplyAllInserts() {
     const api = useVideoApi()
     const res = await api.applyReviewInserts(props.videoId, pending)
     const count = res.data?.inserted_shots ?? pending.length
-    reviewResult.value.suggested_inserts.forEach((_, i) => appliedInsertIndexes.value.add(i))
-    appliedInsertIndexes.value = new Set(appliedInsertIndexes.value)
+    reviewResult.value.suggested_inserts.forEach((_, i) => markInsertApplied(i))
     toast.success(`已插入 ${count} 个新镜头`)
     await videoStore.fetchStoryboard(props.videoId)
   } catch (e: any) {
@@ -93,7 +121,7 @@ async function handleApplyDelete(del: ShotDeleteSuggestion) {
   try {
     const api = useVideoApi()
     await api.applyReviewDeletes(props.videoId, [del.shot_no])
-    appliedDeleteShotNos.value = new Set([...appliedDeleteShotNos.value, del.shot_no])
+    markDeleteApplied(del.shot_no)
     toast.success(`已删除镜头 #${del.shot_no}`)
     await videoStore.fetchStoryboard(props.videoId)
   } catch (e: any) {
@@ -114,8 +142,7 @@ async function handleApplyAllDeletes() {
     const api = useVideoApi()
     const res = await api.applyReviewDeletes(props.videoId, pending)
     const count = res.data?.deleted_shots ?? pending.length
-    pending.forEach(no => appliedDeleteShotNos.value.add(no))
-    appliedDeleteShotNos.value = new Set(appliedDeleteShotNos.value)
+    pending.forEach(no => markDeleteApplied(no))
     toast.success(`已删除 ${count} 个镜头`)
     await videoStore.fetchStoryboard(props.videoId)
   } catch (e: any) {
@@ -280,6 +307,7 @@ function openHistoryDiffModal(record: ReviewRecord) {
   const shotMap = new Map(shots.value.map(s => [s.shot_no, s]))
   const items: DiffItem[] = []
   for (const fb of (record.review.shot_feedback ?? [])) {
+    if (fb.issues.every(issue => ignoredIssueSet.value.has(`${fb.shot_no}|${issue}`))) continue
     const shot = shotMap.get(fb.shot_no)
     const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
     const hasDial = !!fb.suggested_dialogue && fb.suggested_dialogue !== (shot?.dialogue ?? '')
@@ -296,7 +324,7 @@ function openHistoryDiffModal(record: ReviewRecord) {
       orig_description: shot?.description ?? '',
       suggested_description: fb.suggested_description ?? '',
       has_description_diff: hasDesc,
-      issues: fb.issues,
+      issues: fb.issues.filter(issue => !ignoredIssueSet.value.has(`${fb.shot_no}|${issue}`)),
       severity: fb.severity,
       selected: true,
       record_id: record.id,
@@ -312,6 +340,7 @@ function openDiffModal() {
   const shotMap = new Map(shots.value.map(s => [s.shot_no, s]))
   const items: DiffItem[] = []
   for (const fb of reviewResult.value.shot_feedback) {
+    if (fb.issues.every(issue => ignoredIssueSet.value.has(`${fb.shot_no}|${issue}`))) continue
     const shot = shotMap.get(fb.shot_no)
     const hasNarr = !!fb.suggested_narration && fb.suggested_narration !== (shot?.narration ?? '')
     const hasDial = !!fb.suggested_dialogue && fb.suggested_dialogue !== (shot?.dialogue ?? '')
@@ -327,7 +356,7 @@ function openDiffModal() {
       orig_description: shot?.description ?? '',
       suggested_description: fb.suggested_description ?? '',
       has_description_diff: hasDesc,
-      issues: fb.issues,
+      issues: fb.issues.filter(issue => !ignoredIssueSet.value.has(`${fb.shot_no}|${issue}`)),
       severity: fb.severity,
       suggestion: (!hasNarr && !hasDial && !hasDesc) ? ((fb as any).suggestion ?? '') : undefined,
       selected: hasNarr || hasDial || hasDesc,
@@ -384,8 +413,6 @@ async function startReview() {
   reviewError.value = ''
   reviewResult.value = null
   applyResult.value = null
-  appliedInsertIndexes.value = new Set()
-  appliedDeleteShotNos.value = new Set()
   reviewPanelTab.value = 'current'
   loadReviewHistory()
   try {
@@ -775,38 +802,33 @@ defineExpose({ startReview, reviewing })
                   逐镜反馈 <span class="normal-case font-normal text-gray-400">（共 {{ reviewResult.shot_feedback.length }} 条）</span>
                 </h4>
                 <div class="space-y-2">
-                  <div
+                  <template
                     v-for="fb in reviewResult.shot_feedback"
                     :key="fb.shot_no"
+                  >
+                  <div
+                    v-if="fb.issues.some(issue => !ignoredIssueSet.has(`${fb.shot_no}|${issue}`))"
                     class="rounded-lg border-l-4 p-3 text-sm"
                     :class="severityClass(fb.severity)"
                   >
                     <div class="font-medium text-gray-800 dark:text-gray-200 mb-1">镜 {{ fb.shot_no }}</div>
                     <ul class="mb-1.5 space-y-0.5">
-                      <li v-for="issue in fb.issues" :key="issue" class="flex items-start gap-1.5 text-gray-600 dark:text-gray-400">
-                        <span class="shrink-0">·</span>
-                        <span class="flex-1">{{ issue }}</span>
-                        <button
-                          v-if="!ignoredIssueSet.has(`${fb.shot_no}|${issue}`)"
-                          class="shrink-0 ml-1 text-gray-300 hover:text-amber-500 dark:text-gray-600 dark:hover:text-amber-400 transition-colors"
-                          :disabled="ignoringIssue === `${fb.shot_no}|${issue}`"
-                          title="忽略此建议（下次审查不再出现）"
-                          @click.stop="handleIgnore(fb.shot_no, issue)"
-                        >
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                          </svg>
-                        </button>
-                        <span
-                          v-else
-                          class="shrink-0 ml-1 text-amber-400 dark:text-amber-500"
-                          title="已忽略"
-                        >
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                          </svg>
-                        </span>
-                      </li>
+                      <template v-for="issue in fb.issues" :key="issue">
+                        <li v-if="!ignoredIssueSet.has(`${fb.shot_no}|${issue}`)" class="flex items-start gap-1.5 text-gray-600 dark:text-gray-400">
+                          <span class="shrink-0">·</span>
+                          <span class="flex-1">{{ issue }}</span>
+                          <button
+                            class="shrink-0 ml-1 text-gray-300 hover:text-amber-500 dark:text-gray-600 dark:hover:text-amber-400 transition-colors"
+                            :disabled="ignoringIssue === `${fb.shot_no}|${issue}`"
+                            title="忽略此建议（下次审查不再出现）"
+                            @click.stop="handleIgnore(fb.shot_no, issue)"
+                          >
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                            </svg>
+                          </button>
+                        </li>
+                      </template>
                     </ul>
                     <div v-if="fb.suggestion" class="text-gray-500 dark:text-gray-500 text-xs italic">{{ fb.suggestion }}</div>
                     <div v-if="fb.suggested_narration" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
@@ -822,6 +844,7 @@ defineExpose({ startReview, reviewing })
                       <div class="text-xs text-gray-700 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 rounded p-1.5 font-mono">{{ fb.suggested_description }}</div>
                     </div>
                   </div>
+                  </template>
                 </div>
               </div>
             </template>
