@@ -599,69 +599,97 @@ function getRoleLabel(role: string): string {
         <div
           v-for="look in looks"
           :key="look.id"
-          class="card p-4 flex gap-4 items-start"
+          class="card p-4"
         >
-          <!-- 缩略图 -->
-          <div class="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-            <img
-              v-if="look.portrait || look.face_closeup"
-              :src="look.portrait || look.face_closeup"
-              class="w-full h-full object-cover"
-            />
-            <span v-else class="text-2xl text-gray-300">🎭</span>
-          </div>
-
-          <!-- 信息 -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-semibold text-gray-800 dark:text-gray-100">{{ look.label }}</span>
-              <span v-if="look.is_default" class="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">默认</span>
-              <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
-                第 {{ look.chapter_from }} 章
-                {{ look.chapter_to > 0 ? `— 第 ${look.chapter_to} 章` : '起（无限延伸）' }}
-              </span>
+          <div class="flex gap-4 items-start">
+            <!-- 头像上传区（点击上传 portrait） -->
+            <div
+              class="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer relative group border-2 border-dashed border-transparent hover:border-primary-400 transition-colors"
+              title="点击上传头像"
+              @click="triggerLookUpload(look, 'portrait')"
+            >
+              <img
+                v-if="look.portrait || look.face_closeup"
+                :src="look.portrait || look.face_closeup"
+                class="w-full h-full object-cover"
+              />
+              <div v-else class="flex flex-col items-center gap-1 text-gray-300">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span class="text-xs">头像</span>
+              </div>
+              <!-- hover overlay -->
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-lg">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <!-- uploading spinner -->
+              <div v-if="uploadingLookImage === look.id && pendingLookUpload?.type === 'portrait'" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              </div>
             </div>
-            <p v-if="look.description" class="text-sm text-gray-500 mt-1 line-clamp-2">{{ look.description }}</p>
-            <p v-if="look.visual_prompt" class="text-xs text-gray-400 mt-1 line-clamp-1 font-mono">{{ look.visual_prompt }}</p>
 
-            <!-- 操作按钮 -->
-            <div class="flex gap-2 mt-2 flex-wrap">
-              <button
-                class="btn-secondary text-xs py-1 px-2"
-                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                @click="handleGenerateLookImage(look, 'face_closeup')"
-              >
-                {{ generatingLookImage === look.id ? '生成中…' : 'AI 生成头像' }}
-              </button>
-              <button
-                class="btn-secondary text-xs py-1 px-2"
-                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                @click="handleGenerateLookImage(look, 'three_view')"
-              >
-                {{ generatingLookImage === look.id ? '生成中…' : 'AI 三视图' }}
-              </button>
-              <button
-                class="btn-secondary text-xs py-1 px-2"
-                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                @click="triggerLookUpload(look, 'portrait')"
-              >
-                {{ uploadingLookImage === look.id ? '上传中…' : '上传头像' }}
-              </button>
-              <button
-                class="btn-secondary text-xs py-1 px-2"
-                :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                @click="triggerLookUpload(look, 'three_view')"
-              >
-                {{ uploadingLookImage === look.id ? '上传中…' : '上传三视图' }}
-              </button>
-              <button class="btn-secondary text-xs py-1 px-2" @click="openLookForm(look)">编辑</button>
-              <button class="text-xs text-red-500 hover:text-red-700 py-1 px-2" @click="handleDeleteLook(look)">删除</button>
+            <!-- 信息区 -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-gray-800 dark:text-gray-100">{{ look.label }}</span>
+                <span v-if="look.is_default" class="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">默认</span>
+                <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
+                  第 {{ look.chapter_from }} 章
+                  {{ look.chapter_to > 0 ? `— 第 ${look.chapter_to} 章` : '起（无限延伸）' }}
+                </span>
+              </div>
+              <p v-if="look.description" class="text-sm text-gray-500 mt-1 line-clamp-2">{{ look.description }}</p>
+              <p v-if="look.visual_prompt" class="text-xs text-gray-400 mt-1 line-clamp-1 font-mono">{{ look.visual_prompt }}</p>
+
+              <!-- 操作按钮 -->
+              <div class="flex gap-2 mt-2 flex-wrap">
+                <button
+                  class="btn-secondary text-xs py-1 px-2"
+                  :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                  @click="handleGenerateLookImage(look, 'face_closeup')"
+                >
+                  {{ generatingLookImage === look.id ? '生成中…' : 'AI 生成头像' }}
+                </button>
+                <button
+                  class="btn-secondary text-xs py-1 px-2"
+                  :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
+                  @click="handleGenerateLookImage(look, 'three_view')"
+                >
+                  {{ generatingLookImage === look.id ? '生成中…' : 'AI 三视图' }}
+                </button>
+                <button class="btn-secondary text-xs py-1 px-2" @click="openLookForm(look)">编辑</button>
+                <button class="text-xs text-red-500 hover:text-red-700 py-1 px-2" @click="handleDeleteLook(look)">删除</button>
+              </div>
             </div>
-          </div>
 
-          <!-- 三视图缩略图 -->
-          <div v-if="look.three_view_sheet" class="w-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-            <img :src="look.three_view_sheet" class="w-full h-auto object-cover" />
+            <!-- 三视图上传区（点击上传 three_view） -->
+            <div
+              class="w-36 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 cursor-pointer relative group border-2 border-dashed border-transparent hover:border-primary-400 transition-colors"
+              style="aspect-ratio: 16/9"
+              title="点击上传三视图"
+              @click="triggerLookUpload(look, 'three_view')"
+            >
+              <img v-if="look.three_view_sheet" :src="look.three_view_sheet" class="w-full h-full object-cover" />
+              <div v-else class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-gray-300">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span class="text-xs">三视图</span>
+              </div>
+              <!-- hover overlay -->
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <!-- uploading spinner -->
+              <div v-if="uploadingLookImage === look.id && pendingLookUpload?.type === 'three_view'" class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
