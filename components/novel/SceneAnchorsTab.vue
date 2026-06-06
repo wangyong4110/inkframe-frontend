@@ -91,7 +91,7 @@ async function extractAnchors() {
   try {
     const novelTitle = useNovelStore().currentNovel?.title
     const added = await sceneAnchorStore.extractAnchors(props.novelId, chapter.content, novelTitle)
-    toast.success(`已提取 ${added.length} 个新场景锚点`)
+    toast.success(`已提取 ${added.length} 个新场景`)
   } catch (e: any) {
     toast.error(e.message || '提取失败')
   } finally {
@@ -108,11 +108,11 @@ async function extractAllAnchors() {
     taskStore.trackTask(taskId, async (task) => {
       extractingAllAnchors.value = false
       if (task?.status === 'failed') {
-        toast.error('场景锚点提取失败：' + (task.error || '未知错误'))
+        toast.error('场景提取失败：' + (task.error || '未知错误'))
         return
       }
       await sceneAnchorStore.fetchAnchors(props.novelId)
-      toast.success('场景锚点提取完成')
+      toast.success('场景提取完成')
     })
   } catch (e: any) {
     extractingAllAnchors.value = false
@@ -266,7 +266,7 @@ function getTypeLabel(type: string): string {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
-      <p class="text-gray-500 dark:text-gray-400 mb-1">暂无场景锚点</p>
+      <p class="text-gray-500 dark:text-gray-400 mb-1">暂无场景</p>
       <p class="text-xs text-gray-400 dark:text-gray-500">可手动新建，或通过「AI 提取场景」从章节内容自动生成</p>
     </div>
 
@@ -358,7 +358,7 @@ function getTypeLabel(type: string): string {
         <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           <div class="p-6">
             <div class="flex items-center justify-between mb-5">
-              <h2 class="text-lg font-bold text-gray-900 dark:text-white">新建场景锚点</h2>
+              <h2 class="text-lg font-bold text-gray-900 dark:text-white">新建场景</h2>
               <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showAnchorModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -408,7 +408,7 @@ function getTypeLabel(type: string): string {
     <!-- 删除确认弹窗 -->
     <ConfirmDialog
       v-model="showDeleteConfirm"
-      title="删除场景锚点"
+      title="删除场景"
       :description="`确认删除场景「${anchorToDelete?.name || ''}」？此操作不可撤销。`"
       variant="danger"
       confirm-text="确认删除"

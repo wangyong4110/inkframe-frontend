@@ -53,7 +53,7 @@ const tabs = [
   { key: 'visual', label: '视觉设计' },
 ]
 
-useUnsavedGuard(isDirty, '场景锚点有未保存的修改，确认离开？')
+useUnsavedGuard(isDirty, '场景有未保存的修改，确认离开？')
 watch(form, () => { isDirty.value = true }, { deep: true })
 
 const typeOptions = [
@@ -90,7 +90,7 @@ onMounted(async () => {
         description: a.value.description ?? '',
       }
     } else {
-      toast.error('加载场景锚点失败')
+      toast.error('加载场景失败')
     }
     if (n.status === 'fulfilled') {
       novel.value = (n.value as any)?.data ?? n.value
@@ -193,7 +193,7 @@ function goBack() {
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">
-              {{ anchor?.name || '场景锚点' }}
+              {{ anchor?.name || '场景' }}
             </h1>
             <span v-if="anchor?.type" class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" :class="typeBadgeClass(anchor.type)">
               {{ anchor.type }}

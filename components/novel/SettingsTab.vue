@@ -399,7 +399,7 @@ async function confirmDeleteNovel() {
               @click="novelStore.updateNovel(novelId, { prompt_language: lang.value })"
             >{{ lang.label }}</button>
           </div>
-          <p class="mt-1 text-xs text-gray-400">角色/物品/场景锚点描述的生成语言</p>
+          <p class="mt-1 text-xs text-gray-400">角色/物品/场景描述的生成语言</p>
         </div>
       </div>
     </div>
@@ -663,7 +663,7 @@ async function confirmDeleteNovel() {
                   '角色、物品、世界观设定',
                   '故事板与视频镜头',
                   '审查记录与弧线摘要',
-                  '场景锚点与参考图',
+                  '场景与参考图',
                 ]" :key="item" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                   <svg class="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />

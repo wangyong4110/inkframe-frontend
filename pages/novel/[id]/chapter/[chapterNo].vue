@@ -765,7 +765,7 @@ async function switchToScenes() {
   fetchShotsForChapter()
 }
 
-// ── 场景锚点管理（场景管理 Tab）──────────────────────────────────────────────
+// ── 场景管理（场景管理 Tab）──────────────────────────────────────────────
 const anchors = computed(() => sceneAnchorStore.anchors)
 const showAnchorForm = ref(false)
 const editingAnchorId = ref<number | null>(null)
@@ -806,7 +806,7 @@ async function saveAnchor() {
 }
 
 async function deleteAnchor(id: number) {
-  if (!confirm('确定删除该场景锚点？')) return
+  if (!confirm('确定删除该场景？')) return
   try {
     await sceneAnchorStore.deleteAnchor(id)
     toast.success('已删除')
@@ -1113,7 +1113,7 @@ async function handleExtractChapterAnchors() {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, { method: 'POST' })
     const count = data?.total ?? (Array.isArray(data?.scene_anchors) ? data.scene_anchors.length : 0)
-    toast.success(`提取场景锚点 ${count} 个`)
+    toast.success(`提取场景 ${count} 个`)
   } catch (e: any) {
     toast.error('提取失败：' + (e.message || ''))
   } finally {
@@ -1848,11 +1848,11 @@ onUnmounted(() => {
         <div v-else-if="pageMode === 'scenes'" class="h-full overflow-auto">
           <div class="max-w-3xl mx-auto px-8 py-10 space-y-6">
 
-            <!-- 场景锚点库 -->
+            <!-- 场景库 -->
             <div class="card p-5">
               <div class="flex items-center justify-between mb-4">
                 <div>
-                  <h3 class="font-semibold text-gray-900 dark:text-white">场景锚点库</h3>
+                  <h3 class="font-semibold text-gray-900 dark:text-white">场景库</h3>
                   <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">锁定场景视觉描述，确保跨镜头布景一致</p>
                 </div>
                 <button class="btn-primary text-sm" @click="startAnchorCreate">+ 新建场景</button>
@@ -1892,7 +1892,7 @@ onUnmounted(() => {
 
               <!-- 锚点列表 -->
               <div v-if="chapterAnchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
-                暂无场景锚点，点击「新建场景」创建，或从右侧 AI 助手中提取
+                暂无场景，点击「新建场景」创建，或从右侧 AI 助手中提取
               </div>
               <div class="space-y-3">
                 <div
@@ -1926,7 +1926,7 @@ onUnmounted(() => {
             <!-- 分镜场景绑定（需要有分镜数据） -->
             <div v-if="chapterShots.length > 0" class="card p-5">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-1">分镜场景绑定</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">为每个镜头指定场景锚点，生成图像时自动注入一致的布景描述</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">为每个镜头指定场景，生成图像时自动注入一致的布景描述</p>
               <div class="space-y-2">
                 <div v-for="shot in chapterShots" :key="shot.id" class="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
                   <span class="text-xs font-mono text-gray-500 w-12 flex-shrink-0">镜 #{{ shot.shot_no }}</span>
@@ -1939,7 +1939,7 @@ onUnmounted(() => {
                     <option value="">未绑定</option>
                     <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
                   </select>
-                  <span v-if="shot.scene_anchor_id" class="text-xs text-amber-500" title="已绑定场景锚点">🔒</span>
+                  <span v-if="shot.scene_anchor_id" class="text-xs text-amber-500" title="已绑定场景">🔒</span>
                 </div>
               </div>
             </div>
@@ -2509,7 +2509,7 @@ onUnmounted(() => {
           <!-- ── 场景管理 AI ── -->
           <template v-else-if="pageMode === 'scenes'">
             <div class="p-4 space-y-3">
-              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中 AI 提取场景，或手动创建场景锚点以确保视觉一致性。</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中 AI 提取场景，或手动创建场景以确保视觉一致性。</p>
               <!-- 高级参数 -->
               <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                 <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
@@ -2541,7 +2541,7 @@ onUnmounted(() => {
               >
                 <svg v-if="extractingChapterAnchors" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                {{ extractingChapterAnchors ? 'AI 提取中...' : 'AI 提取场景锚点' }}
+                {{ extractingChapterAnchors ? 'AI 提取中...' : 'AI 提取场景' }}
               </button>
             </div>
           </template>

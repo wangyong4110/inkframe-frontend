@@ -1007,6 +1007,72 @@ defineExpose({ loadVideoProviders: async () => {
                 重试
               </button>
             </div>
+
+            <!-- Scene anchor row -->
+            <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">📍 场景</span>
+              <select
+                :value="shot.scene_anchor_id || ''"
+                class="input text-xs py-0.5 h-6 flex-1 min-w-0 max-w-[180px]"
+                @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+              >
+                <option value="">不绑定</option>
+                <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+              </select>
+              <template v-if="shot.scene_anchor_id">
+                <div class="flex-1 flex items-center gap-1.5 min-w-0">
+                  <div class="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all"
+                      :class="{
+                        'bg-green-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                        'bg-amber-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                        'bg-red-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                        'bg-gray-300': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
+                      }"
+                      :style="{ width: `${Math.min(100, ((anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) * 100))}%` }"
+                    />
+                  </div>
+                  <span class="text-xs flex-shrink-0"
+                    :class="{
+                      'text-green-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                      'text-amber-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                      'text-red-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                      'text-gray-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
+                    }"
+                  >
+                    {{ (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0
+                      ? (anchorById.get(shot.scene_anchor_id!)!.avg_cons_score).toFixed(2)
+                      : '待评分'
+                    }}
+                  </span>
+                </div>
+              </template>
+            </div>
+            <!-- Character binding row -->
+            <div class="mt-1 flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
+              <template v-for="charId in (shot.character_ids || [])" :key="charId">
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                  <img
+                    v-if="characterById.get(charId)?.portrait"
+                    :src="characterById.get(charId)!.portrait"
+                    loading="lazy"
+                    class="w-3 h-3 rounded-full object-cover"
+                  />
+                  {{ characterById.get(charId)?.name || charId }}
+                  <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
+                </span>
+              </template>
+              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
+                <option value="">+ 绑定角色</option>
+                <option
+                  v-for="c in (unassignedCharsMap.get(shot.id) ?? [])"
+                  :key="c.id"
+                  :value="c.id"
+                >{{ c.name }}</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1145,7 +1211,7 @@ defineExpose({ loadVideoProviders: async () => {
           </div>
           <!-- Anchor selector + score bar -->
           <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-wrap">
-            <span class="text-xs text-gray-400 flex-shrink-0">📍 场景锚点</span>
+            <span class="text-xs text-gray-400 flex-shrink-0">📍 场景</span>
             <select
               :value="shot.scene_anchor_id || ''"
               class="input text-xs py-0.5 h-6 flex-1 min-w-0 max-w-[180px]"

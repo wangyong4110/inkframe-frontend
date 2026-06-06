@@ -561,7 +561,7 @@ onMounted(async () => {
         </button>
       </div>
       <p class="text-sm text-blue-700 dark:text-blue-300 mb-4">
-        从导入的章节中自动提取角色、物品、世界观、剧情点、场景锚点，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
+        从导入的章节中自动提取角色、物品、世界观、剧情点、场景，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
       </p>
 
       <!-- 空闲状态：显示启动按钮 -->
@@ -600,7 +600,7 @@ onMounted(async () => {
             {{ analysisStatus.progress >= 60 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 剧情点
           </span>
           <span :class="analysisStatus.progress >= 70 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 70 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 场景锚点
+            {{ analysisStatus.progress >= 70 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 场景
           </span>
           <span :class="analysisStatus.progress >= 90 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
             {{ analysisStatus.progress >= 90 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 故事大纲
@@ -620,7 +620,7 @@ onMounted(async () => {
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          分析完成！角色、物品、世界观、剧情点、场景锚点、故事大纲、项目设置和章节大纲已全部更新。
+          分析完成！角色、物品、世界观、剧情点、场景、故事大纲、项目设置和章节大纲已全部更新。
         </div>
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}

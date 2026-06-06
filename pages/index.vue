@@ -43,7 +43,7 @@ const pipeline = [
   {
     icon: '🎨',
     title: '视觉生成',
-    desc: '基于场景锚点的一致性图像生成，Ken Burns 动态镜头效果',
+    desc: '基于场景的一致性图像生成，Ken Burns 动态镜头效果',
     bgClass: 'bg-purple-500/20 border border-purple-500/30',
   },
   {
@@ -72,7 +72,7 @@ const features = [
   {
     icon: '🎬',
     title: '电影级视频',
-    desc: 'Kling Pro 模式、Ken Burns 动效、场景锚点一致性、EBU R128 音频',
+    desc: 'Kling Pro 模式、Ken Burns 动效、场景一致性、EBU R128 音频',
     iconBg: 'bg-amber-500/20',
     tags: ['Kling AI', '4K支持', 'BGM混音'],
   },
