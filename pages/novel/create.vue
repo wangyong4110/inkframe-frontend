@@ -130,6 +130,7 @@ const aiForm = reactive({
   target_chapters: 0,
   cover_image: 'ai', // 默认使用 AI 生成封面
   prompt_language: 'zh',
+  chapter_mode: 'sequential', // sequential=连贯剧情 / independent=独立成篇
 })
 const aiLoading = ref(false)
 const aiLoadingMsg = ref('创建中...')
@@ -147,6 +148,7 @@ async function submitAI() {
       description: aiForm.description.trim(),
       genre: aiForm.genre,
       prompt_language: aiForm.prompt_language,
+      chapter_mode: aiForm.chapter_mode,
     }
     // 'ai' 特殊值：先不传 cover_image，创建后调用 AI 生成
     if (aiForm.cover_image !== 'ai') body.cover_image = aiForm.cover_image
@@ -868,6 +870,28 @@ async function rwSubmit() {
                 : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'"
               @click="aiForm.prompt_language = lang.value"
             >{{ lang.label }}</button>
+          </div>
+        </div>
+
+        <!-- 章节模式 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            章节模式
+          </label>
+          <div class="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+            <button
+              v-for="mode in [{ value: 'sequential', label: '连贯剧情', desc: '各章节情节相互衔接' }, { value: 'independent', label: '独立成篇', desc: '每章都是完整故事' }]"
+              :key="mode.value"
+              type="button"
+              class="flex-1 py-2 text-sm transition-colors flex flex-col items-center gap-0.5"
+              :class="aiForm.chapter_mode === mode.value
+                ? 'bg-purple-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'"
+              @click="aiForm.chapter_mode = mode.value"
+            >
+              <span>{{ mode.label }}</span>
+              <span class="text-xs opacity-70">{{ mode.desc }}</span>
+            </button>
           </div>
         </div>
 

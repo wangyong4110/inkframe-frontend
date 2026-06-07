@@ -22,6 +22,7 @@ export interface Novel {
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
   prompt_language?: string  // AI提示词语言：zh（中文，默认）/ en（英文）
+  chapter_mode?: string     // sequential=连贯剧情（默认）/ independent=独立成篇
   auto_review_rounds?: number    // 生成后自动审查轮次：0=关闭，1-3=开启
   auto_review_min_score?: number // 提前停止阈值（0-100），默认80
   core_theme?: string  // 全书核心主题（如"信任比力量更难获得"）
