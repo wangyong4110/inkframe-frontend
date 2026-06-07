@@ -362,6 +362,67 @@ onUnmounted(() => {
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
 })
 
+// ── 内联编辑旁白 / 对白 ──────────────────────────────────────────────────────
+const editingShotId = ref<number | null>(null)
+const editingField  = ref<'narration' | 'dialogue' | null>(null)
+const editingText   = ref('')
+
+function startEditNarration(shot: StoryboardShot) {
+  editingShotId.value = shot.id
+  editingField.value  = 'narration'
+  editingText.value   = shot.narration || ''
+}
+
+function startEditDialogueText(shot: StoryboardShot) {
+  editingShotId.value = shot.id
+  editingField.value  = 'dialogue'
+  editingText.value   = parseDialogue(shot.dialogue || '').text
+}
+
+async function saveEdit(shot: StoryboardShot) {
+  if (editingShotId.value !== shot.id) return
+  const text = editingText.value.trim()
+  try {
+    if (editingField.value === 'narration') {
+      await videoStore.updateShot(props.videoId, shot.id, { narration: text })
+    } else if (editingField.value === 'dialogue') {
+      const { speaker } = parseDialogue(shot.dialogue || '')
+      const newDialogue = speaker ? `${speaker}：${text}` : text
+      await videoStore.updateShot(props.videoId, shot.id, { dialogue: newDialogue })
+    }
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+  } finally {
+    cancelEdit()
+  }
+}
+
+function cancelEdit() {
+  editingShotId.value = null
+  editingField.value  = null
+  editingText.value   = ''
+}
+
+const emotionColorMap: Record<string, string> = {
+  平静: 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400',
+  悲伤: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+  哀愁: 'bg-blue-100 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400',
+  紧张: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
+  悬疑: 'bg-amber-100 dark:bg-amber-900/30 text-amber-500 dark:text-amber-400',
+  愤怒: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+  惊恐: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
+  压抑: 'bg-purple-100 dark:bg-purple-900/30 text-purple-500 dark:text-purple-400',
+  喜悦: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400',
+  振奋: 'bg-green-100 dark:bg-green-900/30 text-green-500 dark:text-green-400',
+  浪漫: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400',
+  释怀: 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400',
+}
+
+function emotionClass(tone: string | undefined): string {
+  if (!tone) return ''
+  return emotionColorMap[tone] ?? 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+}
+
 // Expose shotAudioUrls & shotSegments for parent (TimelineTab needs them)
 defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId })
 </script>
@@ -525,7 +586,15 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
           <!-- Header -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-2 mb-1">
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</p>
+              <div class="flex items-center gap-1.5">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</p>
+                <span
+                  v-if="shot.emotional_tone"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  :class="emotionClass(shot.emotional_tone)"
+                  :title="`情感基调：${shot.emotional_tone}`"
+                >{{ shot.emotional_tone }}</span>
+              </div>
               <div class="flex items-center gap-1.5">
                 <!-- Legacy single-voice button -->
                 <button
@@ -557,14 +626,56 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   {{ parseDialogue(shot.dialogue).speaker || '未知角色' }} ▾
                 </button>
               </div>
-              <p class="text-sm italic text-blue-500 dark:text-blue-400 leading-relaxed line-clamp-2 flex-1">
+              <!-- 对白内联编辑 -->
+              <template v-if="editingShotId === shot.id && editingField === 'dialogue'">
+                <textarea
+                  v-model="editingText"
+                  rows="2"
+                  class="flex-1 text-sm rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  autofocus
+                  @keydown.enter.ctrl="saveEdit(shot)"
+                  @keydown.escape="cancelEdit"
+                />
+                <div class="flex flex-col gap-1 ml-1">
+                  <button class="text-[10px] px-1.5 py-0.5 rounded bg-primary-500 text-white hover:bg-primary-600" @click="saveEdit(shot)">保存</button>
+                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700" @click="cancelEdit">取消</button>
+                </div>
+              </template>
+              <p
+                v-else
+                class="text-sm italic text-blue-500 dark:text-blue-400 leading-relaxed line-clamp-2 flex-1 cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10 rounded px-1 -mx-1 transition-colors"
+                title="点击编辑对白"
+                @click="startEditDialogueText(shot)"
+              >
                 {{ parseDialogue(shot.dialogue).text }}
               </p>
             </div>
             <!-- Narration / description shot -->
-            <p v-else class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
-              {{ shot.narration || shot.description || '（无台词）' }}
-            </p>
+            <template v-else>
+              <!-- 旁白内联编辑 -->
+              <div v-if="editingShotId === shot.id && editingField === 'narration'" class="flex items-start gap-1.5">
+                <textarea
+                  v-model="editingText"
+                  rows="2"
+                  class="flex-1 text-sm rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  autofocus
+                  @keydown.enter.ctrl="saveEdit(shot)"
+                  @keydown.escape="cancelEdit"
+                />
+                <div class="flex flex-col gap-1 ml-1">
+                  <button class="text-[10px] px-1.5 py-0.5 rounded bg-primary-500 text-white hover:bg-primary-600" @click="saveEdit(shot)">保存</button>
+                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700" @click="cancelEdit">取消</button>
+                </div>
+              </div>
+              <p
+                v-else
+                class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded px-1 -mx-1 transition-colors"
+                title="点击编辑旁白"
+                @click="startEditNarration(shot)"
+              >
+                {{ shot.narration || shot.description || '（无台词）' }}
+              </p>
+            </template>
             <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-1.5 w-full h-8" />
           </div>
         </div>
