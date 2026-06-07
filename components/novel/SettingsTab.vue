@@ -366,6 +366,25 @@ async function confirmDeleteNovel() {
           </p>
         </div>
       </div>
+
+      <!-- 章节模式（创建时确定，不可变更） -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">章节模式</label>
+        <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div
+            v-for="mode in [{ value: 'sequential', label: '连贯剧情', desc: '各章节情节相互衔接' }, { value: 'independent', label: '独立成篇', desc: '每章都是完整故事' }]"
+            :key="mode.value"
+            class="flex-1 py-1.5 text-xs flex flex-col items-center gap-0.5 select-none"
+            :class="(novel?.chapter_mode ?? 'sequential') === mode.value
+              ? 'bg-primary-500 text-white'
+              : 'bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-600'"
+          >
+            <span>{{ mode.label }}</span>
+            <span class="opacity-70">{{ mode.desc }}</span>
+          </div>
+        </div>
+        <p class="mt-1 text-xs text-gray-400">创建时确定，不可变更</p>
+      </div>
     </div>
 
     <!-- ③ 模型配置 -->
