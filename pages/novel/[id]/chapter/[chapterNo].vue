@@ -20,6 +20,7 @@ const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
+const characterApi = useCharacterApi()
 
 const saving = ref(false)
 const isSaving = ref(false)
@@ -208,6 +209,8 @@ onMounted(async () => {
     savedTitle.value = chapterTitle.value
     // Record the server timestamp for optimistic concurrency detection on save.
     serverUpdatedAt.value = (chapter.value as any)?.updated_at || ''
+    // 加载本章有效角色（不依赖文本字面量过滤）
+    await fetchEffectiveCharacters()
   }
   // 仅在用户未手动设置时，用小说配置推算字数目标
   if (wordCountOverride.value === 0) {
@@ -598,25 +601,33 @@ function countWords(text: string): number {
 }
 
 // Filter helpers: when chapter content exists, only show items whose name appears in the text.
-function appearsInContent(name: string): boolean {
-  if (!content.value) return true
-  return content.value.includes(name)
+// 章节有效角色：由后端 ListEffectiveCharacters 返回，包含所有小说角色及本章覆盖信息，
+// 不依赖字面量文本搜索（避免代词/简称导致角色遗漏）。
+const effectiveCharacters = ref<any[]>([])
+
+async function fetchEffectiveCharacters() {
+  if (!chapterNo || chapterNo <= 0) return
+  try {
+    const res = await characterApi.getEffectiveCharacters(novelId, chapterNo)
+    effectiveCharacters.value = res.data ?? []
+  } catch {
+    // 降级：使用本地全量角色列表
+    effectiveCharacters.value = characters.value
+  }
 }
 
 const mainCharacters = computed(() =>
-  characters.value.filter((c: any) => c.role !== 'minor' && appearsInContent(c.name)),
+  effectiveCharacters.value.filter((c: any) => c.role !== 'minor'),
 )
 const minorCharacters = computed(() =>
-  characters.value.filter((c: any) => c.role === 'minor' && appearsInContent(c.name)),
+  effectiveCharacters.value.filter((c: any) => c.role === 'minor'),
 )
 
 function getActiveCharacters(): any[] {
   return mainCharacters.value
 }
 
-const chapterAnchors = computed(() =>
-  anchors.value.filter((a: any) => appearsInContent(a.name)),
-)
+const chapterAnchors = computed(() => anchors.value)
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
 const generatingOutline = ref(false)

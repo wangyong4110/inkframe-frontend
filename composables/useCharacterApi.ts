@@ -115,6 +115,9 @@ export const useCharacterApi = () => {
   const reanalyzeCharacter = (id: number) =>
     request<ApiResponse<Character>>(`/characters/${id}/reanalyze`, { method: 'POST' })
 
+  const getEffectiveCharacters = (novelId: number, chapterNo: number) =>
+    request<ApiResponse<any[]>>(`/novels/${novelId}/chapters/${chapterNo}/characters`)
+
   return {
     getCharacters,
     getCharacter,
@@ -138,5 +141,6 @@ export const useCharacterApi = () => {
     generateLookPrompt,
     generateLookImages,
     reanalyzeCharacter,
+    getEffectiveCharacters,
   }
 }
