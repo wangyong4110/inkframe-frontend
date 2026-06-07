@@ -472,14 +472,16 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
 }
 
 async function handleGenerateImages() {
-  if (!await guardAiProvider('IMAGE')) return
+  if (batchGeneratingImages.value) return
+  batchGeneratingImages.value = true
+  if (!await guardAiProvider('IMAGE')) { batchGeneratingImages.value = false; return }
   if (generatingStoryboard.value) {
     toast.error('分镜脚本正在生成中，请等待完成后再生成图片')
+    batchGeneratingImages.value = false
     return
   }
-  const pending = shots.value.filter(s => !s.image_url && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
-  if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); return }
-  batchGeneratingImages.value = true
+  const pending = shots.value.filter(s => !s.image_url && s.status !== 'generating' && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
+  if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); batchGeneratingImages.value = false; return }
   try {
     const taskId = await videoStore.batchGenerateShotImages(props.videoId, pending.map(s => s.id))
     if (!taskId) { toast.error('图片生成失败：未获取到任务ID'); batchGeneratingImages.value = false; return }
