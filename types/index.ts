@@ -515,6 +515,7 @@ export interface ModelProvider {
   timeout?: number              // HTTP 超时秒数，0 或未设置表示使用默认值 300s
   concurrency?: number          // 最大并发调用数，0 或未设置表示不限制
   rate_limit?: number           // 请求/分钟限速，0 或未设置表示不限制
+  max_tokens?: number           // 最大输出 token 数，0 或未设置表示使用模型默认值
   has_key?: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
   created_at?: string

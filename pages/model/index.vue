@@ -84,6 +84,7 @@ const providerForm = ref({
   timeout: 0,      // 秒，0 = 使用默认值 300s
   concurrency: 0,  // 最大并发数，0 = 不限制
   rate_limit: 0,   // 请求/分钟，0 = 不限制
+  max_tokens: 0,   // 最大输出 token 数，0 = 使用模型默认值
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
@@ -402,7 +403,7 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0 }
+  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0, max_tokens: 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -411,7 +412,7 @@ function openEditProvider(p: ModelProvider) {
   const knownTypes = ['llm', 'image', 'img2img', 'video', 'voice', 'embedding', 'sfx']
   const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
   providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
-    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0, rate_limit: p.rate_limit ?? 0 }
+    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0, rate_limit: p.rate_limit ?? 0, max_tokens: p.max_tokens ?? 0 }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -1021,6 +1022,7 @@ watch(activeTab, (tab) => {
                 <span v-if="p.timeout" class="font-mono">超时 {{ p.timeout }}s</span>
                 <span v-if="p.concurrency" class="font-mono">并发 {{ p.concurrency }}</span>
                 <span v-if="p.rate_limit" class="font-mono">限速 {{ p.rate_limit }}/min</span>
+                <span v-if="p.max_tokens" class="font-mono">{{ p.max_tokens.toLocaleString() }} tokens</span>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
@@ -1597,8 +1599,8 @@ watch(activeTab, (tab) => {
                   </p>
                 </div>
               </div>
-              <!-- 超时 + 并发度 + 限速 -->
-              <div class="grid grid-cols-3 gap-3">
+              <!-- 超时 + 并发度 + 限速 + MaxTokens -->
+              <div class="grid grid-cols-4 gap-3">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">请求超时（秒）</label>
                   <input
@@ -1625,6 +1627,15 @@ watch(activeTab, (tab) => {
                     class="input font-mono text-sm"
                     placeholder="0" />
                   <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大 Tokens</label>
+                  <input
+                    v-model.number="providerForm.max_tokens"
+                    type="number" min="0" step="1024"
+                    class="input font-mono text-sm"
+                    placeholder="0" />
+                  <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">
