@@ -86,24 +86,9 @@ function iconGradient(value: string) {
 
 // ── Screen 2a: AI 生成表单 ─────────────────────────────────────────────────────
 const genreOptions = [
-  { label: '玄幻奇幻', value: 'fantasy' },
-  { label: '仙侠修仙', value: 'xianxia' },
-  { label: '都市现代', value: 'urban' },
-  { label: '言情爱情', value: 'romance' },
-  { label: '历史古代', value: 'historical' },
-  { label: '科幻未来', value: 'scifi' },
-  { label: '悬疑推理', value: 'mystery' },
-  { label: '武侠江湖', value: 'wuxia' },
-  { label: '灵异恐怖', value: 'horror' },
-  { label: '游戏竞技', value: 'game' },
-  { label: '军事战争', value: 'military' },
-  { label: '体育竞技', value: 'sports' },
-  { label: '青春校园', value: 'campus' },
-  { label: '末世废土', value: 'apocalypse' },
-  { label: '重生穿越', value: 'rebirth' },
-  { label: '宫斗宅斗', value: 'palace' },
-  { label: '系统流', value: 'system' },
-  { label: '其他', value: 'other' },
+  '玄幻奇幻','仙侠修仙','都市现代','言情爱情','历史古代','科幻未来',
+  '悬疑推理','武侠江湖','灵异恐怖','游戏竞技','军事战争','体育竞技',
+  '青春校园','末世废土','重生穿越','宫斗宅斗','系统流','其他',
 ]
 const wordCountOptions = [
   { label: 'AI 自定', value: 0 },
@@ -124,7 +109,7 @@ const chapterCountOptions = [
 
 const aiForm = reactive({
   title: '',
-  genre: 'fantasy',
+  genre: '玄幻奇幻',
   description: '',
   target_word_count: 0,
   target_chapters: 0,
@@ -818,14 +803,14 @@ async function rwSubmit() {
           <div class="flex flex-wrap gap-1.5">
             <button
               v-for="opt in genreOptions"
-              :key="opt.value"
+              :key="opt"
               type="button"
               class="px-2.5 py-1 text-xs rounded-lg border transition-colors"
-              :class="aiForm.genre === opt.value
+              :class="aiForm.genre === opt
                 ? 'bg-purple-600 border-purple-600 text-white'
                 : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-purple-400'"
-              @click="aiForm.genre = opt.value"
-            >{{ opt.label }}</button>
+              @click="aiForm.genre = opt"
+            >{{ opt }}</button>
           </div>
         </div>
 

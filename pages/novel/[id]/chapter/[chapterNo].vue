@@ -445,9 +445,9 @@ async function handleGenerate() {
   const currentChapterNo = chapter.value.chapter_no
   generating.value = true
   try {
-    const wordCount = wordCountOverride.value > 0 ? wordCountOverride.value : undefined
     // max_tokens 仅作为 LLM 上下文限制；不再用于推算目标字数
     const maxTokens = advMaxTokens.value > 0 ? advMaxTokens.value : undefined
+    const wordCount = wordCountOverride.value > 0 ? wordCountOverride.value : undefined
     const temperature = advTemperature.value > 0 ? advTemperature.value : undefined
     const timeoutSeconds = advTimeoutSeconds.value > 0 ? advTimeoutSeconds.value : undefined
     const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined, isLastChapter.value || undefined)
@@ -1793,7 +1793,7 @@ onUnmounted(() => {
                   v-for="char in getActiveCharacters()"
                   :key="char.id"
                   class="flex items-center gap-4 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
-                  @click="router.push(`/character/${char.id}`)"
+                  @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
                   <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                     <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
@@ -1818,7 +1818,7 @@ onUnmounted(() => {
                   v-for="char in minorCharacters"
                   :key="char.id"
                   class="flex items-center gap-4 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
-                  @click="router.push(`/character/${char.id}`)"
+                  @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
                   <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                     <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />

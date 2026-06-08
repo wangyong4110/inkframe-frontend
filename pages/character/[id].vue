@@ -293,6 +293,8 @@ async function handleReanalyze() {
 }
 
 function goBack() {
+  const from = route.query.from as string | undefined
+  if (from) { router.push(decodeURIComponent(from)); return }
   const nid = characterStore.currentCharacter?.novel_id
   nid ? router.push(`/novel/${nid}?tab=characters`) : router.back()
 }

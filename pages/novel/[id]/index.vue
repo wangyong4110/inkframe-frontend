@@ -448,7 +448,7 @@ onMounted(async () => {
               </button>
             </div>
             <div class="flex flex-wrap items-center gap-3 mb-3">
-              <span class="tag tag-primary">{{ novel.genre }}</span>
+              <span class="tag tag-primary">{{ ({ fantasy:'玄幻奇幻', xianxia:'仙侠修仙', urban:'都市现代', romance:'言情爱情', historical:'历史古代', scifi:'科幻未来', mystery:'悬疑推理', wuxia:'武侠江湖', horror:'灵异恐怖', game:'游戏竞技', military:'军事战争', sports:'体育竞技', campus:'青春校园', apocalypse:'末世废土', rebirth:'重生穿越', palace:'宫斗宅斗', system:'系统流', other:'其他' } as Record<string,string>)[novel.genre] ?? novel.genre }}</span>
               <span class="text-sm text-gray-500 dark:text-gray-400">
                 {{ novelChapterCount }} 章
               </span>
