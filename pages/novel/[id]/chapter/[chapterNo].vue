@@ -1606,8 +1606,18 @@ onUnmounted(() => {
                 <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">第 {{ chapterNo }} 章</p>
                 <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
               </div>
-              <!-- View mode: 编辑 button -->
+              <!-- View mode: 历史版本 + 编辑 buttons -->
               <div v-if="!writeEditMode" class="flex items-center gap-2 flex-shrink-0 mt-1">
+                <button
+                  class="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="历史版本"
+                  @click="showVersionHistory = !showVersionHistory"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  历史版本
+                </button>
                 <button
                   v-if="content"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors"
@@ -1657,13 +1667,6 @@ onUnmounted(() => {
                   title="重做 (⌘⇧Z)"
                   @click="handleRedo"
                 >↪</button>
-                <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
-                <!-- 历史版本 -->
-                <button
-                  class="px-1.5 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs transition-colors"
-                  title="历史版本"
-                  @click="showVersionHistory = !showVersionHistory"
-                >📋 历史版本</button>
                 <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                 <!-- 查找 -->
                 <button
@@ -2909,7 +2912,7 @@ onUnmounted(() => {
   <!-- 历史版本侧边栏 -->
   <Teleport to="body">
     <Transition name="slide-right">
-      <div v-if="showVersionHistory" class="fixed right-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-800 shadow-xl z-40 flex flex-col border-l border-gray-200 dark:border-gray-700">
+      <div v-if="showVersionHistory" class="fixed right-0 bottom-0 w-80 bg-white dark:bg-gray-800 shadow-xl z-40 flex flex-col border-l border-gray-200 dark:border-gray-700" style="top: 57px">
         <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h3 class="font-semibold text-gray-900 dark:text-white">历史版本</h3>
           <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showVersionHistory = false">✕</button>
