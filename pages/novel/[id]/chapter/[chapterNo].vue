@@ -532,6 +532,7 @@ const checking = ref(false)
 const refining = ref(false)
 const refinedContent = ref('')
 const showRefinedPreview = ref(false)
+const showRightPanel = ref(true)
 
 // ── AI 深度审查面板 ───────────────────────────────────────────────────────────
 const showReviewPanel = ref(false)
@@ -1432,6 +1433,16 @@ onUnmounted(() => {
       <!-- Actions -->
       <div class="flex items-center gap-2 flex-shrink-0">
         <span v-if="autoSaveLabel" :class="saveFailed ? 'text-xs text-red-500' : 'text-xs text-gray-400 dark:text-gray-500'">{{ autoSaveLabel }}</span>
+        <button
+          v-if="!showRightPanel"
+          class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          title="显示 AI 助手"
+          @click="showRightPanel = true"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19l-7-7m0 0l7-7m-7 7h18"/>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -1977,34 +1988,45 @@ onUnmounted(() => {
 
       <!-- Right: tools panel (hidden on export tab) -->
       <aside
-        v-if="!(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
+        v-if="showRightPanel && !(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
         class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
       >
 
         <!-- Panel header -->
-        <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <p class="text-xs font-semibold text-gray-900 dark:text-white">
-            {{
-              pageMode === 'script' && videoEditorRef?.activeTab === 'timeline' ? '视频预览' :
-              pageMode === 'script' && videoEditorRef?.activeTab === 'sfx' ? '音效助手' :
-              pageMode === 'script' && videoEditorRef?.activeTab === 'bgm' ? '背景音乐助手' :
-              pageMode === 'script' && videoEditorRef?.activeTab === 'voice' ? '配音字幕助手' :
-              'AI 助手'
-            }}
-          </p>
-          <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-            {{
-              pageMode === 'outline' ? '大纲' :
-              pageMode === 'write' ? '写作' :
-              pageMode === 'character' ? '角色' :
-              pageMode === 'scenes' ? '场景' :
-              videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
-              videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
-              videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
-              videoEditorRef?.activeTab === 'voice' ? '配音模式 & 字幕' :
-              '脚本'
-            }}
-          </p>
+        <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
+          <div>
+            <p class="text-xs font-semibold text-gray-900 dark:text-white">
+              {{
+                pageMode === 'script' && videoEditorRef?.activeTab === 'timeline' ? '视频预览' :
+                pageMode === 'script' && videoEditorRef?.activeTab === 'sfx' ? '音效助手' :
+                pageMode === 'script' && videoEditorRef?.activeTab === 'bgm' ? '背景音乐助手' :
+                pageMode === 'script' && videoEditorRef?.activeTab === 'voice' ? '配音字幕助手' :
+                'AI 助手'
+              }}
+            </p>
+            <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
+              {{
+                pageMode === 'outline' ? '大纲' :
+                pageMode === 'write' ? '写作' :
+                pageMode === 'character' ? '角色' :
+                pageMode === 'scenes' ? '场景' :
+                videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
+                videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
+                videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
+                videoEditorRef?.activeTab === 'voice' ? '配音模式 & 字幕' :
+                '脚本'
+              }}
+            </p>
+          </div>
+          <button
+            class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0 mt-0.5"
+            title="关闭面板"
+            @click="showRightPanel = false"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
         </div>
 
         <!-- Panel content -->

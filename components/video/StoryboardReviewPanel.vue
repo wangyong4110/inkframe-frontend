@@ -609,49 +609,49 @@ defineExpose({ startReview, reviewing })
               {{ reviewError }}
             </div>
             <template v-else-if="reviewResult">
-              <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                <div class="flex items-end gap-3 mb-4">
-                  <div class="text-4xl font-bold" :class="scoreColor(reviewResult.overall_score)">
-                    {{ normalizeScore(reviewResult.overall_score).toFixed(0) }}
+              <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">综合评分</span>
+                  <div class="flex items-center gap-2">
+                    <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" :disabled="reviewing" @click="startReview">重新审查</button>
+                    <button
+                      class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-violet-600 hover:bg-violet-700 text-white"
+                      @click="openDiffModal"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      预览改动方案
+                    </button>
+                    <span class="text-2xl font-bold tabular-nums" :class="scoreColor(reviewResult.overall_score)">
+                      {{ normalizeScore(reviewResult.overall_score).toFixed(0) }}
+                    </span>
                   </div>
-                  <div class="text-sm text-gray-500 pb-1">/ 100</div>
-                  <div class="flex-1" />
-                  <span v-if="reviewHistory[0]?.review && !reviewing" class="text-[10px] text-gray-400 dark:text-gray-500">上次审查结果</span>
-                  <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="reviewing" @click="startReview">重新审查</button>
-                  <button
-                    class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-violet-600 hover:bg-violet-700 text-white"
-                    @click="openDiffModal"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    预览改动方案
-                  </button>
                 </div>
-                <div v-if="applyResult" class="mt-2 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                  </svg>
-                  已应用 {{ applyResult.count }} 处修改
-                </div>
-                <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="p-4 space-y-2.5">
                   <div v-for="item in [
                     { label: '叙事连贯性', score: reviewResult.narrative_score },
                     { label: '视觉多样性', score: reviewResult.visual_score },
                     { label: '节奏控制',   score: reviewResult.pacing_score },
                     { label: '旁白质量',   score: reviewResult.voiceover_score },
                   ]" :key="item.label" class="flex items-center gap-2">
-                    <span class="text-gray-500 w-16 shrink-0">{{ item.label }}</span>
-                    <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                    <span class="text-xs text-gray-500 w-16 shrink-0">{{ item.label }}</span>
+                    <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                       <div class="h-full rounded-full transition-all"
                         :class="item.score >= 80 ? 'bg-green-500' : item.score >= 60 ? 'bg-yellow-500' : 'bg-red-500'"
                         :style="`width:${item.score}%`" />
                     </div>
-                    <span class="font-medium" :class="scoreColor(item.score)">{{ normalizeScore(item.score).toFixed(0) }}</span>
+                    <span class="text-xs font-medium tabular-nums" :class="scoreColor(item.score)">{{ normalizeScore(item.score).toFixed(0) }}</span>
                   </div>
+                  <div v-if="applyResult" class="pt-1 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                    已应用 {{ applyResult.count }} 处修改
+                  </div>
+                  <div class="text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±5 属正常范围 · 每次审查独立采样</div>
                 </div>
-                <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-right">分数波动 ±5 属正常范围 · 每次审查独立采样</div>
               </div>
               <div class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ reviewResult.summary }}</div>
               <div v-if="reviewResult.strengths?.length">
