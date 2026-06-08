@@ -15,8 +15,20 @@ const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
 
-const { publishChapter, unpublishChapter, regenerateChapter, batchGenerateChapters } = useChapterApi()
+const { publishChapter, unpublishChapter, regenerateChapter, batchGenerateChapters, generateChapterOutline } = useChapterApi()
+
 const { guardAiProvider } = useAiProviderGuard()
+
+// ── 新建章节弹窗 ───────────────────────────────────────────────────────────────
+const showCreateModal = ref(false)
+const createDescription = ref('')
+const createModalTextarea = ref<HTMLTextAreaElement | null>(null)
+
+function openCreateModal() {
+  createDescription.value = ''
+  showCreateModal.value = true
+  nextTick(() => createModalTextarea.value?.focus())
+}
 
 // ── 大纲审查 ──────────────────────────────────────────────────────────────────
 const outlineReviewApi = useOutlineReviewApi()
@@ -232,6 +244,35 @@ onMounted(() => {
 
 const chapters = computed(() => chapterStore.chapters)
 const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
+
+const creatingChapter = ref(false)
+const createStep = ref<'idle' | 'creating' | 'generating'>('idle')
+
+async function handleCreateChapter() {
+  if (!await guardAiProvider('LLM')) return
+  if (creatingChapter.value) return
+  showCreateModal.value = false
+  creatingChapter.value = true
+  const desc = createDescription.value.trim()
+  try {
+    const nextNo = chapters.value.length > 0
+      ? Math.max(...chapters.value.map((c: any) => c.chapter_no)) + 1
+      : 1
+
+    createStep.value = 'creating'
+    const chapter = await chapterStore.createChapter(props.novelId, nextNo)
+
+    createStep.value = 'generating'
+    await generateChapterOutline(props.novelId, chapter.chapter_no, desc || undefined)
+
+    router.push(`/novel/${props.novelId}/chapter/${chapter.chapter_no}`)
+  } catch (e: any) {
+    toast.error('新建章节失败：' + (e.message || ''))
+  } finally {
+    creatingChapter.value = false
+    createStep.value = 'idle'
+  }
+}
 const pagedChapters = computed(() => {
   const start = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
   return chapters.value.slice(start, start + CHAPTER_PAGE_SIZE)
@@ -346,15 +387,19 @@ async function confirmDeleteChapter() {
             </svg>
             AI 批量审查大纲
           </button>
-          <NuxtLink
-            :to="`/novel/${novelId}/chapter/new`"
+          <button
             class="btn-primary"
+            :disabled="creatingChapter"
+            @click="openCreateModal"
           >
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg v-if="creatingChapter" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
-            新建章节
-          </NuxtLink>
+            {{ createStep === 'generating' ? 'AI 生成大纲中…' : createStep === 'creating' ? '创建中…' : '新建章节' }}
+          </button>
         </div>
       </div>
     </div>
@@ -658,6 +703,63 @@ async function confirmDeleteChapter() {
               class="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
               :style="{ width: batchGenProgress + '%' }"
             />
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 新建章节弹窗 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="showCreateModal" class="fixed inset-0 z-[300] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showCreateModal = false" />
+        <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+          <!-- 标题 -->
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">新建章节</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">AI 将根据你的描述和前续章节大纲自动生成本章大纲</p>
+            </div>
+          </div>
+
+          <!-- 章节描述输入 -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              章节描述
+              <span class="text-gray-400 dark:text-gray-500 font-normal ml-1">（可选，留空由 AI 自主延续剧情）</span>
+            </label>
+            <textarea
+              ref="createModalTextarea"
+              v-model="createDescription"
+              rows="5"
+              class="w-full text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500"
+              placeholder="例如：凌云在废墟中发现了师父留下的遗物，触发了沉睡已久的阵法，与潜伏在遗址中的魔修正面交锋……"
+              @keydown.esc="showCreateModal = false"
+            />
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">AI 会结合前 5 章大纲和你的描述生成本章情节规划</p>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="flex gap-3 pt-1">
+            <button
+              class="flex-1 btn-secondary text-sm"
+              @click="showCreateModal = false"
+            >取消</button>
+            <button
+              class="flex-1 btn-primary text-sm"
+              @click="handleCreateChapter"
+            >
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.316A4 4 0 0112 17.97a4 4 0 01-2.772-1.11l-.347-.315z" />
+              </svg>
+              AI 生成大纲
+            </button>
           </div>
         </div>
       </div>

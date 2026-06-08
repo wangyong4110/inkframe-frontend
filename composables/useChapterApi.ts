@@ -86,6 +86,12 @@ export const useChapterApi = () => {
       body: JSON.stringify(options || {}),
     })
 
+  const generateChapterOutline = (novelId: number, chapterNo: number, prompt?: string) =>
+    request<ApiResponse<Chapter>>(`/novels/${novelId}/chapters/${chapterNo}/outline`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt: prompt || '' }),
+    })
+
   return {
     getChapters,
     getChapter,
@@ -93,6 +99,7 @@ export const useChapterApi = () => {
     updateChapter,
     deleteChapter,
     generateChapter,
+    generateChapterOutline,
     publishChapter,
     unpublishChapter,
     batchPublishChapters,
