@@ -116,6 +116,15 @@ export function useSceneAnchorApi() {
     )
   }
 
+  const listChapterAnchors = (novelId: number, chapterNo: number) =>
+    request<ApiResponse<SceneAnchor[]>>(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors`)
+
+  const bindChapterAnchor = (novelId: number, chapterNo: number, anchorId: number) =>
+    request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/${anchorId}`, { method: 'PUT' })
+
+  const unbindChapterAnchor = (novelId: number, chapterNo: number, anchorId: number) =>
+    request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/${anchorId}`, { method: 'DELETE' })
+
   return {
     getSceneAnchor,
     listSceneAnchors,
@@ -131,5 +140,8 @@ export function useSceneAnchorApi() {
     getConsistencyLogs,
     batchGenerateRefImages,
     uploadRefImage,
+    listChapterAnchors,
+    bindChapterAnchor,
+    unbindChapterAnchor,
   }
 }

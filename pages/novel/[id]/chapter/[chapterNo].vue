@@ -41,9 +41,8 @@ function pageModeClass(mode: PageMode) {
     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
 }
 
-// ── 角色状态快照 ──────────────────────────────────────────────────────────────
+// ── 角色形象 ──────────────────────────────────────────────────────────────────
 const updateCharSnapshots = ref(false)
-const snapshotMode = ref<'generate' | 'reuse'>('generate')
 const selectedCharacterIds = ref<number[]>([])
 const syncingSnapshots = ref(false)
 const snapshotMsg = ref('')
@@ -52,24 +51,21 @@ function toggleAllCharacters(checked: boolean) {
   selectedCharacterIds.value = checked ? characters.value.map((c: any) => c.id) : []
 }
 
-async function handleSyncSnapshots() {
-  if (!chapter.value) return
+async function handleGenerateCharacterImages() {
+  if (!chapter.value || selectedCharacterIds.value.length === 0) return
   syncingSnapshots.value = true
   snapshotMsg.value = ''
   try {
-    const { request } = useApi()
-    await request(`/novels/${novelId}/chapters/${chapter.value.chapter_no}/character-snapshots`, {
-      method: 'POST',
-      body: JSON.stringify({
-        character_ids: selectedCharacterIds.value,
-        reuse_previous: snapshotMode.value === 'reuse',
-      }),
-    })
-    snapshotMsg.value = '角色状态已更新'
-    toast.success('角色状态更新完成')
+    const res = await characterApi.generateChapterCharacterImages(
+      Number(novelId),
+      chapter.value.chapter_no,
+      selectedCharacterIds.value,
+    )
+    snapshotMsg.value = `已为 ${selectedCharacterIds.value.length} 个角色启动形象生成`
+    toast.success('角色形象生成任务已提交，请稍候')
   } catch (e: any) {
     snapshotMsg.value = ''
-    toast.error('更新失败：' + (e.message || ''))
+    toast.error('生成失败：' + (e.message || ''))
   } finally {
     syncingSnapshots.value = false
   }
@@ -628,7 +624,40 @@ function getActiveCharacters(): any[] {
   return mainCharacters.value
 }
 
-const chapterAnchors = computed(() => anchors.value)
+// 手动绑定角色
+const showBindCharModal = ref(false)
+const bindingCharId = ref<number | null>(null)
+const unbindingCharId = ref<number | null>(null)
+
+const unboundCharacters = computed(() => {
+  const boundIds = new Set(effectiveCharacters.value.map((c: any) => c.id))
+  return characters.value.filter((c: any) => !boundIds.has(c.id))
+})
+
+async function handleBindCharacter(charId: number) {
+  bindingCharId.value = charId
+  try {
+    await characterApi.bindChapterCharacter(novelId, chapterNo, charId)
+    await fetchEffectiveCharacters()
+    showBindCharModal.value = false
+  } catch (e: any) {
+    toast.error('绑定失败：' + (e.message || ''))
+  } finally {
+    bindingCharId.value = null
+  }
+}
+
+async function handleUnbindCharacter(charId: number) {
+  unbindingCharId.value = charId
+  try {
+    await characterApi.unbindChapterCharacter(novelId, chapterNo, charId)
+    await fetchEffectiveCharacters()
+  } catch (e: any) {
+    toast.error('解绑失败：' + (e.message || ''))
+  } finally {
+    unbindingCharId.value = null
+  }
+}
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
 const generatingOutline = ref(false)
@@ -771,9 +800,55 @@ function switchToCharacter() {
   if (chapterItems.value.length === 0) fetchChapterItems()
 }
 
+const chapterAnchors = ref<any[]>([])
+const showBindAnchorModal = ref(false)
+const bindingAnchorId = ref<number | null>(null)
+const unbindingAnchorId = ref<number | null>(null)
+const sceneAnchorApi = useSceneAnchorApi()
+
+const unboundAnchors = computed(() => {
+  const boundIds = new Set(chapterAnchors.value.map((a: any) => a.id))
+  return sceneAnchorStore.anchors.filter((a: any) => !boundIds.has(a.id))
+})
+
+async function fetchChapterAnchors() {
+  try {
+    const res = await sceneAnchorApi.listChapterAnchors(novelId, chapterNo)
+    chapterAnchors.value = res.data ?? []
+  } catch {
+    chapterAnchors.value = []
+  }
+}
+
+async function handleBindAnchor(anchorId: number) {
+  bindingAnchorId.value = anchorId
+  try {
+    await sceneAnchorApi.bindChapterAnchor(novelId, chapterNo, anchorId)
+    await fetchChapterAnchors()
+    showBindAnchorModal.value = false
+  } catch (e: any) {
+    toast.error('绑定失败：' + (e.message || ''))
+  } finally {
+    bindingAnchorId.value = null
+  }
+}
+
+async function handleUnbindAnchor(anchorId: number) {
+  unbindingAnchorId.value = anchorId
+  try {
+    await sceneAnchorApi.unbindChapterAnchor(novelId, chapterNo, anchorId)
+    await fetchChapterAnchors()
+  } catch (e: any) {
+    toast.error('解绑失败：' + (e.message || ''))
+  } finally {
+    unbindingAnchorId.value = null
+  }
+}
+
 async function switchToScenes() {
   pageMode.value = 'scenes'
   sceneAnchorStore.fetchAnchors(novelId)
+  fetchChapterAnchors()
   fetchShotsForChapter()
 }
 
@@ -1084,11 +1159,11 @@ async function handleExtractMinorChars() {
   try {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, { method: 'POST' })
-    const count = data?.total ?? data?.count ?? (Array.isArray(data?.characters) ? data.characters.length : 0)
-    toast.success(`提取次要角色 ${count} 个`)
-    await characterStore.fetchCharacters(novelId)
+    const newCount = data?.new_count ?? 0
+    toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
+    await fetchEffectiveCharacters()
   } catch (e: any) {
-    toast.error('提取失败：' + (e.message || ''))
+    toast.error('角色分析失败：' + (e.message || ''))
   } finally {
     extractingMinorChars.value = false
   }
@@ -1131,8 +1206,10 @@ async function handleExtractChapterAnchors() {
   try {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, { method: 'POST' })
-    const count = data?.total ?? (Array.isArray(data?.scene_anchors) ? data.scene_anchors.length : 0)
-    toast.success(`提取场景 ${count} 个`)
+    const newCount = data?.new_count ?? 0
+    toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
+    await fetchChapterAnchors()
+    sceneAnchorStore.fetchAnchors(novelId)
   } catch (e: any) {
     toast.error('提取失败：' + (e.message || ''))
   } finally {
@@ -1784,53 +1861,71 @@ onUnmounted(() => {
           <div class="max-w-2xl mx-auto px-8 py-10 space-y-8">
             <!-- Active characters -->
             <div>
-              <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">活跃角色</h4>
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">活跃角色</h4>
+                <button
+                  class="flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+                  @click="showBindCharModal = true"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                  </svg>
+                  手动绑定
+                </button>
+              </div>
               <div v-if="getActiveCharacters().length === 0" class="text-center py-12 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
                 <p class="text-sm text-gray-400 dark:text-gray-500">暂无角色</p>
               </div>
-              <div v-else class="grid gap-2">
+              <div v-else class="grid grid-cols-3 gap-2">
                 <div
                   v-for="char in getActiveCharacters()"
                   :key="char.id"
-                  class="flex items-center gap-4 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
+                  class="group relative flex flex-col items-center gap-1.5 p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer"
                   @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
-                  <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                  <div class="w-12 h-12 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                     <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
-                    <span v-else class="text-base font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+                    <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ char.name }}</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ { protagonist: '主角', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
-                    <p v-if="char.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">{{ char.description }}</p>
-                  </div>
-                  <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                  </svg>
+                  <span class="text-xs font-medium text-gray-800 dark:text-gray-200 w-full text-center truncate leading-tight">{{ char.name }}</span>
+                  <button
+                    class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    title="解除绑定"
+                    :disabled="unbindingCharId === char.id"
+                    @click.stop="handleUnbindCharacter(char.id)"
+                  >
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
             <!-- Minor Characters -->
             <div v-if="minorCharacters.length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-8">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">次要角色</h4>
-              <div class="grid gap-2">
+              <div class="grid grid-cols-3 gap-2">
                 <div
                   v-for="char in minorCharacters"
                   :key="char.id"
-                  class="flex items-center gap-4 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group"
+                  class="group relative flex flex-col items-center gap-1.5 p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer"
                   @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
-                  <div class="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                  <div class="w-12 h-12 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                     <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
-                    <span v-else class="text-base font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+                    <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ char.name }}</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ char.three_view_sheet ? '有三视图' : '无三视图' }} · {{ { protagonist: '主角', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
-                  </div>
-                  <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                  </svg>
+                  <span class="text-xs font-medium text-gray-800 dark:text-gray-200 w-full text-center truncate leading-tight">{{ char.name }}</span>
+                  <button
+                    class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    title="解除绑定"
+                    :disabled="unbindingCharId === char.id"
+                    @click.stop="handleUnbindCharacter(char.id)"
+                  >
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1878,103 +1973,102 @@ onUnmounted(() => {
 
         <!-- ─ 场景管理模式 ─ -->
         <div v-else-if="pageMode === 'scenes'" class="h-full overflow-auto">
-          <div class="max-w-3xl mx-auto px-8 py-10 space-y-6">
+          <div class="max-w-2xl mx-auto px-8 py-10 space-y-8">
 
-            <!-- 场景库 -->
-            <div class="card p-5">
+            <!-- 本章场景 九宫格 -->
+            <div>
               <div class="flex items-center justify-between mb-4">
-                <div>
-                  <h3 class="font-semibold text-gray-900 dark:text-white">场景库</h3>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">锁定场景视觉描述，确保跨镜头布景一致</p>
-                </div>
-                <button class="btn-primary text-sm" @click="startAnchorCreate">+ 新建场景</button>
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章场景</h4>
+                <button
+                  class="flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+                  @click="showBindAnchorModal = true"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                  </svg>
+                  手动绑定
+                </button>
               </div>
-
-              <!-- 新建/编辑表单 -->
-              <div v-if="showAnchorForm" class="mb-5 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
-                    <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
-                  </div>
-                  <div>
-                    <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">类型</label>
-                    <select v-model="anchorForm.type" class="input w-full text-sm">
-                      <option value="interior">室内</option>
-                      <option value="exterior">室外</option>
-                      <option value="imaginary">虚构/幻境</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
-                  <textarea v-model="anchorForm.description" rows="2" placeholder="用自然语言描述场景外观、氛围…" class="input w-full text-sm resize-none" />
-                </div>
-                <div>
-                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词（逗号分隔，生成时强制注入）</label>
-                  <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
-                </div>
-                <div class="flex gap-2 pt-1">
-                  <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">
-                    {{ savingAnchor ? '保存中…' : (editingAnchorId ? '更新' : '创建') }}
-                  </button>
-                  <button class="btn-outline text-sm" @click="showAnchorForm = false">取消</button>
-                </div>
+              <div v-if="chapterAnchors.length === 0" class="text-center py-12 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                <p class="text-sm text-gray-400 dark:text-gray-500">暂无场景，点击右侧「场景分析」或「手动绑定」</p>
               </div>
-
-              <!-- 锚点列表 -->
-              <div v-if="chapterAnchors.length === 0 && !showAnchorForm" class="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
-                暂无场景，点击「新建场景」创建，或从右侧 AI 助手中提取
-              </div>
-              <div class="space-y-3">
+              <div v-else class="grid grid-cols-3 gap-2">
                 <div
                   v-for="anchor in chapterAnchors"
                   :key="anchor.id"
-                  class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
+                  @click="startAnchorEdit(anchor)"
                 >
-                  <div class="w-16 h-12 rounded-md overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                  <!-- 参考图 -->
+                  <div class="aspect-video bg-gray-100 dark:bg-gray-700 flex-shrink-0">
                     <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
-                    <div v-else class="w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md p-1">
-                      <span class="text-xs text-center text-gray-400 leading-tight">首次生成后<br>自动锁定</span>
+                    <div v-else class="w-full h-full flex items-center justify-center">
+                      <svg class="w-6 h-6 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
                     </div>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2">
-                      <span class="font-medium text-sm text-gray-900 dark:text-white truncate">{{ anchor.name }}</span>
-                      <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">{{ anchor.type || 'interior' }}</span>
-                      <span v-if="anchor.ref_image_url" class="text-xs text-amber-600 dark:text-amber-400" title="参考图已锁定">🔒</span>
-                    </div>
-                    <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{{ anchor.description }}</p>
-                    <p v-if="anchor.prompt_lock" class="text-xs text-blue-500 dark:text-blue-400 mt-0.5 truncate font-mono">{{ anchor.prompt_lock }}</p>
+                  <!-- 名称 -->
+                  <div class="px-2 py-1.5">
+                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{{ anchor.name }}</p>
+                    <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
                   </div>
-                  <div class="flex gap-1.5 flex-shrink-0">
-                    <button class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" @click="startAnchorEdit(anchor)">编辑</button>
-                    <button class="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" @click="deleteAnchor(anchor.id)">删除</button>
-                  </div>
+                  <!-- 锁定标记 -->
+                  <span v-if="anchor.ref_image_url" class="absolute top-1 left-1 text-[10px] bg-amber-500/90 text-white rounded px-1">已锁定</span>
+                  <!-- 解绑按钮 -->
+                  <button
+                    class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500/90 transition-colors opacity-0 group-hover:opacity-100"
+                    title="解除绑定"
+                    :disabled="unbindingAnchorId === anchor.id"
+                    @click.stop="handleUnbindAnchor(anchor.id)"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
 
-            <!-- 分镜场景绑定（需要有分镜数据） -->
-            <div v-if="chapterShots.length > 0" class="card p-5">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-1">分镜场景绑定</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">为每个镜头指定场景，生成图像时自动注入一致的布景描述</p>
-              <div class="space-y-2">
-                <div v-for="shot in chapterShots" :key="shot.id" class="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                  <span class="text-xs font-mono text-gray-500 w-12 flex-shrink-0">镜 #{{ shot.shot_no }}</span>
-                  <p class="flex-1 text-xs text-gray-600 dark:text-gray-400 truncate">{{ shot.description || '—' }}</p>
-                  <select
-                    :value="shot.scene_anchor_id || ''"
-                    class="input text-xs py-1 h-7 w-36 flex-shrink-0"
-                    @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
-                  >
-                    <option value="">未绑定</option>
-                    <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+            <!-- 编辑表单（点击场景卡片弹出） -->
+            <div v-if="showAnchorForm" class="p-4 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+              <div class="flex items-center justify-between">
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ editingAnchorId ? '编辑场景' : '新建场景' }}</h4>
+                <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showAnchorForm = false">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
+                  <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">类型</label>
+                  <select v-model="anchorForm.type" class="input w-full text-sm">
+                    <option value="interior">室内</option>
+                    <option value="exterior">室外</option>
+                    <option value="imaginary">虚构/幻境</option>
                   </select>
-                  <span v-if="shot.scene_anchor_id" class="text-xs text-amber-500" title="已绑定场景">🔒</span>
                 </div>
               </div>
+              <div>
+                <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
+                <textarea v-model="anchorForm.description" rows="2" placeholder="用自然语言描述场景外观、氛围…" class="input w-full text-sm resize-none" />
+              </div>
+              <div>
+                <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词</label>
+                <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">
+                  {{ savingAnchor ? '保存中…' : (editingAnchorId ? '更新' : '创建') }}
+                </button>
+                <button v-if="editingAnchorId" class="text-xs text-red-400 hover:text-red-600 px-3 py-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20" @click="deleteAnchor(editingAnchorId); showAnchorForm = false">删除场景</button>
+                <button class="btn-outline text-sm" @click="showAnchorForm = false">取消</button>
+              </div>
             </div>
+
 
           </div>
         </div>
@@ -2437,8 +2531,8 @@ onUnmounted(() => {
               <div v-if="chapter" class="space-y-3">
                 <div class="flex items-center justify-between mb-3">
                   <div>
-                    <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">角色状态快照</h4>
-                    <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">保存角色在本章的状态</p>
+                    <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">角色形象</h4>
+                    <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">根据本章内容生成角色形象</p>
                   </div>
                   <button
                     type="button"
@@ -2453,17 +2547,6 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <template v-if="updateCharSnapshots">
-                  <div class="flex gap-2 mb-3">
-                    <button type="button" class="flex-1 py-1.5 text-xs rounded-lg border-2 transition-colors"
-                      :class="snapshotMode === 'generate' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300' : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'"
-                      @click="snapshotMode = 'generate'">重新生成</button>
-                    <button type="button" class="flex-1 py-1.5 text-xs rounded-lg border-2 transition-colors"
-                      :class="snapshotMode === 'reuse' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300' : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'"
-                      @click="snapshotMode = 'reuse'">复用上章</button>
-                  </div>
-                  <p class="text-xs text-gray-400 dark:text-gray-500 mb-3 leading-relaxed">
-                    {{ snapshotMode === 'generate' ? '结合本章内容和上章状态，AI 重新生成角色状态' : '直接将上一章的角色状态复制到本章' }}
-                  </p>
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-xs text-gray-500 dark:text-gray-400">选择角色</span>
                     <button type="button" class="text-xs text-purple-600 dark:text-purple-400 hover:underline"
@@ -2487,11 +2570,11 @@ onUnmounted(() => {
                   <button type="button"
                     :disabled="syncingSnapshots || selectedCharacterIds.length === 0"
                     class="w-full py-2 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5"
-                    @click="handleSyncSnapshots">
+                    @click="handleGenerateCharacterImages">
                     <svg v-if="syncingSnapshots" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
-                    {{ syncingSnapshots ? '更新中...' : `更新 ${selectedCharacterIds.length} 个角色状态` }}
+                    {{ syncingSnapshots ? '生成中...' : `生成 ${selectedCharacterIds.length} 个角色形象` }}
                   </button>
                 </template>
               </div>
@@ -2533,7 +2616,7 @@ onUnmounted(() => {
                 >
                   <svg v-if="extractingMinorChars" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  {{ extractingMinorChars ? '提取中...' : '提取次要角色' }}
+                  {{ extractingMinorChars ? '分析中...' : '角色分析' }}
                 </button>
                 <button
                   :disabled="extractingChapterItems || !chapter?.content"
@@ -2552,7 +2635,7 @@ onUnmounted(() => {
           <!-- ── 场景管理 AI ── -->
           <template v-else-if="pageMode === 'scenes'">
             <div class="p-4 space-y-3">
-              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中 AI 提取场景，或手动创建场景以确保视觉一致性。</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中提取场景，或手动绑定场景以确保跨镜头视觉一致性。</p>
               <!-- 高级参数 -->
               <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                 <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
@@ -2584,7 +2667,7 @@ onUnmounted(() => {
               >
                 <svg v-if="extractingChapterAnchors" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                {{ extractingChapterAnchors ? 'AI 提取中...' : 'AI 提取场景' }}
+                {{ extractingChapterAnchors ? '分析中...' : '场景分析' }}
               </button>
             </div>
           </template>
@@ -3083,6 +3166,90 @@ onUnmounted(() => {
           class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
           @click="handleRegenerate"
         >确认重新生成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手动绑定场景弹窗 -->
+  <div v-if="showBindAnchorModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showBindAnchorModal = false" />
+    <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">绑定场景到本章</h3>
+        <button class="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" @click="showBindAnchorModal = false">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1 p-4">
+        <p v-if="unboundAnchors.length === 0" class="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
+          所有场景已绑定到本章
+        </p>
+        <div v-else class="space-y-2">
+          <button
+            v-for="anchor in unboundAnchors"
+            :key="anchor.id"
+            class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-300 dark:hover:border-violet-600 transition-colors text-left disabled:opacity-50"
+            :disabled="bindingAnchorId === anchor.id"
+            @click="handleBindAnchor(anchor.id)"
+          >
+            <div class="w-12 h-9 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+              <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <svg class="w-4 h-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ anchor.name }}</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
+            </div>
+            <svg v-if="bindingAnchorId === anchor.id" class="w-4 h-4 animate-spin text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <svg v-else class="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手动绑定角色弹窗 -->
+  <div v-if="showBindCharModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showBindCharModal = false" />
+    <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">绑定角色到本章</h3>
+        <button class="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" @click="showBindCharModal = false">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1 p-4">
+        <p v-if="unboundCharacters.length === 0" class="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
+          所有角色已绑定到本章
+        </p>
+        <div v-else class="space-y-2">
+          <button
+            v-for="char in unboundCharacters"
+            :key="char.id"
+            class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-300 dark:hover:border-violet-600 transition-colors text-left disabled:opacity-50"
+            :disabled="bindingCharId === char.id"
+            @click="handleBindCharacter(char.id)"
+          >
+            <div class="w-9 h-9 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+              <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+              <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ char.name }}</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500">{{ { protagonist: '主角', antagonist: '反派', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
+            </div>
+            <svg v-if="bindingCharId === char.id" class="w-4 h-4 animate-spin text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <svg v-else class="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>

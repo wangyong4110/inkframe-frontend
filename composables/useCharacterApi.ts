@@ -118,6 +118,18 @@ export const useCharacterApi = () => {
   const getEffectiveCharacters = (novelId: number, chapterNo: number) =>
     request<ApiResponse<any[]>>(`/novels/${novelId}/chapters/${chapterNo}/characters`)
 
+  const bindChapterCharacter = (novelId: number, chapterNo: number, characterId: number) =>
+    request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/characters/${characterId}`, { method: 'POST', body: JSON.stringify({}) })
+
+  const unbindChapterCharacter = (novelId: number, chapterNo: number, characterId: number) =>
+    request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/characters/${characterId}`, { method: 'DELETE' })
+
+  const generateChapterCharacterImages = (novelId: number, chapterNo: number, characterIds: number[], provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/${chapterNo}/characters/generate-images`, {
+      method: 'POST',
+      body: JSON.stringify({ character_ids: characterIds, provider: provider ?? '' }),
+    })
+
   return {
     getCharacters,
     getCharacter,
@@ -142,5 +154,8 @@ export const useCharacterApi = () => {
     generateLookImages,
     reanalyzeCharacter,
     getEffectiveCharacters,
+    bindChapterCharacter,
+    unbindChapterCharacter,
+    generateChapterCharacterImages,
   }
 }
