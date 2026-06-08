@@ -22,7 +22,6 @@ watch(() => route.path, () => { mobileMenuOpen.value = false })
 
 const navItems = [
   { label: '首页', to: '/' },
-  { label: '概览', to: '/dashboard' },
   { label: '项目', to: '/novel' },
   { label: '素材', to: '/assets' },
   { label: '模型', to: '/model' },
