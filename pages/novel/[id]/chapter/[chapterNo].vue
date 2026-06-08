@@ -890,11 +890,18 @@ watch(scriptCustomDurationMins, (v) => {
   scriptTargetDuration.value = Math.max(0, Math.round(v * 60))
 })
 const scriptAvgShotDur = computed(() => ({ auto: 5, slow: 8, normal: 5, fast: 3 }[scriptPacing.value] ?? 5))
-const scriptEstimatedShots = computed(() =>
-  scriptTargetDuration.value > 0
-    ? Math.max(3, Math.round(scriptTargetDuration.value / scriptAvgShotDur.value))
-    : '自动'
-)
+const scriptEstimatedShots = computed(() => {
+  const avgSec = scriptAvgShotDur.value
+  if (scriptTargetDuration.value > 0) {
+    return Math.max(3, Math.round(scriptTargetDuration.value / avgSec))
+  }
+  // 自动模式：与后端 calcTotalShots 逻辑对齐
+  // 估算视频时长(秒) = 字数 * 2 / 25（约 300字/分阅读速度 × 0.4 精炼比）
+  const totalChars = chapter.value?.content?.length ?? 0
+  if (totalChars <= 0) return '自动'
+  const estimatedSecs = Math.round(totalChars * 2 / 25)
+  return Math.min(200, Math.max(5, Math.round(estimatedSecs / avgSec)))
+})
 
 async function switchToScript() {
   pageMode.value = 'script'
@@ -2641,7 +2648,7 @@ onUnmounted(() => {
                   <span v-if="scriptTargetDuration > 0" class="text-xs text-primary-500">= {{ scriptTargetDuration }}秒</span>
                 </div>
                 <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
-                  预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头
+                  预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头<span v-if="scriptTargetDuration === 0 && typeof scriptEstimatedShots === 'number'" class="ml-1 text-gray-400">（按字数估算）</span>
                 </p>
               </div>
               <!-- 配音模式 -->

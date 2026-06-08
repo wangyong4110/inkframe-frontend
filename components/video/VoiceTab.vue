@@ -106,8 +106,11 @@ async function handleGenerateAllVoice() {
   if (shots.value.length === 0) { toast.error('没有分镜，无法生成配音'); return }
   if (batchVoiceGenerating.value) { toast.info('配音批量任务进行中…'); return }
   const missing = findCharsWithoutVoice()
-  if (missing.length > 0) {
+  const needsNarration = shots.value.some(s => s.narration)
+  const narrationMissing = needsNarration && !narrationVoice.value
+  if (missing.length > 0 || narrationMissing) {
     missingVoiceChars.value = missing
+    narrationVoiceMissing.value = narrationMissing
     showVoiceWarningModal.value = true
     return
   }
@@ -252,6 +255,7 @@ import type { Character } from '~/types'
 
 const showVoiceWarningModal = ref(false)
 const missingVoiceChars = ref<Character[]>([])
+const narrationVoiceMissing = ref(false)
 
 function findCharsWithoutVoice(): Character[] {
   const speakerNames = new Set<string>()
@@ -508,15 +512,36 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 </svg>
               </div>
               <div>
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">部分角色未配置音色</h3>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">音色未配置</h3>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  以下角色在分镜中有台词，但尚未设置专属音色，生成时将使用默认旁白音色代替。
+                  以下配音项尚未设置音色，请前往对应页面配置后再生成。
                 </p>
               </div>
             </div>
 
-            <!-- 角色列表 -->
+            <!-- 未配置列表 -->
             <div class="space-y-2 max-h-52 overflow-y-auto">
+              <!-- 旁白音色 -->
+              <div
+                v-if="narrationVoiceMissing"
+                class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </div>
+                  <span class="text-sm font-medium text-gray-800 dark:text-gray-200">旁白</span>
+                  <span class="text-xs text-amber-500 dark:text-amber-400 flex-shrink-0">未设置音色</span>
+                </div>
+                <NuxtLink
+                  :to="`/novel/${videoStore.currentVideo?.novel_id}?tab=settings`"
+                  class="text-xs text-primary-600 dark:text-primary-400 hover:underline flex-shrink-0 ml-2"
+                  @click="showVoiceWarningModal = false"
+                >前往配置 →</NuxtLink>
+              </div>
+              <!-- 角色音色 -->
               <div
                 v-for="char in missingVoiceChars"
                 :key="char.id"
