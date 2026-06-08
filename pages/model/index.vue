@@ -739,7 +739,7 @@ async function toggleModelBinding(modelId: number) {
 // ═══════════════════════════════════════════════════════════════════════════
 // TAB 3 — 模型测试 & A/B 对比
 // ═══════════════════════════════════════════════════════════════════════════
-const { testModelPrompt, getTaskMappings, updateTaskMapping } = useModelApi()
+const { testModelPrompt } = useModelApi()
 
 // ── Single model test panel ──────────────────────────────────────────────────
 const testPanel = reactive({
@@ -831,45 +831,6 @@ async function runABTest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TAB 4 — 任务-模型映射
-// ═══════════════════════════════════════════════════════════════════════════
-const taskTypeLabels: Record<string, string> = {
-  chapter_generation:    '章节生成',
-  character_extraction:  '角色提取',
-  storyboard_generation: '分镜生成',
-  image_generation:      '图像生成',
-  tts:                   'TTS语音',
-  translation:           '翻译',
-}
-
-const taskMappings = ref<Record<string, number | null>>({})
-const taskMappingLoading = ref(false)
-const taskMappingSaving = ref<Record<string, boolean>>({})
-
-const loadTaskMappings = async () => {
-  taskMappingLoading.value = true
-  try {
-    const res = await getTaskMappings()
-    taskMappings.value = (res as any).data || {}
-  } catch {
-    // ignore — backend may not have this endpoint yet
-  } finally {
-    taskMappingLoading.value = false
-  }
-}
-
-async function saveTaskMapping(taskType: string, providerId: number | null) {
-  taskMappingSaving.value = { ...taskMappingSaving.value, [taskType]: true }
-  try {
-    await updateTaskMapping({ task_type: taskType, provider_id: providerId || null })
-    toast.success('映射已更新')
-  } catch {
-    toast.error('保存失败')
-  } finally {
-    taskMappingSaving.value = { ...taskMappingSaving.value, [taskType]: false }
-  }
-}
-
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadProviderTemplates()
@@ -879,7 +840,6 @@ onMounted(() => {
 
 watch(activeTab, (tab) => {
   if (tab === 'mcp' && mcpTools.value.length === 0 && !mcpLoading.value) loadMcpTools()
-  if (tab === 'mapping') loadTaskMappings()
 })
 </script>
 
@@ -949,15 +909,6 @@ watch(activeTab, (tab) => {
           @click="activeTab = 'test'"
         >
           生成测试
-        </button>
-        <button
-          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
-          :class="activeTab === 'mapping'
-            ? 'border-primary-500 text-primary-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-          @click="activeTab = 'mapping'"
-        >
-          任务映射
         </button>
       </nav>
     </div>
@@ -1128,35 +1079,6 @@ watch(activeTab, (tab) => {
               </button>
               <button class="btn-ghost text-xs px-3 py-1.5" @click="closeAddModelForm(p.id)">取消</button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 待配置语音/音效供应商提示 -->
-      <div v-if="unconfiguredVoiceProviders.length > 0" class="mt-6">
-        <div class="flex items-center gap-2 mb-3">
-          <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
-          </svg>
-          <span class="text-sm font-medium text-amber-700 dark:text-amber-400">可用的语音合成供应商（尚未配置密钥）</span>
-          <span class="text-xs text-gray-400">点击「配置」填写 API Key 后即可在角色配音中选择音色</span>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div
-            v-for="p in unconfiguredVoiceProviders" :key="p.id"
-            class="flex items-center gap-3 rounded-xl border border-dashed border-amber-200 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/10 px-4 py-3"
-          >
-            <div class="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold shrink-0" :class="providerColor(p.name)">
-              {{ (p.display_name || p.name).charAt(0).toUpperCase() }}
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ p.display_name || p.name }}</div>
-              <div class="text-xs text-gray-400 font-mono">{{ p.name }}</div>
-            </div>
-            <button
-              class="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-              @click="openEditProvider(p)"
-            >配置</button>
           </div>
         </div>
       </div>
@@ -1377,65 +1299,6 @@ watch(activeTab, (tab) => {
             <div v-if="abTest.errorB" class="text-sm text-red-500">{{ abTest.errorB }}</div>
           </div>
         </div>
-      </div>
-    </template>
-
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- TAB 4: 任务-模型映射                                                  -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <template v-else-if="activeTab === 'mapping'">
-      <div class="card p-6">
-        <div class="flex items-center justify-between mb-6">
-          <div>
-            <h3 class="font-semibold text-gray-900 dark:text-white">任务-模型映射</h3>
-            <p class="text-xs text-gray-400 mt-1">为每种任务类型指定默认提供商，更改后立即生效</p>
-          </div>
-          <button class="btn-ghost text-sm" :disabled="taskMappingLoading" @click="loadTaskMappings">
-            <svg class="w-4 h-4" :class="taskMappingLoading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-          </button>
-        </div>
-
-        <div v-if="taskMappingLoading" class="space-y-4">
-          <div v-for="i in 6" :key="i" class="animate-pulse flex items-center gap-4">
-            <div class="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
-            <div class="h-9 flex-1 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
-          </div>
-        </div>
-
-        <div v-else class="space-y-4">
-          <div
-            v-for="(label, taskType) in taskTypeLabels"
-            :key="taskType"
-            class="flex items-center gap-4"
-          >
-            <span class="w-36 text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">{{ label }}</span>
-            <select
-              v-model="taskMappings[taskType as string]"
-              class="flex-1 input text-sm"
-              :disabled="taskMappingSaving[taskType as string]"
-              @change="saveTaskMapping(taskType as string, taskMappings[taskType as string] ?? null)"
-            >
-              <option :value="null">使用默认</option>
-              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">
-                {{ p.display_name || p.name }}
-              </option>
-            </select>
-            <svg
-              v-if="taskMappingSaving[taskType as string]"
-              class="w-4 h-4 animate-spin text-primary-500 shrink-0"
-              fill="none" viewBox="0 0 24 24"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-          </div>
-        </div>
-
-        <p class="text-xs text-gray-400 mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
-          "使用默认"表示由系统自动选择优先级最高的可用提供商。映射仅影响对应任务类型的后续生成请求。
-        </p>
       </div>
     </template>
 
