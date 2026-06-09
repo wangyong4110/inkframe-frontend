@@ -1997,7 +1997,7 @@ onUnmounted(() => {
                   v-for="anchor in chapterAnchors"
                   :key="anchor.id"
                   class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="startAnchorEdit(anchor)"
+                  @click="router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}`)"
                 >
                   <!-- 参考图 -->
                   <div class="aspect-video bg-gray-100 dark:bg-gray-700 flex-shrink-0">
