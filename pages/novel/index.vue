@@ -122,14 +122,16 @@ function isImageUrl(v?: string): boolean {
   return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
 }
 
-function novelIconStyle(coverImage?: string): string {
+function novelIconStyle(coverImage?: string, aspectRatio?: string): string {
+  const ar = (aspectRatio ?? '9:16').replace(':', '/')
+  const base = `aspect-ratio:${ar};`
   if (isImageUrl(coverImage)) {
-    return `background-image:url(${coverImage});background-size:cover;background-position:center`
+    return `${base}background-image:url(${coverImage});background-size:cover;background-position:center`
   }
   if (coverImage && iconGradients[coverImage]) {
-    return `background:${iconGradients[coverImage]}`
+    return `${base}background:${iconGradients[coverImage]}`
   }
-  return 'background:linear-gradient(135deg,#8B5CF6,#3B82F6)'
+  return `${base}background:linear-gradient(135deg,#8B5CF6,#3B82F6)`
 }
 
 function formatDate(dateStr: string): string {
@@ -227,8 +229,8 @@ function formatDate(dateStr: string): string {
       >
         <!-- Cover / icon -->
         <div
-          class="h-32 flex items-center justify-center"
-          :style="novelIconStyle(novel.cover_image)"
+          class="w-full flex items-center justify-center"
+          :style="novelIconStyle(novel.cover_image, novel.video_aspect_ratio)"
         >
           <span v-if="!isImageUrl(novel.cover_image)" class="text-4xl font-bold text-white opacity-60">{{ novel.title.charAt(0) }}</span>
         </div>
