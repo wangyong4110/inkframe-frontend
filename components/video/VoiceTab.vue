@@ -548,7 +548,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50"
               >
                 <div class="flex items-center gap-2 min-w-0">
-                  <img v-if="char.portrait || char.face_closeup" :src="char.portrait || char.face_closeup" class="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                  <img v-if="char.portrait" :src="char.portrait" class="w-7 h-7 rounded-full object-cover flex-shrink-0" />
                   <div v-else class="w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center flex-shrink-0">
                     <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ char.name[0] }}</span>
                   </div>

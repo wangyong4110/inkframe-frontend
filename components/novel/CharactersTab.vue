@@ -27,14 +27,11 @@ const characters = computed(() => characterStore.characters)
 onMounted(() => characterStore.fetchCharacters(props.novelId))
 
 function openCharacterImage(character: Character) {
-  const src = character.three_view_sheet || character.portrait || ''
+  const src = character.default_three_view || character.portrait || ''
   if (!src) return
   openLightbox(
     src,
     (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
-    async (newUrl) => {
-      await characterStore.updateCharacter(character.id, { three_view_sheet: newUrl })
-    },
   )
 }
 
@@ -243,8 +240,8 @@ async function confirmDeleteCharacter() {
         <!-- 图片区域 -->
         <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
           <img
-            v-if="character.three_view_sheet || character.portrait"
-            :src="character.three_view_sheet || character.portrait"
+            v-if="character.default_three_view || character.portrait"
+            :src="character.default_three_view || character.portrait"
             class="w-full h-full object-cover cursor-zoom-in"
             :alt="character.name"
             @click.stop="openCharacterImage(character)"

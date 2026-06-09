@@ -206,37 +206,6 @@ async function handleGenerateOrRegenerate(chapter: Chapter, event: Event) {
   }
 }
 
-// ── 节奏曲线（内嵌，折叠式）────────────────────────────────────────────────────
-const { getPacingCurve, getPacingHealth } = usePacingApi()
-const showPacingCurve = ref(false)
-const pacingPoints = ref<any[]>([])
-const pacingHealth = ref<any>(null)
-const pacingLoading = ref(false)
-
-const TONE_COLORS: Record<string, string> = {
-  tense: 'bg-red-400', exciting: 'bg-orange-400', happy: 'bg-yellow-400',
-  romantic: 'bg-pink-400', sad: 'bg-blue-400', calm: 'bg-green-400', mysterious: 'bg-purple-400',
-}
-const maxTension = computed(() => Math.max(...pacingPoints.value.map((p: any) => p.tension_level), 1))
-function toneColor(tone: string) { return TONE_COLORS[tone] ?? 'bg-gray-400' }
-function barHeight(tension: number) { return Math.max(4, Math.round((tension / maxTension.value) * 100)) }
-
-async function fetchPacing() {
-  if (pacingLoading.value) return
-  pacingLoading.value = true
-  try {
-    const [curve, health] = await Promise.all([
-      getPacingCurve(props.novelId),
-      getPacingHealth(props.novelId),
-    ])
-    pacingPoints.value = (curve as any).points ?? []
-    pacingHealth.value = health
-  } catch { /* silent */ } finally {
-    pacingLoading.value = false
-  }
-}
-
-watch(showPacingCurve, (v) => { if (v && pacingPoints.value.length === 0) fetchPacing() })
 
 onMounted(() => {
   loadNovelReviews()
@@ -545,67 +514,6 @@ async function confirmDeleteChapter() {
             @click="chapterPage = chapterTotalPages"
           >»</button>
         </div>
-      </div>
-    </div>
-
-    <!-- 节奏曲线（折叠） -->
-    <div class="card overflow-hidden">
-      <button
-        class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-        @click="showPacingCurve = !showPacingCurve"
-      >
-        <span class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
-          </svg>
-          张力节奏曲线
-        </span>
-        <svg class="w-4 h-4 text-gray-400 transition-transform" :class="showPacingCurve ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-        </svg>
-      </button>
-      <div v-if="showPacingCurve" class="px-4 pb-4 border-t border-gray-100 dark:border-gray-700">
-        <div class="flex items-center justify-between py-3">
-          <div v-if="pacingHealth" class="flex items-center gap-2 text-xs" :class="{
-            'text-green-600 dark:text-green-400': pacingHealth.status === 'healthy',
-            'text-yellow-600 dark:text-yellow-400': pacingHealth.status === 'warning',
-            'text-red-600 dark:text-red-400': pacingHealth.status === 'critical',
-          }">
-            <span class="w-2 h-2 rounded-full" :class="{
-              'bg-green-500': pacingHealth.status === 'healthy',
-              'bg-yellow-500': pacingHealth.status === 'warning',
-              'bg-red-500': pacingHealth.status === 'critical',
-            }"></span>
-            {{ { healthy: '节奏健康', warning: '节奏警告', critical: '节奏问题' }[pacingHealth.status as string] ?? '' }}
-            <span v-if="pacingHealth.warnings?.length" class="text-gray-400 ml-1">· {{ pacingHealth.warnings[0].message }}</span>
-          </div>
-          <div v-else class="text-xs text-gray-400">章节张力可视化</div>
-          <button class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :disabled="pacingLoading" @click="fetchPacing">
-            {{ pacingLoading ? '加载中...' : '刷新' }}
-          </button>
-        </div>
-        <div v-if="pacingLoading" class="flex justify-center py-8">
-          <div class="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-        <div v-else-if="pacingPoints.length > 0" class="overflow-x-auto">
-          <div class="flex items-end gap-0.5 h-24 min-w-0">
-            <div
-              v-for="point in pacingPoints"
-              :key="point.chapter_no"
-              class="flex-1 min-w-3 rounded-t cursor-pointer group relative transition-opacity hover:opacity-80"
-              :class="toneColor(point.emotional_tone)"
-              :style="{ height: `${barHeight(point.tension_level)}%` }"
-            >
-              <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10 pointer-events-none">
-                第{{ point.chapter_no }}章 · 张力{{ point.tension_level }}
-              </div>
-            </div>
-          </div>
-          <div class="flex justify-between text-xs text-gray-400 mt-1">
-            <span>第1章</span><span>第{{ pacingPoints.at(-1)?.chapter_no }}章</span>
-          </div>
-        </div>
-        <div v-else class="text-center py-6 text-gray-400 text-xs">暂无数据，请先生成章节</div>
       </div>
     </div>
 

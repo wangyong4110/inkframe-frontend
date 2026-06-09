@@ -6,8 +6,6 @@ const novelStore = useNovelStore()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { url: lightboxUrl } = useImageLightbox()
-const { editImage } = useImageEditApi()
 const { guardAiProvider } = useAiProviderGuard()
 const characterApi = useCharacterApi()
 
@@ -17,69 +15,57 @@ if (isNaN(characterId)) {
   await navigateTo('/novel')
 }
 
-const activeTab = ref('profile')
+const validTabs = ['profile', 'voice', 'looks']
+const initialTab = validTabs.includes(route.query.tab as string) ? (route.query.tab as string) : 'profile'
+const activeTab = ref(initialTab)
 const saving = ref(false)
 const reanalyzing = ref(false)
 const voicePanelRef = ref<{ getVoiceData: () => Record<string, unknown> } | null>(null)
 const isDirty = ref(false)
-const generatingThreeView = ref(false)
-const generatingFaceCloseup = ref(false)
-
-// 三视图任务状态
-const threeViewTaskId = ref('')
-const threeViewTaskStatus = ref<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
-let threeViewTaskTimer: ReturnType<typeof setInterval> | null = null
-
-// 面部特写任务状态
-const faceCloseupTaskId = ref('')
-const faceCloseupTaskStatus = ref<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
-let faceCloseupTaskTimer: ReturnType<typeof setInterval> | null = null
-
-function clearThreeViewTimer() {
-  if (threeViewTaskTimer) { clearInterval(threeViewTaskTimer); threeViewTaskTimer = null }
-}
-function clearFaceCloseupTimer() {
-  if (faceCloseupTaskTimer) { clearInterval(faceCloseupTaskTimer); faceCloseupTaskTimer = null }
-}
-onUnmounted(() => { clearThreeViewTimer(); clearFaceCloseupTimer() })
 const novelImageStyle = computed(() => novelStore.currentNovel?.image_style || 'anime')
 const selectedImageProvider = computed(() => novelStore.currentNovel?.image_model || '')
 
-// 简化后的角色本地副本（对齐后端简化模型）
 const character = ref({
   name: '',
   role: 'protagonist' as string,
   gender: '' as string,
   age: '' as string,
-  description: '',       // 统一描述：外貌、性格、背景、说话风格等
-  visual_prompt: '',     // 英文图像生成提示词
+  description: '',
   portrait: '',
-  three_view_sheet: '',
-  face_closeup: '',
 })
 
 const tabs = [
   { key: 'profile', label: '角色档案' },
-  { key: 'images', label: '视觉设计' },
   { key: 'voice', label: '配音设置' },
   { key: 'looks', label: '形象管理' },
 ]
 
 // ── 形象管理状态 ────────────────────────────────────────────────────────────────
 const looks = ref<CharacterLook[]>([])
+const sortedLooks = computed(() => {
+  const defaultId = character.value?.default_look_id
+  if (!defaultId) return looks.value
+  return [...looks.value].sort((a, b) => {
+    if (a.id === defaultId) return -1
+    if (b.id === defaultId) return 1
+    return 0
+  })
+})
 const loadingLooks = ref(false)
 const showLookForm = ref(false)
 const editingLook = ref<CharacterLook | null>(null)
 const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
-const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string }>({
+const generatingFormThreeView = ref(false)
+const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string }>({
   label: '',
   chapter_from: 1,
   chapter_to: 0,
-  is_default: false,
+  set_as_default: false,
   sort_order: 0,
   description: '',
   visual_prompt: '',
+  three_view_sheet: '',
 })
 
 async function fetchLooks() {
@@ -102,23 +88,28 @@ function openLookForm(look?: CharacterLook) {
       label: look.label,
       chapter_from: look.chapter_from,
       chapter_to: look.chapter_to,
-      is_default: look.is_default,
+      set_as_default: false,
       sort_order: look.sort_order,
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
+      three_view_sheet: look.three_view_sheet ?? '',
     }
   } else {
     editingLook.value = null
-    lookForm.value = { label: '', chapter_from: 1, chapter_to: 0, is_default: false, sort_order: 0, description: '', visual_prompt: '' }
+    lookForm.value = {
+      label: '',
+      chapter_from: 1,
+      chapter_to: 0,
+      set_as_default: false,
+      sort_order: 0,
+      description: character.value?.description ?? '',
+      visual_prompt: '',
+    }
   }
   showLookForm.value = true
 }
 
 async function handleGenerateLookPrompt() {
-  if (!lookForm.value.description) {
-    toast.error('请先填写外观描述')
-    return
-  }
   if (!await guardAiProvider('LLM')) return
   generatingLookPrompt.value = true
   try {
@@ -144,10 +135,11 @@ async function handleSaveLook() {
         label: lookForm.value.label,
         chapter_from: lookForm.value.chapter_from,
         chapter_to: lookForm.value.chapter_to,
-        is_default: lookForm.value.is_default,
+        set_as_default: lookForm.value.set_as_default,
         sort_order: lookForm.value.sort_order,
         description: lookForm.value.description,
         visual_prompt: lookForm.value.visual_prompt,
+        three_view_sheet: lookForm.value.three_view_sheet,
       }
       await characterApi.updateLook(characterId, editingLook.value.id, updateData)
       toast.success('形象已更新')
@@ -162,14 +154,91 @@ async function handleSaveLook() {
   }
 }
 
+const copyingLookId = ref<number | null>(null)
+
+async function handleCopyLook(look: CharacterLook) {
+  copyingLookId.value = look.id
+  try {
+    await characterApi.createLook(characterId, {
+      label: look.label + ' 副本',
+      chapter_from: look.chapter_from,
+      chapter_to: look.chapter_to,
+      sort_order: look.sort_order,
+      description: look.description ?? '',
+      visual_prompt: look.visual_prompt ?? '',
+    })
+    toast.success('形象已复制')
+    await fetchLooks()
+  } catch (e: any) {
+    toast.error('复制失败：' + (e.message || ''))
+  } finally {
+    copyingLookId.value = null
+  }
+}
+
 async function handleDeleteLook(look: CharacterLook) {
-  if (!confirm(`确认删除形象「${look.label}」？`)) return
+  if (looks.value.length <= 1) {
+    toast.error('角色至少需要保留一个形象')
+    return
+  }
+  if (!confirm(`确认删除形象「${look.label}」？此操作不可撤销。`)) return
   try {
     await characterApi.deleteLook(characterId, look.id)
     toast.success('形象已删除')
     await fetchLooks()
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+const settingDefaultLookId = ref<number | null>(null)
+
+async function handleSetDefaultLook(look: CharacterLook) {
+  if (character.value?.default_look_id === look.id) return
+  settingDefaultLookId.value = look.id
+  try {
+    await characterApi.updateLook(characterId, look.id, { set_as_default: true })
+    // 本地更新 character.default_look_id，避免重新拉取整个角色
+    if (character.value) character.value.default_look_id = look.id
+    toast.success(`「${look.label}」已设为默认形象`)
+  } catch (e: any) {
+    toast.error('设置失败：' + (e.message || ''))
+  } finally {
+    settingDefaultLookId.value = null
+  }
+}
+
+async function handleDeleteLookFromForm() {
+  if (!editingLook.value) return
+  if (looks.value.length <= 1) {
+    toast.error('角色至少需要保留一个形象')
+    return
+  }
+  if (!confirm(`确认删除形象「${editingLook.value.label}」？此操作不可撤销。`)) return
+  try {
+    await characterApi.deleteLook(characterId, editingLook.value.id)
+    toast.success('形象已删除')
+    showLookForm.value = false
+    await fetchLooks()
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || ''))
+  }
+}
+
+async function handleFormGenerateThreeView() {
+  if (!editingLook.value) return
+  if (!await guardAiProvider('IMAGE')) return
+  generatingFormThreeView.value = true
+  try {
+    await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined)
+    await fetchLooks()
+    const updated = looks.value.find(l => l.id === editingLook.value!.id)
+    if (updated?.three_view_sheet) lookForm.value.three_view_sheet = updated.three_view_sheet
+    toast.success('三视图已生成')
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || ''))
+  } finally {
+    generatingFormThreeView.value = false
   }
 }
 
@@ -215,6 +284,7 @@ async function handleLookImageUpload(e: Event) {
 }
 
 watch(activeTab, (val) => {
+  router.replace({ query: { ...route.query, tab: val } })
   if (val === 'looks' && looks.value.length === 0) fetchLooks()
 })
 
@@ -238,10 +308,7 @@ onMounted(async () => {
         gender: (c as any).gender ?? '',
         age: (c as any).age ?? '',
         description: c.description ?? '',
-        visual_prompt: (c as any).visual_prompt ?? '',
         portrait: c.portrait ?? '',
-        three_view_sheet: c.three_view_sheet ?? '',
-        face_closeup: c.face_closeup ?? '',
       }
     }
     await nextTick()
@@ -272,7 +339,6 @@ async function handleReanalyze() {
     if (res.data) {
       const d = res.data as any
       character.value.description = d.description ?? character.value.description
-      character.value.visual_prompt = d.visual_prompt ?? character.value.visual_prompt
       character.value.gender = d.gender ?? character.value.gender
       character.value.age = d.age ?? character.value.age
       // 同步配音字段到 store，让配音设置 tab 实时反映 AI 推荐结果
@@ -303,109 +369,6 @@ async function autoSaveIfDirty() {
   if (!isDirty.value) return
   await characterStore.updateCharacter(characterId, { ...character.value })
   isDirty.value = false
-}
-
-async function handleGenerateThreeView() {
-  if (!character.value.description && !character.value.visual_prompt) {
-    toast.error('请先填写角色描述或视觉提示词，再生成三视图')
-    return
-  }
-  if (!await guardAiProvider('IMAGE')) return
-  try { await autoSaveIfDirty() } catch (e: any) {
-    toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
-    return
-  }
-  generatingThreeView.value = true
-  threeViewTaskStatus.value = 'pending'
-  clearThreeViewTimer()
-  try {
-    const api = useCharacterApi()
-    const res = await api.generateThreeView(characterId, novelImageStyle.value, selectedImageProvider.value || undefined)
-    const taskId = (res as any).data?.task_id ?? ''
-    if (!taskId) throw new Error('未获取到任务 ID')
-    threeViewTaskId.value = taskId
-    toast.info('三视图生成任务已提交，AI 正在生成中…')
-    threeViewTaskTimer = setInterval(async () => {
-      try {
-        const pollRes = await useTaskApi().getTask(threeViewTaskId.value)
-        const task = pollRes.data
-        threeViewTaskStatus.value = task.status as any
-        if (task.status === 'completed') {
-          clearThreeViewTimer()
-          generatingThreeView.value = false
-          const updatedChar = (task.data?.character ?? task.character) as any
-          const newUrl = updatedChar?.three_view_sheet
-          if (newUrl) {
-            character.value.three_view_sheet = newUrl
-            await nextTick()
-            isDirty.value = false
-          }
-          toast.success('三视图生成完成')
-        } else if (task.status === 'failed') {
-          clearThreeViewTimer()
-          generatingThreeView.value = false
-          toast.error('生成失败：' + (task.error || '未知错误'))
-        }
-      } catch { /* ignore */ }
-    }, 3000)
-  } catch (e: any) {
-    clearThreeViewTimer()
-    generatingThreeView.value = false
-    threeViewTaskStatus.value = 'failed'
-    toast.error('生成失败：' + (e.message || ''))
-  }
-}
-
-async function handleGenerateFaceCloseup() {
-  if (!character.value.description && !character.value.visual_prompt) {
-    toast.error('请先填写角色描述或视觉提示词，再生成面部特写')
-    return
-  }
-  if (!await guardAiProvider('IMAGE')) return
-  try { await autoSaveIfDirty() } catch (e: any) {
-    toast.error('自动保存失败，请手动保存后再生成：' + (e.message || ''))
-    return
-  }
-  generatingFaceCloseup.value = true
-  faceCloseupTaskStatus.value = 'pending'
-  clearFaceCloseupTimer()
-  try {
-    const api = useCharacterApi()
-    const res = await api.generateFaceCloseup(characterId, novelImageStyle.value, selectedImageProvider.value || undefined)
-    const taskId = (res as any).data?.task_id ?? ''
-    if (!taskId) throw new Error('未获取到任务 ID')
-    faceCloseupTaskId.value = taskId
-    toast.info('面部特写生成任务已提交，AI 正在生成中…')
-    faceCloseupTaskTimer = setInterval(async () => {
-      try {
-        const pollRes = await useTaskApi().getTask(faceCloseupTaskId.value)
-        const task = pollRes.data
-        faceCloseupTaskStatus.value = task.status as any
-        if (task.status === 'completed') {
-          clearFaceCloseupTimer()
-          generatingFaceCloseup.value = false
-          const updatedChar = (task.data?.character ?? task.character) as any
-          const newUrl = updatedChar?.face_closeup
-          if (newUrl) {
-            character.value.face_closeup = newUrl
-            character.value.portrait = newUrl
-            await nextTick()
-            isDirty.value = false
-          }
-          toast.success('面部特写生成完成')
-        } else if (task.status === 'failed') {
-          clearFaceCloseupTimer()
-          generatingFaceCloseup.value = false
-          toast.error('生成失败：' + (task.error || '未知错误'))
-        }
-      } catch { /* ignore */ }
-    }, 3000)
-  } catch (e: any) {
-    clearFaceCloseupTimer()
-    generatingFaceCloseup.value = false
-    faceCloseupTaskStatus.value = 'failed'
-    toast.error('生成失败：' + (e.message || ''))
-  }
 }
 
 function getRoleColor(role: string): string {
@@ -514,105 +477,10 @@ function getRoleLabel(role: string): string {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">角色描述</label>
-        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">包含外貌、性格、背景故事、说话风格等所有描述性信息</p>
-        <textarea v-model="character.description" rows="10" class="input" placeholder="描述角色的外貌特征、性格特点、背景故事、说话方式…"></textarea>
+        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">角色的出身来历、成长经历、关键转折、动机与目标</p>
+        <textarea v-model="character.description" rows="10" class="input" placeholder="描述角色的出身来历、成长经历、关键转折、动机与目标…"></textarea>
       </div>
 
-    </div>
-
-    <!-- 视觉设计 Tab -->
-    <div v-if="activeTab === 'images'" class="card p-6 space-y-6">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉提示词</label>
-        <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">供 AI 图像生成使用的提示词，由 AI 分析自动填写，也可手动编辑</p>
-        <textarea v-model="character.visual_prompt" rows="4" class="input font-mono text-xs" placeholder="e.g. young woman, long silver hair, blue eyes, traditional hanfu, elegant posture..."></textarea>
-      </div>
-      <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">图像资产</h3>
-      <!-- column ratio 24:76 so that 9:16 and 16:9 boxes share the same row height -->
-      <div class="grid gap-6" style="grid-template-columns: 24fr 76fr">
-        <!-- Face closeup (LEFT, 9:16) — also used as portrait/avatar -->
-        <div>
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h4 class="text-sm font-medium text-gray-900 dark:text-white">面部特写</h4>
-              <p class="text-xs text-gray-500 mt-0.5">头部特写，同时用作角色头像</p>
-            </div>
-            <button
-              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-              :disabled="generatingFaceCloseup"
-              @click="handleGenerateFaceCloseup"
-            >
-              <svg v-if="generatingFaceCloseup" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {{ generatingFaceCloseup ? '生成中...' : 'AI 生成' }}
-            </button>
-          </div>
-          <div class="relative">
-            <ImageUploadBox
-              v-model="character.face_closeup"
-              aspect-ratio="9/16"
-              placeholder="面部特写图"
-              :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id)"
-              :on-save="(url: string) => { character.face_closeup = url; character.portrait = url; isDirty = true }"
-              @error="toast.error"
-            />
-            <div v-if="generatingFaceCloseup" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          </div>
-          <div v-if="faceCloseupTaskStatus !== 'idle'" class="mt-2 text-xs">
-            <span v-if="faceCloseupTaskStatus === 'pending' || faceCloseupTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
-              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              AI 正在生成，请稍候…
-            </span>
-            <span v-else-if="faceCloseupTaskStatus === 'completed'" class="text-green-500">生成完成</span>
-            <span v-else-if="faceCloseupTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
-          </div>
-        </div>
-
-        <!-- Three-view sheet (RIGHT, 16:9) -->
-        <div>
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h4 class="text-sm font-medium text-gray-900 dark:text-white">三视图参考图</h4>
-              <p class="text-xs text-gray-500 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
-            </div>
-            <button
-              class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-              :disabled="generatingThreeView"
-              @click="handleGenerateThreeView"
-            >
-              <svg v-if="generatingThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {{ generatingThreeView ? '生成中...' : 'AI 生成' }}
-            </button>
-          </div>
-          <div class="relative">
-            <ImageUploadBox
-              v-model="character.three_view_sheet"
-              aspect-ratio="16/9"
-              placeholder="三视图参考图（正面+侧面+背面合图）"
-              :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id)"
-              :on-save="(url: string) => { character.three_view_sheet = url; isDirty = true }"
-              @error="toast.error"
-            />
-            <div v-if="generatingThreeView" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-              <div class="w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          </div>
-          <div v-if="threeViewTaskStatus !== 'idle'" class="mt-2 text-xs">
-            <span v-if="threeViewTaskStatus === 'pending' || threeViewTaskStatus === 'running'" class="text-blue-500 flex items-center gap-1">
-              <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              AI 正在生成，请稍候…
-            </span>
-            <span v-else-if="threeViewTaskStatus === 'completed'" class="text-green-500">生成完成</span>
-            <span v-else-if="threeViewTaskStatus === 'failed'" class="text-red-500">生成失败，请重试</span>
-          </div>
-        </div>
-      </div>
-      <p class="text-xs text-gray-500 mt-4">需填写「角色描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
 
     <!-- 配音设置 Tab -->
@@ -646,101 +514,40 @@ function getRoleLabel(role: string): string {
         <p class="text-sm mt-1">点击「新建形象」为角色创建不同时期的外观版本</p>
       </div>
 
-      <!-- 形象列表（时间线视图） -->
-      <div v-else class="space-y-3">
+      <!-- 形象列表（卡片网格） -->
+      <div v-else class="grid grid-cols-3 gap-3">
         <div
-          v-for="look in looks"
+          v-for="look in sortedLooks"
           :key="look.id"
-          class="card p-4"
+          class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden hover:border-violet-400 dark:hover:border-violet-500 transition-colors"
         >
-          <div class="flex gap-4 items-start">
-            <!-- 头像上传区（点击上传 portrait） -->
-            <div
-              class="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer relative group border-2 border-dashed border-transparent hover:border-primary-400 transition-colors"
-              title="点击上传头像"
-              @click="triggerLookUpload(look, 'portrait')"
-            >
-              <img
-                v-if="look.portrait || look.face_closeup"
-                :src="look.portrait || look.face_closeup"
-                class="w-full h-full object-cover"
-              />
-              <div v-else class="flex flex-col items-center gap-1 text-gray-300">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span class="text-xs">头像</span>
-              </div>
-              <!-- hover overlay -->
-              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-lg">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <!-- uploading spinner -->
-              <div v-if="uploadingLookImage === look.id && pendingLookUpload?.type === 'portrait'" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
-                <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            </div>
+          <!-- 三视图图片区（只读） -->
+          <div class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden">
+            <img v-if="look.three_view_sheet" :src="look.three_view_sheet" class="w-full h-full object-cover" />
+            <span v-else class="text-2xl font-bold text-gray-300 dark:text-gray-600 select-none">{{ look.label.charAt(0) }}</span>
+            <!-- 默认 badge -->
+            <span v-if="character?.default_look_id === look.id" class="absolute top-1.5 left-1.5 text-[10px] bg-blue-500/90 text-white px-1.5 py-0.5 rounded-full leading-none">默认</span>
+          </div>
 
-            <!-- 信息区 -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-gray-800 dark:text-gray-100">{{ look.label }}</span>
-                <span v-if="look.is_default" class="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">默认</span>
-                <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
-                  第 {{ look.chapter_from }} 章
-                  {{ look.chapter_to > 0 ? `— 第 ${look.chapter_to} 章` : '起（无限延伸）' }}
-                </span>
-              </div>
-              <p v-if="look.description" class="text-sm text-gray-500 mt-1 line-clamp-2">{{ look.description }}</p>
-              <p v-if="look.visual_prompt" class="text-xs text-gray-400 mt-1 line-clamp-1 font-mono">{{ look.visual_prompt }}</p>
-
-              <!-- 操作按钮 -->
-              <div class="flex gap-2 mt-2 flex-wrap">
-                <button
-                  class="btn-secondary text-xs py-1 px-2"
-                  :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                  @click="handleGenerateLookImage(look, 'face_closeup')"
-                >
-                  {{ generatingLookImage === look.id ? '生成中…' : 'AI 生成头像' }}
-                </button>
-                <button
-                  class="btn-secondary text-xs py-1 px-2"
-                  :disabled="generatingLookImage === look.id || uploadingLookImage === look.id"
-                  @click="handleGenerateLookImage(look, 'three_view')"
-                >
-                  {{ generatingLookImage === look.id ? '生成中…' : 'AI 三视图' }}
-                </button>
-                <button class="btn-secondary text-xs py-1 px-2" @click="openLookForm(look)">编辑</button>
-                <button class="text-xs text-red-500 hover:text-red-700 py-1 px-2" @click="handleDeleteLook(look)">删除</button>
-              </div>
-            </div>
-
-            <!-- 三视图上传区（点击上传 three_view） -->
-            <div
-              class="w-36 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 cursor-pointer relative group border-2 border-dashed border-transparent hover:border-primary-400 transition-colors"
-              style="aspect-ratio: 16/9"
-              title="点击上传三视图"
-              @click="triggerLookUpload(look, 'three_view')"
-            >
-              <img v-if="look.three_view_sheet" :src="look.three_view_sheet" class="w-full h-full object-cover" />
-              <div v-else class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-gray-300">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
-                </svg>
-                <span class="text-xs">三视图</span>
-              </div>
-              <!-- hover overlay -->
-              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <!-- uploading spinner -->
-              <div v-if="uploadingLookImage === look.id && pendingLookUpload?.type === 'three_view'" class="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              </div>
+          <!-- 底部信息区 -->
+          <div class="px-2.5 py-2">
+            <p class="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">{{ look.label }}</p>
+            <p class="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+              第 {{ look.chapter_from }} 章{{ look.chapter_to > 0 ? ` — 第 ${look.chapter_to} 章` : ' 起（无限延伸）' }}
+            </p>
+            <div class="flex gap-2 mt-1.5 flex-wrap">
+              <button class="text-[10px] text-violet-600 dark:text-violet-400 hover:underline" @click.stop="openLookForm(look)">编辑</button>
+              <button
+                class="text-[10px] text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
+                :disabled="copyingLookId === look.id"
+                @click.stop="handleCopyLook(look)"
+              >{{ copyingLookId === look.id ? '复制中…' : '复制' }}</button>
+              <button
+                v-if="character?.default_look_id !== look.id"
+                class="text-[10px] text-amber-500 dark:text-amber-400 hover:underline disabled:opacity-50"
+                :disabled="settingDefaultLookId === look.id"
+                @click.stop="handleSetDefaultLook(look)"
+              >{{ settingDefaultLookId === look.id ? '设置中…' : '设为默认' }}</button>
             </div>
           </div>
         </div>
@@ -749,10 +556,15 @@ function getRoleLabel(role: string): string {
       <!-- 新建/编辑形象弹窗 -->
       <div v-if="showLookForm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/50" @click="showLookForm = false" />
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
-          <h3 class="font-semibold text-gray-800 dark:text-gray-100 text-lg">
-            {{ editingLook ? '编辑形象' : '新建形象' }}
-          </h3>
+        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+          <!-- 弹窗标题（固定） -->
+          <div class="px-6 pt-6 pb-4 flex-shrink-0">
+            <h3 class="font-semibold text-gray-800 dark:text-gray-100 text-lg">
+              {{ editingLook ? '编辑形象' : '新建形象' }}
+            </h3>
+          </div>
+          <!-- 滚动内容区 -->
+          <div class="px-6 pb-2 overflow-y-auto flex-1 space-y-4">
 
           <!-- 形象名称 -->
           <div>
@@ -772,29 +584,13 @@ function getRoleLabel(role: string): string {
             </div>
           </div>
 
-          <!-- 默认形象 -->
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input v-model="lookForm.is_default" type="checkbox" class="rounded" />
-            <span class="text-sm text-gray-700 dark:text-gray-300">设为默认形象（无章节匹配时使用）</span>
-          </label>
-
-          <!-- 外观描述 -->
-          <div>
-            <label class="label">外观描述（中文）</label>
-            <textarea
-              v-model="lookForm.description"
-              class="input h-20 resize-none"
-              placeholder="描述该时期的外貌特征，如服装、发型、特殊标志等"
-            />
-          </div>
-
           <!-- 视觉提示词 -->
           <div>
             <div class="flex items-center justify-between mb-1">
-              <label class="label mb-0">AI 图像提示词（英文）</label>
+              <label class="label mb-0">图像提示词</label>
               <button
                 class="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
-                :disabled="generatingLookPrompt || !lookForm.description"
+                :disabled="generatingLookPrompt"
                 @click="handleGenerateLookPrompt"
               >
                 {{ generatingLookPrompt ? '生成中…' : '✨ AI 生成' }}
@@ -802,15 +598,54 @@ function getRoleLabel(role: string): string {
             </div>
             <textarea
               v-model="lookForm.visual_prompt"
-              class="input h-20 resize-none font-mono text-xs"
+              class="input h-40 resize-none font-mono text-xs"
               placeholder="English visual prompt for AI image generation…"
             />
           </div>
 
-          <!-- 操作按钮 -->
-          <div class="flex justify-end gap-3 pt-2">
-            <button class="btn-secondary" @click="showLookForm = false">取消</button>
-            <button class="btn-primary" @click="handleSaveLook">保存</button>
+          <!-- 三视图参考图 -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">三视图参考图</p>
+                <p class="text-xs text-gray-400 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
+              </div>
+              <button
+                class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+                :disabled="generatingFormThreeView || !editingLook"
+                :title="editingLook ? '' : '保存形象后再生成'"
+                @click="handleFormGenerateThreeView"
+              >
+                <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ generatingFormThreeView ? '生成中...' : 'AI 生成' }}
+              </button>
+            </div>
+            <ImageUploadBox
+              v-model="lookForm.three_view_sheet"
+              aspect-ratio="16/9"
+              placeholder="三视图参考图（正面+侧面+背面合图）"
+              :on-save="(url: string) => { lookForm.three_view_sheet = url }"
+              @error="toast.error"
+            />
+          </div>
+
+          </div><!-- end 滚动内容区 -->
+
+          <!-- 操作按钮（固定底部） -->
+          <div class="px-6 py-4 flex-shrink-0 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+            <!-- 删除（仅编辑模式） -->
+            <button
+              v-if="editingLook"
+              class="text-sm text-red-500 hover:text-red-600 transition-colors"
+              @click="handleDeleteLookFromForm"
+            >删除形象</button>
+            <div v-else />
+            <div class="flex gap-3">
+              <button class="btn-secondary" @click="showLookForm = false">取消</button>
+              <button class="btn-primary" @click="handleSaveLook">保存</button>
+            </div>
           </div>
         </div>
       </div>

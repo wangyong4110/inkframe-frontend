@@ -174,9 +174,8 @@ export interface Character {
   core_desire?: string       // 核心渴望
   arc_design?: string        // 弧光设计 JSON
   current_arc_stage?: string // 当前弧光阶段（起点/考验/最低点/转折/终点）
-  visual_prompt?: string     // 英文图像生成提示词
-  three_view_sheet?: string  // 三合一参考图（combined sheet）
-  face_closeup?: string      // 面部特写图
+  default_look_id?: number     // 默认形象 ID
+  default_three_view?: string  // 默认形象的三视图（由服务层注入）
   portrait?: string
   // 配音设置
   voice_id?: string
@@ -198,7 +197,6 @@ export interface CharacterLook {
   label: string         // 形象名称，如"少年时期""成年装束""伪装后"
   chapter_from: number  // 起始章节（含），0 表示从头
   chapter_to: number    // 结束章节（含），0 表示无限延伸
-  is_default: boolean   // 兜底形象
   sort_order: number
   description?: string  // 外观描述（中文）
   visual_prompt?: string // AI 图像生成英文 Prompt
@@ -213,7 +211,7 @@ export interface CreateCharacterLookForm {
   label: string
   chapter_from: number
   chapter_to: number
-  is_default?: boolean
+  set_as_default?: boolean
   sort_order?: number
   description?: string
   visual_prompt?: string

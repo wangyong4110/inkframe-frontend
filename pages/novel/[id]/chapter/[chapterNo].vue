@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlotPoint, ChapterVersion } from '~/types'
+import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 
 const route = useRoute()
@@ -658,6 +658,51 @@ async function handleUnbindCharacter(charId: number) {
     unbindingCharId.value = null
   }
 }
+
+// ── 角色形象切换 ──────────────────────────────────────────────────────────────
+const charLooksMap = ref<Record<number, CharacterLook[]>>({})
+const charLookIdxMap = ref<Record<number, number>>({})
+
+async function fetchCharLooks(charId: number) {
+  try {
+    const res = await characterApi.listLooks(charId)
+    charLooksMap.value[charId] = res.data?.looks ?? []
+    // initialize index to the look active for this chapter
+    const active = await characterApi.getActiveLook(charId, chapterNo)
+    const activeLook = active.data?.look
+    if (activeLook) {
+      const idx = charLooksMap.value[charId].findIndex((l) => l.id === activeLook.id)
+      charLookIdxMap.value[charId] = idx >= 0 ? idx : 0
+    } else {
+      charLookIdxMap.value[charId] = 0
+    }
+  } catch {
+    charLooksMap.value[charId] = []
+    charLookIdxMap.value[charId] = 0
+  }
+}
+
+function getCharDisplayLook(charId: number): CharacterLook | null {
+  const looks = charLooksMap.value[charId]
+  if (!looks || looks.length === 0) return null
+  return looks[charLookIdxMap.value[charId] ?? 0] ?? null
+}
+
+function cycleCharLook(charId: number, dir: 1 | -1, event: Event) {
+  event.stopPropagation()
+  const looks = charLooksMap.value[charId]
+  if (!looks || looks.length <= 1) return
+  const cur = charLookIdxMap.value[charId] ?? 0
+  charLookIdxMap.value[charId] = (cur + dir + looks.length) % looks.length
+}
+
+watch(effectiveCharacters, async (chars) => {
+  for (const char of chars) {
+    if (!(char.id in charLooksMap.value)) {
+      await fetchCharLooks(char.id)
+    }
+  }
+}, { immediate: false })
 
 // ── 大纲编辑 ──────────────────────────────────────────────────────────────────
 const generatingOutline = ref(false)
@@ -1880,24 +1925,65 @@ onUnmounted(() => {
                 <div
                   v-for="char in getActiveCharacters()"
                   :key="char.id"
-                  class="group relative flex flex-col items-center gap-1.5 p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
                   @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
-                  <div class="w-12 h-12 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-                    <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
-                    <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+                  <!-- three-view image area -->
+                  <div class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden">
+                    <template v-if="getCharDisplayLook(char.id)?.three_view_sheet">
+                      <img :src="getCharDisplayLook(char.id)!.three_view_sheet" class="w-full h-full object-cover" :alt="char.name" />
+                    </template>
+                    <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
+                      <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+                    </template>
+                    <span v-else class="text-2xl font-bold text-gray-300 dark:text-gray-600 select-none">{{ char.name.charAt(0) }}</span>
+                    <!-- look switch arrows -->
+                    <template v-if="charLooksMap[char.id]?.length > 1">
+                      <button
+                        class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
+                        @click="cycleCharLook(char.id, -1, $event)"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                      </button>
+                      <button
+                        class="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
+                        @click="cycleCharLook(char.id, 1, $event)"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                        </svg>
+                      </button>
+                      <!-- look index dots -->
+                      <div class="absolute bottom-1 left-0 right-0 flex justify-center gap-0.5">
+                        <span
+                          v-for="(_, i) in charLooksMap[char.id]"
+                          :key="i"
+                          class="w-1 h-1 rounded-full transition-colors"
+                          :class="i === (charLookIdxMap[char.id] ?? 0) ? 'bg-white' : 'bg-white/40'"
+                        />
+                      </div>
+                    </template>
+                    <!-- unbind button -->
+                    <button
+                      class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-red-500/80 transition-colors opacity-0 group-hover:opacity-100"
+                      title="解除绑定"
+                      :disabled="unbindingCharId === char.id"
+                      @click.stop="handleUnbindCharacter(char.id)"
+                    >
+                      <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
                   </div>
-                  <span class="text-xs font-medium text-gray-800 dark:text-gray-200 w-full text-center truncate leading-tight">{{ char.name }}</span>
-                  <button
-                    class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                    title="解除绑定"
-                    :disabled="unbindingCharId === char.id"
-                    @click.stop="handleUnbindCharacter(char.id)"
-                  >
-                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                  </button>
+                  <!-- name + look label -->
+                  <div class="px-2 py-1.5">
+                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
+                    <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
+                      {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1908,24 +1994,60 @@ onUnmounted(() => {
                 <div
                   v-for="char in minorCharacters"
                   :key="char.id"
-                  class="group relative flex flex-col items-center gap-1.5 p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
                   @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
                 >
-                  <div class="w-12 h-12 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-                    <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
-                    <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
+                  <div class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden">
+                    <template v-if="getCharDisplayLook(char.id)?.three_view_sheet">
+                      <img :src="getCharDisplayLook(char.id)!.three_view_sheet" class="w-full h-full object-cover" :alt="char.name" />
+                    </template>
+                    <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
+                      <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+                    </template>
+                    <span v-else class="text-2xl font-bold text-gray-300 dark:text-gray-600 select-none">{{ char.name.charAt(0) }}</span>
+                    <template v-if="charLooksMap[char.id]?.length > 1">
+                      <button
+                        class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
+                        @click="cycleCharLook(char.id, -1, $event)"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                      </button>
+                      <button
+                        class="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
+                        @click="cycleCharLook(char.id, 1, $event)"
+                      >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                        </svg>
+                      </button>
+                      <div class="absolute bottom-1 left-0 right-0 flex justify-center gap-0.5">
+                        <span
+                          v-for="(_, i) in charLooksMap[char.id]"
+                          :key="i"
+                          class="w-1 h-1 rounded-full transition-colors"
+                          :class="i === (charLookIdxMap[char.id] ?? 0) ? 'bg-white' : 'bg-white/40'"
+                        />
+                      </div>
+                    </template>
+                    <button
+                      class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-red-500/80 transition-colors opacity-0 group-hover:opacity-100"
+                      title="解除绑定"
+                      :disabled="unbindingCharId === char.id"
+                      @click.stop="handleUnbindCharacter(char.id)"
+                    >
+                      <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
                   </div>
-                  <span class="text-xs font-medium text-gray-800 dark:text-gray-200 w-full text-center truncate leading-tight">{{ char.name }}</span>
-                  <button
-                    class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                    title="解除绑定"
-                    :disabled="unbindingCharId === char.id"
-                    @click.stop="handleUnbindCharacter(char.id)"
-                  >
-                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                  </button>
+                  <div class="px-2 py-1.5">
+                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
+                    <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
+                      {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3235,7 +3357,7 @@ onUnmounted(() => {
             @click="handleBindCharacter(char.id)"
           >
             <div class="w-9 h-9 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-              <img v-if="char.three_view_sheet || char.portrait" :src="char.three_view_sheet || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+              <img v-if="char.default_three_view || char.portrait" :src="char.default_three_view || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
               <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
             </div>
             <div class="flex-1 min-w-0">
