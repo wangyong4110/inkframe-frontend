@@ -117,11 +117,6 @@ function isCoverUrl(v?: string): boolean {
   return !!v && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))
 }
 
-// Convert "16:9" → "16/9" for CSS aspect-ratio; default to "9/16" (portrait book cover)
-const coverAspectRatioCss = computed(() => {
-  const ar = novel.value?.video_aspect_ratio ?? '9:16'
-  return ar.replace(':', '/')
-})
 
 function coverStyle(coverImage?: string): Record<string, string> {
   if (isCoverUrl(coverImage)) {
@@ -407,9 +402,9 @@ onMounted(async () => {
           <!-- 封面缩略图 -->
           <div class="shrink-0">
             <div
-              class="relative rounded-xl overflow-hidden shadow-sm flex items-center justify-center"
+              class="relative w-20 h-24 rounded-xl overflow-hidden shadow-sm flex items-center justify-center"
               :class="isCoverUrl(novel.cover_image) ? 'cursor-zoom-in' : 'cursor-pointer'"
-              :style="{ ...coverStyle(novel.cover_image), aspectRatio: coverAspectRatioCss, height: '96px' }"
+              :style="coverStyle(novel.cover_image)"
               @click="isCoverUrl(novel.cover_image) ? openCoverLightbox() : coverFileInput?.click()"
             >
               <span v-if="!isCoverUrl(novel.cover_image)" class="text-3xl font-bold text-white opacity-60 select-none">
