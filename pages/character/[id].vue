@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CharacterLook, CreateCharacterLookForm } from '~/types'
+import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const characterStore = useCharacterStore()
 const novelStore = useNovelStore()
@@ -8,6 +9,7 @@ const router = useRouter()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const characterApi = useCharacterApi()
+const { getTask } = useTaskApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -114,12 +116,27 @@ async function handleGenerateLookPrompt() {
   generatingLookPrompt.value = true
   try {
     const res = await characterApi.generateLookPrompt(characterId, lookForm.value.description)
-    const prompt = (res as any)?.data?.visual_prompt ?? (res as any)?.visual_prompt ?? ''
-    lookForm.value.visual_prompt = prompt
-    toast.success('视觉提示词已生成')
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingLookPrompt.value = false; return }
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
+      onResult: (r) => {
+        if (r.data?.status === 'completed') {
+          lookForm.value.visual_prompt = (r.data?.data as any)?.visual_prompt ?? ''
+          toast.success('视觉提示词已生成')
+          generatingLookPrompt.value = false
+        } else if (r.data?.status === 'failed') {
+          toast.error('生成失败：' + (r.data?.error || '未知错误'))
+          generatingLookPrompt.value = false
+        }
+      },
+      onError: () => {},
+      initialDelay: 2000, maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
-  } finally {
     generatingLookPrompt.value = false
   }
 }
@@ -230,14 +247,30 @@ async function handleFormGenerateThreeView() {
   if (!await guardAiProvider('IMAGE')) return
   generatingFormThreeView.value = true
   try {
-    await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined)
-    await fetchLooks()
-    const updated = looks.value.find(l => l.id === editingLook.value!.id)
-    if (updated?.three_view_sheet) lookForm.value.three_view_sheet = updated.three_view_sheet
-    toast.success('三视图已生成')
+    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined)
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormThreeView.value = false; return }
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
+      onResult: async (r) => {
+        if (r.data?.status === 'completed') {
+          await fetchLooks()
+          const updated = looks.value.find(l => l.id === editingLook.value!.id)
+          if (updated?.three_view_sheet) lookForm.value.three_view_sheet = updated.three_view_sheet
+          toast.success('三视图已生成')
+          generatingFormThreeView.value = false
+        } else if (r.data?.status === 'failed') {
+          toast.error('生成失败：' + (r.data?.error || '未知错误'))
+          generatingFormThreeView.value = false
+        }
+      },
+      onError: () => {},
+      initialDelay: 2000, maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
-  } finally {
     generatingFormThreeView.value = false
   }
 }
@@ -246,12 +279,28 @@ async function handleGenerateLookImage(look: CharacterLook, type: 'three_view' |
   if (!await guardAiProvider('IMAGE')) return
   generatingLookImage.value = look.id
   try {
-    await characterApi.generateLookImages(characterId, look.id, type, selectedImageProvider.value || undefined)
-    toast.success('图像生成完成')
-    await fetchLooks()
+    const res = await characterApi.generateLookImages(characterId, look.id, type, selectedImageProvider.value || undefined)
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingLookImage.value = null; return }
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
+      onResult: async (r) => {
+        if (r.data?.status === 'completed') {
+          await fetchLooks()
+          toast.success('图像生成完成')
+          generatingLookImage.value = null
+        } else if (r.data?.status === 'failed') {
+          toast.error('生成失败：' + (r.data?.error || '未知错误'))
+          generatingLookImage.value = null
+        }
+      },
+      onError: () => {},
+      initialDelay: 2000, maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || ''))
-  } finally {
     generatingLookImage.value = null
   }
 }
@@ -332,28 +381,60 @@ async function handleSave() {
   }
 }
 
+let reanalyzePoll: ReturnType<typeof usePollWithBackoff> | null = null
+
 async function handleReanalyze() {
   reanalyzing.value = true
   try {
     const res = await characterApi.reanalyzeCharacter(characterId)
-    if (res.data) {
-      const d = res.data as any
-      character.value.description = d.description ?? character.value.description
-      character.value.gender = d.gender ?? character.value.gender
-      character.value.age = d.age ?? character.value.age
-      // 同步配音字段到 store，让配音设置 tab 实时反映 AI 推荐结果
-      characterStore.patchCurrentCharacter({
-        voice_id: d.voice_id,
-        voice_style: d.voice_style,
-        voice_language: d.voice_language,
-        voice_speed: d.voice_speed,
-      })
-      isDirty.value = false
-      toast.success('角色信息已重新分析')
+    const taskId = res.data?.task_id
+    if (!taskId) {
+      toast.error('重新分析失败：未获取到任务ID')
+      reanalyzing.value = false
+      return
     }
+    toast.info('重新分析任务已提交，正在处理...')
+
+    reanalyzePoll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: async (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          // 重新从后端加载最新角色数据
+          await characterStore.fetchCharacter(characterId)
+          const updated = characterStore.currentCharacter
+          if (updated) {
+            character.value.description = updated.description ?? character.value.description
+            character.value.gender = updated.gender ?? character.value.gender
+            character.value.age = updated.age ?? character.value.age
+            characterStore.patchCurrentCharacter({
+              voice_id: updated.voice_id,
+              voice_style: updated.voice_style,
+              voice_language: updated.voice_language,
+              voice_speed: updated.voice_speed,
+            })
+          }
+          isDirty.value = false
+          reanalyzing.value = false
+          toast.success('角色信息已重新分析')
+        } else if (status === 'failed') {
+          reanalyzing.value = false
+          toast.error('重新分析失败：' + (r.data?.error || '未知错误'))
+        }
+      },
+      onError: () => {
+        // polling errors are transient, keep retrying
+      },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    reanalyzePoll.start()
   } catch (e: any) {
     toast.error('重新分析失败：' + (e.message || ''))
-  } finally {
     reanalyzing.value = false
   }
 }

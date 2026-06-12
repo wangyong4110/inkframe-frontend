@@ -45,7 +45,7 @@ export const useNovelApi = () => {
     temperature?: number
     timeout_seconds?: number
   }) =>
-    request<ApiResponse<{ title: string; chapters: any[] }>>(`/novels/${id}/outline`, {
+    request<ApiResponse<{ task_id: string }>>(`/novels/${id}/outline`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
@@ -60,7 +60,7 @@ export const useNovelApi = () => {
     request<ApiResponse<{ unpublished: boolean }>>(`/novels/${id}/unpublish`, { method: 'POST' })
 
   const generateCoverImage = (id: number, suggestion?: string) =>
-    request<ApiResponse<{ url: string }>>(`/novels/${id}/cover/generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/novels/${id}/cover/generate`, {
       method: 'POST',
       body: suggestion ? JSON.stringify({ suggestion }) : undefined,
     })

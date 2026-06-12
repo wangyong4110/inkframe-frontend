@@ -1295,3 +1295,35 @@ export interface OutlineReview {
   created_at: string
   updated_at: string
 }
+
+// ─── Collaboration ──────────────────────────────────────────────────────────
+
+export interface NovelMember {
+  id: number
+  novel_id: number
+  user_id: number
+  role: 'owner' | 'editor' | 'viewer'
+  status: 'active' | 'pending'
+  nickname: string
+  email: string
+  avatar?: string
+  joined_at?: string
+}
+
+export interface EditingLock {
+  id: number
+  entity_type: string
+  entity_id: number
+  locked_by: number
+  locked_by_name: string
+  expires_at: string
+}
+
+export interface CollabEvent {
+  type: string
+  entity_id?: number
+  user_id?: number
+  user?: string
+  summary?: string
+  data?: Record<string, unknown>
+}

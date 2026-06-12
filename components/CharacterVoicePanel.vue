@@ -2,6 +2,7 @@
 import type { Character, AIModel } from '~/types'
 import { useCharacterApi } from '~/composables/useCharacterApi'
 import { useModelApi } from '~/composables/useModelApi'
+import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const props = defineProps<{ character: Character }>()
 const emit = defineEmits<{ update: [data: Partial<Character>] }>()
@@ -210,14 +211,33 @@ async function preview() {
       voice_style:    voiceStyle.value || undefined,
       voice_language: voiceLanguage.value || undefined,
     })
-    audioUrl.value = res.data.audio_url
-    await nextTick()
-    audioEl.value?.load()
-    audioEl.value?.play()
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { throw new Error('未获取到任务ID') }
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
+      onResult: async (r) => {
+        if (r.data?.status === 'completed') {
+          const d = r.data?.data as any
+          audioUrl.value = d?.audio_url ?? ''
+          previewing.value = false
+          await nextTick()
+          audioEl.value?.load()
+          audioEl.value?.play()
+        } else if (r.data?.status === 'failed') {
+          audioUrl.value = ''
+          errorMsg.value = r.data?.error || '试听失败，请检查语音合成配置'
+          previewing.value = false
+        }
+      },
+      onError: () => {},
+      initialDelay: 1000, maxDelay: 5000,
+    })
+    poll.start()
   } catch (e: any) {
     audioUrl.value = ''
     errorMsg.value = e.message || '试听失败，请检查语音合成配置'
-  } finally {
     previewing.value = false
   }
 }

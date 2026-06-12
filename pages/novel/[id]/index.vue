@@ -162,15 +162,41 @@ async function onCoverFileChange(e: Event) {
 async function doGenerateCover() {
   coverGenerating.value = true
   try {
-    await generateCoverImage(novelId)
-    await novelStore.fetchNovel(novelId)
-    toast.success('AI 封面生成成功')
+    const res = await generateCoverImage(novelId)
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { toast.error('封面生成失败：未获取到任务ID'); coverGenerating.value = false; return }
+    toast.info('封面生成任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
+      onResult: async (r) => {
+        if (r.data?.status === 'completed') {
+          await novelStore.fetchNovel(novelId)
+          toast.success('AI 封面生成成功')
+          coverGenerating.value = false
+        } else if (r.data?.status === 'failed') {
+          toast.error('AI 封面生成失败：' + (r.data?.error || '未知错误'))
+          coverGenerating.value = false
+        }
+      },
+      onError: () => {},
+      initialDelay: 3000, maxDelay: 10000,
+    })
+    poll.start()
   } catch (err: any) {
     toast.error('AI 封面生成失败：' + (err.message || ''))
-  } finally {
     coverGenerating.value = false
   }
 }
+
+// ── Collaboration ────────────────────────────────────────────────────────────
+const showCollabModal = ref(false)
+const novelEvents = useNovelEvents(computed(() => (isNaN(novelId) ? null : novelId)))
+novelEvents.onEvent((evt) => {
+  if (evt.type === 'member.joined') toast.info(evt.summary || `${evt.user ?? '新成员'} 已加入协作`)
+  else if (evt.summary && evt.type.includes('.updated')) toast.info(evt.summary)
+})
 
 // ── Export ──────────────────────────────────────────────────────────────────
 const { requestBlob } = useApi()
@@ -497,6 +523,17 @@ onMounted(async () => {
             </div>
           </div>
           <div class="flex items-center space-x-2">
+            <!-- 协作按钮 -->
+            <button
+              class="btn-secondary"
+              title="协作成员"
+              @click="showCollabModal = true"
+            >
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              协作
+            </button>
             <!-- 已发布：显示"取消发布"+ 广场链接 -->
             <template v-if="novel.is_published">
               <NuxtLink :to="`/plaza/novel/${novel.id}`" class="text-xs text-green-600 dark:text-green-400 hover:underline whitespace-nowrap">
@@ -745,6 +782,14 @@ onMounted(async () => {
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Collaboration members modal -->
+  <CollabMembersModal
+    v-if="!isNaN(novelId)"
+    :novel-id="novelId"
+    :open="showCollabModal"
+    @update:open="showCollabModal = $event"
+  />
 </template>
 
 <style scoped>

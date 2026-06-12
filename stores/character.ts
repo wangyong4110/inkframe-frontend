@@ -5,6 +5,7 @@ interface CharacterState {
   characters: Character[]
   currentCharacter: Character | null
   loading: boolean
+  generating: boolean
   error: string | null
   _currentNovelId: number | null
 }
@@ -14,6 +15,7 @@ export const useCharacterStore = defineStore('character', {
     characters: [],
     currentCharacter: null,
     loading: false,
+    generating: false,
     error: null,
     _currentNovelId: null,
   }),
@@ -140,20 +142,18 @@ export const useCharacterStore = defineStore('character', {
       }
     },
 
-    async generateCharacterProfile(novelId: number, description: string) {
-      this.loading = true
+    async generateCharacterProfile(novelId: number, description: string): Promise<string> {
+      this.generating = true
       this.error = null
-
       try {
         const api = useCharacterApi()
         const response = await api.generateCharacterProfile(novelId, description)
-        this.characters.push(response.data)
-        return response.data
+        return (response as any)?.data?.task_id ?? ''
       } catch (e: any) {
         this.error = e.message || 'Failed to generate character profile'
         throw e
       } finally {
-        this.loading = false
+        this.generating = false
       }
     },
 

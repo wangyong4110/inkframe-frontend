@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Chapter, OutlineReview } from '~/types'
+import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const props = defineProps<{ novelId: number }>()
 
@@ -274,13 +275,38 @@ async function handleGenerateOutline() {
   if (!novelStore.currentNovel) return
   generatingOutline.value = true
   try {
-    const result = await novelStore.generateOutline(props.novelId, 10)
-    await chapterStore.fetchChapters(props.novelId)
-    const count = result?.chapters?.length ?? 0
-    toast.success(count > 0 ? `大纲生成完成，共 ${count} 章` : '大纲生成完成')
+    const taskId = await novelStore.generateOutline(props.novelId, 10)
+    if (!taskId) {
+      toast.error('大纲生成失败：未获取到任务ID')
+      generatingOutline.value = false
+      return
+    }
+    toast.info('大纲生成任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: async (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          await chapterStore.fetchChapters(props.novelId)
+          toast.success('大纲生成完成')
+          generatingOutline.value = false
+        } else if (status === 'failed') {
+          toast.error('大纲生成失败：' + (r.data?.error || '未知错误'))
+          generatingOutline.value = false
+        }
+      },
+      onError: () => { /* transient error, keep retrying */ },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
-  } finally {
     generatingOutline.value = false
   }
 }

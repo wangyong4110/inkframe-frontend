@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
+import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const route = useRoute()
 const router = useRouter()
@@ -495,18 +496,44 @@ async function handleRegenerate() {
     if (storyPatternEnabled.value) opts.use_story_pattern = true
 
     const resp = await chapterApiForVersions.regenerateChapter(chapter.value.id, opts)
-    const task_id = (resp as any)?.data?.task_id ?? (resp as any)?.task_id
-    currentTaskId.value = task_id
-    toast.info('重新生成中，请稍候...')
-    const result = await chapterStore.pollChapterGenTask(novelId, task_id)
-    currentTaskId.value = null
-    previewModal.content = result.content || ''
-    previewModal.open = true
-    toast.success('重新生成完成，请预览后选择是否应用')
-    regenPrompt.value = ''
+    const taskId = (resp as any)?.data?.task_id ?? (resp as any)?.task_id
+    if (!taskId) {
+      toast.error('重新生成失败：未获取到任务ID')
+      regenerating.value = false
+      return
+    }
+    currentTaskId.value = taskId
+    toast.info('重新生成任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          const result = (r.data?.data as any)?.chapter as Chapter | undefined
+          currentTaskId.value = null
+          previewModal.content = result?.content || ''
+          previewModal.open = true
+          toast.success('重新生成完成，请预览后选择是否应用')
+          regenPrompt.value = ''
+          regenerating.value = false
+        } else if (status === 'failed') {
+          currentTaskId.value = null
+          toast.error('重新生成失败：' + (r.data?.error || '未知错误'))
+          regenerating.value = false
+        }
+      },
+      onError: () => { /* transient error, keep retrying */ },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('重新生成失败：' + (e.message || '未知错误'))
-  } finally {
     regenerating.value = false
   }
 }
@@ -795,11 +822,38 @@ async function handleGenerateNovelOutline() {
       temperature: advTemperature.value || undefined,
       timeout_seconds: advTimeoutSeconds.value || undefined,
     }
-    await novelStore.generateOutline(novelId, 10, prompt.value || undefined, overrides)
-    toast.success('全小说大纲生成完成')
+    const taskId = await novelStore.generateOutline(novelId, 10, prompt.value || undefined, overrides)
+    if (!taskId) {
+      toast.error('大纲生成失败：未获取到任务ID')
+      generatingNovelOutline.value = false
+      return
+    }
+    toast.info('大纲生成任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: async (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          await chapterStore.fetchChapters(novelId)
+          toast.success('大纲生成完成')
+          generatingNovelOutline.value = false
+        } else if (status === 'failed') {
+          toast.error('大纲生成失败：' + (r.data?.error || '未知错误'))
+          generatingNovelOutline.value = false
+        }
+      },
+      onError: () => { /* transient error, keep retrying */ },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
-  } finally {
     generatingNovelOutline.value = false
   }
 }
@@ -1204,12 +1258,39 @@ async function handleExtractMinorChars() {
   try {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, { method: 'POST' })
-    const newCount = data?.new_count ?? 0
-    toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
-    await fetchEffectiveCharacters()
+    const taskId: string | undefined = data?.task_id
+    if (!taskId) {
+      toast.error('角色分析失败：未获取到任务ID')
+      extractingMinorChars.value = false
+      return
+    }
+    toast.info('角色分析任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: async (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          const newCount = (r.data?.data as any)?.new_count ?? 0
+          toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
+          await fetchEffectiveCharacters()
+          extractingMinorChars.value = false
+        } else if (status === 'failed') {
+          toast.error('角色分析失败：' + (r.data?.error || '未知错误'))
+          extractingMinorChars.value = false
+        }
+      },
+      onError: () => { /* transient error, keep retrying */ },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('角色分析失败：' + (e.message || ''))
-  } finally {
     extractingMinorChars.value = false
   }
 }
@@ -1251,13 +1332,40 @@ async function handleExtractChapterAnchors() {
   try {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, { method: 'POST' })
-    const newCount = data?.new_count ?? 0
-    toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
-    await fetchChapterAnchors()
-    sceneAnchorStore.fetchAnchors(novelId)
+    const taskId: string | undefined = data?.task_id
+    if (!taskId) {
+      toast.error('场景分析失败：未获取到任务ID')
+      extractingChapterAnchors.value = false
+      return
+    }
+    toast.info('场景分析任务已提交，正在处理...')
+    const { getTask } = useTaskApi()
+    const poll = usePollWithBackoff({
+      fn: () => getTask(taskId),
+      isDone: (r) => {
+        const status = r.data?.status
+        return status === 'completed' || status === 'failed'
+      },
+      onResult: async (r) => {
+        const status = r.data?.status
+        if (status === 'completed') {
+          const newCount = (r.data?.data as any)?.new_count ?? 0
+          toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
+          await fetchChapterAnchors()
+          sceneAnchorStore.fetchAnchors(novelId)
+          extractingChapterAnchors.value = false
+        } else if (status === 'failed') {
+          toast.error('场景分析失败：' + (r.data?.error || '未知错误'))
+          extractingChapterAnchors.value = false
+        }
+      },
+      onError: () => { /* transient error, keep retrying */ },
+      initialDelay: 2000,
+      maxDelay: 8000,
+    })
+    poll.start()
   } catch (e: any) {
     toast.error('提取失败：' + (e.message || ''))
-  } finally {
     extractingChapterAnchors.value = false
   }
 }
@@ -2307,7 +2415,7 @@ onUnmounted(() => {
                   <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                   </svg>
-                  {{ generatingNovelOutline ? '生成中...' : '生成全小说大纲' }}
+                  {{ generatingNovelOutline ? '生成中...' : '生成大纲' }}
                 </button>
               </div>
             </div>

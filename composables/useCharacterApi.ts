@@ -25,7 +25,7 @@ export const useCharacterApi = () => {
     request<void>(`/characters/${id}`, { method: 'DELETE' })
 
   const generateCharacterProfile = (novelId: number, description: string) =>
-    request<ApiResponse<Character>>(`/novels/${novelId}/characters/generate`, {
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/characters/generate`, {
       method: 'POST',
       body: JSON.stringify({ description }),
     })
@@ -58,7 +58,7 @@ export const useCharacterApi = () => {
     voice_style?: string
     voice_language?: string
   }) =>
-    request<ApiResponse<{ audio_url: string; voice_id: string; voice_speed: number }>>(`/characters/${id}/voice/preview`, {
+    request<ApiResponse<{ task_id: string }>>(`/characters/${id}/voice/preview`, {
       method: 'POST',
       body: JSON.stringify({
         text: params?.text ?? '',
@@ -101,19 +101,19 @@ export const useCharacterApi = () => {
     request<ApiResponse<{ look: CharacterLook | null }>>(`/characters/${characterId}/looks/active?chapter_no=${chapterNo}`)
 
   const generateLookPrompt = (characterId: number, description: string) =>
-    request<ApiResponse<{ visual_prompt: string }>>(`/characters/${characterId}/looks/generate-prompt`, {
+    request<ApiResponse<{ task_id: string }>>(`/characters/${characterId}/looks/generate-prompt`, {
       method: 'POST',
       body: JSON.stringify({ description }),
     })
 
   const generateLookImages = (characterId: number, lookId: number, type: 'three_view' | 'face_closeup' | 'portrait', provider?: string) =>
-    request<ApiResponse<CharacterLook>>(`/characters/${characterId}/looks/${lookId}/images`, {
+    request<ApiResponse<{ task_id: string }>>(`/characters/${characterId}/looks/${lookId}/images`, {
       method: 'POST',
       body: JSON.stringify({ type, provider: provider ?? '' }),
     })
 
   const reanalyzeCharacter = (id: number) =>
-    request<ApiResponse<Character>>(`/characters/${id}/reanalyze`, { method: 'POST' })
+    request<ApiResponse<{ task_id: string }>>(`/characters/${id}/reanalyze`, { method: 'POST' })
 
   const getEffectiveCharacters = (novelId: number, chapterNo: number) =>
     request<ApiResponse<any[]>>(`/novels/${novelId}/chapters/${chapterNo}/characters`)

@@ -179,7 +179,7 @@ export const useNovelStore = defineStore('novel', {
       }
     },
 
-    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number }) {
+    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number }): Promise<string> {
       this.loading = true
       this.error = null
 
@@ -190,7 +190,7 @@ export const useNovelStore = defineStore('novel', {
           prompt,
           ...overrides,
         })
-        return response.data
+        return response.data?.task_id ?? ''
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
         throw e
