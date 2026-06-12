@@ -262,7 +262,7 @@ const analysisStatus = ref<AnalysisStatus | null>(null)
 const showAnalysisPanel = computed(() => {
   if (analysisStatus.value) return true
   const n = novel.value
-  return !!(n && !n.worldview_id && n.chapter_count > 0)
+  return !!(n && n.chapter_count > 0)
 })
 
 const analysisPoll = usePollWithBackoff({
@@ -593,7 +593,9 @@ onMounted(async () => {
 
       <!-- 空闲状态：显示启动按钮 -->
       <div v-if="!analysisStatus">
-        <button class="btn-primary" @click="triggerAnalysis">开始 AI 分析</button>
+        <button class="btn-primary" @click="triggerAnalysis">
+          {{ novel?.worldview_id ? '重新分析' : '开始 AI 分析' }}
+        </button>
       </div>
 
       <!-- 运行中 / 进行状态 -->
