@@ -1308,6 +1308,7 @@ export interface NovelMember {
   email: string
   avatar?: string
   joined_at?: string
+  invite_expires_at?: string
 }
 
 export interface EditingLock {

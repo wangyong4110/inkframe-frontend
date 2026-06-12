@@ -23,7 +23,7 @@ if (!isNaN(novelId)) {
   characterStore.clearForNovel(novelId)
 }
 
-const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'scene_anchors', 'knowledge', 'foreshadow', 'settings'])
+const validTabKeys = new Set(['chapters', 'characters', 'items', 'worldview', 'scene_anchors', 'knowledge', 'foreshadow', 'team', 'settings'])
 const initialTab = route.query.tab as string
 const activeTab = ref(validTabKeys.has(initialTab) ? initialTab : 'chapters')
 const tabSectionRef = ref<HTMLElement | null>(null)
@@ -71,6 +71,7 @@ const tabs = [
   { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
   { key: 'knowledge', label: '知识库', icon: 'database' },
   { key: 'foreshadow', label: '伏笔', icon: 'bookmark' },
+  { key: 'team', label: '团队', icon: 'users' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -191,7 +192,6 @@ async function doGenerateCover() {
 }
 
 // ── Collaboration ────────────────────────────────────────────────────────────
-const showCollabModal = ref(false)
 const novelEvents = useNovelEvents(computed(() => (isNaN(novelId) ? null : novelId)))
 novelEvents.onEvent((evt) => {
   if (evt.type === 'member.joined') toast.info(evt.summary || `${evt.user ?? '新成员'} 已加入协作`)
@@ -523,17 +523,6 @@ onMounted(async () => {
             </div>
           </div>
           <div class="flex items-center space-x-2">
-            <!-- 协作按钮 -->
-            <button
-              class="btn-secondary"
-              title="协作成员"
-              @click="showCollabModal = true"
-            >
-              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              协作
-            </button>
             <!-- 已发布：显示"取消发布"+ 广场链接 -->
             <template v-if="novel.is_published">
               <NuxtLink :to="`/plaza/novel/${novel.id}`" class="text-xs text-green-600 dark:text-green-400 hover:underline whitespace-nowrap">
@@ -700,6 +689,7 @@ onMounted(async () => {
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />
     <NovelKnowledgeTab v-else-if="activeTab === 'knowledge'" :novel-id="novelId" />
     <NovelForeshadowTab v-else-if="activeTab === 'foreshadow'" :novel-id="novelId" />
+    <NovelTeamTab v-else-if="activeTab === 'team'" :novel-id="novelId" />
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />
   </div>
 
@@ -783,13 +773,6 @@ onMounted(async () => {
     </Transition>
   </Teleport>
 
-  <!-- Collaboration members modal -->
-  <CollabMembersModal
-    v-if="!isNaN(novelId)"
-    :novel-id="novelId"
-    :open="showCollabModal"
-    @update:open="showCollabModal = $event"
-  />
 </template>
 
 <style scoped>

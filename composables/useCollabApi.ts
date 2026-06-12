@@ -6,10 +6,10 @@ export function useCollabApi() {
   const listMembers = (novelId: number) =>
     request<{ members: NovelMember[] }>(`/novels/${novelId}/members`)
 
-  const inviteMember = (novelId: number, email: string, role: string) =>
+  const inviteMember = (novelId: number, email: string, role: string, ttlMinutes = 10) =>
     request<{ invite_token: string; invite_link: string }>(
       `/novels/${novelId}/members/invite`,
-      { method: 'POST', body: JSON.stringify({ email, role }) },
+      { method: 'POST', body: JSON.stringify({ email, role, ttl_minutes: ttlMinutes }) },
     )
 
   const acceptInvite = (token: string) =>
@@ -20,6 +20,9 @@ export function useCollabApi() {
 
   const removeMember = (novelId: number, userId: number) =>
     request<void>(`/novels/${novelId}/members/${userId}`, { method: 'DELETE' })
+
+  const leaveNovel = (novelId: number) =>
+    request<void>(`/novels/${novelId}/members/me`, { method: 'DELETE' })
 
   const updateMemberRole = (novelId: number, userId: number, role: string) =>
     request<void>(`/novels/${novelId}/members/${userId}`, {
@@ -50,6 +53,7 @@ export function useCollabApi() {
     inviteMember,
     acceptInvite,
     removeMember,
+    leaveNovel,
     updateMemberRole,
     acquireLock,
     releaseLock,
