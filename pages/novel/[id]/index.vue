@@ -170,24 +170,15 @@ async function doGenerateCover() {
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('封面生成失败：未获取到任务ID'); coverGenerating.value = false; return }
     toast.info('封面生成任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
-      onResult: async (r) => {
-        if (r.data?.status === 'completed') {
-          await novelStore.fetchNovel(novelId)
-          toast.success('AI 封面生成成功')
-          coverGenerating.value = false
-        } else if (r.data?.status === 'failed') {
-          toast.error('AI 封面生成失败：' + (r.data?.error || '未知错误'))
-          coverGenerating.value = false
-        }
-      },
-      onError: () => {},
-      initialDelay: 3000, maxDelay: 10000,
+    useTaskStore().trackTask(taskId, async (task) => {
+      coverGenerating.value = false
+      if (task.status === 'completed') {
+        await novelStore.fetchNovel(novelId)
+        toast.success('AI 封面生成成功')
+      } else if (task.status === 'failed') {
+        toast.error('AI 封面生成失败：' + (task.error || '未知错误'))
+      }
     })
-    poll.start()
   } catch (err: any) {
     toast.error('AI 封面生成失败：' + (err.message || ''))
     coverGenerating.value = false

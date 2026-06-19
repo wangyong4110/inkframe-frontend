@@ -1,6 +1,6 @@
 import { ref, watch } from 'vue'
 
-export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], debounceMs = 2000) {
+export function useAutosave(saveFn: () => Promise<void>, watchSources: any[], debounceMs = 30000) {
   const lastSavedAt = ref<Date | null>(null)
   const autoSaving = ref(false)
   const saveFailed = ref(false)

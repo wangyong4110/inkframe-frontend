@@ -113,6 +113,12 @@ export const useChapterApi = () => {
       body: JSON.stringify({ instruction }),
     })
 
+  const refineSelection = (chapterId: number, selectedText: string, instruction: string) =>
+    request<ApiResponse<{ refined_text: string }>>(`/chapters/${chapterId}/refine-selection`, {
+      method: 'POST',
+      body: JSON.stringify({ selected_text: selectedText, instruction }),
+    })
+
   const chapterChatStream = async (
     chapterId: number,
     messages: Array<{ role: string; content: string }>,
@@ -185,5 +191,6 @@ export const useChapterApi = () => {
     batchGenerateChapters,
     chapterChatStream,
     rewriteChapterByInstruction,
+    refineSelection,
   }
 }

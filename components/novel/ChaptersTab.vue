@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Chapter, OutlineReview } from '~/types'
-import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const props = defineProps<{ novelId: number }>()
 
@@ -8,6 +7,7 @@ const router = useRouter()
 const toast = useToast()
 const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
+const taskStore = useTaskStore()
 
 const generatingOutline = ref(false)
 const chapterPage = ref(1)
@@ -52,24 +52,6 @@ const batchGenProgress = ref(0)
 const batchGenTitle = ref('')
 const batchGenTotal = ref(0)
 
-async function pollTaskWithProgress(
-  taskId: string,
-  onProgress: (p: number, title: string) => void,
-  onComplete: (result: any) => void,
-) {
-  const taskApi = useTaskApi()
-  while (true) {
-    await new Promise(r => setTimeout(r, 2000))
-    try {
-      const resp: any = await taskApi.getTask(taskId)
-      const task = resp?.data ?? resp
-      if (task?.progress !== undefined) onProgress(task.progress, task.title ?? '')
-      if (task?.status === 'completed') { onComplete(task?.data ?? task?.result); break }
-      if (task?.status === 'failed') { throw new Error(task?.error || '任务失败') }
-    } catch (e) { throw e }
-  }
-}
-
 async function handleBatchGenerate() {
   if (!await guardAiProvider('LLM')) return
   showBatchGenModal.value = false
@@ -80,42 +62,38 @@ async function handleBatchGenerate() {
     const resp: any = await batchGenerateChapters(props.novelId, { skip_existing: batchGenSkipExisting.value })
     const taskId = resp?.task_id ?? resp?.data?.task_id
     batchGenTotal.value = resp?.total ?? resp?.data?.total ?? 0
-    await pollTaskWithProgress(
-      taskId,
-      (p, title) => {
-        batchGenProgress.value = p
-        if (title) batchGenTitle.value = title
+    // Sync progress from task store into local progress bar
+    const unwatch = watch(
+      () => taskStore.tasks.find(t => t.task_id === taskId),
+      (task) => {
+        if (!task) return
+        if (task.progress !== undefined) batchGenProgress.value = task.progress
+        if (task.title) batchGenTitle.value = task.title
+        if (['completed', 'failed', 'cancelled'].includes(task.status)) unwatch()
       },
-      async (result) => {
-        await chapterStore.fetchChapters(props.novelId)
-        const generated = result?.generated ?? 0
-        const failed = result?.failed ?? 0
+    )
+    taskStore.trackTask(taskId, async (task) => {
+      batchGenRunning.value = false
+      batchGenProgress.value = 0
+      batchGenTitle.value = ''
+      await chapterStore.fetchChapters(props.novelId)
+      if (task.status === 'completed') {
+        const generated = (task.data?.generated as number) ?? 0
+        const failed = (task.data?.failed as number) ?? 0
         if (failed > 0) {
           toast.warning(`批量生成完成：成功 ${generated} 章，失败 ${failed} 章`)
         } else {
           toast.success(`批量生成完成，共生成 ${generated} 章`)
         }
-      },
-    )
+      } else if (task.status === 'failed') {
+        toast.error('批量生成失败：' + (task.error || '未知错误'))
+      }
+    })
   } catch (e: any) {
     toast.error('批量生成失败：' + (e.message || '未知错误'))
-  } finally {
     batchGenRunning.value = false
     batchGenProgress.value = 0
     batchGenTitle.value = ''
-  }
-}
-
-async function pollTask(taskId: string, onComplete: (result: any) => void) {
-  const taskApi = useTaskApi()
-  while (true) {
-    await new Promise(r => setTimeout(r, 2000))
-    try {
-      const resp: any = await taskApi.getTask(taskId)
-      const task = resp?.data ?? resp
-      if (task?.status === 'completed') { onComplete(task?.result); break }
-      if (task?.status === 'failed') { throw new Error(task?.error || '任务失败') }
-    } catch (e) { throw e }
   }
 }
 
@@ -138,24 +116,18 @@ async function handleReviewChapter(chapter: Chapter, event: Event) {
     const resp: any = await outlineReviewApi.reviewChapter(chapter.id)
     const taskId = resp?.task_id ?? resp?.data?.task_id
     toast.info('大纲审查中，请稍候...')
-    await pollTask(taskId, (result: any) => {
-      if (result?.review) {
-        outlineReviews.value[chapter.id] = result.review
+    taskStore.trackTask(taskId, async (task) => {
+      reviewingChapterId.value = null
+      if (task.status === 'completed') {
+        const r: any = await outlineReviewApi.getChapterReview(chapter.id)
+        if (r) outlineReviews.value[chapter.id] = r
         toast.success(`第${chapter.chapter_no}章审查完成`)
-      } else {
-        // Fetch the review after task completes
-        outlineReviewApi.getChapterReview(chapter.id).then((r: any) => {
-          if (r) outlineReviews.value[chapter.id] = r
-        }).catch(() => {})
-        toast.success(`第${chapter.chapter_no}章审查完成`)
+      } else if (task.status === 'failed') {
+        toast.error('审查失败：' + (task.error || '未知错误'))
       }
     })
-    // Always refresh after polling finishes
-    const r: any = await outlineReviewApi.getChapterReview(chapter.id)
-    if (r) outlineReviews.value[chapter.id] = r
   } catch (e: any) {
     toast.error('审查失败：' + (e.message || '未知错误'))
-  } finally {
     reviewingChapterId.value = null
   }
 }
@@ -196,13 +168,17 @@ async function handleGenerateOrRegenerate(chapter: Chapter, event: Event) {
     const taskId = resp?.task_id ?? resp?.data?.task_id
     const verb = chapter.word_count > 0 ? '重新生成' : '生成'
     toast.info(`${verb}中，请稍候...`)
-    await pollTask(taskId, async () => {
-      await chapterStore.fetchChapters(props.novelId)
-      toast.success(`第${chapter.chapter_no}章${verb}完成`)
+    taskStore.trackTask(taskId, async (task) => {
+      generatingChapterId.value = null
+      if (task.status === 'completed') {
+        await chapterStore.fetchChapters(props.novelId)
+        toast.success(`第${chapter.chapter_no}章${verb}完成`)
+      } else if (task.status === 'failed') {
+        toast.error('生成失败：' + (task.error || '未知错误'))
+      }
     })
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
-  } finally {
     generatingChapterId.value = null
   }
 }
@@ -385,29 +361,15 @@ async function handleGenerateOutline() {
       return
     }
     toast.info('大纲生成任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => {
-        const status = r.data?.status
-        return status === 'completed' || status === 'failed'
-      },
-      onResult: async (r) => {
-        const status = r.data?.status
-        if (status === 'completed') {
-          await chapterStore.fetchChapters(props.novelId)
-          toast.success('大纲生成完成')
-          generatingOutline.value = false
-        } else if (status === 'failed') {
-          toast.error('大纲生成失败：' + (r.data?.error || '未知错误'))
-          generatingOutline.value = false
-        }
-      },
-      onError: () => { /* transient error, keep retrying */ },
-      initialDelay: 2000,
-      maxDelay: 8000,
+    taskStore.trackTask(taskId, async (task) => {
+      generatingOutline.value = false
+      if (task.status === 'completed') {
+        await chapterStore.fetchChapters(props.novelId)
+        toast.success('大纲生成完成')
+      } else if (task.status === 'failed') {
+        toast.error('大纲生成失败：' + (task.error || '未知错误'))
+      }
     })
-    poll.start()
   } catch (e: any) {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
     generatingOutline.value = false

@@ -12,6 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const videoStore = useVideoStore()
+const taskStore = useTaskStore()
 const toast = useToast()
 
 const video = computed(() => videoStore.currentVideo)
@@ -84,6 +85,7 @@ onMounted(() => {
   if (savedTaskId) {
     synthesizing.value = true
     synthesizeStep.value = '恢复中...'
+    taskStore.trackTask(savedTaskId)
     startPolling(savedTaskId)
   }
 })
@@ -99,6 +101,7 @@ async function handleSynthesize() {
     if (!taskId) throw new Error('未获取到任务 ID')
     localStorage.setItem(STORAGE_KEY(), taskId)
     emit('task-started', taskId)
+    taskStore.trackTask(taskId)
     startPolling(taskId)
   } catch (e: any) {
     toast.error('合成失败：' + (e.message || ''))

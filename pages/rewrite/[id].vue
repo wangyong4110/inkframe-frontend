@@ -599,6 +599,7 @@ import type { RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask
 
 const route = useRoute()
 const toast = useToast()
+const taskStore = useTaskStore()
 const {
   getProject,
   startAnalysis: apiStartAnalysis,
@@ -696,6 +697,7 @@ const displayProgress = computed(() => {
 function startPolling(taskId: string) {
   activeTaskId.value = taskId
   stopPolling()
+  taskStore.trackTask(taskId, async () => { await refreshProject() })
   pollTimer = setInterval(async () => {
     try {
       const res = await getTask(taskId)

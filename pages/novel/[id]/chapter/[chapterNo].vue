@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
-import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
 
@@ -553,7 +552,7 @@ const writePanelTab = ref<'generate' | 'rewrite'>('generate')
 const rewriteInstruction = ref('')
 const rewriting = ref(false)
 const rewriteError = ref('')
-const { rewriteChapterByInstruction } = useChapterApi()
+const { rewriteChapterByInstruction, refineSelection } = useChapterApi()
 
 const REWRITE_HINTS = [
   '改写最后一段，增加悬念感',
@@ -562,6 +561,173 @@ const REWRITE_HINTS = [
   '结尾太平，加一个反转或威胁',
   '主角内心独白太多，改为外化行为',
 ]
+
+// ── 选段精修 ──────────────────────────────────────────────────────────────────
+const viewContentRef = ref<HTMLElement | null>(null)
+// mode: 'input' → 输入指令；'preview' → 展示改写前后对比
+const selectionPopup = reactive({
+  visible: false,
+  mode: 'input' as 'input' | 'preview',
+  selectedText: '',
+  selectionStart: 0,
+  selectionEnd: 0,
+  top: 0,
+  left: 0,
+  refinedText: '',
+})
+const selectionInstruction = ref('')
+const selectionRefining = ref(false)
+const selectionError = ref('')
+const selectionHints = [
+  '增加画面感，补充动作细节',
+  '对话太平，改得更有张力',
+  '节奏太快，舒展一下',
+  '加一个细节暗示角色情绪',
+]
+
+function getSelectionOffsets(containerEl: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null
+  const range = sel.getRangeAt(0)
+  if (!containerEl.contains(range.commonAncestorContainer)) return null
+  const pre = range.cloneRange()
+  pre.selectNodeContents(containerEl)
+  pre.setEnd(range.startContainer, range.startOffset)
+  const start = pre.toString().length
+  return { start, end: start + range.toString().length }
+}
+
+// 弹窗 DOM ref，用于点击外部关闭检测
+const selectionPopupRef = ref<HTMLElement | null>(null)
+
+function openSelectionPopup(
+  selectedText: string,
+  start: number,
+  end: number,
+  anchorRect: { top: number; bottom: number; left: number; right: number },
+) {
+  const popupW = 300
+  const popupH = 380
+  const gap = 10
+
+  // 水平：优先出现在选区右侧，空间不足时出现在左侧
+  let left = anchorRect.right + gap
+  if (left + popupW > window.innerWidth - 8) left = anchorRect.left - popupW - gap
+  if (left < 8) left = 8
+
+  // 垂直：顶部对齐选区顶端，超出视口底部时向上推
+  let top = anchorRect.top
+  if (top + popupH > window.innerHeight - 8) top = window.innerHeight - popupH - 8
+  if (top < 8) top = 8
+
+  selectionPopup.selectedText = selectedText
+  selectionPopup.selectionStart = start
+  selectionPopup.selectionEnd = end
+  selectionPopup.mode = 'input'
+  selectionPopup.refinedText = ''
+  selectionError.value = ''
+  selectionInstruction.value = ''
+  nextTick(() => {
+    selectionPopup.top = top
+    selectionPopup.left = left
+    selectionPopup.visible = true
+  })
+}
+
+function onViewMouseUp(e: MouseEvent) {
+  if (selectionPopup.visible && selectionPopup.mode === 'preview') return
+
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+
+  const selectedText = sel.toString().trim()
+  if (!selectedText || selectedText.length < 5) return
+
+  const containerEl = viewContentRef.value
+  if (!containerEl) return
+  const offsets = getSelectionOffsets(containerEl)
+  if (!offsets) return
+
+  // 用选区真实 bounding rect，确保弹窗不压住任何选中文字
+  const rect = sel.getRangeAt(0).getBoundingClientRect()
+  openSelectionPopup(selectedText, offsets.start, offsets.end, rect)
+}
+
+function onEditMouseUp(e: MouseEvent) {
+  if (selectionPopup.visible && selectionPopup.mode === 'preview') return
+  const ta = textareaRef.value
+  if (!ta) return
+  const start = ta.selectionStart
+  const end = ta.selectionEnd
+  if (start === end) return
+  const selectedText = ta.value.substring(start, end).trim()
+  if (!selectedText || selectedText.length < 5) return
+  const rawSelected = ta.value.substring(start, end)
+  const trimStart = rawSelected.indexOf(selectedText.charAt(0))
+  const actualStart = start + trimStart
+  const actualEnd = actualStart + selectedText.length
+  // textarea 无 DOM Range，用鼠标释放位置构造锚点矩形
+  openSelectionPopup(selectedText, actualStart, actualEnd, {
+    top: e.clientY,
+    bottom: e.clientY,
+    left: e.clientX,
+    right: e.clientX,
+  })
+}
+
+function closeSelectionPopup() {
+  selectionPopup.visible = false
+  selectionPopup.mode = 'input'
+  selectionPopup.refinedText = ''
+  selectionInstruction.value = ''
+  selectionError.value = ''
+}
+
+// document-level pointerdown：点到弹窗之外时关闭（不使用 inset-0 遮罩，避免阻挡内容区交互）
+function onDocPointerDown(e: PointerEvent) {
+  if (!selectionPopup.visible) return
+  if (selectionRefining.value) return
+  const popupEl = selectionPopupRef.value
+  if (popupEl && popupEl.contains(e.target as Node)) return
+  closeSelectionPopup()
+}
+
+onMounted(() => document.addEventListener('pointerdown', onDocPointerDown, true))
+onUnmounted(() => document.removeEventListener('pointerdown', onDocPointerDown, true))
+
+async function handleRefineSelection() {
+  if (!chapter.value || !selectionInstruction.value.trim() || selectionRefining.value) return
+  selectionRefining.value = true
+  selectionError.value = ''
+  try {
+    const resp = await refineSelection(chapter.value.id, selectionPopup.selectedText, selectionInstruction.value.trim())
+    const refined = (resp as any)?.data?.refined_text ?? (resp as any)?.refined_text ?? ''
+    if (!refined) {
+      selectionError.value = '未获取到改写结果'
+      return
+    }
+    // 切换到预览模式，让用户对比后决定是否应用
+    selectionPopup.refinedText = refined
+    selectionPopup.mode = 'preview'
+  } catch (e: any) {
+    selectionError.value = e?.message ?? '改写失败'
+  } finally {
+    selectionRefining.value = false
+  }
+}
+
+async function applySelectionRefine() {
+  content.value = content.value.slice(0, selectionPopup.selectionStart) + selectionPopup.refinedText + content.value.slice(selectionPopup.selectionEnd)
+  closeSelectionPopup()
+  await doSave()
+  toast.success('片段已应用')
+}
+
+function rejectSelectionRefine() {
+  // 回到输入模式，保留指令让用户继续调整
+  selectionPopup.mode = 'input'
+  selectionPopup.refinedText = ''
+}
 
 const OUTLINE_REWRITE_HINTS = [
   '高潮章节太靠后，整体节奏前松后紧',
@@ -918,29 +1084,15 @@ async function handleGenerateNovelOutline() {
       return
     }
     toast.info('大纲生成任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => {
-        const status = r.data?.status
-        return status === 'completed' || status === 'failed'
-      },
-      onResult: async (r) => {
-        const status = r.data?.status
-        if (status === 'completed') {
-          await chapterStore.fetchChapters(novelId)
-          toast.success('大纲生成完成')
-          generatingNovelOutline.value = false
-        } else if (status === 'failed') {
-          toast.error('大纲生成失败：' + (r.data?.error || '未知错误'))
-          generatingNovelOutline.value = false
-        }
-      },
-      onError: () => { /* transient error, keep retrying */ },
-      initialDelay: 2000,
-      maxDelay: 8000,
+    taskStore.trackTask(taskId, async (task) => {
+      generatingNovelOutline.value = false
+      if (task.status === 'completed') {
+        await chapterStore.fetchChapters(novelId)
+        toast.success('大纲生成完成')
+      } else if (task.status === 'failed') {
+        toast.error('大纲生成失败：' + (task.error || '未知错误'))
+      }
     })
-    poll.start()
   } catch (e: any) {
     toast.error('大纲生成失败：' + (e.message || '未知错误'))
     generatingNovelOutline.value = false
@@ -1340,44 +1492,35 @@ const extractingMinorChars = ref(false)
 const extractingChapterItems = ref(false)
 const extractingChapterSkills = ref(false)
 const extractingChapterAnchors = ref(false)
+const sceneAnchorUserPrompt = ref('')
+const characterUserPrompt = ref('')
 
 async function handleExtractMinorChars() {
   if (!chapter.value || extractingMinorChars.value) return
   extractingMinorChars.value = true
   try {
     const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, { method: 'POST' })
-    const taskId: string | undefined = data?.task_id
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, {
+      method: 'POST',
+      body: characterUserPrompt.value ? { user_prompt: characterUserPrompt.value } : undefined,
+    })
+    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) {
       toast.error('角色分析失败：未获取到任务ID')
       extractingMinorChars.value = false
       return
     }
     toast.info('角色分析任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => {
-        const status = r.data?.status
-        return status === 'completed' || status === 'failed'
-      },
-      onResult: async (r) => {
-        const status = r.data?.status
-        if (status === 'completed') {
-          const newCount = (r.data?.data as any)?.new_count ?? 0
-          toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
-          await fetchEffectiveCharacters()
-          extractingMinorChars.value = false
-        } else if (status === 'failed') {
-          toast.error('角色分析失败：' + (r.data?.error || '未知错误'))
-          extractingMinorChars.value = false
-        }
-      },
-      onError: () => { /* transient error, keep retrying */ },
-      initialDelay: 2000,
-      maxDelay: 8000,
+    taskStore.trackTask(taskId, async (task) => {
+      extractingMinorChars.value = false
+      if (task.status === 'completed') {
+        const newCount = (task.data?.new_count as number) ?? 0
+        toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
+        await fetchEffectiveCharacters()
+      } else if (task.status === 'failed') {
+        toast.error('角色分析失败：' + (task.error || '未知错误'))
+      }
     })
-    poll.start()
   } catch (e: any) {
     toast.error('角色分析失败：' + (e.message || ''))
     extractingMinorChars.value = false
@@ -1389,10 +1532,28 @@ async function handleExtractChapterItems() {
   extractingChapterItems.value = true
   try {
     const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, { method: 'POST' })
-    const count = data?.count ?? (Array.isArray(data?.items) ? data.items.length : 0)
-    toast.success(`提取物品 ${count} 个`)
-    fetchChapterItems()
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, {
+      method: 'POST',
+      body: characterUserPrompt.value ? { user_prompt: characterUserPrompt.value } : undefined,
+    })
+    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
+    if (taskId) {
+      toast.info('物品提取任务已提交，正在处理...')
+      taskStore.trackTask(taskId, async (task) => {
+        extractingChapterItems.value = false
+        if (task.status === 'completed') {
+          const count = (task.data?.new_count as number) ?? (task.data?.count as number) ?? 0
+          toast.success(`物品提取完成，新增 ${count} 个`)
+          fetchChapterItems()
+        } else if (task.status === 'failed') {
+          toast.error('物品提取失败：' + (task.error || '未知错误'))
+        }
+      })
+    } else {
+      toast.success('物品提取完成')
+      fetchChapterItems()
+      extractingChapterItems.value = false
+    }
   } catch (e: any) {
     toast.error('提取失败：' + (e.message || ''))
   } finally {
@@ -1420,39 +1581,28 @@ async function handleExtractChapterAnchors() {
   extractingChapterAnchors.value = true
   try {
     const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, { method: 'POST' })
-    const taskId: string | undefined = data?.task_id
+    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, {
+      method: 'POST',
+      body: sceneAnchorUserPrompt.value ? { user_prompt: sceneAnchorUserPrompt.value } : undefined,
+    })
+    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) {
       toast.error('场景分析失败：未获取到任务ID')
       extractingChapterAnchors.value = false
       return
     }
     toast.info('场景分析任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => {
-        const status = r.data?.status
-        return status === 'completed' || status === 'failed'
-      },
-      onResult: async (r) => {
-        const status = r.data?.status
-        if (status === 'completed') {
-          const newCount = (r.data?.data as any)?.new_count ?? 0
-          toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
-          await fetchChapterAnchors()
-          sceneAnchorStore.fetchAnchors(novelId)
-          extractingChapterAnchors.value = false
-        } else if (status === 'failed') {
-          toast.error('场景分析失败：' + (r.data?.error || '未知错误'))
-          extractingChapterAnchors.value = false
-        }
-      },
-      onError: () => { /* transient error, keep retrying */ },
-      initialDelay: 2000,
-      maxDelay: 8000,
+    taskStore.trackTask(taskId, async (task) => {
+      extractingChapterAnchors.value = false
+      if (task.status === 'completed') {
+        const newCount = (task.data?.new_count as number) ?? 0
+        toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
+        await fetchChapterAnchors()
+        sceneAnchorStore.fetchAnchors(novelId)
+      } else if (task.status === 'failed') {
+        toast.error('场景分析失败：' + (task.error || '未知错误'))
+      }
     })
-    poll.start()
   } catch (e: any) {
     toast.error('提取失败：' + (e.message || ''))
     extractingChapterAnchors.value = false
@@ -2102,6 +2252,7 @@ onUnmounted(() => {
                   :style="{ fontSize: (editorFontSize as number) + 'px', lineHeight: '2' }"
                   class="w-full min-h-[60vh] resize-none bg-transparent border-none outline-none text-gray-900 dark:text-white leading-8 placeholder-gray-300 dark:placeholder-gray-600 focus:ring-0"
                   placeholder="开始写作..."
+                  @mouseup="onEditMouseUp"
                 />
               </div>
             </div>
@@ -2129,6 +2280,125 @@ onUnmounted(() => {
               >{{ content }}</p>
             </div>
           </div>
+
+          <!-- Selection refine popup -->
+          <Teleport to="body">
+            <div
+              v-if="selectionPopup.visible"
+              ref="selectionPopupRef"
+              class="fixed z-[200] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-200"
+              :class="selectionPopup.mode === 'preview' ? 'w-[520px]' : 'w-[300px]'"
+              :style="{ top: selectionPopup.top + 'px', left: selectionPopup.left + 'px', maxHeight: 'calc(100vh - 24px)' }"
+            >
+              <!-- Header -->
+              <div class="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    {{ selectionPopup.mode === 'preview' ? '改写对比' : '改写选段' }}
+                  </span>
+                  <span v-if="selectionPopup.mode === 'preview'" class="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">确认后应用</span>
+                </div>
+                <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" @click="closeSelectionPopup">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- ── 输入模式 ── -->
+              <template v-if="selectionPopup.mode === 'input'">
+                <div class="p-3 space-y-2.5 flex-1 overflow-y-auto">
+                  <!-- Selected text preview -->
+                  <div class="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed italic border-l-2 border-indigo-300 pl-2 line-clamp-3">
+                    {{ selectionPopup.selectedText.slice(0, 100) }}{{ selectionPopup.selectedText.length > 100 ? '…' : '' }}
+                  </div>
+
+                  <!-- Quick hints -->
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="hint in selectionHints" :key="hint"
+                      class="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      :disabled="selectionRefining"
+                      @click="selectionInstruction = hint"
+                    >{{ hint }}</button>
+                  </div>
+
+                  <!-- Instruction textarea -->
+                  <textarea
+                    v-model="selectionInstruction"
+                    rows="3"
+                    class="w-full text-xs border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 placeholder-gray-400 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    placeholder="描述改写要求..."
+                    :disabled="selectionRefining"
+                    @keydown.ctrl.enter.prevent="handleRefineSelection"
+                    @keydown.meta.enter.prevent="handleRefineSelection"
+                  />
+                  <p class="text-[10px] text-gray-400">Ctrl+Enter 提交</p>
+                  <p v-if="selectionError" class="text-[10px] text-red-500">{{ selectionError }}</p>
+                </div>
+
+                <div class="px-3 pb-3 flex-shrink-0">
+                  <button
+                    class="w-full py-2 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                    :class="selectionRefining ? 'bg-gray-100 dark:bg-gray-700 text-gray-400' : 'bg-indigo-600 hover:bg-indigo-700 text-white'"
+                    :disabled="selectionRefining || !selectionInstruction.trim()"
+                    @click="handleRefineSelection"
+                  >
+                    <span v-if="selectionRefining" class="flex items-center justify-center gap-1.5">
+                      <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                      AI 改写中...
+                    </span>
+                    <span v-else>开始改写</span>
+                  </button>
+                </div>
+              </template>
+
+              <!-- ── 预览模式：前后对比 ── -->
+              <template v-else-if="selectionPopup.mode === 'preview'">
+                <div class="flex-1 overflow-y-auto min-h-0">
+                  <!-- 两栏标题 -->
+                  <div class="grid grid-cols-2 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
+                    <div class="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 dark:bg-red-950/30 border-r border-gray-100 dark:border-gray-700">
+                      <span class="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0"/>
+                      <span class="text-[10px] font-semibold text-red-600 dark:text-red-400">原文</span>
+                      <span class="ml-auto text-[10px] text-gray-400">{{ selectionPopup.selectedText.length }} 字</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 dark:bg-green-950/30">
+                      <span class="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0"/>
+                      <span class="text-[10px] font-semibold text-green-600 dark:text-green-400">改写后</span>
+                      <span class="ml-auto text-[10px]" :class="selectionPopup.refinedText.length > selectionPopup.selectedText.length ? 'text-green-500' : selectionPopup.refinedText.length < selectionPopup.selectedText.length ? 'text-red-400' : 'text-gray-400'">
+                        {{ selectionPopup.refinedText.length }} 字
+                        <template v-if="selectionPopup.refinedText.length !== selectionPopup.selectedText.length">
+                          ({{ selectionPopup.refinedText.length > selectionPopup.selectedText.length ? '+' : '' }}{{ selectionPopup.refinedText.length - selectionPopup.selectedText.length }})
+                        </template>
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 两栏内容 -->
+                  <div class="grid grid-cols-2 divide-x divide-gray-100 dark:divide-gray-700 max-h-60 overflow-y-auto">
+                    <div class="p-3 text-[11px] leading-relaxed text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-red-50/40 dark:bg-red-950/10">{{ selectionPopup.selectedText }}</div>
+                    <div class="p-3 text-[11px] leading-relaxed text-gray-800 dark:text-gray-100 whitespace-pre-wrap bg-green-50/40 dark:bg-green-950/10">{{ selectionPopup.refinedText }}</div>
+                  </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="px-3 py-2.5 border-t border-gray-100 dark:border-gray-700 flex gap-2 flex-shrink-0">
+                  <button
+                    class="flex-1 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    @click="rejectSelectionRefine"
+                  >重新输入</button>
+                  <button
+                    class="flex-1 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                    @click="applySelectionRefine"
+                  >应用</button>
+                </div>
+              </template>
+            </div>
+
+          </Teleport>
         </div>
 
         <!-- ─ 角色模式 ─ -->
@@ -3120,6 +3390,12 @@ onUnmounted(() => {
               <!-- AI 本章提取 -->
               <div class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
                 <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
+                <textarea
+                  v-model="characterUserPrompt"
+                  :placeholder="'补充提示（可选）：如「重点关注配角」、「忽略临时路人」…'"
+                  rows="2"
+                  class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500 dark:focus:ring-purple-400"
+                />
                 <button
                   :disabled="extractingMinorChars || !chapter?.content"
                   class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50"
@@ -3147,6 +3423,12 @@ onUnmounted(() => {
           <template v-else-if="pageMode === 'scenes'">
             <div class="p-4 space-y-3">
               <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中提取场景，或手动绑定场景以确保跨镜头视觉一致性。</p>
+              <textarea
+                v-model="sceneAnchorUserPrompt"
+                :placeholder="'补充提示（可选）：如「重点关注室内场景」、「忽略过渡性场景」…'"
+                rows="3"
+                class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-teal-500 dark:focus:ring-teal-400"
+              />
               <button
                 :disabled="extractingChapterAnchors || !chapter?.content"
                 class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors disabled:opacity-50"

@@ -474,6 +474,8 @@ export type AsyncTaskType =
   | 'novel_analysis'
   | 'rewrite_analysis'
   | 'rewrite_chapters'
+  | 'chapter_char_extract'
+  | 'chapter_scene_extract'
 
 export interface AsyncTask {
   id: number

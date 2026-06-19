@@ -2,13 +2,13 @@
 import type { Character, AIModel } from '~/types'
 import { useCharacterApi } from '~/composables/useCharacterApi'
 import { useModelApi } from '~/composables/useModelApi'
-import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
 
 const props = defineProps<{ character: Character }>()
 const emit = defineEmits<{ update: [data: Partial<Character>] }>()
 
 const { updateCharacter, previewVoice } = useCharacterApi()
 const { getAvailableModels } = useModelApi()
+const taskStore = useTaskStore()
 const toast = useToast()
 
 // ─── Static catalog ───────────────────────────────────────────────────────────
@@ -213,28 +213,18 @@ async function preview() {
     })
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { throw new Error('未获取到任务ID') }
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => r.data?.status === 'completed' || r.data?.status === 'failed',
-      onResult: async (r) => {
-        if (r.data?.status === 'completed') {
-          const d = r.data?.data as any
-          audioUrl.value = d?.audio_url ?? ''
-          previewing.value = false
-          await nextTick()
-          audioEl.value?.load()
-          audioEl.value?.play()
-        } else if (r.data?.status === 'failed') {
-          audioUrl.value = ''
-          errorMsg.value = r.data?.error || '试听失败，请检查语音合成配置'
-          previewing.value = false
-        }
-      },
-      onError: () => {},
-      initialDelay: 1000, maxDelay: 5000,
+    taskStore.trackTask(taskId, async (task) => {
+      previewing.value = false
+      if (task.status === 'completed') {
+        audioUrl.value = (task.data?.audio_url as string) ?? ''
+        await nextTick()
+        audioEl.value?.load()
+        audioEl.value?.play()
+      } else if (task.status === 'failed') {
+        audioUrl.value = ''
+        errorMsg.value = task.error || '试听失败，请检查语音合成配置'
+      }
     })
-    poll.start()
   } catch (e: any) {
     audioUrl.value = ''
     errorMsg.value = e.message || '试听失败，请检查语音合成配置'
