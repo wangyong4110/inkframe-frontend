@@ -54,10 +54,9 @@ const iconOptions = [
 ]
 
 const genreOptions = [
-  '现代言情','古代言情','幻想言情','历史','军事','科幻','游戏','游戏竞技',
-  '玄幻奇幻','都市','奇闻异事','武侠仙侠','体育','N次元','文学艺术',
-  '人文社科','经管励志','经典文学','出版小说','少儿教育','衍生言情',
-  '现实题材','现实主义',
+  '玄幻奇幻','仙侠修仙','都市现代','言情爱情','历史古代','科幻未来',
+  '悬疑推理','武侠江湖','灵异恐怖','游戏竞技','军事战争','体育竞技',
+  '青春校园','末世废土','重生穿越','宫斗宅斗','系统流','其他',
 ]
 
 const settingsWCOptions = [
@@ -367,23 +366,24 @@ async function confirmDeleteNovel() {
         </div>
       </div>
 
-      <!-- 章节模式（创建时确定，不可变更） -->
+      <!-- 章节模式 -->
       <div>
         <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">章节模式</label>
         <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-          <div
+          <button
             v-for="mode in [{ value: 'sequential', label: '连贯剧情', desc: '各章节情节相互衔接' }, { value: 'independent', label: '独立成篇', desc: '每章都是完整故事' }]"
             :key="mode.value"
-            class="flex-1 py-1.5 text-xs flex flex-col items-center gap-0.5 select-none"
+            type="button"
+            class="flex-1 py-1.5 text-xs flex flex-col items-center gap-0.5 transition-colors"
             :class="(novel?.chapter_mode ?? 'sequential') === mode.value
               ? 'bg-primary-500 text-white'
-              : 'bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-600'"
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+            @click="novelStore.updateNovel(novelId, { chapter_mode: mode.value })"
           >
             <span>{{ mode.label }}</span>
             <span class="opacity-70">{{ mode.desc }}</span>
-          </div>
+          </button>
         </div>
-        <p class="mt-1 text-xs text-gray-400">创建时确定，不可变更</p>
       </div>
     </div>
 

@@ -16,7 +16,7 @@ const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
 
-const { publishChapter, unpublishChapter, regenerateChapter, batchGenerateChapters, generateChapterOutline } = useChapterApi()
+const { publishChapter, unpublishChapter, regenerateChapter, batchGenerateChapters, generateChapterOutline, insertChapterAfter, reorderChapters } = useChapterApi()
 
 const { guardAiProvider } = useAiProviderGuard()
 
@@ -218,6 +218,108 @@ const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.le
 const creatingChapter = ref(false)
 const createStep = ref<'idle' | 'creating' | 'generating'>('idle')
 
+// ── 拖拽排序 ────────────────────────────────────────────────────────────────────
+const dragSrcIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+const reordering = ref(false)
+
+function onDragStart(idx: number, event: DragEvent) {
+  dragSrcIndex.value = idx
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(idx))
+  }
+}
+
+function onDragOver(idx: number, event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragOverIndex.value = idx
+}
+
+function onDragLeave() {
+  dragOverIndex.value = null
+}
+
+function onDragEnd() {
+  dragSrcIndex.value = null
+  dragOverIndex.value = null
+}
+
+async function onDrop(toIdx: number, event: DragEvent) {
+  event.preventDefault()
+  const fromIdx = dragSrcIndex.value
+  dragSrcIndex.value = null
+  dragOverIndex.value = null
+  if (fromIdx === null || fromIdx === toIdx) return
+
+  // Build the new order by moving the item
+  const allChapters = [...chapters.value]
+  const pageOffset = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
+  const fromGlobal = pageOffset + fromIdx
+  const toGlobal = pageOffset + toIdx
+
+  const reordered = [...allChapters]
+  const [moved] = reordered.splice(fromGlobal, 1)
+  reordered.splice(toGlobal, 0, moved)
+
+  // Optimistic update
+  chapterStore.chapters = reordered
+
+  reordering.value = true
+  try {
+    const orders = reordered.map((c, i) => ({ chapter_id: c.id, chapter_no: i + 1 }))
+    await reorderChapters(props.novelId, orders)
+    await chapterStore.fetchChapters(props.novelId)
+  } catch (e: any) {
+    toast.error('排序失败：' + (e.message || ''))
+    await chapterStore.fetchChapters(props.novelId)
+  } finally {
+    reordering.value = false
+  }
+}
+
+// ── 插入章节 ───────────────────────────────────────────────────────────────────
+const showInsertModal = ref(false)
+const insertAfterNo = ref(0)
+const insertDescription = ref('')
+const insertModalTextarea = ref<HTMLTextAreaElement | null>(null)
+const insertingAfterNo = ref<number | null>(null)
+const insertStep = ref<'idle' | 'creating' | 'generating'>('idle')
+
+function openInsertModal(afterChapterNo: number, event: Event) {
+  event.stopPropagation()
+  insertAfterNo.value = afterChapterNo
+  insertDescription.value = ''
+  showInsertModal.value = true
+  nextTick(() => insertModalTextarea.value?.focus())
+}
+
+async function handleInsertChapter() {
+  if (!await guardAiProvider('LLM')) return
+  if (insertingAfterNo.value !== null) return
+  showInsertModal.value = false
+  insertingAfterNo.value = insertAfterNo.value
+  const desc = insertDescription.value.trim()
+  try {
+    insertStep.value = 'creating'
+    const res: any = await insertChapterAfter(props.novelId, insertAfterNo.value)
+    const chapter = res?.data ?? res
+
+    insertStep.value = 'generating'
+    await generateChapterOutline(props.novelId, chapter.chapter_no, desc || undefined)
+
+    await chapterStore.fetchChapters(props.novelId)
+    router.push(`/novel/${props.novelId}/chapter/${chapter.chapter_no}`)
+  } catch (e: any) {
+    toast.error('插入章节失败：' + (e.message || ''))
+    await chapterStore.fetchChapters(props.novelId)
+  } finally {
+    insertingAfterNo.value = null
+    insertStep.value = 'idle'
+  }
+}
+
 async function handleCreateChapter() {
   if (!await guardAiProvider('LLM')) return
   if (creatingChapter.value) return
@@ -275,7 +377,8 @@ async function handleGenerateOutline() {
   if (!novelStore.currentNovel) return
   generatingOutline.value = true
   try {
-    const taskId = await novelStore.generateOutline(props.novelId, 10)
+    const chapterNum = chapters.value.length > 0 ? chapters.value.length : (novelStore.currentNovel?.target_chapters || 10)
+    const taskId = await novelStore.generateOutline(props.novelId, chapterNum)
     if (!taskId) {
       toast.error('大纲生成失败：未获取到任务ID')
       generatingOutline.value = false
@@ -356,16 +459,6 @@ async function confirmDeleteChapter() {
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
         <div class="flex items-center gap-2">
-          <button class="btn-secondary text-sm" :disabled="batchGenRunning" @click="showBatchGenModal = true">
-            <svg v-if="batchGenRunning" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-            </svg>
-            {{ batchGenRunning ? batchGenTitle || '生成中...' : '生成小说内容' }}
-          </button>
           <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
             <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -380,26 +473,13 @@ async function confirmDeleteChapter() {
             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
             </svg>
-            AI 批量审查大纲
-          </button>
-          <button
-            class="btn-primary"
-            :disabled="creatingChapter"
-            @click="openCreateModal"
-          >
-            <svg v-if="creatingChapter" class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            {{ createStep === 'generating' ? 'AI 生成大纲中…' : createStep === 'creating' ? '创建中…' : '新建章节' }}
+            AI 审查
           </button>
         </div>
       </div>
     </div>
 
-    <div v-if="chapterStore.loading" class="space-y-3">
+    <div v-if="chapterStore.loading && chapters.length === 0" class="space-y-3">
       <div v-for="i in 5" :key="i" class="card p-4">
         <div class="skeleton h-5 w-1/3 mb-2"></div>
         <div class="skeleton h-4 w-2/3"></div>
@@ -413,14 +493,41 @@ async function confirmDeleteChapter() {
       <p class="text-gray-500 dark:text-gray-400">还没有章节，创建你的第一章</p>
     </div>
 
-    <div v-else class="space-y-3">
+    <div v-else class="space-y-0">
+      <template v-for="(chapter, idx) in pagedChapters" :key="chapter.id">
+      <!-- 插入分隔线（章节之间，以及第一章前面） -->
       <div
-        v-for="chapter in pagedChapters"
-        :key="chapter.id"
-        class="card p-4 hover:shadow-soft transition-shadow cursor-pointer group"
+        v-if="idx === 0"
+        class="group/ins flex items-center gap-2 h-5 my-0.5"
+      >
+        <div class="flex-1 border-t border-dashed border-transparent group-hover/ins:border-gray-300 dark:group-hover/ins:border-gray-600 transition-colors"/>
+        <button
+          class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 dark:hover:text-indigo-400 opacity-0 group-hover/ins:opacity-100 transition-all flex items-center justify-center text-sm leading-none"
+          :disabled="insertingAfterNo !== null"
+          :title="`在第${chapter.chapter_no}章前插入`"
+          @click.stop="openInsertModal(chapter.chapter_no - 1, $event)"
+        >+</button>
+        <div class="flex-1 border-t border-dashed border-transparent group-hover/ins:border-gray-300 dark:group-hover/ins:border-gray-600 transition-colors"/>
+      </div>
+      <div
+        draggable="true"
+        class="card p-4 hover:shadow-soft transition-all cursor-pointer group mt-1.5 mb-0 select-none"
+        :class="{
+          'opacity-40 scale-[0.98]': dragSrcIndex === idx,
+          'ring-2 ring-indigo-400 ring-offset-1': dragOverIndex === idx && dragSrcIndex !== idx,
+        }"
+        @dragstart="onDragStart(idx, $event)"
+        @dragover="onDragOver(idx, $event)"
+        @dragleave="onDragLeave"
+        @dragend="onDragEnd"
+        @drop="onDrop(idx, $event)"
         @click="goToChapter(chapter)"
       >
         <div class="flex items-center justify-between">
+          <!-- 拖拽把手 -->
+          <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mr-2 cursor-grab active:cursor-grabbing" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm0 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm0 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm8-12a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm0 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm0 6a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+          </svg>
           <div class="flex-1">
             <div class="flex items-center space-x-3">
               <span class="text-lg font-medium text-gray-900 dark:text-white">
@@ -496,12 +603,40 @@ async function confirmDeleteChapter() {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
               </svg>
             </button>
+            <!-- 删除章节按钮 -->
+            <button
+              class="p-1 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400"
+              title="删除章节"
+              @click.stop="requestDeleteChapter(chapter, $event)"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           </div>
         </div>
       </div>
+      <!-- 章节后的插入分隔线 -->
+      <div class="group/ins flex items-center gap-2 h-5 my-0.5">
+        <div class="flex-1 border-t border-dashed border-transparent group-hover/ins:border-gray-300 dark:group-hover/ins:border-gray-600 transition-colors"/>
+        <button
+          class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 dark:hover:text-indigo-400 opacity-0 group-hover/ins:opacity-100 transition-all flex items-center justify-center text-sm leading-none"
+          :disabled="insertingAfterNo !== null"
+          :title="`在第${chapter.chapter_no}章后插入`"
+          @click.stop="openInsertModal(chapter.chapter_no, $event)"
+        >
+          <svg v-if="insertingAfterNo === chapter.chapter_no" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <span v-else>+</span>
+        </button>
+        <div class="flex-1 border-t border-dashed border-transparent group-hover/ins:border-gray-300 dark:group-hover/ins:border-gray-600 transition-colors"/>
+      </div>
+      </template>
 
       <!-- 分页控件 -->
       <div v-if="chapterTotalPages > 1" class="flex items-center justify-between pt-2">
@@ -689,6 +824,56 @@ async function confirmDeleteChapter() {
               class="flex-1 btn-primary text-sm"
               @click="handleCreateChapter"
             >
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.316A4 4 0 0112 17.97a4 4 0 01-2.772-1.11l-.347-.315z" />
+              </svg>
+              AI 生成大纲
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 插入章节弹窗 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="showInsertModal" class="fixed inset-0 z-[300] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="showInsertModal = false" />
+        <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">插入章节</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                将在第 {{ insertAfterNo }} 章后插入新章节，AI 自动生成大纲
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              章节描述
+              <span class="text-gray-400 dark:text-gray-500 font-normal ml-1">（可选，留空由 AI 自主延续剧情）</span>
+            </label>
+            <textarea
+              ref="insertModalTextarea"
+              v-model="insertDescription"
+              rows="5"
+              class="w-full text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500"
+              placeholder="例如：凌云在废墟中发现了师父留下的遗物，触发了沉睡已久的阵法，与潜伏在遗址中的魔修正面交锋……"
+              @keydown.esc="showInsertModal = false"
+            />
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">AI 会结合前后章节大纲和你的描述生成本章情节规划</p>
+          </div>
+
+          <div class="flex gap-3 pt-1">
+            <button class="flex-1 btn-secondary text-sm" @click="showInsertModal = false">取消</button>
+            <button class="flex-1 btn-primary text-sm" @click="handleInsertChapter">
               <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.316A4 4 0 0112 17.97a4 4 0 01-2.772-1.11l-.347-.315z" />
               </svg>

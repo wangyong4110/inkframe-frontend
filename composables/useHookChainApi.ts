@@ -1,4 +1,4 @@
-export type HookType = 'chapter_end' | 'emotional' | 'mystery' | 'threat' | 'promise'
+export type HookType = 'chapter_end' | 'emotional' | 'mystery' | 'threat' | 'promise' | 'revelation' | 'decision' | 'action'
 
 export interface HookChain {
   id: number
@@ -12,6 +12,9 @@ export interface HookChain {
   intensity: number
   is_fulfilled: boolean
   notes: string
+  foreshadow_id?: number
+  payoff_quality?: number
+  payoff_notes?: string
   created_at: string
   updated_at: string
 }
@@ -66,5 +69,12 @@ export function useHookChainApi() {
     })
   }
 
-  return { listHooks, createHook, updateHook, deleteHook, fulfillHook }
+  async function ratePayoff(id: number, quality: number, notes = ''): Promise<HookChain> {
+    return request(`/hooks/${id}/payoff-quality`, {
+      method: 'PUT',
+      body: JSON.stringify({ payoff_quality: quality, payoff_notes: notes }),
+    })
+  }
+
+  return { listHooks, createHook, updateHook, deleteHook, fulfillHook, ratePayoff }
 }

@@ -52,12 +52,16 @@
           <!-- Info -->
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ task.title }}</p>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1.5">
               <span v-if="task.status === 'pending'">排队中…</span>
-              <span v-else-if="task.status === 'running'">
-                {{ task.progress > 0 ? task.progress + '%' : '处理中…' }}
-              </span>
-              <span v-else-if="task.status === 'completed'" class="text-success-600 dark:text-success-400">已完成</span>
+              <template v-else-if="task.status === 'running'">
+                <span>{{ task.progress > 0 ? task.progress + '%' : '处理中…' }}</span>
+                <span class="text-gray-400 dark:text-gray-500">· {{ formatElapsed(task.created_at) }}</span>
+              </template>
+              <template v-else-if="task.status === 'completed'">
+                <span class="text-success-600 dark:text-success-400">已完成</span>
+                <span class="text-gray-400 dark:text-gray-500">· {{ formatElapsed(task.created_at, task.updated_at) }}</span>
+              </template>
               <span v-else-if="task.status === 'cancelled'" class="text-gray-400">已取消</span>
               <span v-else class="text-error-600 dark:text-error-400 truncate">{{ task.error || '失败' }}</span>
             </p>
@@ -166,10 +170,23 @@ function taskTypeLabel(type: AsyncTaskType | string) {
   return TYPE_LABELS[type] ?? type
 }
 
-// Load active tasks when the panel mounts (restores after page refresh)
+// 每秒更新 now，用于实时计算运行时长
+const now = ref(Date.now())
+let ticker: ReturnType<typeof setInterval>
 onMounted(() => {
   taskStore.loadActiveTasks()
+  ticker = setInterval(() => { now.value = Date.now() }, 1000)
 })
+onUnmounted(() => clearInterval(ticker))
+
+function formatElapsed(startIso: string, endIso?: string): string {
+  const start = new Date(startIso).getTime()
+  const end = endIso ? new Date(endIso).getTime() : now.value
+  const secs = Math.max(0, Math.floor((end - start) / 1000))
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
 </script>
 
 <style scoped>

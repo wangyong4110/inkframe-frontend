@@ -1,5 +1,5 @@
-export type ConflictArcType = 'internal' | 'interpersonal' | 'social'
-export type ConflictPhase = 'setup' | 'escalation' | 'climax' | 'resolution'
+export type ConflictArcType = 'internal' | 'interpersonal' | 'social' | 'philosophical'
+export type ConflictPhase = 'setup' | 'ignition' | 'escalation' | 'turning_point' | 'climax' | 'aftershock' | 'resolution'
 
 export interface ConflictArc {
   id: number
@@ -15,6 +15,7 @@ export interface ConflictArc {
   current_phase: ConflictPhase
   is_resolved: boolean
   notes: string
+  tension_levels?: string
   created_at: string
   updated_at: string
 }
@@ -70,5 +71,12 @@ export function useConflictArcApi() {
     return request(`/conflict-arcs/${id}/advance-phase`, { method: 'PUT' })
   }
 
-  return { listConflictArcs, createConflictArc, updateConflictArc, deleteConflictArc, advancePhase }
+  async function updateTension(id: number, phase: string, level: number): Promise<ConflictArc> {
+    return request(`/conflict-arcs/${id}/tension`, {
+      method: 'PUT',
+      body: JSON.stringify({ phase, tension_level: level }),
+    })
+  }
+
+  return { listConflictArcs, createConflictArc, updateConflictArc, deleteConflictArc, advancePhase, updateTension }
 }

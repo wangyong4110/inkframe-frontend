@@ -2,6 +2,8 @@
 import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { usePollWithBackoff } from '~/composables/usePollWithBackoff'
+import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
+import { generateDiffFile } from '@git-diff-view/file'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +21,7 @@ const novelStore = useNovelStore()
 const characterStore = useCharacterStore()
 const videoStore = useVideoStore()
 const sceneAnchorStore = useSceneAnchorStore()
+const taskStore = useTaskStore()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const characterApi = useCharacterApi()
@@ -471,6 +474,7 @@ async function handleGenerate() {
     if (wordCountOverride.value > 0) chapterStore.wordCountGoal = wordCountOverride.value
     // Show preview modal instead of directly applying
     previewModal.content = result.content || ''
+    previewModal.originalContent = content.value
     previewModal.open = true
     toast.success('内容生成完成，请预览后选择是否应用')
   } catch (e: any) {
@@ -504,34 +508,20 @@ async function handleRegenerate() {
     }
     currentTaskId.value = taskId
     toast.info('重新生成任务已提交，正在处理...')
-    const { getTask } = useTaskApi()
-    const poll = usePollWithBackoff({
-      fn: () => getTask(taskId),
-      isDone: (r) => {
-        const status = r.data?.status
-        return status === 'completed' || status === 'failed'
-      },
-      onResult: (r) => {
-        const status = r.data?.status
-        if (status === 'completed') {
-          const result = (r.data?.data as any)?.chapter as Chapter | undefined
-          currentTaskId.value = null
-          previewModal.content = result?.content || ''
-          previewModal.open = true
-          toast.success('重新生成完成，请预览后选择是否应用')
-          regenPrompt.value = ''
-          regenerating.value = false
-        } else if (status === 'failed') {
-          currentTaskId.value = null
-          toast.error('重新生成失败：' + (r.data?.error || '未知错误'))
-          regenerating.value = false
-        }
-      },
-      onError: () => { /* transient error, keep retrying */ },
-      initialDelay: 2000,
-      maxDelay: 8000,
+    taskStore.trackTask(taskId, (task) => {
+      currentTaskId.value = null
+      if (task.status === 'completed') {
+        const result = (task.data as any)?.chapter as Chapter | undefined
+        previewModal.content = result?.content || ''
+        previewModal.originalContent = content.value
+        previewModal.open = true
+        toast.success('重新生成完成，请预览后选择是否应用')
+        regenPrompt.value = ''
+      } else if (task.status === 'failed') {
+        toast.error('重新生成失败：' + (task.error || '未知错误'))
+      }
+      regenerating.value = false
     })
-    poll.start()
   } catch (e: any) {
     toast.error('重新生成失败：' + (e.message || '未知错误'))
     regenerating.value = false
@@ -556,6 +546,105 @@ const refining = ref(false)
 const refinedContent = ref('')
 const showRefinedPreview = ref(false)
 const showRightPanel = ref(true)
+
+// ── 精修章节 ──────────────────────────────────────────────────────────────────
+const outlinePanelTab = ref<'generate' | 'rewrite'>('generate')
+const writePanelTab = ref<'generate' | 'rewrite'>('generate')
+const rewriteInstruction = ref('')
+const rewriting = ref(false)
+const rewriteError = ref('')
+const { rewriteChapterByInstruction } = useChapterApi()
+
+const REWRITE_HINTS = [
+  '改写最后一段，增加悬念感',
+  '这段对话太平淡，改得更有张力',
+  '场景描写太少，加一些感官细节',
+  '结尾太平，加一个反转或威胁',
+  '主角内心独白太多，改为外化行为',
+]
+
+const OUTLINE_REWRITE_HINTS = [
+  '高潮章节太靠后，整体节奏前松后紧',
+  '中段剧情平淡，缺少冲突和转折',
+  '主角成长弧线不够清晰，补充关键节点',
+  '反派动机薄弱，增加对立线索',
+  '结局章节太仓促，拆分细化收尾',
+  '伏笔太少，在前期章节埋几条线索',
+  '某几章重复感强，合并或差异化',
+  '世界观展示太集中，分散到各章节',
+]
+
+const REWRITE_HISTORY_KEY = `rewrite-history-novel-${novelId}-chapter-${chapterNo}`
+const MAX_HISTORY = 20
+
+const rewriteHistory = ref<string[]>([])
+
+function loadRewriteHistory() {
+  try {
+    const raw = localStorage.getItem(REWRITE_HISTORY_KEY)
+    rewriteHistory.value = raw ? JSON.parse(raw) : []
+  } catch {
+    rewriteHistory.value = []
+  }
+}
+
+function saveToRewriteHistory(instruction: string) {
+  const trimmed = instruction.trim()
+  if (!trimmed) return
+  const list = rewriteHistory.value.filter(h => h !== trimmed)
+  list.unshift(trimmed)
+  rewriteHistory.value = list.slice(0, MAX_HISTORY)
+  try {
+    localStorage.setItem(REWRITE_HISTORY_KEY, JSON.stringify(rewriteHistory.value))
+  } catch { /* ignore */ }
+}
+
+function deleteRewriteHistory(idx: number) {
+  rewriteHistory.value.splice(idx, 1)
+  try {
+    localStorage.setItem(REWRITE_HISTORY_KEY, JSON.stringify(rewriteHistory.value))
+  } catch { /* ignore */ }
+}
+
+onMounted(loadRewriteHistory)
+
+async function handleRewriteByInstruction() {
+  const text = rewriteInstruction.value.trim()
+  if (!text || rewriting.value || !chapter.value) return
+  rewriteError.value = ''
+  rewriting.value = true
+  saveToRewriteHistory(text)
+
+  try {
+    const resp = await rewriteChapterByInstruction(chapter.value.id, text)
+    const taskId = (resp as any)?.data?.task_id ?? (resp as any)?.task_id
+    if (!taskId) {
+      rewriteError.value = '提交失败：未获取到任务ID'
+      rewriting.value = false
+      return
+    }
+    currentTaskId.value = taskId
+    toast.info('精修任务已提交，AI 正在处理...')
+    taskStore.trackTask(taskId, (task) => {
+      currentTaskId.value = null
+      if (task.status === 'completed') {
+        const result = (task.data as any)?.chapter as any
+        previewModal.content = result?.content || ''
+        previewModal.originalContent = content.value
+        previewModal.open = true
+        toast.success('精修完成，请预览后决定是否应用')
+        rewriteInstruction.value = ''
+      } else if (task.status === 'failed') {
+        rewriteError.value = task.error || '修改失败'
+        toast.error('修改失败：' + (task.error || '未知错误'))
+      }
+      rewriting.value = false
+    })
+  } catch (e: any) {
+    rewriteError.value = e.message || '提交失败'
+    rewriting.value = false
+  }
+}
 
 // ── AI 深度审查面板 ───────────────────────────────────────────────────────────
 const showReviewPanel = ref(false)
@@ -1395,12 +1484,30 @@ async function fetchShotsForChapter() {
 const previewModal = reactive({
   open: false,
   content: '',
+  originalContent: '',
+})
+const previewDiffMode = ref(false)
+
+const previewDiffFile = computed(() => {
+  if (!previewDiffMode.value) return null
+  const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const file = generateDiffFile(
+    '原文', previewModal.originalContent,
+    '新版本', previewModal.content,
+    'plaintext', 'plaintext',
+  )
+  file.initTheme(dark ? 'dark' : 'light')
+  file.init()
+  file.buildSplitDiffLines()
+  file.buildUnifiedDiffLines()
+  return file
 })
 
 const applyGenerated = () => {
   content.value = previewModal.content
   savedContent.value = savedContent.value // keep dirty
   previewModal.open = false
+  previewDiffMode.value = false
   toast.success('已应用生成内容')
 }
 
@@ -1484,6 +1591,7 @@ const loadVersions = async () => {
 
 const previewVersion = (v: ChapterVersion) => {
   previewModal.content = v.content
+  previewModal.originalContent = content.value
   previewModal.open = true
 }
 
@@ -1535,8 +1643,22 @@ const diffVersionOptions = computed((): DiffVersion[] => {
   return opts
 })
 
-const diffRows = computed(() => computeParaDiff(diffLeftContent.value, diffRightContent.value))
-const diffSummary = computed(() => diffStats(diffRows.value))
+const diffFile = computed(() => {
+  if (!diffLeftContent.value && !diffRightContent.value) return null
+  const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const leftLabel = diffVersionOptions.value.find(o => o.id === diffLeftId.value)?.label ?? '左侧'
+  const rightLabel = diffVersionOptions.value.find(o => o.id === diffRightId.value)?.label ?? '右侧'
+  const file = generateDiffFile(
+    leftLabel, diffLeftContent.value,
+    rightLabel, diffRightContent.value,
+    'plaintext', 'plaintext',
+  )
+  file.initTheme(dark ? 'dark' : 'light')
+  file.init()
+  file.buildSplitDiffLines()
+  file.buildUnifiedDiffLines()
+  return file
+})
 
 async function resolveVersionContent(id: number | 'current'): Promise<string> {
   if (id === 'current') return content.value
@@ -1773,8 +1895,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 章末衔接锚点（chapter_end_state）-->
-            <div v-if="parsedEndState" class="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <!-- 章末衔接锚点（chapter_end_state）独立成篇模式无需衔接下章，不显示 -->
+            <div v-if="parsedEndState && novel?.chapter_mode !== 'independent'" class="mt-8 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
                 <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
@@ -1807,8 +1929,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 读者悬念（reader_expectations）-->
-            <div v-if="parsedReaderExpectations.length" class="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <!-- 读者悬念（reader_expectations）独立成篇模式章章独立，不显示 -->
+            <div v-if="parsedReaderExpectations.length && novel?.chapter_mode !== 'independent'" class="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
                 <svg class="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -2327,7 +2449,7 @@ onUnmounted(() => {
       >
 
         <!-- Panel header -->
-        <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
+        <div class="relative flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
           <div>
             <p class="text-xs font-semibold text-gray-900 dark:text-white">
               {{
@@ -2352,15 +2474,99 @@ onUnmounted(() => {
               }}
             </p>
           </div>
-          <button
-            class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0 mt-0.5"
-            title="关闭面板"
-            @click="showRightPanel = false"
+          <div class="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+            <!-- 高级参数 trigger（视频子 tab 时隐藏） -->
+            <button
+              v-if="!(pageMode === 'script' && ['timeline','sfx','bgm','voice'].includes(videoEditorRef?.activeTab ?? ''))"
+              class="w-6 h-6 flex items-center justify-center rounded transition-colors"
+              :class="showAdvancedParams ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'"
+              title="高级参数"
+              @click.stop="showAdvancedParams = !showAdvancedParams"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+              </svg>
+            </button>
+            <button
+              class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="关闭面板"
+              @click="showRightPanel = false"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 高级参数 下拉浮层 -->
+          <div
+            v-if="showAdvancedParams"
+            class="absolute top-full right-0 w-72 mt-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 p-4 space-y-3"
+            @click.stop
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+            <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">高级参数</h4>
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0 = 自动）</span></label>
+              <input v-model.number="advMaxTokens" type="number" min="0" step="256" placeholder="0"
+                class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0 = 自动）</span></label>
+              <div class="flex items-center gap-2">
+                <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500"/>
+                <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0"
+                  class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
+              <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0"
+                class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
+            </div>
+            <!-- 写作模式专属 -->
+            <template v-if="pageMode === 'write'">
+              <div class="border-t border-gray-100 dark:border-gray-700 pt-2 space-y-2.5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-xs text-gray-600 dark:text-gray-300">联网参考</span>
+                    <p class="text-[10px] text-gray-400">搜索相关故事片段作为灵感</p>
+                  </div>
+                  <button class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                    :class="webSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                    @click="webSearchEnabled = !webSearchEnabled">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                      :class="webSearchEnabled ? 'translate-x-4' : ''"/>
+                  </button>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-xs text-gray-600 dark:text-gray-300">百科知识</span>
+                    <p class="text-[10px] text-gray-400">查询 Wikipedia 提升世界观准确性</p>
+                  </div>
+                  <button class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                    :class="wikiSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                    @click="wikiSearchEnabled = !wikiSearchEnabled">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                      :class="wikiSearchEnabled ? 'translate-x-4' : ''"/>
+                  </button>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-xs text-gray-600 dark:text-gray-300">情节模板</span>
+                    <p class="text-[10px] text-gray-400">注入逆袭/觉醒等叙事结构参考</p>
+                  </div>
+                  <button class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+                    :class="storyPatternEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
+                    @click="storyPatternEnabled = !storyPatternEnabled">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                      :class="storyPatternEnabled ? 'translate-x-4' : ''"/>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <!-- 点击其他区域关闭浮层 -->
+          <div v-if="showAdvancedParams" class="fixed inset-0 z-40" @click="showAdvancedParams = false"/>
         </div>
 
         <!-- Panel content -->
@@ -2368,7 +2574,28 @@ onUnmounted(() => {
 
           <!-- ── 大纲 AI ── -->
           <template v-if="pageMode === 'outline'">
-            <div class="p-4 space-y-4">
+
+            <!-- Tab header：左右等宽 -->
+            <div class="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700">
+              <button
+                class="flex-1 py-2 text-xs font-medium transition-colors"
+                :class="outlinePanelTab === 'generate' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                @click="outlinePanelTab = 'generate'"
+              >生成</button>
+              <button
+                class="flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                :class="outlinePanelTab === 'rewrite' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                @click="outlinePanelTab = 'rewrite'"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                精修
+              </button>
+            </div>
+
+            <!-- 生成 tab -->
+            <div v-if="outlinePanelTab === 'generate'" class="p-4 space-y-4">
               <div class="space-y-3">
                 <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">生成整部小说的章节大纲，包含所有章节标题和剧情提要。</p>
                 <div>
@@ -2379,30 +2606,6 @@ onUnmounted(() => {
                     class="input text-sm resize-none"
                     placeholder="对大纲方向的额外要求..."
                   />
-                </div>
-                <!-- 高级参数 -->
-                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                  <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
-                    <span>高级参数</span>
-                    <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                  </button>
-                  <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0 = 自动）</span></label>
-                      <input v-model.number="advMaxTokens" type="number" min="0" step="256" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0 = 自动）</span></label>
-                      <div class="flex items-center gap-2">
-                        <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500"/>
-                        <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0" class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                      </div>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
-                      <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                  </div>
                 </div>
                 <button
                   class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
@@ -2419,12 +2622,125 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+
+            <!-- 精修 tab -->
+            <div v-else-if="outlinePanelTab === 'rewrite'" class="p-4 space-y-4">
+
+              <div class="space-y-1.5">
+                <p class="text-xs font-medium text-gray-600 dark:text-gray-300">用自然语言描述精修需求</p>
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">描述你的修改需求，AI 会在保留原有情节的基础上进行精准改写，完成后生成新版本供预览。</p>
+              </div>
+
+              <!-- Quick hints -->
+              <div class="space-y-1.5">
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">快速填入</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="hint in OUTLINE_REWRITE_HINTS" :key="hint"
+                    class="text-[10px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-primary-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                    :disabled="rewriting"
+                    @click="rewriteInstruction = hint"
+                  >{{ hint }}</button>
+                </div>
+              </div>
+
+              <!-- Instruction input -->
+              <div class="space-y-2">
+                <textarea
+                  v-model="rewriteInstruction"
+                  rows="5"
+                  class="input text-sm resize-none"
+                  placeholder="例如：把结尾两段改得更有张力，制造悬念..."
+                  :disabled="rewriting"
+                  @keydown.ctrl.enter.prevent="handleRewriteByInstruction"
+                  @keydown.meta.enter.prevent="handleRewriteByInstruction"
+                />
+                <p class="text-[10px] text-gray-400">Ctrl+Enter 提交 · 精修完成后会弹出预览，可选择应用</p>
+              </div>
+
+              <!-- Error -->
+              <p v-if="rewriteError" class="text-xs text-red-500">{{ rewriteError }}</p>
+
+              <!-- Instruction history -->
+              <div v-if="rewriteHistory.length > 0" class="space-y-1">
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">历史指令</p>
+                <div class="space-y-1 max-h-40 overflow-y-auto pr-0.5">
+                  <div
+                    v-for="(h, idx) in rewriteHistory" :key="idx"
+                    class="group flex items-start gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors cursor-pointer"
+                    @click="rewriteInstruction = h"
+                  >
+                    <svg class="w-3 h-3 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 mt-0.5 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="flex-1 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-2">{{ h }}</span>
+                    <button
+                      class="flex-shrink-0 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all"
+                      title="删除"
+                      @click.stop="deleteRewriteHistory(idx)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit button -->
+              <button
+                class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                :class="rewriting ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-primary-600 hover:bg-primary-700 text-white'"
+                :disabled="rewriting || !rewriteInstruction.trim() || !chapter?.content"
+                @click="handleRewriteByInstruction"
+              >
+                <svg v-if="rewriting" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                {{ rewriting ? 'AI 精修中...' : '开始精修' }}
+              </button>
+
+              <!-- Progress -->
+              <div v-if="rewriting" class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+                <div class="flex gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:0ms"/>
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:150ms"/>
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:300ms"/>
+                </div>
+                <p class="text-xs text-blue-600 dark:text-blue-400">AI 正在精修，通常需要 30-60 秒...</p>
+              </div>
+
+            </div>
+
           </template>
 
           <!-- ── 写作 AI ── -->
           <template v-else-if="pageMode === 'write'">
-            <div class="p-4 space-y-4">
-              <!-- Generation form -->
+
+            <!-- Tab header：左右等宽 -->
+            <div class="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700">
+              <button
+                class="flex-1 py-2 text-xs font-medium transition-colors"
+                :class="writePanelTab === 'generate' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                @click="writePanelTab = 'generate'"
+              >生成</button>
+              <button
+                class="flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                :class="writePanelTab === 'rewrite' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                @click="writePanelTab = 'rewrite'"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                精修
+              </button>
+            </div>
+
+            <!-- 生成 tab -->
+            <div v-if="writePanelTab === 'generate'" class="p-4 space-y-4">
               <div class="space-y-3">
                 <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">创作提示 <span class="font-normal text-gray-400">（可选）</span></label>
@@ -2442,9 +2758,7 @@ onUnmounted(() => {
                   </label>
                   <input
                     v-model.number="wordCountOverride"
-                    type="number"
-                    min="0"
-                    step="500"
+                    type="number" min="0" step="500"
                     class="input text-sm"
                     placeholder="3000"
                   />
@@ -2479,9 +2793,7 @@ onUnmounted(() => {
                         <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">轮数上限</label>
                         <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 h-[32px]">
                           <button
-                            v-for="n in [1, 2, 3]"
-                            :key="n"
-                            type="button"
+                            v-for="n in [1, 2, 3]" :key="n" type="button"
                             class="flex-1 text-xs transition-colors"
                             :class="(novel?.auto_review_rounds ?? 1) === n
                               ? 'bg-primary-500 text-white font-medium'
@@ -2494,10 +2806,7 @@ onUnmounted(() => {
                       <div>
                         <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">质量阈值 <span class="text-gray-400">（0=不限）</span></label>
                         <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="1"
+                          type="number" min="0" max="100" step="1"
                           :value="novel?.auto_review_min_score ?? 80"
                           class="input text-xs h-[32px]"
                           placeholder="80"
@@ -2507,80 +2816,7 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
-                <!-- 高级参数 -->
-                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                  <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
-                    <span>高级参数</span>
-                    <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                  </button>
-                  <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0 = 自动；优先于字数目标）</span></label>
-                      <input v-model.number="advMaxTokens" type="number" min="0" step="256" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0 = 自动）</span></label>
-                      <div class="flex items-center gap-2">
-                        <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500"/>
-                        <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0" class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                      </div>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
-                      <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                    <div class="flex items-center justify-between pt-1">
-                      <div>
-                        <span class="text-xs text-gray-600 dark:text-gray-300">联网参考</span>
-                        <p class="text-[10px] text-gray-400">搜索相关故事片段作为灵感（需启用 web_search 工具）</p>
-                      </div>
-                      <button
-                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
-                        :class="webSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
-                        @click="webSearchEnabled = !webSearchEnabled"
-                      >
-                        <span
-                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-                          :class="webSearchEnabled ? 'translate-x-4' : ''"
-                        />
-                      </button>
-                    </div>
-                    <div class="flex items-center justify-between pt-1">
-                      <div>
-                        <span class="text-xs text-gray-600 dark:text-gray-300">百科知识</span>
-                        <p class="text-[10px] text-gray-400">查询 Wikipedia 提升世界观准确性（需启用 wiki_search 工具）</p>
-                      </div>
-                      <button
-                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
-                        :class="wikiSearchEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
-                        @click="wikiSearchEnabled = !wikiSearchEnabled"
-                      >
-                        <span
-                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-                          :class="wikiSearchEnabled ? 'translate-x-4' : ''"
-                        />
-                      </button>
-                    </div>
-                    <div class="flex items-center justify-between pt-1">
-                      <div>
-                        <span class="text-xs text-gray-600 dark:text-gray-300">情节模板</span>
-                        <p class="text-[10px] text-gray-400">注入逆袭/觉醒等叙事结构参考（需启用 story_pattern 工具）</p>
-                      </div>
-                      <button
-                        class="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
-                        :class="storyPatternEnabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
-                        @click="storyPatternEnabled = !storyPatternEnabled"
-                      >
-                        <span
-                          class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-                          :class="storyPatternEnabled ? 'translate-x-4' : ''"
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
                 <div class="flex gap-2">
-                  <!-- 有内容：重新生成 -->
                   <template v-if="chapter?.word_count">
                     <button
                       class="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
@@ -2588,13 +2824,12 @@ onUnmounted(() => {
                       title="重新生成当前章节内容（会保存当前版本）"
                       @click="showRegenModal = true"
                     >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg :class="['w-4 h-4', regenerating && 'animate-spin']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                       </svg>
                       {{ regenerating ? '重新生成中...' : '重新生成' }}
                     </button>
                   </template>
-                  <!-- 无内容：立即生成 -->
                   <template v-else>
                     <div class="flex-1 flex flex-col gap-1">
                       <span v-if="isLastChapter" class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -2621,15 +2856,12 @@ onUnmounted(() => {
                     v-if="generating"
                     class="px-3 py-2.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
                     @click="cancelGeneration"
-                  >
-                    取消生成
-                  </button>
+                  >取消生成</button>
                 </div>
               </div>
 
               <!-- Quality report -->
               <div v-if="qualityReport" class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
-                <!-- Score card -->
                 <div class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                   <div class="flex-1 min-w-0">
                     <div class="flex items-baseline gap-1.5">
@@ -2660,12 +2892,9 @@ onUnmounted(() => {
                     <span v-else>重检</span>
                   </button>
                 </div>
-
-                <!-- Issues -->
                 <div v-if="qualityReport.issues.length > 0" class="space-y-1">
                   <div
-                    v-for="issue in qualityReport.issues.slice(0, 4)"
-                    :key="issue.description"
+                    v-for="issue in qualityReport.issues.slice(0, 4)" :key="issue.description"
                     class="flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg text-xs leading-relaxed"
                     :class="{
                       'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300': issue.severity === 'high',
@@ -2679,15 +2908,9 @@ onUnmounted(() => {
                     {{ issue.description }}
                   </div>
                 </div>
-
-                <!-- Suggestions + one-click refine -->
                 <div v-if="qualityReport.suggestions && qualityReport.suggestions.length > 0" class="space-y-2">
                   <div class="space-y-1">
-                    <div
-                      v-for="sg in qualityReport.suggestions"
-                      :key="sg"
-                      class="flex items-start gap-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed"
-                    >
+                    <div v-for="sg in qualityReport.suggestions" :key="sg" class="flex items-start gap-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
                       <span class="shrink-0 text-blue-400 mt-0.5">›</span>
                       {{ sg }}
                     </div>
@@ -2706,8 +2929,6 @@ onUnmounted(() => {
                     {{ refining ? 'AI精修中...' : '✨ AI一键精修' }}
                   </button>
                 </div>
-
-                <!-- Refined content preview panel -->
                 <div v-if="showRefinedPreview && refinedContent" class="border border-blue-200 dark:border-blue-700 rounded-xl overflow-hidden">
                   <div class="flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-700">
                     <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">✨ AI精修预览</span>
@@ -2715,14 +2936,8 @@ onUnmounted(() => {
                   </div>
                   <div class="p-3 max-h-64 overflow-y-auto text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap bg-white dark:bg-gray-800">{{ refinedContent }}</div>
                   <div class="flex gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-600">
-                    <button
-                      class="flex-1 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                      @click="acceptRefinement"
-                    >采纳</button>
-                    <button
-                      class="flex-1 py-1.5 text-xs font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg transition-colors"
-                      @click="discardRefinement"
-                    >丢弃</button>
+                    <button class="flex-1 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors" @click="acceptRefinement">采纳</button>
+                    <button class="flex-1 py-1.5 text-xs font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg transition-colors" @click="discardRefinement">丢弃</button>
                   </div>
                 </div>
               </div>
@@ -2753,6 +2968,99 @@ onUnmounted(() => {
               </button>
 
             </div>
+
+            <!-- 精修 tab -->
+            <div v-else-if="writePanelTab === 'rewrite'" class="p-4 space-y-4">
+
+              <div class="space-y-1.5">
+                <p class="text-xs font-medium text-gray-600 dark:text-gray-300">用自然语言描述精修需求</p>
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">描述你的修改需求，AI 会在保留原有情节的基础上进行精准改写，完成后生成新版本供预览。</p>
+              </div>
+
+              <!-- Quick hints -->
+              <div class="space-y-1.5">
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">快速填入</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="hint in REWRITE_HINTS" :key="hint"
+                    class="text-[10px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-primary-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                    :disabled="rewriting"
+                    @click="rewriteInstruction = hint"
+                  >{{ hint }}</button>
+                </div>
+              </div>
+
+              <!-- Instruction input -->
+              <div class="space-y-2">
+                <textarea
+                  v-model="rewriteInstruction"
+                  rows="5"
+                  class="input text-sm resize-none"
+                  placeholder="例如：把结尾两段改得更有张力，制造悬念..."
+                  :disabled="rewriting"
+                  @keydown.ctrl.enter.prevent="handleRewriteByInstruction"
+                  @keydown.meta.enter.prevent="handleRewriteByInstruction"
+                />
+                <p class="text-[10px] text-gray-400">Ctrl+Enter 提交 · 精修完成后会弹出预览，可选择应用</p>
+              </div>
+
+              <!-- Error -->
+              <p v-if="rewriteError" class="text-xs text-red-500">{{ rewriteError }}</p>
+
+              <!-- Instruction history -->
+              <div v-if="rewriteHistory.length > 0" class="space-y-1.5">
+                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">历史指令</p>
+                <div class="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  <div
+                    v-for="(h, idx) in rewriteHistory" :key="idx"
+                    class="group flex items-start gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors cursor-pointer"
+                    @click="rewriteInstruction = h"
+                  >
+                    <svg class="w-3 h-3 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 mt-0.5 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="flex-1 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-2">{{ h }}</span>
+                    <button
+                      class="flex-shrink-0 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all"
+                      title="删除"
+                      @click.stop="deleteRewriteHistory(idx)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit button -->
+              <button
+                class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+                :class="rewriting ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-primary-600 hover:bg-primary-700 text-white'"
+                :disabled="rewriting || !rewriteInstruction.trim() || !chapter?.content"
+                @click="handleRewriteByInstruction"
+              >
+                <svg v-if="rewriting" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                {{ rewriting ? 'AI 精修中...' : '开始精修' }}
+              </button>
+
+              <!-- Progress hint when task running -->
+              <div v-if="rewriting" class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+                <div class="flex gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:0ms"/>
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:150ms"/>
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:300ms"/>
+                </div>
+                <p class="text-xs text-blue-600 dark:text-blue-400">AI 正在精修，通常需要 30-60 秒...</p>
+              </div>
+
+            </div>
+
           </template>
 
           <!-- ── 角色 AI ── -->
@@ -2809,33 +3117,6 @@ onUnmounted(() => {
                 </template>
               </div>
 
-              <!-- 高级参数 -->
-              <div class="pt-4 border-t border-gray-100 dark:border-gray-700">
-                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                  <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
-                    <span>高级参数</span>
-                    <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                  </button>
-                  <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0 = 自动）</span></label>
-                      <input v-model.number="advMaxTokens" type="number" min="0" step="256" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0 = 自动）</span></label>
-                      <div class="flex items-center gap-2">
-                        <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500"/>
-                        <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0" class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                      </div>
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
-                      <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- AI 本章提取 -->
               <div class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
                 <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
@@ -2866,30 +3147,6 @@ onUnmounted(() => {
           <template v-else-if="pageMode === 'scenes'">
             <div class="p-4 space-y-3">
               <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中提取场景，或手动绑定场景以确保跨镜头视觉一致性。</p>
-              <!-- 高级参数 -->
-              <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                <button class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showAdvancedParams = !showAdvancedParams">
-                  <span>高级参数</span>
-                  <svg class="w-3.5 h-3.5 transition-transform" :class="showAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                <div v-if="showAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Max Tokens <span class="text-gray-400">（0 = 自动）</span></label>
-                    <input v-model.number="advMaxTokens" type="number" min="0" step="256" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Temperature <span class="text-gray-400">（0 = 自动）</span></label>
-                    <div class="flex items-center gap-2">
-                      <input v-model.number="advTemperature" type="range" min="0" max="2.0" step="0.1" class="flex-1 accent-primary-500"/>
-                      <input v-model.number="advTemperature" type="number" min="0" max="2.0" step="0.1" placeholder="0" class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span></label>
-                    <input v-model.number="advTimeoutSeconds" type="number" min="0" max="600" step="30" placeholder="0" class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"/>
-                  </div>
-                </div>
-              </div>
               <button
                 :disabled="extractingChapterAnchors || !chapter?.content"
                 class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors disabled:opacity-50"
@@ -2987,63 +3244,6 @@ onUnmounted(() => {
                   placeholder="例如：镜头以第一视角为主，多用近景特写，风格写实…"
                   class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
-              </div>
-              <!-- 高级参数（折叠） -->
-              <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                <button
-                  class="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  @click="showScriptAdvancedParams = !showScriptAdvancedParams"
-                >
-                  <span>高级参数</span>
-                  <svg class="w-3.5 h-3.5 transition-transform" :class="showScriptAdvancedParams ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                <div v-if="showScriptAdvancedParams" class="px-3 pb-3 space-y-2.5 bg-gray-50 dark:bg-gray-800/50">
-                  <!-- Max Tokens -->
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Max Tokens <span class="text-gray-400">（0 = 自动）</span>
-                    </label>
-                    <input
-                      v-model.number="scriptMaxTokens"
-                      type="number" min="0" step="256"
-                      placeholder="0"
-                      class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-                    />
-                  </div>
-                  <!-- Temperature -->
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Temperature <span class="text-gray-400">（0 = 自动 0.1）</span>
-                    </label>
-                    <div class="flex items-center gap-2">
-                      <input
-                        v-model.number="scriptTemperature"
-                        type="range" min="0" max="2.0" step="0.1"
-                        class="flex-1 accent-primary-500"
-                      />
-                      <input
-                        v-model.number="scriptTemperature"
-                        type="number" min="0" max="2.0" step="0.1"
-                        placeholder="0"
-                        class="w-14 px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-                      />
-                    </div>
-                  </div>
-                  <!-- Timeout -->
-                  <div>
-                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      超时（秒）<span class="text-gray-400">（0 = 自动 300s）</span>
-                    </label>
-                    <input
-                      v-model.number="scriptTimeoutSeconds"
-                      type="number" min="0" max="600" step="30"
-                      placeholder="0"
-                      class="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-                    />
-                  </div>
-                </div>
               </div>
               <button
                 class="w-full px-4 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -3200,9 +3400,28 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="modal-fade">
       <div v-if="previewModal.open" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
-          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-lg text-gray-900 dark:text-white">生成预览</h3>
+        <div
+          class="bg-white dark:bg-gray-800 rounded-xl flex flex-col shadow-2xl max-h-[85vh] transition-all duration-300"
+          :class="previewDiffMode ? 'w-full max-w-6xl' : 'w-full max-w-4xl'"
+        >
+          <!-- Header -->
+          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div class="flex items-center gap-3">
+              <h3 class="font-semibold text-lg text-gray-900 dark:text-white">生成预览</h3>
+              <!-- 对比切换 -->
+              <button
+                class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+                :class="previewDiffMode
+                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 border border-primary-300 dark:border-primary-600'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'"
+                @click="previewDiffMode = !previewDiffMode"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                </svg>
+                对比
+              </button>
+            </div>
             <div class="flex gap-2">
               <button
                 class="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors"
@@ -3212,17 +3431,62 @@ onUnmounted(() => {
               </button>
               <button
                 class="px-4 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                @click="previewModal.open = false"
+                @click="previewModal.open = false; previewDiffMode = false"
               >
                 放弃
               </button>
             </div>
           </div>
-          <div class="overflow-y-auto p-6 text-sm leading-relaxed whitespace-pre-wrap flex-1 text-gray-800 dark:text-gray-200">
-            {{ previewModal.content }}
+
+          <!-- Body -->
+          <div class="flex-1 overflow-hidden flex min-h-0">
+            <!-- 对比模式：DiffView 组件 -->
+            <div v-if="previewDiffMode && previewDiffFile" class="flex-1 flex flex-col overflow-hidden">
+              <!-- 列标题 -->
+              <div class="flex-shrink-0 grid grid-cols-2 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-950/30 border-r border-gray-200 dark:border-gray-700">
+                  <span class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"/>
+                  <span class="text-xs font-semibold text-red-700 dark:text-red-400">原文</span>
+                  <span class="ml-auto text-[10px] text-gray-400">{{ countWords(previewModal.originalContent) }} 字</span>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-950/30">
+                  <span class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"/>
+                  <span class="text-xs font-semibold text-green-700 dark:text-green-400">新版本</span>
+                  <span class="ml-auto text-[10px] text-gray-400">{{ countWords(previewModal.content) }} 字</span>
+                </div>
+              </div>
+              <div class="flex-1 overflow-auto">
+                <DiffView
+                  :diff-file="previewDiffFile"
+                  :diff-view-mode="DiffModeEnum.Split"
+                  :diff-view-wrap="true"
+                  :diff-view-highlight="false"
+                  :diff-view-font-size="13"
+                />
+              </div>
+            </div>
+
+            <!-- 普通模式：单列 -->
+            <div v-else class="flex-1 overflow-y-auto p-6 text-sm leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+              {{ previewModal.content }}
+            </div>
           </div>
-          <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
-            字数：{{ countWords(previewModal.content) }} 字
+
+          <!-- Footer -->
+          <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              新版本：{{ countWords(previewModal.content) }} 字
+              <template v-if="previewModal.originalContent">
+                <span class="mx-1.5 text-gray-300 dark:text-gray-600">·</span>
+                <span
+                  :class="countWords(previewModal.content) > countWords(previewModal.originalContent)
+                    ? 'text-green-500' : countWords(previewModal.content) < countWords(previewModal.originalContent)
+                    ? 'text-red-400' : 'text-gray-400'"
+                >
+                  {{ countWords(previewModal.content) > countWords(previewModal.originalContent) ? '+' : '' }}{{ countWords(previewModal.content) - countWords(previewModal.originalContent) }} 字
+                </span>
+              </template>
+            </span>
           </div>
         </div>
       </div>
@@ -3287,85 +3551,82 @@ onUnmounted(() => {
   <!-- 版本对比弹窗 -->
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="showDiffModal" class="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
-        <!-- 顶部工具栏 -->
-        <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0">
-          <h2 class="font-semibold text-gray-900 dark:text-white mr-2">版本对比</h2>
-          <!-- 左侧选择 -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">左侧</span>
-            <select
-              v-model="diffLeftId"
-              class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
-            >
-              <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
-            </select>
+      <div v-if="showDiffModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl flex flex-col shadow-2xl max-h-[85vh] w-full max-w-6xl overflow-hidden">
+          <!-- 顶部工具栏 -->
+          <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0 flex-wrap">
+            <h2 class="font-semibold text-gray-900 dark:text-white mr-2">版本对比</h2>
+            <!-- 左侧选择 -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">左侧</span>
+              <select
+                v-model="diffLeftId"
+                class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
+              >
+                <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+              </select>
+            </div>
+            <span class="text-gray-400 dark:text-gray-600">→</span>
+            <!-- 右侧选择 -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">右侧</span>
+              <select
+                v-model="diffRightId"
+                class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
+              >
+                <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+              </select>
+            </div>
+            <!-- 应用按钮 -->
+            <div class="flex items-center gap-2 ml-auto">
+              <button
+                class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                @click="applyDiffVersion('right')"
+              >应用右侧版本</button>
+              <button
+                class="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                @click="applyDiffVersion('left')"
+              >应用左侧版本</button>
+              <button
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 ml-1 text-lg leading-none"
+                @click="showDiffModal = false"
+              >✕</button>
+            </div>
           </div>
-          <span class="text-gray-400 dark:text-gray-600">→</span>
-          <!-- 右侧选择 -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">右侧</span>
-            <select
-              v-model="diffRightId"
-              class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 max-w-xs"
-            >
-              <option v-for="o in diffVersionOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
-            </select>
+          <!-- 加载中 -->
+          <div v-if="diffLoading" class="flex-1 flex items-center justify-center">
+            <span class="text-sm text-gray-400 dark:text-gray-500">加载中…</span>
           </div>
-          <!-- 统计 -->
-          <div class="flex items-center gap-2 ml-auto text-xs">
-            <span class="px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">-{{ diffSummary.removed }} 段</span>
-            <span class="px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">+{{ diffSummary.added }} 段</span>
-            <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">={{ diffSummary.same }} 段</span>
-          </div>
-          <!-- 应用按钮 -->
-          <button
-            @click="applyDiffVersion('right')"
-            class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors ml-2"
-          >应用右侧版本</button>
-          <button
-            @click="applyDiffVersion('left')"
-            class="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          >应用左侧版本</button>
-          <button
-            @click="showDiffModal = false"
-            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 ml-1 text-lg leading-none"
-          >✕</button>
-        </div>
-        <!-- 列头 -->
-        <div class="grid grid-cols-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
-          <div class="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-            {{ diffVersionOptions.find(o => o.id === diffLeftId)?.label ?? '左侧' }}
-          </div>
-          <div class="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800">
-            {{ diffVersionOptions.find(o => o.id === diffRightId)?.label ?? '右侧' }}
-          </div>
-        </div>
-        <!-- 加载中 -->
-        <div v-if="diffLoading" class="flex-1 flex items-center justify-center">
-          <span class="text-sm text-gray-400 dark:text-gray-500">加载中…</span>
-        </div>
-        <!-- Diff 内容 -->
-        <div v-else class="flex-1 overflow-y-auto">
-          <div
-            v-for="(row, idx) in diffRows"
-            :key="idx"
-            class="grid grid-cols-2 border-b border-gray-100 dark:border-gray-800"
-            :class="{
-              'bg-red-50 dark:bg-red-950/30': row.type === 'removed',
-              'bg-green-50 dark:bg-green-950/30': row.type === 'added',
-            }"
-          >
-            <div
-              class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 border-r border-gray-100 dark:border-gray-800 leading-relaxed whitespace-pre-wrap"
-              :class="{ 'line-through text-red-600 dark:text-red-400': row.type === 'removed', 'text-gray-300 dark:text-gray-600 select-none': row.type === 'added' }"
-            >{{ row.type === 'added' ? '' : row.left }}</div>
-            <div
-              class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap"
-              :class="{ 'text-green-700 dark:text-green-300 font-medium': row.type === 'added', 'text-gray-300 dark:text-gray-600 select-none': row.type === 'removed' }"
-            >{{ row.type === 'removed' ? '' : row.right }}</div>
-          </div>
-          <div v-if="diffRows.length === 0 && !diffLoading" class="py-12 text-center text-sm text-gray-400 dark:text-gray-500">
+          <!-- DiffView -->
+          <template v-else-if="diffFile">
+            <!-- 列标题 -->
+            <div class="flex-shrink-0 grid grid-cols-2 border-b border-gray-200 dark:border-gray-700">
+              <div class="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-950/30 border-r border-gray-200 dark:border-gray-700">
+                <span class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"/>
+                <span class="text-xs font-semibold text-red-700 dark:text-red-400">
+                  {{ diffVersionOptions.find(o => o.id === diffLeftId)?.label ?? '左侧' }}
+                </span>
+                <span class="ml-auto text-[10px] text-gray-400">{{ countWords(diffLeftContent) }} 字</span>
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-950/30">
+                <span class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"/>
+                <span class="text-xs font-semibold text-green-700 dark:text-green-400">
+                  {{ diffVersionOptions.find(o => o.id === diffRightId)?.label ?? '右侧' }}
+                </span>
+                <span class="ml-auto text-[10px] text-gray-400">{{ countWords(diffRightContent) }} 字</span>
+              </div>
+            </div>
+            <div class="flex-1 overflow-auto">
+              <DiffView
+                :diff-file="diffFile"
+                :diff-view-mode="DiffModeEnum.Split"
+                :diff-view-wrap="true"
+                :diff-view-highlight="false"
+                :diff-view-font-size="13"
+              />
+            </div>
+          </template>
+          <div v-else class="flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">
             两个版本内容完全相同
           </div>
         </div>

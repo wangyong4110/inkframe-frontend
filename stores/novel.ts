@@ -16,6 +16,7 @@ interface NovelState {
     status?: NovelStatus
     genre?: NovelGenre
   }
+  _updateSeq: number
 }
 
 export const useNovelStore = defineStore('novel', {
@@ -30,6 +31,7 @@ export const useNovelStore = defineStore('novel', {
       total: 0,
     },
     filters: {},
+    _updateSeq: 0,
   }),
 
   getters: {
@@ -71,11 +73,17 @@ export const useNovelStore = defineStore('novel', {
     async fetchNovel(id: number) {
       this.loading = true
       this.error = null
+      // Snapshot the update counter before the API call. If updateNovel runs
+      // while we await, the counter will have changed and we must not overwrite
+      // the more-recent state with stale server data.
+      const seqBeforeFetch = this._updateSeq
 
       try {
         const api = useNovelApi()
         const response = await api.getNovel(id)
-        this.currentNovel = response.data
+        if (this._updateSeq === seqBeforeFetch) {
+          this.currentNovel = response.data
+        }
         return response.data
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
@@ -110,6 +118,8 @@ export const useNovelStore = defineStore('novel', {
     async updateNovel(id: number, data: Partial<Novel>) {
       this.loading = true
       this.error = null
+      // Increment so any in-flight fetchNovel knows not to overwrite our state.
+      this._updateSeq++
 
       // Save original for rollback on failure.
       const original = this.currentNovel?.id === id ? { ...this.currentNovel } : null

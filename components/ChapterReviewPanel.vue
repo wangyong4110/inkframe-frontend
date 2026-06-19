@@ -29,16 +29,21 @@ const ignoringKey = ref<string | null>(null)
 type DiffItem = {
   index: number
   orig_text: string
-  action: 'rewrite' | 'delete'
+  action: 'rewrite' | 'delete' | 'restructure'
   suggested_rewrite: string
   issues: string[]
   suggestion: string
   severity: 'info' | 'warning' | 'error'
+  narrative_impact: 'plot_critical' | 'quality' | 'style'
+  preserved_function: string
   selected: boolean
 }
 const diffItems = ref<DiffItem[]>([])
 const applyingDiffs = ref(false)
 const showDiffModal = ref(false)
+
+const impactOrder: Record<string, number> = { plot_critical: 0, quality: 1, style: 2 }
+const severityOrder: Record<string, number> = { error: 0, warning: 1, info: 2 }
 
 const ignoredHashSet = computed(() => {
   const s = new Set<string>()
@@ -88,17 +93,28 @@ async function loadIgnoredIssues() {
 }
 
 function buildDiffItems(review: ChapterReview) {
-  diffItems.value = (review.paragraph_feedback ?? []).map(fb => ({
+  const items = (review.paragraph_feedback ?? []).map(fb => ({
     index: fb.index,
     orig_text: fb.orig_text,
-    action: (fb.action === 'delete' ? 'delete' : 'rewrite') as 'rewrite' | 'delete',
+    action: (fb.action === 'delete' ? 'delete' : fb.action === 'restructure' ? 'restructure' : 'rewrite') as 'rewrite' | 'delete' | 'restructure',
     suggested_rewrite: fb.suggested_rewrite ?? '',
     issues: fb.issues,
     suggestion: fb.suggestion,
     severity: fb.severity,
-    // auto-select if there's a rewrite OR it's a delete action
+    narrative_impact: (fb.narrative_impact ?? 'style') as 'plot_critical' | 'quality' | 'style',
+    preserved_function: fb.preserved_function ?? '',
     selected: fb.action === 'delete' || !!fb.suggested_rewrite,
   }))
+  // 按叙事影响力排序：plot_critical > quality > style，同级按 severity 排序
+  items.sort((a, b) => {
+    const ia = impactOrder[a.narrative_impact] ?? 2
+    const ib = impactOrder[b.narrative_impact] ?? 2
+    if (ia !== ib) return ia - ib
+    const sa = severityOrder[a.severity] ?? 2
+    const sb = severityOrder[b.severity] ?? 2
+    return sa - sb
+  })
+  diffItems.value = items
 }
 
 async function startReview() {
@@ -335,8 +351,10 @@ defineExpose({ startReview, reviewing })
                       { key: 'writing_score', label: '文笔质量' },
                       { key: 'pacing_score', label: '节奏把控' },
                       { key: 'dramatic_score', label: '戏剧张力' },
+                      { key: 'narrative_necessity', label: '叙事必要' },
+                      { key: 'emotional_resonance', label: '情感共鸣' },
                       { key: 'visual_potential', label: '画面感' },
-                    ]" :key="dim.key" class="flex items-center gap-2">
+                    ].filter(d => (reviewResult as any)[d.key] !== undefined && (reviewResult as any)[d.key] !== null)" :key="dim.key" class="flex items-center gap-2">
                       <span class="text-xs text-gray-500 w-16 shrink-0">{{ dim.label }}</span>
                       <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                         <div
@@ -397,6 +415,79 @@ defineExpose({ startReview, reviewing })
                   </ul>
                 </div>
 
+                <!-- Hook analysis -->
+                <div v-if="reviewResult.hook_analysis" class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div class="px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">章末钩子</p>
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                        :class="{
+                          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': reviewResult.hook_analysis.type === 'cliffhanger',
+                          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': reviewResult.hook_analysis.type === 'reversal',
+                          'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': reviewResult.hook_analysis.type === 'emotional',
+                          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': reviewResult.hook_analysis.type === 'action',
+                          'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400': reviewResult.hook_analysis.type === 'none',
+                        }"
+                      >{{ { cliffhanger:'悬念危机', reversal:'反转揭示', emotional:'情感余韵', action:'行动触发', none:'无钩子' }[reviewResult.hook_analysis.type] }}</span>
+                      <span class="text-sm font-bold tabular-nums" :class="scoreColor(reviewResult.hook_analysis.strength)">{{ reviewResult.hook_analysis.strength }}</span>
+                    </div>
+                  </div>
+                  <div class="p-3 space-y-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-400 shrink-0">强度</span>
+                      <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-500" :class="scoreBar(reviewResult.hook_analysis.strength)" :style="`width:${reviewResult.hook_analysis.strength}%`"/>
+                      </div>
+                    </div>
+                    <blockquote v-if="reviewResult.hook_analysis.hook_text" class="text-xs text-gray-600 dark:text-gray-300 italic leading-relaxed border-l-2 border-gray-300 dark:border-gray-600 pl-2.5">
+                      "{{ reviewResult.hook_analysis.hook_text }}"
+                    </blockquote>
+                    <p v-if="reviewResult.hook_analysis.next_chapter_setup" class="text-xs text-primary-600 dark:text-primary-400 leading-relaxed">
+                      <span class="font-medium">读者想知道：</span>{{ reviewResult.hook_analysis.next_chapter_setup }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Scene analysis -->
+                <div v-if="reviewResult.scene_analysis?.length" class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div class="px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">场景层分析（{{ reviewResult.scene_analysis.length }} 个场景）</p>
+                  </div>
+                  <div class="divide-y divide-gray-100 dark:divide-gray-800">
+                    <div v-for="sc in reviewResult.scene_analysis" :key="sc.scene_no" class="p-3 space-y-2 text-xs">
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold text-gray-700 dark:text-gray-200 shrink-0">场景 {{ sc.scene_no }}</span>
+                        <span class="text-gray-400 shrink-0">¶{{ sc.start_index }}–{{ sc.end_index }}</span>
+                        <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div class="h-full rounded-full transition-all" :class="sc.c3_score >= 80 ? 'bg-green-500' : sc.c3_score >= 60 ? 'bg-yellow-400' : 'bg-red-400'" :style="`width:${sc.c3_score}%`"/>
+                        </div>
+                        <span class="tabular-nums font-semibold shrink-0" :class="scoreColor(sc.c3_score)">{{ sc.c3_score }}</span>
+                      </div>
+                      <div class="grid grid-cols-3 gap-1.5">
+                        <div class="rounded-lg bg-gray-50 dark:bg-gray-800 p-1.5 space-y-0.5">
+                          <p class="text-[10px] text-gray-400 uppercase tracking-wide">目标</p>
+                          <p class="text-gray-700 dark:text-gray-300 leading-snug">{{ sc.goal }}</p>
+                        </div>
+                        <div class="rounded-lg bg-gray-50 dark:bg-gray-800 p-1.5 space-y-0.5">
+                          <p class="text-[10px] text-gray-400 uppercase tracking-wide">冲突</p>
+                          <p class="text-gray-700 dark:text-gray-300 leading-snug">{{ sc.conflict }}</p>
+                        </div>
+                        <div
+                          class="rounded-lg p-1.5 space-y-0.5"
+                          :class="sc.c3_score < 60 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-gray-50 dark:bg-gray-800'"
+                        >
+                          <p class="text-[10px] text-gray-400 uppercase tracking-wide">变化</p>
+                          <p class="leading-snug" :class="sc.c3_score < 60 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'">{{ sc.change || '—' }}</p>
+                        </div>
+                      </div>
+                      <p v-if="sc.note" class="text-gray-400 dark:text-gray-500 pl-1 leading-relaxed">
+                        <span class="mr-1 text-gray-300 dark:text-gray-600">└</span>{{ sc.note }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Paragraph feedback -->
                 <div v-if="diffItems.length > 0" class="space-y-2">
                   <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">段落反馈（{{ diffItems.length }}）</p>
@@ -423,7 +514,15 @@ defineExpose({ startReview, reviewing })
                           <span
                             class="text-[10px] px-1.5 py-0.5 rounded font-medium"
                             :class="item.severity === 'error' ? 'bg-red-100 text-red-700' : item.severity === 'warning' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'"
-                          >{{ item.severity }}</span>
+                          >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
+                          <span
+                            v-if="item.narrative_impact === 'plot_critical'"
+                            class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800"
+                          >情节必要</span>
+                          <span
+                            v-else-if="item.narrative_impact === 'quality'"
+                            class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                          >质量</span>
                         </div>
                         <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ item.orig_text }}</p>
                         <ul class="mt-1 space-y-0.5">
@@ -439,16 +538,34 @@ defineExpose({ startReview, reviewing })
                       </svg>
                     </div>
 
-                    <!-- Expanded: suggested rewrite + ignore -->
+                    <!-- Expanded: context preview + suggested rewrite + preserved_function + ignore -->
                     <div v-if="expandedIdx === i" class="px-3 pb-3 space-y-2 border-t border-gray-200 dark:border-gray-600 pt-2">
+                      <!-- prev paragraph context -->
+                      <div v-if="diffItems.find(d => d.index === item.index - 1)" class="text-[10px] text-gray-400 dark:text-gray-500 italic leading-snug px-1 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
+                        ↑ 上段：{{ diffItems.find(d => d.index === item.index - 1)?.orig_text }}
+                      </div>
                       <div v-if="item.suggestion" class="text-xs text-gray-600 dark:text-gray-300 italic">
                         建议：{{ item.suggestion }}
                       </div>
                       <div v-if="item.action === 'delete'" class="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 line-through opacity-70 whitespace-pre-wrap">
                         {{ item.orig_text }}
                       </div>
-                      <div v-else-if="item.suggested_rewrite" class="bg-white dark:bg-gray-800 rounded-lg p-2.5 text-xs text-gray-700 dark:text-gray-300 leading-relaxed border border-gray-200 dark:border-gray-600 whitespace-pre-wrap">
-                        {{ item.suggested_rewrite }}
+                      <div v-else-if="item.suggested_rewrite" class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-500 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text }}</div>
+                        <div
+                          class="rounded-lg p-2 leading-relaxed whitespace-pre-wrap"
+                          :class="item.action === 'restructure'
+                            ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-gray-700 dark:text-gray-300'
+                            : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-gray-700 dark:text-gray-300'"
+                        >{{ item.suggested_rewrite }}</div>
+                      </div>
+                      <!-- preserved_function for restructure/delete -->
+                      <div v-if="item.preserved_function && item.preserved_function !== '无叙事功能损失'" class="text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 rounded-lg px-2.5 py-1.5 leading-relaxed border border-purple-100 dark:border-purple-800">
+                        🔒 叙事功能：{{ item.preserved_function }}
+                      </div>
+                      <!-- next paragraph context -->
+                      <div v-if="diffItems.find(d => d.index === item.index + 1)" class="text-[10px] text-gray-400 dark:text-gray-500 italic leading-snug px-1 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
+                        ↓ 下段：{{ diffItems.find(d => d.index === item.index + 1)?.orig_text }}
                       </div>
                       <button
                         class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
@@ -579,6 +696,7 @@ defineExpose({ startReview, reviewing })
                   <input type="checkbox" v-model="item.selected" class="w-4 h-4 accent-primary-600 shrink-0" />
                   <span class="font-medium text-sm text-gray-800 dark:text-gray-200">段落 {{ item.index }}</span>
                   <span v-if="item.action === 'delete'" class="ml-2 text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">删除</span>
+                  <span v-else-if="item.action === 'restructure'" class="ml-2 text-xs px-1.5 py-0.5 rounded-full font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">重构</span>
                   <span
                     class="ml-auto text-xs px-1.5 py-0.5 rounded-full font-medium"
                     :class="{
@@ -589,10 +707,27 @@ defineExpose({ startReview, reviewing })
                   >{{ item.severity === 'error' ? '严重' : item.severity === 'warning' ? '警告' : '建议' }}</span>
                 </label>
                 <div class="px-4 pb-3 space-y-2 text-xs">
+                  <!-- prev context -->
+                  <div v-if="diffItems.find(d => d.index === item.index - 1)" class="text-[10px] text-gray-400 italic leading-snug border-l-2 border-gray-200 dark:border-gray-700 pl-2">
+                    ↑ {{ diffItems.find(d => d.index === item.index - 1)?.orig_text }}
+                  </div>
                   <div v-if="item.action === 'delete'" class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text || '（空）' }}</div>
                   <div v-else class="grid grid-cols-2 gap-2">
                     <div class="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-2 text-gray-600 dark:text-gray-400 line-through opacity-70 leading-relaxed whitespace-pre-wrap">{{ item.orig_text || '（空）' }}</div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{{ item.suggested_rewrite }}</div>
+                    <div
+                      class="rounded-lg p-2 leading-relaxed whitespace-pre-wrap"
+                      :class="item.action === 'restructure'
+                        ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-gray-700 dark:text-gray-300'
+                        : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-gray-700 dark:text-gray-300'"
+                    >{{ item.suggested_rewrite }}</div>
+                  </div>
+                  <!-- next context -->
+                  <div v-if="diffItems.find(d => d.index === item.index + 1)" class="text-[10px] text-gray-400 italic leading-snug border-l-2 border-gray-200 dark:border-gray-700 pl-2">
+                    ↓ {{ diffItems.find(d => d.index === item.index + 1)?.orig_text }}
+                  </div>
+                  <!-- preserved_function -->
+                  <div v-if="item.preserved_function && item.preserved_function !== '无叙事功能损失'" class="text-[10px] text-purple-600 dark:text-purple-400 italic">
+                    🔒 {{ item.preserved_function }}
                   </div>
                   <div v-if="item.issues.length" class="text-gray-500 dark:text-gray-500 pt-1">
                     <span v-for="(issue, i) in item.issues" :key="i">{{ issue }}{{ i < item.issues.length - 1 ? ' · ' : '' }}</span>

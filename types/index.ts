@@ -226,15 +226,8 @@ export interface Worldview {
   magic_system?: string
   geography?: string
   history?: string
-  culture?: string
-  technology?: string
   rules?: string
-  factions?: string
-  core_conflicts?: string
-  character_archetypes?: string
-  religion?: string
   glossary?: string
-  cover_image?: string
   entities?: WorldviewEntity[]
   created_at: string
   updated_at: string
@@ -1018,8 +1011,34 @@ export interface Foreshadow {
   payoff_chapter_id?: number
   status: 'planted' | 'paid_off' | 'abandoned'
   tags?: string
+  planted_chapter_no: number
+  payoff_chapter_no: number
+  actual_payoff_chapter_no: number
+  level: 'main' | 'sub' | 'detail'
+  foreshadow_type: 'prop' | 'dialogue' | 'behavior' | 'scene' | 'prophecy' | ''
+  importance: 'critical' | 'major' | 'normal' | 'minor'
+  linked_hook_id?: number
+  linked_arc_id?: number
+  confidence?: 'high' | 'medium' | 'low'
+  parent_id?: number
+  character_ids?: string
+  reinforcement_chapters?: string
+  payoff_quality?: number
+  payoff_notes?: string
   created_at: string
   updated_at: string
+}
+
+export interface ForeshadowStats {
+  total: number
+  planted: number
+  paid_off: number
+  abandoned: number
+  overdue: number
+  narrative_debt: number
+  by_level: Record<string, number>
+  by_type: Record<string, number>
+  by_confidence: Record<string, number>
 }
 
 export interface WebhookSubscription {
@@ -1188,9 +1207,29 @@ export interface ParagraphFeedback {
   orig_text: string
   issues: string[]
   suggestion: string
-  action?: 'rewrite' | 'delete'
+  action?: 'rewrite' | 'delete' | 'restructure'
   suggested_rewrite: string
   severity: 'info' | 'warning' | 'error'
+  narrative_impact?: 'plot_critical' | 'quality' | 'style'
+  preserved_function?: string
+}
+
+export interface SceneAnalysisItem {
+  scene_no: number
+  start_index: number
+  end_index: number
+  goal: string
+  conflict: string
+  change: string
+  c3_score: number
+  note?: string
+}
+
+export interface HookAnalysis {
+  type: 'cliffhanger' | 'emotional' | 'action' | 'reversal' | 'none'
+  strength: number
+  hook_text: string
+  next_chapter_setup: string
 }
 
 export interface ChapterReview {
@@ -1200,11 +1239,15 @@ export interface ChapterReview {
   writing_score: number
   pacing_score: number
   dramatic_score: number
+  narrative_necessity?: number
+  emotional_resonance?: number
   visual_potential: number
   summary: string
   strengths: string[]
   weaknesses: WeaknessItem[]
   global_suggestions: string[]
+  hook_analysis?: HookAnalysis
+  scene_analysis?: SceneAnalysisItem[]
   paragraph_feedback: ParagraphFeedback[]
   record_id?: number
 }
@@ -1294,6 +1337,51 @@ export interface OutlineReview {
   reviewed_at: string | null
   created_at: string
   updated_at: string
+}
+
+export interface TensionPoint {
+  chapter_no: number
+  planned_level: number
+  score: number
+  status: string
+}
+
+export interface ArcBalance {
+  act1_count: number
+  act2_count: number
+  act3_count: number
+  act1_avg_score: number
+  act2_avg_score: number
+  act3_avg_score: number
+  assessment: string
+  suggestion: string
+}
+
+export interface ChapterAdvice {
+  chapter_no: number
+  title: string
+  score: number
+  status: string
+  key_issue: string
+  suggestion: string
+}
+
+export interface NovelOutlineSynthesis {
+  id: number
+  novel_id: number
+  total_chapters: number
+  reviewed_count: number
+  passed_count: number
+  warning_count: number
+  failed_count: number
+  avg_score: number
+  tension_curve_json: string
+  arc_balance_json: string
+  recurring_issues_json: string
+  chapter_advices_json: string
+  global_suggestion: string
+  status: 'partial' | 'completed'
+  synthesized_at: string
 }
 
 // ─── Collaboration ──────────────────────────────────────────────────────────

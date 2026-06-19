@@ -481,8 +481,8 @@ const avatarInitial = computed(() =>
               :alt="item.novel?.title"
             />
             <div v-else class="w-full h-full bg-gradient-to-b from-violet-700 to-indigo-800 flex items-center justify-center">
-              <span class="text-white text-xs font-bold opacity-80">
-                {{ (item.novel?.title || '?').charAt(0) }}
+              <span class="text-white text-[9px] font-semibold opacity-80 text-center px-1 leading-snug line-clamp-3">
+                {{ item.novel?.title || '?' }}
               </span>
             </div>
           </div>

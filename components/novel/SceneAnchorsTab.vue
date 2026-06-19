@@ -250,7 +250,7 @@ function getTypeLabel(type: string): string {
     </div>
 
     <!-- 骨架屏 -->
-    <div v-if="sceneAnchorStore.loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div v-if="sceneAnchorStore.loading && sceneAnchorStore.anchors.length === 0" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div v-for="i in 4" :key="i" class="card overflow-hidden">
         <div class="skeleton h-32 w-full"></div>
         <div class="p-3 space-y-2">

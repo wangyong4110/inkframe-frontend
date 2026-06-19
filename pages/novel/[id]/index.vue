@@ -59,7 +59,10 @@ function switchTab(key: string) {
 // ── Visibility change: refetch active tab data when user returns to this tab ──
 const onVisibilityChange = () => {
   if (document.visibilityState === 'visible') {
-    fetchTabData(activeTab.value)
+    const lastFetch = tabLastFetchedAt[activeTab.value]
+    if (!lastFetch || Date.now() - lastFetch > STALE_THRESHOLD) {
+      fetchTabData(activeTab.value)
+    }
   }
 }
 
@@ -315,7 +318,8 @@ watch(analysisPoll.isPolling, (nowPolling) => {
 
 async function triggerAnalysis(source?: string) {
   try {
-    const createOutlines = (source ?? route.query.source) === 'ai'
+    const src = source ?? route.query.source
+    const createOutlines = src === 'ai' || src === 'ai-chat'
     const resp = await analysisApi.startAnalysis(novelId, createOutlines ? { create_chapter_outlines: true } : undefined)
     analysisTaskId.value = (resp as any).data?.task_id ?? ''
     if (analysisTaskId.value) {
@@ -433,8 +437,8 @@ onMounted(async () => {
               :style="coverStyle(novel.cover_image)"
               @click="isCoverUrl(novel.cover_image) ? openCoverLightbox() : coverFileInput?.click()"
             >
-              <span v-if="!isCoverUrl(novel.cover_image)" class="text-3xl font-bold text-white opacity-60 select-none">
-                {{ novel.title.charAt(0) }}
+              <span v-if="!isCoverUrl(novel.cover_image)" class="text-xs font-semibold text-white opacity-80 text-center px-2 leading-snug line-clamp-4 select-none">
+                {{ novel.title }}
               </span>
               <!-- 右下角更换图标 -->
               <button
@@ -577,7 +581,7 @@ onMounted(async () => {
           <span class="font-semibold text-blue-800 dark:text-blue-200">AI 分析小说内容</span>
         </div>
         <button
-          class="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 transition-colors disabled:opacity-50"
+          class="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-blue-400 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800/40 disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="analysisStatus?.status === 'pending' || analysisStatus?.status === 'running'"
           @click="triggerAnalysis()"
         >
@@ -591,15 +595,8 @@ onMounted(async () => {
         从导入的章节中自动提取角色、物品、世界观、剧情点、场景，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
       </p>
 
-      <!-- 空闲状态：显示启动按钮 -->
-      <div v-if="!analysisStatus">
-        <button class="btn-primary" @click="triggerAnalysis">
-          {{ novel?.worldview_id ? '重新分析' : '开始 AI 分析' }}
-        </button>
-      </div>
-
       <!-- 运行中 / 进行状态 -->
-      <div v-else-if="analysisStatus.status === 'pending' || analysisStatus.status === 'running'" class="space-y-3">
+      <div v-if="analysisStatus && (analysisStatus.status === 'pending' || analysisStatus.status === 'running')" class="space-y-3">
         <div>
           <div class="flex justify-between text-sm mb-1">
             <span class="text-blue-700 dark:text-blue-300">{{ analysisStatus.step }}</span>
@@ -631,25 +628,25 @@ onMounted(async () => {
           <span :class="analysisStatus.progress >= 70 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
             {{ analysisStatus.progress >= 70 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 场景
           </span>
-          <span :class="analysisStatus.progress >= 90 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 90 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 故事大纲
+          <span :class="analysisStatus.progress >= 78 ? 'text-green-600' : (analysisStatus.progress >= 70 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 78 ? '✓' : (analysisStatus.progress >= 70 ? '⟳' : '○') }} 项目设置
           </span>
-          <span :class="analysisStatus.progress >= 90 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 90 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 项目设置
+          <span :class="analysisStatus.progress >= 88 ? 'text-green-600' : (analysisStatus.progress >= 78 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 88 ? '✓' : (analysisStatus.progress >= 78 ? '⟳' : '○') }} 故事大纲
           </span>
-          <span :class="analysisStatus.progress >= 95 ? 'text-green-600' : (analysisStatus.progress >= 90 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 95 ? '✓' : (analysisStatus.progress >= 90 ? '⟳' : '○') }} 章节大纲
+          <span :class="analysisStatus.progress >= 95 ? 'text-green-600' : (analysisStatus.progress >= 88 ? 'text-blue-500' : 'text-gray-400')">
+            {{ analysisStatus.progress >= 95 ? '✓' : (analysisStatus.progress >= 88 ? '⟳' : '○') }} 章节大纲
           </span>
         </div>
       </div>
 
       <!-- 完成状态 -->
-      <div v-else-if="analysisStatus.status === 'completed'" class="space-y-1">
+      <div v-else-if="analysisStatus?.status === 'completed'" class="space-y-1">
         <div class="flex items-center gap-2 text-green-700 dark:text-green-400">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          分析完成！角色、物品、世界观、剧情点、场景、故事大纲、项目设置和章节大纲已全部更新。
+          分析完成！角色、物品、世界观、剧情点、场景、项目设置、故事大纲和章节大纲已全部更新。
         </div>
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}
@@ -660,7 +657,7 @@ onMounted(async () => {
       </div>
 
       <!-- 失败状态 -->
-      <div v-else-if="analysisStatus.status === 'failed'" class="space-y-2">
+      <div v-else-if="analysisStatus?.status === 'failed'" class="space-y-2">
         <p class="text-red-600 dark:text-red-400 text-sm">分析失败：{{ analysisStatus.error || '未知错误' }}</p>
         <button class="btn-secondary text-sm" @click="triggerAnalysis">重试</button>
       </div>
@@ -690,7 +687,7 @@ onMounted(async () => {
     <NovelWorldviewTab v-else-if="activeTab === 'worldview'" :novel-id="novelId" />
     <NovelSceneAnchorsTab v-else-if="activeTab === 'scene_anchors'" :novel-id="novelId" />
     <NovelKnowledgeTab v-else-if="activeTab === 'knowledge'" :novel-id="novelId" />
-    <NovelForeshadowTab v-else-if="activeTab === 'foreshadow'" :novel-id="novelId" />
+    <NovelForeshadowTab v-else-if="activeTab === 'foreshadow'" :novel-id="novelId" :total-chapters="novel?.chapter_count ?? 0" />
     <NovelTeamTab v-else-if="activeTab === 'team'" :novel-id="novelId" />
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />
   </div>

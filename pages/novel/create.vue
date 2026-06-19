@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { marked } from 'marked'
 import type { CrawlProgress } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
 import type { Novel } from '~/types'
+
+function renderMarkdown(text: string): string {
+  return marked.parse(text, { async: false }) as string
+}
 
 const { uploadImage, uploading: coverUploading } = useImageUpload()
 const { generateCoverImage } = useNovelApi()
@@ -63,8 +68,241 @@ function selectAIGenerate() {
 }
 
 // ── 步骤状态机 ────────────────────────────────────────────────────────────────
-type Step = 'choose' | 'ai-form' | 'import-choose' | 'import-file' | 'import-crawl' | 'rewrite-form'
+type Step = 'choose' | 'ai-form' | 'ai-chat' | 'import-choose' | 'import-file' | 'import-crawl' | 'rewrite-form'
 const step = ref<Step>('choose')
+
+function selectAIChat() {
+  if (hasLLMProvider.value === false) { showNoLLMModal.value = true; return }
+  step.value = 'ai-chat'
+  if (!loadChatDraft()) initChat()
+  nextTick(() => scrollChat())
+}
+
+// ── Screen 2c: AI 对话创建 ─────────────────────────────────────────────────────
+interface ChatMsg { role: 'user' | 'assistant'; content: string }
+interface ExtractedNovelParams {
+  title?: string
+  genre?: string
+  description?: string
+  target_chapters?: number
+  chapter_mode?: string
+}
+
+const chatMsgs = ref<ChatMsg[]>([])
+const chatInput = ref('')
+const chatLoading = ref(false)
+const chatExtracted = ref<ExtractedNovelParams | null>(null)
+const chatSubmitting = ref(false)
+const chatError = ref('')
+const autoSubmitOnExtract = ref(false)
+const chatMsgContainer = ref<HTMLElement | null>(null)
+
+const CHAT_DRAFT_KEY = 'inkframe_novel_chat_draft'
+
+function saveChatDraft() {
+  if (chatMsgs.value.length <= 1) return
+  localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify({
+    msgs: chatMsgs.value,
+    extracted: chatExtracted.value,
+  }))
+}
+
+function clearChatDraft() {
+  localStorage.removeItem(CHAT_DRAFT_KEY)
+}
+
+function loadChatDraft(): boolean {
+  try {
+    const raw = localStorage.getItem(CHAT_DRAFT_KEY)
+    if (!raw) return false
+    const draft = JSON.parse(raw)
+    if (!Array.isArray(draft.msgs) || draft.msgs.length <= 1) return false
+    chatMsgs.value = draft.msgs
+    chatExtracted.value = draft.extracted ?? null
+    return true
+  } catch {
+    return false
+  }
+}
+
+watch([chatMsgs, chatExtracted], saveChatDraft, { deep: true })
+
+const quickSuggestions = [
+  '我想写一个修仙小说，主角从普通凡人开始逐步成为仙界第一人',
+  '帮我创作一个都市爱情故事，男女主是青梅竹马',
+  '我想写末世废土风格，讲述人类在丧尸世界中的生存故事',
+  '创作一个穿越古代的故事，主角带着现代知识改变历史',
+]
+
+function initChat() {
+  clearChatDraft()
+  chatMsgs.value = [
+    {
+      role: 'assistant',
+      content: '你好！我是你的小说创作助手 ✨\n\n告诉我你想写什么样的故事吧——比如："写一个修仙少年复仇的故事" 或者 "帮我创作一个都市爱情小说"。\n\n你也可以描述主角、背景世界、故事核心冲突，我们一起聊出一部好小说！',
+    },
+  ]
+  chatExtracted.value = null
+  chatInput.value = ''
+  chatError.value = ''
+}
+
+async function sendChatMessage(content?: string) {
+  const text = (content ?? chatInput.value).trim()
+  if (!text || chatLoading.value) return
+  chatInput.value = ''
+  // Snapshot history before adding placeholder
+  const history = chatMsgs.value.map(m => ({ role: m.role, content: m.content }))
+  history.push({ role: 'user', content: text })
+  chatMsgs.value.push({ role: 'user', content: text })
+  chatLoading.value = true
+  chatError.value = ''
+  await nextTick()
+  scrollChat()
+
+  // Add AI message placeholder for streaming
+  const aiMsgIdx = chatMsgs.value.length
+  chatMsgs.value.push({ role: 'assistant', content: '' })
+
+  try {
+    const token = getAuthToken()
+    const response = await fetch(`${apiBase}/ai/novel-chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ messages: history }),
+    })
+
+    if (!response.ok || !response.body) {
+      const errText = await response.text().catch(() => '')
+      throw new Error(errText || `HTTP ${response.status}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const raw = line.slice(6).trim()
+        if (!raw) continue
+        try {
+          const evt = JSON.parse(raw)
+          if (evt.error) {
+            chatError.value = evt.error
+            break
+          }
+          if (evt.delta) {
+            chatMsgs.value[aiMsgIdx].content += evt.delta
+            scrollChat()
+          }
+          if (evt.done) {
+            if (evt.correction !== undefined) {
+              chatMsgs.value[aiMsgIdx].content = evt.correction
+            }
+            if (evt.extracted) {
+              chatExtracted.value = evt.extracted
+              if (autoSubmitOnExtract.value) {
+                autoSubmitOnExtract.value = false
+                setTimeout(() => submitChat(), 400)
+              }
+            } else if (autoSubmitOnExtract.value) {
+              // AI 未能提取参数，重置标志并提示用户手动补充
+              autoSubmitOnExtract.value = false
+              chatError.value = '未能自动整理小说参数，请再描述一下故事的标题、类型和主要内容，然后重新点击"开始创作"。'
+            }
+          }
+
+
+
+        } catch {
+          // ignore malformed SSE chunks
+        }
+      }
+    }
+  } catch (e: any) {
+    // Remove empty placeholder on error
+    if (chatMsgs.value[aiMsgIdx]?.content === '') {
+      chatMsgs.value.splice(aiMsgIdx, 1)
+    }
+    chatError.value = e.message || '请求失败，请重试'
+  } finally {
+    chatLoading.value = false
+    await nextTick()
+    scrollChat()
+  }
+}
+
+function scrollChat() {
+  if (chatMsgContainer.value) {
+    chatMsgContainer.value.scrollTop = chatMsgContainer.value.scrollHeight
+  }
+}
+
+function handleChatKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendChatMessage()
+  }
+}
+
+const userMsgCount = computed(() => chatMsgs.value.filter(m => m.role === 'user').length)
+
+function resetChat() {
+  initChat()
+  autoSubmitOnExtract.value = false
+}
+
+async function startCreation() {
+  if (chatSubmitting.value || chatLoading.value) return
+  if (chatExtracted.value) {
+    await submitChat()
+  } else {
+    autoSubmitOnExtract.value = true
+    sendChatMessage('我觉得信息差不多了，请根据我们的对话整理小说参数并生成。如果还有不足，告诉我缺什么。')
+  }
+}
+
+async function submitChat() {
+  if (!chatExtracted.value) return
+  chatSubmitting.value = true
+  chatError.value = ''
+  try {
+    const body: Record<string, unknown> = {
+      title: chatExtracted.value.title ?? '未命名小说',
+      description: chatExtracted.value.description ?? '',
+      genre: chatExtracted.value.genre ?? '其他',
+      prompt_language: 'zh',
+      chapter_mode: chatExtracted.value.chapter_mode || 'sequential',
+    }
+    if (chatExtracted.value.target_chapters && chatExtracted.value.target_chapters > 0) {
+      body.target_chapters = chatExtracted.value.target_chapters
+    }
+    const data = await request<any>('/novels', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    const novel = data.data ?? data
+    if (!novel?.id) {
+      chatError.value = '创建成功但未返回小说ID，请前往小说列表查看'
+      return
+    }
+    clearChatDraft()
+    router.push(`/novel/${novel.id}?analyze=1&source=ai-chat`)
+  } catch (e: any) {
+    chatError.value = e.message || '创建失败'
+  } finally {
+    chatSubmitting.value = false
+  }
+}
 
 // ── 颜色/图标选项 ─────────────────────────────────────────────────────────────
 const iconOptions = [
@@ -611,14 +849,14 @@ async function rwSubmit() {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto py-8 px-4">
+  <div class="max-w-5xl mx-auto py-4 px-4">
     <!-- 标题 -->
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+    <div class="mb-4 flex items-baseline gap-3">
+      <h1 class="text-lg font-bold text-gray-900 dark:text-white shrink-0">
         {{ step === 'rewrite-form' ? 'AI 改写' : '创建小说项目' }}
       </h1>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        {{ step === 'rewrite-form' ? '基于已有小说进行 AI 改写，规避版权风险，保留故事精髓' : '选择创建方式开始你的创作' }}
+      <p class="text-sm text-gray-400 dark:text-gray-500 truncate">
+        {{ step === 'rewrite-form' ? '基于已有小说进行 AI 改写，规避版权风险，保留故事精髓' : '多轮对话，AI 自动分析并生成小说参数' }}
       </p>
     </div>
 
@@ -666,21 +904,38 @@ async function rwSubmit() {
 
     <!-- ═══ Screen 1: choose ════════════════════════════════════════════════════ -->
     <template v-if="step === 'choose'">
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <!-- AI 生成 -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- AI 对话创建（推荐） -->
         <button
           type="button"
-          class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-500 transition-all shadow-sm text-left group"
-          @click="selectAIGenerate"
+          class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-purple-300 dark:border-purple-600 hover:border-purple-500 dark:hover:border-purple-400 transition-all shadow-sm text-left group relative overflow-hidden"
+          @click="selectAIChat"
         >
+          <span class="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-semibold bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 rounded-full">推荐</span>
           <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-200 dark:group-hover:bg-purple-800/40 transition-colors">
             <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold text-gray-900 dark:text-white mb-1">对话创建</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">和 AI 自由对话，描述你的想法，AI 帮你分析并自动生成小说参数</p>
+          <span class="mt-4 text-sm font-medium text-purple-600 dark:text-purple-400">开始对话 →</span>
+        </button>
+
+        <!-- AI 生成（表单） -->
+        <button
+          type="button"
+          class="flex flex-col items-start p-6 bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all shadow-sm text-left group"
+          @click="selectAIGenerate"
+        >
+          <div class="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800/40 transition-colors">
+            <svg class="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.35A5.003 5.003 0 0012 17a5 5 0 01-4.546-2.916l-.346-.349z"/>
             </svg>
           </div>
           <h3 class="font-semibold text-gray-900 dark:text-white mb-1">AI 生成</h3>
-          <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">配置小说基本信息，AI 自动生成世界观、角色、大纲、概要</p>
-          <span class="mt-4 text-sm font-medium text-purple-600 dark:text-purple-400">选择 AI 生成 →</span>
+          <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">填写表单配置小说基本信息，AI 自动生成世界观、角色、大纲</p>
+          <span class="mt-4 text-sm font-medium text-indigo-600 dark:text-indigo-400">填写表单 →</span>
         </button>
 
         <!-- 导入小说 -->
@@ -743,8 +998,8 @@ async function rwSubmit() {
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"/>
                 </svg>
               </template>
-              <span v-else-if="!isCoverUrl(aiForm.cover_image)" class="text-2xl font-bold text-white opacity-80 select-none">
-                {{ aiForm.title.charAt(0) || 'I' }}
+              <span v-else-if="!isCoverUrl(aiForm.cover_image)" class="text-[10px] font-semibold text-white opacity-80 text-center px-1.5 leading-snug line-clamp-4 select-none">
+                {{ aiForm.title || 'I' }}
               </span>
               <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded-xl">
                 <svg v-if="!coverUploading" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -942,7 +1197,124 @@ async function rwSubmit() {
       </div>
     </template>
 
-    <!-- ═══ Screen 2b: import-choose ═══════════════════════════════════════════ -->
+    <!-- ═══ Screen 2b: ai-chat ════════════════════════════════════════════════ -->
+    <template v-else-if="step === 'ai-chat'">
+      <div class="flex flex-col gap-4">
+        <!-- 对话区 -->
+        <div class="card overflow-hidden flex flex-col" style="height: min(68vh, 640px); min-height: 480px">
+          <!-- 消息列表 -->
+          <div ref="chatMsgContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div
+              v-for="(msg, i) in chatMsgs"
+              :key="i"
+              class="flex"
+              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+            >
+              <!-- AI 头像 -->
+              <div v-if="msg.role === 'assistant'" class="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center mr-2 mt-0.5 shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.35A5.003 5.003 0 0012 17a5 5 0 01-4.546-2.916l-.346-.349z"/>
+                </svg>
+              </div>
+              <div
+                class="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed chat-bubble"
+                :class="msg.role === 'user'
+                  ? 'bg-purple-600 text-white rounded-tr-sm whitespace-pre-wrap'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-tl-sm chat-bubble--ai'"
+                v-html="msg.role === 'user' ? msg.content : renderMarkdown(msg.content)"
+              />
+            </div>
+
+            <!-- AI 思考中 -->
+            <div v-if="chatLoading" class="flex justify-start">
+              <div class="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center mr-2 shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.35A5.003 5.003 0 0012 17a5 5 0 01-4.546-2.916l-.346-.349z"/>
+                </svg>
+              </div>
+              <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay:0ms" />
+                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay:150ms" />
+                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay:300ms" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 快速建议（仅首次） -->
+          <div v-if="chatMsgs.length === 1 && !chatLoading" class="px-4 pb-3 flex flex-wrap gap-1.5">
+            <button
+              v-for="s in quickSuggestions"
+              :key="s"
+              type="button"
+              class="px-2.5 py-1 text-xs rounded-full border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors truncate max-w-xs"
+              @click="sendChatMessage(s)"
+            >{{ s }}</button>
+          </div>
+
+          <!-- 输入框 -->
+          <div class="border-t border-gray-200 dark:border-gray-700 px-3 py-2.5">
+            <div class="flex gap-2 items-end">
+              <textarea
+                v-model="chatInput"
+                rows="2"
+                placeholder="描述你的故事想法…（Shift+Enter 换行，Enter 发送）"
+                class="flex-1 resize-none text-sm bg-transparent outline-none text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 max-h-24 overflow-y-auto"
+                :disabled="chatLoading"
+                @keydown="handleChatKeydown"
+              />
+              <button
+                type="button"
+                :disabled="chatLoading || !chatInput.trim()"
+                class="w-8 h-8 rounded-full bg-purple-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center justify-center shrink-0 transition-colors hover:bg-purple-700"
+                @click="sendChatMessage()"
+              >
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部操作栏 -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <button
+              type="button"
+              class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              @click="step = 'choose'"
+            >← 返回</button>
+            <button
+              v-if="userMsgCount > 0"
+              type="button"
+              class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              @click="resetChat"
+            >重新开始</button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <p v-if="chatError" class="text-xs text-red-500 max-w-xs truncate">{{ chatError }}</p>
+            <button
+              type="button"
+              :disabled="chatSubmitting || (chatLoading && !chatExtracted) || userMsgCount === 0"
+              class="px-5 py-2.5 text-sm font-medium rounded-xl transition-all flex items-center gap-2 shadow-sm"
+              :class="chatExtracted
+                ? 'bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40'
+                : 'bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40'"
+              @click="startCreation"
+            >
+              <div v-if="chatSubmitting || (autoSubmitOnExtract && chatLoading)" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span>{{ chatSubmitting ? '创建中…' : (autoSubmitOnExtract && chatLoading) ? '分析中…' : '开始创作' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ═══ Screen 2c: import-choose ═══════════════════════════════════════════ -->
     <template v-else-if="step === 'import-choose'">
       <div class="grid grid-cols-2 gap-4">
         <button
@@ -1376,4 +1748,34 @@ async function rwSubmit() {
   transform: scale(0.95);
   opacity: 0;
 }
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* AI 消息 markdown 渲染 */
+.chat-bubble--ai :deep(p) { margin: 0 0 0.5em; }
+.chat-bubble--ai :deep(p:last-child) { margin-bottom: 0; }
+.chat-bubble--ai :deep(strong) { font-weight: 600; }
+.chat-bubble--ai :deep(em) { font-style: italic; }
+.chat-bubble--ai :deep(ul),
+.chat-bubble--ai :deep(ol) { margin: 0.25em 0 0.5em 1.2em; padding: 0; }
+.chat-bubble--ai :deep(li) { margin-bottom: 0.15em; }
+.chat-bubble--ai :deep(h1),
+.chat-bubble--ai :deep(h2),
+.chat-bubble--ai :deep(h3) { font-weight: 600; margin: 0.6em 0 0.3em; line-height: 1.3; }
+.chat-bubble--ai :deep(h1) { font-size: 1em; }
+.chat-bubble--ai :deep(h2) { font-size: 0.95em; }
+.chat-bubble--ai :deep(h3) { font-size: 0.9em; }
+.chat-bubble--ai :deep(code) { font-size: 0.85em; background: rgba(0,0,0,0.08); border-radius: 3px; padding: 0.1em 0.3em; }
+.chat-bubble--ai :deep(pre) { background: rgba(0,0,0,0.08); border-radius: 6px; padding: 0.5em 0.75em; overflow-x: auto; margin: 0.4em 0; }
+.chat-bubble--ai :deep(blockquote) { border-left: 3px solid rgba(0,0,0,0.2); margin: 0.4em 0; padding-left: 0.75em; opacity: 0.8; }
+.dark .chat-bubble--ai :deep(code) { background: rgba(255,255,255,0.1); }
+.dark .chat-bubble--ai :deep(pre) { background: rgba(255,255,255,0.1); }
+.dark .chat-bubble--ai :deep(blockquote) { border-left-color: rgba(255,255,255,0.2); }
 </style>

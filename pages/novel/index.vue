@@ -230,7 +230,7 @@ function formatDate(dateStr: string): string {
           class="h-32 flex items-center justify-center"
           :style="novelIconStyle(novel.cover_image)"
         >
-          <span v-if="!isImageUrl(novel.cover_image)" class="text-4xl font-bold text-white opacity-60">{{ novel.title.charAt(0) }}</span>
+          <span v-if="!isImageUrl(novel.cover_image)" class="text-sm font-semibold text-white opacity-70 text-center px-4 leading-snug line-clamp-4">{{ novel.title }}</span>
         </div>
         <div class="p-4">
           <div class="flex items-start justify-between mb-2">

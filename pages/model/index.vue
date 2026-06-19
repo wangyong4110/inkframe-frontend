@@ -1498,7 +1498,11 @@ watch(activeTab, (tab) => {
                     type="number" min="0" step="1024"
                     class="input font-mono text-sm"
                     placeholder="0" />
-                  <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
+                  <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认；常见上限：GPT-4o / Azure 32768，Claude 16384，Doubao / Deepseek 16384</p>
+                  <p v-if="providerForm.max_tokens > 32768" class="mt-0.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+                    超过 32768 可能导致部分模型（如 Azure GPT-4o）返回 400 错误，建议不超过模型实际支持值
+                  </p>
                 </div>
               </div>
               <div class="flex items-center gap-3 py-1">

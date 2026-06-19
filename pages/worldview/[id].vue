@@ -32,10 +32,8 @@ const worldview = ref<Worldview>({
   magic_system: '',
   geography: '',
   history: '',
-  culture: '',
-  technology: '',
   rules: '',
-  cover_image: '',
+  glossary: '',
   entities: [],
   created_at: '',
   updated_at: '',
@@ -44,9 +42,10 @@ const worldview = ref<Worldview>({
 const tabs = [
   { key: 'overview', label: '概览' },
   { key: 'magic', label: '修炼体系' },
-  { key: 'geography', label: '地理环境' },
-  { key: 'history', label: '历史背景' },
-  { key: 'entities', label: '势力设定' },
+  { key: 'geography', label: '关键地点' },
+  { key: 'history', label: '背景矛盾' },
+  { key: 'glossary', label: '术语词汇' },
+  { key: 'entities', label: '实体设定' },
 ]
 
 onMounted(async () => {
@@ -54,12 +53,14 @@ onMounted(async () => {
   loading.value = true
   try {
     const { getWorldview, listEntities } = useWorldviewApi()
-    const [wvResp, entResp] = await Promise.all([
-      getWorldview(worldviewId.value),
-      listEntities(worldviewId.value),
-    ])
-    worldview.value = wvResp.data
-    entities.value = entResp.data ?? []
+    const wvResp = await getWorldview(worldviewId.value)
+    if (wvResp?.data) {
+      Object.assign(worldview.value, wvResp.data)
+    }
+    // Load entities independently — failure is non-critical
+    listEntities(worldviewId.value).then(entResp => {
+      entities.value = entResp.data ?? []
+    }).catch(() => {})
   } catch (e: any) {
     toast.error('加载失败：' + (e.message || '未知错误'))
   } finally {
@@ -83,12 +84,12 @@ async function handleSave() {
       magic_system: worldview.value.magic_system,
       geography: worldview.value.geography,
       history: worldview.value.history,
-      culture: worldview.value.culture,
-      technology: worldview.value.technology,
       rules: worldview.value.rules,
-      cover_image: worldview.value.cover_image,
+      glossary: worldview.value.glossary,
     })
-    worldview.value = resp.data
+    if (resp?.data) {
+      Object.assign(worldview.value, resp.data)
+    }
     toast.success('世界观已保存')
   } catch (e: any) {
     toast.error('保存失败：' + (e.message || '未知错误'))
@@ -182,9 +183,8 @@ async function generateWorldview() {
     if (g.magic_system) worldview.value.magic_system = g.magic_system
     if (g.geography) worldview.value.geography = g.geography
     if (g.history) worldview.value.history = g.history
-    if (g.culture) worldview.value.culture = g.culture
-    if (g.technology) worldview.value.technology = g.technology
     if (g.rules) worldview.value.rules = g.rules
+    if (g.glossary) worldview.value.glossary = g.glossary
     showGenerateModal.value = false
     toast.success('世界观生成完成')
   } catch (e: any) {
@@ -207,7 +207,6 @@ async function generateWorldview() {
         </button>
         <div>
           <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ worldview.name || '世界观编辑器' }}</h1>
-          <p class="text-sm text-gray-500 dark:text-gray-400">世界观编辑器</p>
         </div>
       </div>
       <div class="flex items-center space-x-2">
@@ -274,27 +273,21 @@ async function generateWorldview() {
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">简介</label>
               <textarea v-model="worldview.description" rows="3" class="input"></textarea>
             </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">封面图片</label>
-              <ImageUploadBox
-                v-model="worldview.cover_image"
-                aspect-ratio="16/9"
-                placeholder="上传封面图片"
-                @error="(msg) => toast.error(msg)"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">文化背景</label>
-              <textarea v-model="worldview.culture" rows="3" class="input" placeholder="描述世界的文化习俗..."></textarea>
-            </div>
           </div>
         </div>
 
         <div class="card p-6">
           <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">世界规则</h3>
-          <textarea v-model="worldview.rules" rows="10" class="input" placeholder="列出世界的核心规则..."></textarea>
-          <p class="mt-2 text-sm text-gray-500">每行一条规则，这些规则将约束AI生成的内容</p>
+          <textarea v-model="worldview.rules" rows="12" class="input" placeholder="列出世界的核心规则与禁忌，每行一条。这些规则将约束 AI 生成的内容..."></textarea>
+          <p class="mt-2 text-sm text-gray-500">每行一条规则，约束 AI 生成章节时的行为边界</p>
         </div>
+      </div>
+
+      <!-- Glossary -->
+      <div v-if="activeTab === 'glossary'" class="card p-6">
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">术语词汇表</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">世界专属术语、专有名词及其含义。AI 生成时将保持术语一致性，避免前后矛盾。</p>
+        <textarea v-model="worldview.glossary" rows="14" class="input" placeholder="每行一条，格式：词语 — 含义&#10;例如：&#10;灵根 — 修炼者天生的感知灵气能力，分金木水火土五行，影响修炼速度和上限&#10;渡劫 — 修炼到化神期后面临天道考验的关卡，失败则魂飞魄散&#10;洞天福地 — 灵气浓郁的修炼圣地，多被各大势力占据..."></textarea>
       </div>
 
       <!-- Magic System -->
@@ -305,39 +298,24 @@ async function generateWorldview() {
         <textarea v-model="worldview.magic_system" rows="10" class="input" placeholder="描述修炼/能力体系..."></textarea>
       </div>
 
-      <!-- Geography -->
+      <!-- Geography → 关键地点 -->
       <div v-if="activeTab === 'geography'" class="card p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">地理环境</h3>
-        </div>
-        <textarea v-model="worldview.geography" rows="8" class="input" placeholder="描述地理环境..."></textarea>
-
-        <!-- Map Placeholder -->
-        <div class="mt-6 h-48 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-          <div class="text-center">
-            <svg class="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 0l6 3m-6-3h.01M9 7l6 3m0 0l-6 3m6-3v12" />
-            </svg>
-            <p class="text-gray-500">地图编辑器（开发中）</p>
-          </div>
-        </div>
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">关键地点</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">只列出故事实际会发生的场景。每个地点说明：控制方、叙事意义、进入难度。不需要描述整个世界的地理格局。</p>
+        <textarea v-model="worldview.geography" rows="12" class="input" placeholder="例如：&#10;青云峰（天宗总部）— 控制方：天宗，主角修炼起点，与外界隔绝，第1-30章核心舞台&#10;血煞禁地（北疆）— 控制方：血煞门，高危区域，封印所在地，第二卷高潮场景&#10;浮云城（中立商业城市）— 控制方：无名商会，信息交汇处，主角初次接触黑市..."></textarea>
       </div>
 
-      <!-- History -->
+      <!-- History → 背景矛盾 -->
       <div v-if="activeTab === 'history'" class="card p-6">
-        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">历史背景</h3>
-        <textarea v-model="worldview.history" rows="10" class="input" placeholder="描述世界的历史背景..."></textarea>
-
-        <div class="mt-4">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">技术水平</label>
-          <textarea v-model="worldview.technology" rows="4" class="input" placeholder="描述世界的科技/法术水平..."></textarea>
-        </div>
+        <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">背景矛盾</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">只记录<strong class="text-gray-700 dark:text-gray-200">仍在影响当前故事</strong>的过去事件。与现在无关的历史不需要写。</p>
+        <textarea v-model="worldview.history" rows="12" class="input" placeholder="例如：&#10;三千年前天魔大战：上古魔君被封印于血煞禁地，封印每隔百年减弱一次，当前正处第三十次减弱期——这是整个故事的时间压力&#10;天宗叛徒事件（二十年前）：天宗前任长老偷走镇宗秘典投靠血煞门，此事至今未解，主角师父是当年调查此案的幸存者&#10;灵气浓度下降（持续中）：修炼资源枯竭导致各势力争夺加剧，这是当前政治紧张局势的根源..."></textarea>
       </div>
 
       <!-- Entities -->
       <div v-if="activeTab === 'entities'" class="space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">势力 / 实体设定</h3>
+          <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">实体设定（势力 / 地点 / 神器 / 种族）</h3>
           <button class="btn-primary text-sm" @click="openCreateEntity">
             <svg class="w-4 h-4 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

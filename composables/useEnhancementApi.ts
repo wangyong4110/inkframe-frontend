@@ -29,33 +29,6 @@ function makeRequest() {
 }
 
 // ============================================
-// Foreshadow API - 伏笔追踪
-// ============================================
-
-export const useForeshadowApi = () => {
-  const request = makeRequest()
-
-  const getForeshadows = (novelId: number, chapterNo?: number) => {
-    const params = new URLSearchParams()
-    if (chapterNo) params.set('chapter_no', String(chapterNo))
-    return request<ApiResponse<{
-      pending: ForeshadowItem[]
-      fulfilled: ForeshadowItem[]
-      total: number
-    }>>(`/novels/${novelId}/foreshadows?${params}`)
-  }
-
-  const markFulfilled = (novelId: number, foreshadowId: number, chapterId: number) => {
-    return request<void>(`/novels/${novelId}/foreshadows/${foreshadowId}/fulfill`, {
-      method: 'POST',
-      body: JSON.stringify({ chapter_id: chapterId }),
-    })
-  }
-
-  return { getForeshadows, markFulfilled }
-}
-
-// ============================================
 // Timeline API - 时间线
 // ============================================
 
