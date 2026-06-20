@@ -147,7 +147,7 @@ const importForm = ref({
 const sources = [
   { value: 'file', label: '本地文件', icon: 'folder', formats: 'TXT, MD, JSON, HTML' },
   { value: 'url', label: '网络链接', icon: 'link', formats: '支持大多数小说网站' },
-  { value: 'crawl', label: '爬取小说', icon: 'globe', formats: '起点、晋江、纵横等' },
+  { value: 'crawl', label: '爬取小说', icon: 'globe', formats: '支持任意小说网站' },
 ]
 
 // 文件上传
@@ -688,7 +688,12 @@ function reset() {
             'text-gray-500': crawlStatus.status === 'paused',
           }"
         >
-          {{ { running: '爬取中', paused: '已暂停', completed: '爬取完成', failed: '部分失败' }[crawlStatus.status] }}
+          <template v-if="crawlStatus.status === 'completed' && crawlStatus.failed > 0">
+            爬取完成（{{ crawlStatus.failed }} 章内容为空，可能为 JS 渲染页面）
+          </template>
+          <template v-else>
+            {{ { running: '爬取中', paused: '已暂停', completed: '爬取完成', failed: '全部章节获取失败' }[crawlStatus.status] }}
+          </template>
           <template v-if="crawlStatus.pages_visited > 0">· {{ crawlStatus.pages_visited }} 页已访问</template>
         </span>
         <span class="text-gray-400">完成后自动生成 AI 摘要</span>
