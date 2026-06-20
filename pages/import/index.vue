@@ -451,6 +451,21 @@ function reset() {
           </select>
         </div>
 
+        <!-- 追加模式（项目内锁定时隐藏） -->
+        <div v-if="!lockedNovelId" class="border-t border-gray-200 dark:border-gray-700 pt-4">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input v-model="appendMode" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">追加章节到已有小说</span>
+          </label>
+          <div v-if="appendMode" class="mt-3">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">选择目标小说</label>
+            <select v-model="appendNovelId" class="input">
+              <option :value="null">-- 请选择 --</option>
+              <option v-for="n in novelList" :key="n.id" :value="n.id">{{ n.title }}</option>
+            </select>
+          </div>
+        </div>
+
         <!-- 高级配置（可折叠） -->
         <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
           <button
