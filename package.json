@@ -37,6 +37,9 @@
     "not dead",
     "not IE 11"
   ],
+  "overrides": {
+    "esbuild": "0.21.5"
+  },
   "devDependencies": {
     "@csstools/postcss-cascade-layers": "^4.0.0",
     "@nuxt/devtools": "^1.0.8",
