@@ -393,6 +393,26 @@ async function handleGenerateShot(shot: StoryboardShot) {
   }
 }
 
+async function handleGenerateShotImage(shot: StoryboardShot) {
+  if (!await guardAiProvider('IMAGE')) return
+  try {
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id])
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
+    toast.info(`镜头 #${shot.shot_no} 图片生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success(`镜头 #${shot.shot_no} 图片已生成`)
+      } else if (task.status !== 'cancelled') {
+        toast.error(`镜头 #${shot.shot_no} 图片生成失败`)
+      }
+    })
+  } catch (e: any) {
+    toast.error('图片生成失败：' + (e.message || ''))
+  }
+}
+
 async function handleStopShot(shot: StoryboardShot) {
   const taskId = shotTaskIds.value[shot.id] || shot.shot_task_id
   if (!taskId) {
@@ -889,12 +909,6 @@ defineExpose({ loadVideoProviders: async () => {
                 >
                   PRO
                 </span>
-                <span
-                  v-else
-                  class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                >
-                  STD
-                </span>
               </div>
               <div class="flex items-center gap-1 flex-shrink-0">
                 <button
@@ -1188,93 +1202,97 @@ defineExpose({ loadVideoProviders: async () => {
                     PRO
                   </span>
                   <span
-                    v-else
-                    class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                  >
-                    STD
-                  </span>
-                  <span
                     v-if="shot.status === 'failed' && shot.error_message"
                     class="text-[10px] text-red-400 dark:text-red-500 max-w-[160px] text-right leading-snug"
                     :title="shot.error_message"
                   >
                     {{ shot.error_message.length > 60 ? shot.error_message.slice(0, 60) + '…' : shot.error_message }}
                   </span>
-                  <button
-                    v-if="shot.status !== 'generating'"
-                    class="text-xs py-1 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
-                    @click="handleGenerateShot(shot)"
-                  >
-                    {{ shot.status === 'completed' ? '重新生成' : '生成' }}
-                  </button>
                 </div>
               </div>
             </div>
           </div>
-          <!-- Anchor selector + score bar -->
-          <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-wrap">
-            <span class="text-xs text-gray-400 flex-shrink-0">📍 场景</span>
-            <select
-              :value="shot.scene_anchor_id || ''"
-              class="input text-xs py-0.5 h-6 flex-1 min-w-0 max-w-[180px]"
-              @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
-            >
-              <option value="">不绑定</option>
-              <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
-            </select>
-            <template v-if="shot.scene_anchor_id">
-              <div class="flex-1 flex items-center gap-1.5 min-w-0">
-                <div class="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all"
+          <!-- Scene + Character rows -->
+          <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">📍 场景</span>
+              <select
+                :value="shot.scene_anchor_id || ''"
+                class="input text-xs py-0.5 h-6 min-w-0 max-w-[180px]"
+                @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+              >
+                <option value="">不绑定</option>
+                <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+              </select>
+              <template v-if="shot.scene_anchor_id">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <div class="w-16 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all"
+                      :class="{
+                        'bg-green-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                        'bg-amber-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                        'bg-red-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                        'bg-gray-300': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
+                      }"
+                      :style="{ width: `${Math.min(100, ((anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) * 100))}%` }"
+                    />
+                  </div>
+                  <span class="text-xs flex-shrink-0"
                     :class="{
-                      'bg-green-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
-                      'bg-amber-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
-                      'bg-red-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
-                      'bg-gray-300': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
+                      'text-green-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
+                      'text-amber-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
+                      'text-red-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
+                      'text-gray-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
                     }"
-                    :style="{ width: `${Math.min(100, ((anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) * 100))}%` }"
-                  />
+                  >
+                    {{ (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0
+                      ? (anchorById.get(shot.scene_anchor_id!)!.avg_cons_score).toFixed(2)
+                      : '待评分'
+                    }}
+                  </span>
                 </div>
-                <span class="text-xs flex-shrink-0"
-                  :class="{
-                    'text-green-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
-                    'text-amber-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
-                    'text-red-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
-                    'text-gray-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
-                  }"
-                >
-                  {{ (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0
-                    ? (anchorById.get(shot.scene_anchor_id!)!.avg_cons_score).toFixed(2)
-                    : '待评分'
-                  }}
+              </template>
+              <template v-if="shot.status !== 'generating'">
+                <div class="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    class="text-[11px] py-0.5 px-2 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    @click="handleGenerateShotImage(shot)"
+                  >
+                    生成图片
+                  </button>
+                  <button
+                    class="text-[11px] py-0.5 px-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                    @click="handleGenerateShot(shot)"
+                  >
+                    {{ shot.status === 'completed' ? '重新生成视频' : '生成视频' }}
+                  </button>
+                </div>
+              </template>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
+              <template v-for="charId in (shot.character_ids || [])" :key="charId">
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                  <img
+                    v-if="characterById.get(charId)?.portrait"
+                    :src="characterById.get(charId)!.portrait"
+                    loading="lazy"
+                    class="w-3 h-3 rounded-full object-cover"
+                  />
+                  {{ characterById.get(charId)?.name || charId }}
+                  <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
                 </span>
-              </div>
-            </template>
-          </div>
-          <!-- Character binding row -->
-          <div class="mt-1 flex items-center gap-2 flex-wrap">
-            <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
-            <template v-for="charId in (shot.character_ids || [])" :key="charId">
-              <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                <img
-                  v-if="characterById.get(charId)?.portrait"
-                  :src="characterById.get(charId)!.portrait"
-                  loading="lazy"
-                  class="w-3 h-3 rounded-full object-cover"
-                />
-                {{ characterById.get(charId)?.name || charId }}
-                <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
-              </span>
-            </template>
-            <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
-              <option value="">+ 绑定角色</option>
-              <option
-                v-for="c in (unassignedCharsMap.get(shot.id) ?? [])"
-                :key="c.id"
-                :value="c.id"
-              >{{ c.name }}</option>
-            </select>
+              </template>
+              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
+                <option value="">+ 绑定角色</option>
+                <option
+                  v-for="c in (unassignedCharsMap.get(shot.id) ?? [])"
+                  :key="c.id"
+                  :value="c.id"
+                >{{ c.name }}</option>
+              </select>
+            </div>
           </div>
         </div>
       </template>
