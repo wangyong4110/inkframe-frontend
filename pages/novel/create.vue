@@ -657,6 +657,7 @@ function pollCrawlTask(taskId: string) {
       } else if (task.status === 'failed') {
         crawlError.value = task.error || taskData.message || '爬取失败'
         crawlLoading.value = false
+        crawlStatus.value = null
       } else {
         setTimeout(tick, 2000)
       }
