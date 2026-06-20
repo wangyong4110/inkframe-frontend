@@ -436,13 +436,13 @@ function reset() {
         <h3 class="font-semibold text-gray-900 dark:text-white">爬取小说</h3>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说页面 URL</label>
-          <input v-model="importForm.url" type="url" class="input" placeholder="https://www.qidian.com/book/xxxxx/" />
-          <p class="mt-1 text-xs text-gray-500">请填写书目页 URL（含 /book/），不支持搜索页或列表页</p>
+          <input v-model="importForm.url" type="url" class="input" placeholder="https://www.example.com/read/novel-id/" />
+          <p class="mt-1 text-xs text-gray-500">支持任意小说站点；起点/晋江/纵横/七猫/红袖使用专用解析器，其他站点自动通用解析。请填写书目/目录页 URL，不支持搜索页。</p>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">站点名称（可选）</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">站点（可选，留空自动检测）</label>
           <select v-model="importForm.siteName" class="input">
-            <option value="">自动检测</option>
+            <option value="">自动检测 / 通用解析</option>
             <option value="qidian">起点中文网</option>
             <option value="jjwxc">晋江文学城</option>
             <option value="zongheng">纵横中文网</option>
