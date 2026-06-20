@@ -540,13 +540,16 @@
       <Transition name="modal-fade">
         <div v-if="comparisonTask" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto py-6 px-4"
           @click.self="comparisonTask = null">
-          <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-5xl">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-5xl flex flex-col max-h-[90vh]">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
               <h3 class="font-semibold text-white">第 {{ comparisonTask.chapter_no }} 章 — 原文 vs 改写版</h3>
               <button @click="comparisonTask = null" class="text-gray-400 hover:text-white text-xl leading-none transition-colors">&times;</button>
             </div>
+
             <!-- Metrics bar -->
-            <div class="px-6 py-3 border-b border-gray-800 flex flex-wrap gap-4 text-xs bg-gray-800/30">
+            <div class="px-6 py-3 border-b border-gray-800 flex flex-wrap gap-4 text-xs bg-gray-800/30 shrink-0">
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-500">词法相似度</span>
                 <span :class="comparisonTask.lexical_sim < 0.20 ? 'text-emerald-400' : comparisonTask.lexical_sim < 0.35 ? 'text-amber-400' : 'text-red-400'" class="font-semibold">{{ Math.round(comparisonTask.lexical_sim * 100) }}%</span>
@@ -566,8 +569,9 @@
               <span v-if="comparisonTask.passed" class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">✓ 合规通过</span>
               <span v-if="comparisonTask.deai_applied" class="text-violet-300 bg-violet-500/20 px-2 py-0.5 rounded-full">去AI润色</span>
             </div>
+
             <!-- Consistency warning -->
-            <div v-if="comparisonConsistencyIssues.length > 0" class="px-6 py-3 border-b border-gray-800 bg-amber-500/5">
+            <div v-if="comparisonConsistencyIssues.length > 0" class="px-6 py-3 border-b border-gray-800 bg-amber-500/5 shrink-0">
               <div class="flex items-start gap-2">
                 <span class="text-amber-400 text-xs font-semibold mt-0.5 shrink-0">⚠ 一致性问题</span>
                 <ul class="space-y-0.5">
@@ -575,17 +579,51 @@
                 </ul>
               </div>
             </div>
-            <!-- Side by side content -->
-            <div class="grid grid-cols-2 divide-x divide-gray-800">
-              <div class="p-6">
-                <p class="text-xs text-gray-500 font-medium mb-3 uppercase tracking-wide">原文</p>
-                <div class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto pr-2">{{ comparisonTask.original_content }}</div>
-              </div>
-              <div class="p-6">
-                <p class="text-xs text-gray-500 font-medium mb-3 uppercase tracking-wide">改写版</p>
-                <div class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto pr-2">{{ comparisonTask.rewritten_content }}</div>
-              </div>
+
+            <!-- Body: loading -->
+            <div v-if="comparisonLoading" class="flex-1 flex items-center justify-center gap-3 text-gray-500 py-20">
+              <div class="w-5 h-5 border-2 border-gray-700 border-t-amber-500 rounded-full animate-spin"></div>
+              <span class="text-sm">加载内容中...</span>
             </div>
+
+            <!-- Body: diff view -->
+            <template v-else>
+              <!-- Column headers with word count -->
+              <div class="shrink-0 grid grid-cols-2 border-b border-gray-800">
+                <div class="flex items-center gap-2 px-6 py-2 bg-red-500/5 border-r border-gray-800">
+                  <span class="w-2 h-2 rounded-full bg-red-400 shrink-0"></span>
+                  <span class="text-xs font-semibold text-red-400">原文</span>
+                  <span class="ml-auto text-xs text-gray-500">{{ countChars(comparisonTask.original_content || '') }} 字</span>
+                </div>
+                <div class="flex items-center gap-2 px-6 py-2 bg-green-500/5">
+                  <span class="w-2 h-2 rounded-full bg-green-400 shrink-0"></span>
+                  <span class="text-xs font-semibold text-green-400">改写版</span>
+                  <span class="ml-auto text-xs text-gray-500">
+                    {{ countChars(comparisonTask.rewritten_content || '') }} 字
+                    <span
+                      :class="countChars(comparisonTask.rewritten_content || '') > countChars(comparisonTask.original_content || '')
+                        ? 'text-green-500' : countChars(comparisonTask.rewritten_content || '') < countChars(comparisonTask.original_content || '')
+                        ? 'text-red-400' : ''"
+                    >
+                      ({{ countChars(comparisonTask.rewritten_content || '') > countChars(comparisonTask.original_content || '') ? '+' : '' }}{{ countChars(comparisonTask.rewritten_content || '') - countChars(comparisonTask.original_content || '') }})
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <div v-if="comparisonDiffFile" class="flex-1 overflow-auto">
+                <DiffView
+                  :diff-file="comparisonDiffFile"
+                  :diff-view-mode="DiffModeEnum.Split"
+                  :diff-view-wrap="true"
+                  :diff-view-highlight="false"
+                  :diff-view-font-size="13"
+                />
+              </div>
+              <div v-else class="flex-1 flex items-center justify-center text-sm text-gray-500 py-12">
+                两侧内容完全相同
+              </div>
+            </template>
+
           </div>
         </div>
       </Transition>
@@ -596,6 +634,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import type { RewriteProject, LiteraryAnalysis, RewriteBible, ChapterRewriteTask, AsyncTask, ComplianceReport } from '~/types'
+import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
+import { generateDiffFile } from '@git-diff-view/file'
+import '@git-diff-view/vue/styles/diff-view.css'
 
 const route = useRoute()
 const toast = useToast()
@@ -607,6 +648,7 @@ const {
   getAnalysis,
   getBible,
   listChapterTasks,
+  getChapterTask,
   updateBible: apiUpdateBible,
   getComplianceReport: apiGetComplianceReport,
 } = useRewriteApi()
@@ -621,6 +663,27 @@ const loading = ref(true)
 const activeTab = ref('workflow')
 const actionLoading = ref(false)
 const comparisonTask = ref<ChapterRewriteTask | null>(null)
+const comparisonLoading = ref(false)
+
+// Word count helper (counts Chinese characters + ASCII words)
+function countChars(text: string): number {
+  return [...text.replace(/\s/g, '')].length
+}
+
+// Diff file for DiffView
+const comparisonDiffFile = computed(() => {
+  if (!comparisonTask.value) return null
+  const orig = comparisonTask.value.original_content || ''
+  const rewr = comparisonTask.value.rewritten_content || ''
+  if (!orig && !rewr) return null
+  const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const file = generateDiffFile('原文', orig, '改写版', rewr, 'plaintext', 'plaintext')
+  file.initTheme(dark ? 'dark' : 'light')
+  file.init()
+  file.buildSplitDiffLines()
+  file.buildUnifiedDiffLines()
+  return file
+})
 
 // Parse consistency issues from JSON string for the comparison modal
 const comparisonConsistencyIssues = computed<string[]>(() => {
@@ -960,8 +1023,20 @@ async function doStartRewriting() {
   }
 }
 
-function openComparison(task: ChapterRewriteTask) {
+async function openComparison(task: ChapterRewriteTask) {
   comparisonTask.value = task
+  // Lazy-load full content if the list response omitted it (large fields)
+  if (!task.original_content || !task.rewritten_content) {
+    comparisonLoading.value = true
+    try {
+      const res = await getChapterTask(projectId, task.id)
+      comparisonTask.value = res.data
+    } catch (e) {
+      console.error('Failed to load comparison content', e)
+    } finally {
+      comparisonLoading.value = false
+    }
+  }
 }
 
 function getTaskByChapterNo(chapterNo: number): ChapterRewriteTask | undefined {
@@ -971,7 +1046,7 @@ function getTaskByChapterNo(chapterNo: number): ChapterRewriteTask | undefined {
 function jumpToChapterComparison(chapterNo: number) {
   const task = getTaskByChapterNo(chapterNo)
   if (task) {
-    comparisonTask.value = task
+    openComparison(task)
   } else {
     toast.info(`第 ${chapterNo} 章数据暂不可用`)
   }

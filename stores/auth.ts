@@ -32,6 +32,8 @@ export const useAuthStore = defineStore('auth', {
       !!state.token &&
       !!state.expiresAt &&
       Date.now() / 1000 < state.expiresAt,
+    isSystemAdmin: (state): boolean =>
+      state.user?.role === 'system_admin',
   },
 
   actions: {
@@ -163,6 +165,14 @@ export const useAuthStore = defineStore('auth', {
         if (Date.now() / 1000 < exp) {
           this.token = token
           this.expiresAt = exp
+          // 从 JWT payload 同步解析 role，确保中间件在 fetchMe 返回前也能正确判断权限
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+            if (payload.role) {
+              this.user = this.user ?? { id: payload.user_id || 0, username: '', nickname: '', avatar: '', email: '', role: payload.role }
+              this.user.role = payload.role
+            }
+          } catch { /* 解析失败时等 fetchMe 填充 */ }
           this.fetchMe()
         } else {
           localStorage.removeItem('auth_token')

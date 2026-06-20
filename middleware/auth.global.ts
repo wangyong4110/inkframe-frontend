@@ -1,6 +1,7 @@
 declare module '#app' {
   interface PageMeta {
     auth?: boolean
+    requireSystemAdmin?: boolean
   }
 }
 
@@ -15,5 +16,12 @@ export default defineNuxtRouteMiddleware((to) => {
 
   if (!auth.isLoggedIn) {
     return navigateTo('/auth/login')
+  }
+
+  // System admin routes: require system_admin role
+  if (to.path.startsWith('/sysadmin')) {
+    if (!auth.isSystemAdmin) {
+      return navigateTo('/')
+    }
   }
 })

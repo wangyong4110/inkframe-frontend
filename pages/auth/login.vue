@@ -29,7 +29,7 @@ async function loginWithEmail() {
     })
     const resp = data.data ?? data
     authStore.setFromAuthResponse(resp)
-    router.push('/')
+    router.push(resp.role === 'system_admin' ? '/sysadmin' : '/')
   } catch (e: any) {
     const msg: string = e.message || '登录失败'
     emailError.value = msg
@@ -102,7 +102,7 @@ async function loginWithPhone() {
     })
     const resp = data.data ?? data
     authStore.setFromAuthResponse(resp)
-    router.push('/')
+    router.push(resp.role === 'system_admin' ? '/sysadmin' : '/')
   } catch (e: any) {
     phoneError.value = e.message || '登录失败'
   } finally {

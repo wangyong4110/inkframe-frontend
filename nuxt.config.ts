@@ -50,6 +50,17 @@ export default defineNuxtConfig({
     build: {
       target: 'es2022',
     },
+    plugins: [
+      {
+        name: 'vite-plugin-app-manifest-shim',
+        resolveId(id: string) {
+          if (id === '#app-manifest') return '\0app-manifest-shim'
+        },
+        load(id: string) {
+          if (id === '\0app-manifest-shim') return 'export default {}'
+        },
+      },
+    ],
   },
 
   postcss: {
