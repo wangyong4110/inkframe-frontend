@@ -3,6 +3,7 @@ import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
+import '@git-diff-view/vue/styles/diff-view.css'
 
 const route = useRoute()
 const router = useRouter()
