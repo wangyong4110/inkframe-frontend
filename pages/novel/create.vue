@@ -580,6 +580,8 @@ const siteOptions = [
   { label: '起点中文网', value: 'qidian' },
   { label: '晋江文学城', value: 'jjwxc' },
   { label: '纵横中文网', value: 'zongheng' },
+  { label: '七猫小说', value: 'qimao' },
+  { label: '红袖添香', value: 'hongxiu' },
 ]
 
 

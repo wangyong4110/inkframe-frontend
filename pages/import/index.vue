@@ -437,6 +437,7 @@ function reset() {
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">小说页面 URL</label>
           <input v-model="importForm.url" type="url" class="input" placeholder="https://www.qidian.com/book/xxxxx/" />
+          <p class="mt-1 text-xs text-gray-500">请填写书目页 URL（含 /book/），不支持搜索页或列表页</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">站点名称（可选）</label>
@@ -446,6 +447,7 @@ function reset() {
             <option value="jjwxc">晋江文学城</option>
             <option value="zongheng">纵横中文网</option>
             <option value="qimao">七猫小说</option>
+            <option value="hongxiu">红袖添香</option>
           </select>
         </div>
 
