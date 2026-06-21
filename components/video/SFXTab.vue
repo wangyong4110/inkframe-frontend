@@ -299,7 +299,7 @@ async function toggleLoop(shot: StoryboardShot, item: ShotSFXItem) {
 }
 
 // 展开详情保存（blur 触发）
-async function saveItemDetail(shot: StoryboardShot, item: ShotSFXItem, field: 'start_offset' | 'fade_in_ms' | 'fade_out_ms', raw: string) {
+async function saveItemDetail(shot: StoryboardShot, item: ShotSFXItem, field: 'start_offset' | 'fade_in_ms' | 'fade_out_ms' | 'play_count', raw: string) {
   const value = parseFloat(raw)
   if (isNaN(value) || value < 0) return
   const api = useVideoApi()
@@ -922,6 +922,20 @@ defineExpose({ sfxItems, loadSFXItems })
                     @keyup.enter="($event.target as HTMLInputElement).blur()"
                   />
                   <span class="text-[10px] text-gray-400">ms</span>
+                </label>
+
+                <!-- 播放次数 -->
+                <label class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                  <span class="text-[10px] whitespace-nowrap">播放次数</span>
+                  <input
+                    type="number" step="1" min="0" max="99"
+                    :value="item.play_count ?? 1"
+                    class="w-12 text-xs border border-gray-200 dark:border-gray-600 rounded px-1.5 py-0.5 bg-white dark:bg-gray-700 text-center"
+                    title="循环播放次数（1=播放一次，0=无限循环）"
+                    @blur="saveItemDetail(shot, item, 'play_count', ($event.target as HTMLInputElement).value)"
+                    @keyup.enter="($event.target as HTMLInputElement).blur()"
+                  />
+                  <span class="text-[10px] text-gray-400">次</span>
                 </label>
 
                 <!-- 时长超出提示 -->

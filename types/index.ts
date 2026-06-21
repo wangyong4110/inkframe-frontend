@@ -387,6 +387,7 @@ export interface ShotSFXItem {
   loop_enabled?: boolean  // 是否循环播放（ambient 默认 true）
   fade_in_ms?: number     // 淡入时长（毫秒）
   fade_out_ms?: number    // 淡出时长（毫秒）
+  play_count?: number     // 循环播放次数（1=播放一次，0=无限循环）
   created_at?: string
 }
 
@@ -410,6 +411,7 @@ export interface JamendoTrack {
   audiodownload: string  // download URL
   audiodownload_allowed: boolean
   tags?: string[]
+  preview_url?: string   // 后端计算的最佳播放 URL（download > stream）
 }
 
 export interface VideoBGMSegment {

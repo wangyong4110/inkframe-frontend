@@ -325,6 +325,7 @@ function timelineSyncMedia() {
       muted: sfxMuted,
       seekOverride: sfxSeekTo,
     })
+    if (timelineSfxRef.value) setupSfxLoopBehavior(timelineSfxRef.value, activeSfxItem)
     timelineSyncBgmAudio()
   })
 }
@@ -372,6 +373,12 @@ function timelineStop() {
   timelineShotElapsed.value = 0
   timelineTotalElapsed.value = 0
   timelineCurrentBgmSegId.value = null
+  // Reset sfx loop tracking so next play starts fresh
+  if (_sfxEndedListener && timelineSfxRef.value) {
+    timelineSfxRef.value.removeEventListener('ended', _sfxEndedListener)
+    _sfxEndedListener = null
+  }
+  _sfxCurrentItemId = null
 }
 
 function timelineSeekToShot(idx: number) {
@@ -402,6 +409,40 @@ function timelineSeekByClick(e: MouseEvent) {
       return
     }
     elapsed += dur
+  }
+}
+
+// SFX play-count tracking: when play_count > 1, replay the sfx element N times via ended event
+let _sfxEndedListener: (() => void) | null = null
+let _sfxCurrentItemId: number | null = null
+
+function setupSfxLoopBehavior(sfxEl: HTMLAudioElement, item: ShotSFXItem | undefined) {
+  const itemId = item?.id ?? null
+  if (itemId === _sfxCurrentItemId) return  // same item, no change needed
+  // Remove old listener from previous item
+  if (_sfxEndedListener) {
+    sfxEl.removeEventListener('ended', _sfxEndedListener)
+    _sfxEndedListener = null
+  }
+  _sfxCurrentItemId = itemId
+  sfxEl.loop = false
+  const playCount = item?.play_count ?? 1
+  if (playCount === 0) {
+    sfxEl.loop = true
+  } else if (playCount > 1) {
+    let remaining = playCount - 1
+    const onEnded = () => {
+      if (remaining > 0 && timelinePlaying.value) {
+        remaining--
+        sfxEl.currentTime = 0
+        sfxEl.play().catch(() => {})
+      } else {
+        sfxEl.removeEventListener('ended', onEnded)
+        if (_sfxEndedListener === onEnded) _sfxEndedListener = null
+      }
+    }
+    _sfxEndedListener = onEnded
+    sfxEl.addEventListener('ended', onEnded)
   }
 }
 
@@ -859,6 +900,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   timelinePause()
+  if (_sfxEndedListener && timelineSfxRef.value) {
+    timelineSfxRef.value.removeEventListener('ended', _sfxEndedListener)
+    _sfxEndedListener = null
+  }
   if (timelineMediaRecorder.value?.state === 'recording') timelineMediaRecorder.value.stop()
   // Fix 1: Remove all tracked document listeners
   for (const { event, fn } of activeDocListeners.value) {

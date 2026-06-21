@@ -34,6 +34,76 @@ const bgmSearchResults = ref<JamendoTrack[]>([])
 const bgmSearchLoading = ref(false)
 const bgmApplyingId = ref<string | null>(null)
 
+// ── Audio preview ──────────────────────────────────────────────────────────
+// Single Audio instance shared across the whole component; only one track
+// plays at a time. playingKey encodes what's playing: "seg:<id>" or "track:<id>".
+let audioEl: HTMLAudioElement | null = null
+const playingKey = ref<string | null>(null)
+const isAudioPlaying = ref(false)
+const audioProgress = ref(0) // 0–1
+let rafId = 0
+
+function getTrackURL(track: JamendoTrack): string {
+  return track.preview_url || (track.audiodownload_allowed && track.audiodownload ? track.audiodownload : track.audio)
+}
+
+function stopAudio() {
+  cancelAnimationFrame(rafId)
+  if (audioEl) {
+    audioEl.pause()
+    audioEl.src = ''
+    audioEl.onended = null
+    audioEl = null
+  }
+  playingKey.value = null
+  isAudioPlaying.value = false
+  audioProgress.value = 0
+}
+
+function tickProgress() {
+  if (audioEl && !audioEl.paused && audioEl.duration) {
+    audioProgress.value = audioEl.currentTime / audioEl.duration
+  }
+  rafId = requestAnimationFrame(tickProgress)
+}
+
+function playPreview(key: string, url: string) {
+  if (!url) return
+  if (playingKey.value === key) {
+    // Toggle pause / resume
+    if (audioEl?.paused) {
+      audioEl.play().catch(() => {})
+      isAudioPlaying.value = true
+      rafId = requestAnimationFrame(tickProgress)
+    } else {
+      audioEl?.pause()
+      cancelAnimationFrame(rafId)
+      isAudioPlaying.value = false
+    }
+    return
+  }
+  stopAudio()
+  audioEl = new Audio(url)
+  playingKey.value = key
+  isAudioPlaying.value = true
+  audioProgress.value = 0
+  audioEl.onended = () => {
+    cancelAnimationFrame(rafId)
+    playingKey.value = null
+    isAudioPlaying.value = false
+    audioProgress.value = 0
+  }
+  audioEl.play().catch((e) => {
+    console.warn('[BGM preview] play failed:', e)
+    stopAudio()
+  })
+  rafId = requestAnimationFrame(tickProgress)
+}
+
+onUnmounted(stopAudio)
+
+// ──────────────────────────────────────────────────────────────────────────
+
 function parseBGMSearchQueries(json: string): string[] {
   try { return JSON.parse(json) } catch { return [] }
 }
@@ -44,8 +114,8 @@ function formatDuration(secs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function trackPlayURL(track: JamendoTrack): string {
-  return track.audiodownload_allowed && track.audiodownload ? track.audiodownload : track.audio
+function formatTime(ratio: number, totalSecs: number): string {
+  return formatDuration(Math.floor(ratio * totalSecs))
 }
 
 async function load() {
@@ -153,6 +223,7 @@ function openBGMSearch(seg: VideoBGMSegment) {
 }
 
 function closeBGMSearch() {
+  stopAudio()
   bgmSearchTargetSeg.value = null
   bgmSearchResults.value = []
 }
@@ -161,6 +232,7 @@ async function handleJamendoSearch() {
   if (!bgmSearchQuery.value && !bgmSearchTags.value) return
   bgmSearchLoading.value = true
   bgmSearchResults.value = []
+  stopAudio()
   try {
     const api = useVideoApi()
     const res = await api.jamendoSearchBGM(props.videoId, {
@@ -185,7 +257,7 @@ async function applyBGMTrack(track: JamendoTrack) {
   try {
     const api = useVideoApi()
     await api.applyBGMTrack(props.videoId, bgmSearchTargetSeg.value.id, {
-      url: trackPlayURL(track),
+      url: getTrackURL(track),
       track_name: track.name,
       track_artist: track.artist_name,
       source: 'jamendo',
@@ -320,14 +392,45 @@ defineExpose({ bgmSegments, bgmVolume, load })
 
         <!-- Track info (if matched) -->
         <div v-if="seg.url" class="flex items-center gap-3 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg mb-2">
-          <svg class="w-6 h-6 text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-          </svg>
+          <!-- Play/Pause button -->
+          <button
+            class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+            :class="playingKey === `seg:${seg.id}`
+              ? 'bg-purple-500 text-white hover:bg-purple-600'
+              : 'bg-purple-100 dark:bg-purple-800/60 text-purple-600 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-700/60'"
+            title="试听"
+            @click="playPreview(`seg:${seg.id}`, seg.url!)"
+          >
+            <!-- Pause icon -->
+            <svg v-if="playingKey === `seg:${seg.id}` && isAudioPlaying" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+            </svg>
+            <!-- Play icon -->
+            <svg v-else class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </button>
+
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-purple-800 dark:text-purple-200 truncate">{{ seg.track_name || '未知曲目' }}</p>
             <p class="text-xs text-purple-600 dark:text-purple-400 truncate">{{ seg.track_artist }}</p>
+            <!-- Progress bar (only when this seg is playing) -->
+            <div v-if="playingKey === `seg:${seg.id}`" class="mt-1 h-0.5 rounded-full bg-purple-200 dark:bg-purple-700 overflow-hidden">
+              <div
+                class="h-full bg-purple-500 transition-all duration-300"
+                :style="{ width: `${audioProgress * 100}%` }"
+              />
+            </div>
           </div>
-          <audio :src="seg.url" controls class="w-32 h-7 flex-shrink-0" />
+
+          <!-- Waveform animation when playing -->
+          <div v-if="playingKey === `seg:${seg.id}` && isAudioPlaying" class="flex items-end gap-0.5 h-5 flex-shrink-0">
+            <span class="w-0.5 bg-purple-400 rounded-full animate-wave1" />
+            <span class="w-0.5 bg-purple-500 rounded-full animate-wave2" />
+            <span class="w-0.5 bg-purple-400 rounded-full animate-wave3" />
+            <span class="w-0.5 bg-purple-500 rounded-full animate-wave2" />
+            <span class="w-0.5 bg-purple-400 rounded-full animate-wave1" />
+          </div>
         </div>
         <div v-else class="text-xs text-gray-400 dark:text-gray-500 italic mb-2">尚未匹配到音乐</div>
 
@@ -458,22 +561,61 @@ defineExpose({ bgmSegments, bgmVolume, load })
                 </svg>
                 搜索中…
               </div>
+
               <div
                 v-for="track in bgmSearchResults"
                 :key="track.id"
                 class="flex items-center gap-3 p-3 rounded-xl border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors"
+                :class="playingKey === `track:${track.id}` ? 'border-purple-200 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-900/10' : ''"
               >
-                <img v-if="track.album_image" :src="track.album_image" class="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                <div v-else class="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
+                <!-- Album art or placeholder -->
+                <div class="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0 overflow-hidden">
                   <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13" />
                   </svg>
                 </div>
+
+                <!-- Track info -->
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ track.name }}</p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ track.artist_name }} · {{ formatDuration(track.duration) }}</p>
+                  <div class="flex items-center gap-2">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ track.artist_name }} · {{ formatDuration(track.duration) }}</p>
+                    <!-- Waveform animation -->
+                    <div v-if="playingKey === `track:${track.id}` && isAudioPlaying" class="flex items-end gap-0.5 h-3.5 flex-shrink-0">
+                      <span class="w-0.5 bg-purple-400 rounded-full animate-wave1" />
+                      <span class="w-0.5 bg-purple-500 rounded-full animate-wave2" />
+                      <span class="w-0.5 bg-purple-400 rounded-full animate-wave3" />
+                      <span class="w-0.5 bg-purple-500 rounded-full animate-wave2" />
+                      <span class="w-0.5 bg-purple-400 rounded-full animate-wave1" />
+                    </div>
+                  </div>
+                  <!-- Progress bar -->
+                  <div v-if="playingKey === `track:${track.id}`" class="mt-1 h-0.5 rounded-full bg-purple-200 dark:bg-purple-700 overflow-hidden">
+                    <div
+                      class="h-full bg-purple-500 transition-all duration-300"
+                      :style="{ width: `${audioProgress * 100}%` }"
+                    />
+                  </div>
                 </div>
-                <audio :src="trackPlayURL(track)" controls class="w-32 h-7 flex-shrink-0" />
+
+                <!-- Play/Pause button -->
+                <button
+                  class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+                  :class="playingKey === `track:${track.id}`
+                    ? 'bg-purple-500 text-white hover:bg-purple-600'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-purple-100 dark:hover:bg-purple-900/40 hover:text-purple-600'"
+                  :title="playingKey === `track:${track.id}` && isAudioPlaying ? '暂停' : '试听'"
+                  @click="playPreview(`track:${track.id}`, getTrackURL(track))"
+                >
+                  <svg v-if="playingKey === `track:${track.id}` && isAudioPlaying" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                  </svg>
+                  <svg v-else class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </button>
+
+                <!-- Apply button -->
                 <button
                   class="btn-primary text-xs py-1 px-2.5 flex-shrink-0"
                   :disabled="bgmApplyingId === track.id"
@@ -482,6 +624,7 @@ defineExpose({ bgmSegments, bgmVolume, load })
                   {{ bgmApplyingId === track.id ? '应用中…' : '应用' }}
                 </button>
               </div>
+
               <p v-if="!bgmSearchLoading && bgmSearchResults.length === 0" class="text-sm text-gray-400 text-center py-8">
                 输入关键词或标签后点击搜索
               </p>
@@ -500,4 +643,21 @@ defineExpose({ bgmSegments, bgmVolume, load })
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
 }
+
+/* Waveform bar animation */
+@keyframes wave1 {
+  0%, 100% { height: 30%; }
+  50%       { height: 100%; }
+}
+@keyframes wave2 {
+  0%, 100% { height: 60%; }
+  50%       { height: 30%; }
+}
+@keyframes wave3 {
+  0%, 100% { height: 100%; }
+  50%       { height: 50%; }
+}
+.animate-wave1 { animation: wave1 0.8s ease-in-out infinite; }
+.animate-wave2 { animation: wave2 0.8s ease-in-out infinite 0.15s; }
+.animate-wave3 { animation: wave3 0.8s ease-in-out infinite 0.30s; }
 </style>
