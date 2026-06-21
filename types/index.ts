@@ -375,7 +375,8 @@ export interface ShotSFXItem {
   shot_id: number
   seq_no: number
   tag: string         // 音效标签，如 "rain_heavy"
-  url: string         // 音效文件 URL
+  url: string         // 音效文件原始 URL（可能是 file:// 或过期 CDN 链接）
+  audio_url?: string  // 后端转换后可播放的 URL（file:// 已转为代理接口）
   volume: number      // 混音音量（0.1–1.0）
   source: string      // local/freesound/elevenlabs/ai-sfx
   disabled?: boolean

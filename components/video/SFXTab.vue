@@ -238,15 +238,16 @@ function toggleSfxPreview(item: ShotSFXItem) {
     audio.pause(); audio.currentTime = 0
     sfxPlayingId.value = null
   }
-  if (!item.url) { toast.error('该音效暂无可用链接'); return }
+  const playUrl = item.audio_url || item.url
+  if (!playUrl) { toast.error('该音效暂无可用链接'); return }
   sfxLoadingId.value = item.id
   audio.loop = item.sfx_type === 'ambient' || !!item.loop_enabled
-  audio.src = item.url
+  audio.src = playUrl
   audio.load()
   audio.play()
     .then(() => { sfxPlayingId.value = item.id; sfxLoadingId.value = null })
     .catch((e) => {
-      console.warn('[SFX Preview] play failed', item.url, e)
+      console.warn('[SFX Preview] play failed', playUrl, e)
       toast.error('音效预览失败，请检查音频链接是否有效')
       sfxPlayingId.value = null; sfxLoadingId.value = null
     })

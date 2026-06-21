@@ -390,11 +390,11 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async batchGenerateShotImages(videoId: number, shotIds: number[]): Promise<string> {
+    async batchGenerateShotImages(videoId: number, shotIds: number[], force = false): Promise<string> {
       this.error = null
       try {
         const api = useVideoApi()
-        const response = await api.batchGenerateShotImages(videoId, shotIds)
+        const response = await api.batchGenerateShotImages(videoId, shotIds, force)
         return response.data?.task_id as string
       } catch (e: any) {
         this.error = e.message || 'Failed to batch generate images'

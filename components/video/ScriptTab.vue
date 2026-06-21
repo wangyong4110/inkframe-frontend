@@ -397,7 +397,7 @@ async function handleGenerateShot(shot: StoryboardShot) {
 async function handleGenerateShotImage(shot: StoryboardShot) {
   if (!await guardAiProvider('IMAGE')) return
   try {
-    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id])
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
     toast.info(`镜头 #${shot.shot_no} 图片生成中…`)
     const taskStore = useTaskStore()
@@ -1267,13 +1267,13 @@ defineExpose({ loadVideoProviders: async () => {
                     class="text-[11px] py-0.5 px-2 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                     @click="handleGenerateShotImage(shot)"
                   >
-                    生成图片
+                    {{ shot.image_url ? '重新生成图片' : '生成图片' }}
                   </button>
                   <button
                     class="text-[11px] py-0.5 px-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors"
                     @click="handleGenerateShot(shot)"
                   >
-                    {{ shot.status === 'completed' ? '重新生成视频' : '生成视频' }}
+                    {{ shot.video_url ? '重新生成视频' : '生成视频' }}
                   </button>
                 </div>
               </template>

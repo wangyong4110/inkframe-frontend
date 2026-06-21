@@ -46,10 +46,10 @@ export const useVideoApi = () => {
       body: JSON.stringify({ shot_ids: shotIds, quality_tier: qualityTier, provider }),
     })
 
-  const batchGenerateShotImages = (videoId: number, shotIds: number[]) =>
+  const batchGenerateShotImages = (videoId: number, shotIds: number[], force = false) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/batch-images`, {
       method: 'POST',
-      body: JSON.stringify({ shot_ids: shotIds }),
+      body: JSON.stringify({ shot_ids: shotIds, force }),
     })
 
   const batchGenerateShotClips = (videoId: number, shotIds: number[]) =>

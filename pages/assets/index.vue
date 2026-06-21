@@ -17,7 +17,7 @@ const pageSize = 24
 
 // Filters
 const searchQ = ref('')
-const filterType = ref('')
+const filterType = ref('image')
 const filterSubType = ref('')
 const filterSource = ref('')
 const filterStatus = ref('')
@@ -69,6 +69,20 @@ function setTypeFilter(f: typeof typeFilters[number]) {
 
 // Selected assets (for batch ops)
 const selected = ref<Set<number>>(new Set())
+const selectMode = ref(false)
+
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value
+  if (!selectMode.value) selected.value = new Set()
+}
+
+function selectAll() {
+  selected.value = new Set(assets.value.map(a => a.id))
+}
+
+function isAllSelected() {
+  return assets.value.length > 0 && assets.value.every(a => selected.value.has(a.id))
+}
 
 // ─── Load ─────────────────────────────────────────────────────────────────────
 
@@ -269,20 +283,28 @@ function toggleSelect(id: number) {
 }
 
 async function batchDelete() {
-  if (!selected.value.size || !confirm(`确认删除选中的 ${selected.value.size} 个素材？`)) return
-  await assetApi.batchDelete([...selected.value])
-  selected.value = new Set()
-  toast.success('已批量删除')
-  await load()
+  if (!selected.value.size || !confirm(`确认删除选中的 ${selected.value.size} 个素材？将移入回收站`)) return
+  try {
+    await assetApi.batchDelete([...selected.value])
+    selected.value = new Set()
+    toast.success('已批量删除')
+    await load()
+  } catch (e: any) {
+    toast.error('批量删除失败：' + (e.message || ''))
+  }
 }
 
 async function batchShare() {
   if (!selected.value.size) return
-  const res = await assetApi.batchShareRequest([...selected.value])
-  const r = res?.data
-  toast.success(`已提交 ${r?.submitted ?? 0} 个，失败 ${r?.failed ?? 0} 个`)
-  selected.value = new Set()
-  await load()
+  try {
+    const res = await assetApi.batchShareRequest([...selected.value])
+    const r = res?.data
+    toast.success(`已提交 ${r?.submitted ?? 0} 个，失败 ${r?.failed ?? 0} 个`)
+    selected.value = new Set()
+    await load()
+  } catch (e: any) {
+    toast.error('批量申请共享失败：' + (e.message || ''))
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -315,6 +337,14 @@ function formatSize(bytes?: number) {
       <div class="flex items-center gap-3">
         <NuxtLink to="/assets/crawl" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">爬取管理</NuxtLink>
         <button
+          v-if="activeScope === 'personal'"
+          class="px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
+          :class="selectMode
+            ? 'border-blue-500 bg-blue-600/20 text-blue-400'
+            : 'border-gray-700 text-gray-300 hover:text-white hover:border-gray-500'"
+          @click="toggleSelectMode"
+        >{{ selectMode ? '退出批量' : '批量操作' }}</button>
+        <button
           class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           @click="showUpload = true"
         >上传素材</button>
@@ -330,7 +360,7 @@ function formatSize(bytes?: number) {
         :class="activeScope === tab.key
           ? 'bg-gray-700 text-white shadow-sm'
           : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-        @click="activeScope = tab.key as any; page = 1; selected = new Set()"
+        @click="activeScope = tab.key as any; page = 1; selected = new Set(); selectMode = false"
       >{{ tab.label }}</button>
     </div>
 
@@ -379,13 +409,31 @@ function formatSize(bytes?: number) {
     <!-- Batch action bar -->
     <Transition name="slide-up">
       <div
-        v-if="selected.size > 0"
-        class="flex items-center gap-4 px-4 py-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl"
+        v-if="selectMode && activeScope === 'personal'"
+        class="flex items-center gap-3 px-4 py-2.5 bg-blue-950/60 border border-blue-800 rounded-xl flex-wrap"
       >
-        <span class="text-sm text-blue-700 dark:text-blue-300 font-medium">已选 {{ selected.size }} 个</span>
-        <button class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="batchShare">申请共享到公共库</button>
-        <button class="text-sm text-red-600 dark:text-red-400 hover:underline" @click="batchDelete">批量删除</button>
-        <button class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 ml-auto" @click="selected = new Set()">取消选择</button>
+        <input
+          type="checkbox"
+          class="w-4 h-4 rounded cursor-pointer"
+          :checked="isAllSelected()"
+          :indeterminate="selected.size > 0 && !isAllSelected()"
+          @change="isAllSelected() ? selected = new Set() : selectAll()"
+        />
+        <span class="text-sm text-blue-300 font-medium min-w-[60px]">
+          {{ selected.size > 0 ? `已选 ${selected.size} 个` : `共 ${assets.length} 个` }}
+        </span>
+        <div class="h-4 w-px bg-blue-800" />
+        <button
+          :disabled="selected.size === 0"
+          class="text-sm text-blue-400 hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          @click="batchShare"
+        >申请共享</button>
+        <button
+          :disabled="selected.size === 0"
+          class="text-sm text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          @click="batchDelete"
+        >删除</button>
+        <button class="text-sm text-gray-500 hover:text-gray-300 ml-auto" @click="selected = new Set()">取消选择</button>
       </div>
     </Transition>
 
@@ -409,17 +457,19 @@ function formatSize(bytes?: number) {
         :key="asset.id"
         class="relative group rounded-xl overflow-hidden bg-gray-900 border border-gray-700 hover:shadow-md transition-shadow cursor-pointer"
         :class="{ 'ring-2 ring-blue-500': selected.has(asset.id) }"
+        @click="selectMode && activeScope === 'personal' ? toggleSelect(asset.id) : undefined"
       >
         <!-- Checkbox (personal only) -->
         <div
           v-if="activeScope === 'personal'"
-          class="absolute top-2 left-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-          :class="{ 'opacity-100': selected.has(asset.id) }"
+          class="absolute top-2 left-2 z-10 transition-opacity"
+          :class="selectMode || selected.has(asset.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+          @click.stop="toggleSelect(asset.id)"
         >
           <input
             type="checkbox"
             :checked="selected.has(asset.id)"
-            class="w-4 h-4 rounded"
+            class="w-4 h-4 rounded cursor-pointer"
             @change.stop="toggleSelect(asset.id)"
           />
         </div>
@@ -687,4 +737,7 @@ function formatSize(bytes?: number) {
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.slide-up-enter-active, .slide-up-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(8px); }
 </style>
