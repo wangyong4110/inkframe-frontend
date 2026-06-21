@@ -254,6 +254,7 @@ function startEdit(shot: StoryboardShot) {
   editingId.value = shot.id
   editForm.value = {
     description: shot.description,
+    prompt: shot.prompt || '',
     narration: shot.narration,
     dialogue: shot.dialogue,
     shot_size: shot.shot_size,
@@ -834,8 +835,12 @@ defineExpose({ loadVideoProviders: async () => {
               </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">画面描述（用于AI图片生成）</label>
-              <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="English visual prompt for image generation..." />
+              <label class="block text-xs font-medium text-gray-500 mb-1">图片生成提示词<span class="ml-1 text-blue-500 font-normal">（实际用于AI生图）</span></label>
+              <textarea v-model="editForm.prompt" rows="3" class="input text-sm resize-none font-mono" placeholder="English structured image prompt — leave empty to use auto-generated prompt from storyboard AI..." />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">画面描述<span class="ml-1 text-gray-400 font-normal">（叙事参考）</span></label>
+              <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="场景画面描述（供参考，不直接用于生图）" />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">视频提示词</label>
@@ -983,7 +988,10 @@ defineExpose({ loadVideoProviders: async () => {
                 {{ shot.description || '（无场景描述）' }}
               </p>
             </template>
-            <p v-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.description">
+            <p v-if="shot.prompt" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.prompt">
+              <span class="text-blue-400 dark:text-blue-500 mr-1">img:</span>{{ shot.prompt }}
+            </p>
+            <p v-else-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.description">
               <span class="text-gray-300 dark:text-gray-600 mr-1">img:</span>{{ shot.description }}
             </p>
 

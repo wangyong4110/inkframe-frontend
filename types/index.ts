@@ -333,7 +333,8 @@ export interface StoryboardShot {
   video_id: number
   uuid: string
   shot_no: number
-  description?: string  // 英文画面描述，供 AI 图片/视频生成
+  description?: string  // 画面场景描述（叙事参考，不直接用于生图）
+  prompt?: string       // 图片生成提示词（实际传给图片AI，英文结构化 prompt）
   narration?: string    // 中文旁白文案，供 TTS 朗读和字幕显示
   dialogue?: string     // 角色台词（格式："角色名：台词"），无对话时为空
   subtitle?: string     // 字幕覆盖文本，非空时优先用于导出，不影响 TTS

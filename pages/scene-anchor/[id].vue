@@ -36,6 +36,7 @@ const form = ref({
 
 const generatingRefImage = ref(false)
 const uploadingRefImage = ref(false)
+const aiUpdating = ref(false)
 const refImageFileInput = ref<HTMLInputElement | null>(null)
 
 
@@ -92,6 +93,23 @@ onMounted(async () => {
     isDirty.value = false
   }
 })
+
+async function handleAIUpdate() {
+  aiUpdating.value = true
+  try {
+    const result = await api.aiAnalyzeAnchor(anchorId)
+    if (result.type) form.value.type = result.type
+    if (result.description) form.value.description = result.description
+    if (result.variant !== undefined) form.value.variant = result.variant
+    toast.success('AI已更新字段，请确认后点击保存')
+    // 自动切换到视觉设计 tab 以展示更新的描述
+    activeTab.value = 'visual'
+  } catch (e: any) {
+    toast.error('AI更新失败：' + (e.message || '未知错误'))
+  } finally {
+    aiUpdating.value = false
+  }
+}
 
 async function handleSave() {
   if (!form.value.name.trim()) { toast.error('名称不能为空'); return }
@@ -181,13 +199,25 @@ function goBack() {
           </div>
         </div>
       </div>
-      <button class="btn-primary flex-shrink-0" :disabled="saving" @click="handleSave">
-        <svg v-if="saving" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-        </svg>
-        {{ saving ? '保存中…' : '保存' }}
-      </button>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button class="btn-secondary flex items-center gap-1.5" :disabled="aiUpdating || saving" @click="handleAIUpdate">
+          <svg v-if="aiUpdating" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.5 3.5 0 01-4.95 0l-.347-.347z" />
+          </svg>
+          {{ aiUpdating ? 'AI分析中…' : 'AI更新' }}
+        </button>
+        <button class="btn-primary" :disabled="saving" @click="handleSave">
+          <svg v-if="saving" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          {{ saving ? '保存中…' : '保存' }}
+        </button>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -327,20 +357,6 @@ function goBack() {
 
             <!-- Actions & status -->
             <div class="flex-1 space-y-3">
-              <!-- Lock status -->
-              <div v-if="anchor?.ref_image_locked_at" class="flex items-center gap-2 text-sm">
-                <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                <span class="text-green-600 dark:text-green-400 font-medium">已锁定</span>
-                <span class="text-gray-400 text-xs">{{ new Date(anchor.ref_image_locked_at).toLocaleString() }}</span>
-              </div>
-              <div v-else class="flex items-center gap-2 text-sm text-gray-500">
-                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                </svg>
-                <span>未锁定（生成后自动锁定）</span>
-              </div>
 
               <div class="flex flex-wrap gap-2">
                 <button
