@@ -128,6 +128,13 @@ const GENRE_LIST = [
     tips: '系统设定要有趣且自洽；任务设计要有挑战性，奖励要让读者有期待感，避免金手指过强。',
   },
   {
+    id: 'fairytale', name: '童话寓言',
+    gradient: 'from-yellow-400 to-pink-400',
+    description: '以拟人化动植物或奇幻小人物为主角，用简洁温馨或充满想象力的故事传递道理与情感。',
+    elements: ['拟人角色', '奇幻世界', '寓言道理', '童趣想象'],
+    tips: '语言轻盈明快，世界观可爱而自洽；情节要有反转或启示，结尾最好有温暖的情感落点。',
+  },
+  {
     id: 'other', name: '其他题材',
     gradient: 'from-gray-400 to-gray-500',
     description: '不属于以上主流分类的创新题材，包括美食、种田、商业文等细分品类。',
@@ -189,7 +196,7 @@ const genreLabel: Record<string, string> = {
   historical: '历史古代', scifi: '科幻未来', mystery: '悬疑推理', wuxia: '武侠江湖',
   horror: '灵异恐怖', game: '游戏竞技', military: '军事战争', sports: '体育竞技',
   campus: '青春校园', apocalypse: '末世废土', rebirth: '重生穿越', palace: '宫斗宅斗',
-  system: '系统流', other: '其他',
+  system: '系统流', fairytale: '童话寓言', other: '其他',
 }
 </script>
 

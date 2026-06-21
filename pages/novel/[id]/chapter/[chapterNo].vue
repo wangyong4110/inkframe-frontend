@@ -60,18 +60,34 @@ async function handleGenerateCharacterImages() {
   syncingSnapshots.value = true
   snapshotMsg.value = ''
   try {
-    const res = await characterApi.generateChapterCharacterImages(
+    const data: any = await characterApi.generateChapterCharacterImages(
       Number(novelId),
       chapter.value.chapter_no,
       selectedCharacterIds.value,
     )
-    snapshotMsg.value = `已为 ${selectedCharacterIds.value.length} 个角色启动形象生成`
-    toast.success('角色形象生成任务已提交，请稍候')
+    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
+    if (!taskId) {
+      toast.error('生成失败：未获取到任务ID')
+      syncingSnapshots.value = false
+      return
+    }
+    toast.info('角色形象生成任务已提交，正在处理...')
+    taskStore.trackTask(taskId, async (task) => {
+      syncingSnapshots.value = false
+      if (task.status === 'completed') {
+        const succeeded = (task.data?.succeeded as number) ?? 0
+        snapshotMsg.value = `已为 ${succeeded} 个角色生成形象`
+        toast.success(`角色形象生成完成，${succeeded} 个角色已更新`)
+        await characterStore.fetchCharacters(Number(novelId))
+      } else if (task.status === 'failed') {
+        snapshotMsg.value = ''
+        toast.error('角色形象生成失败：' + (task.error || '未知错误'))
+      }
+    })
   } catch (e: any) {
     snapshotMsg.value = ''
-    toast.error('生成失败：' + (e.message || ''))
-  } finally {
     syncingSnapshots.value = false
+    toast.error('生成失败：' + (e.message || ''))
   }
 }
 

@@ -35,6 +35,7 @@ const genreOptions = [
   { label: '重生穿越', value: '重生穿越' },
   { label: '宫斗宅斗', value: '宫斗宅斗' },
   { label: '系统流', value: '系统流' },
+  { label: '童话寓言', value: '童话寓言' },
   { label: '其他', value: '其他' },
 ]
 
@@ -93,7 +94,7 @@ function getGenreLabel(genre: string): string {
     mystery: '悬疑推理', wuxia: '武侠江湖', horror: '灵异恐怖',
     game: '游戏竞技', military: '军事战争', sports: '体育竞技',
     campus: '青春校园', apocalypse: '末世废土', rebirth: '重生穿越',
-    palace: '宫斗宅斗', system: '系统流', other: '其他',
+    palace: '宫斗宅斗', system: '系统流', fairytale: '童话寓言', other: '其他',
   }
   return labels[genre] || genre
 }
