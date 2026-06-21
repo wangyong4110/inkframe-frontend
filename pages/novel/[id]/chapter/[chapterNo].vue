@@ -5,6 +5,8 @@ import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
 import '@git-diff-view/vue/styles/diff-view.css'
 
+definePageMeta({ key: (route) => route.fullPath })
+
 const route = useRoute()
 const router = useRouter()
 const novelId = parseInt(route.params.id as string)

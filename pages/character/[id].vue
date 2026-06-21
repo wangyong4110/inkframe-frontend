@@ -33,6 +33,7 @@ const character = ref({
   age: '' as string,
   description: '',
   portrait: '',
+  default_look_id: 0 as number | undefined,
 })
 
 const tabs = [
@@ -333,6 +334,7 @@ onMounted(async () => {
         age: (c as any).age ?? '',
         description: c.description ?? '',
         portrait: c.portrait ?? '',
+        default_look_id: c.default_look_id ?? 0,
       }
     }
     await nextTick()
