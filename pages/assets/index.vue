@@ -20,7 +20,6 @@ const searchQ = ref('')
 const filterType = ref('image')
 const filterSubType = ref('')
 const filterSource = ref('')
-const filterStatus = ref('')
 const sortBy = ref('created_at')
 
 // Playback
@@ -31,8 +30,6 @@ const showUpload = ref(false)
 const uploadFile = ref<File | null>(null)
 const uploadTitle = ref('')
 const uploading = ref(false)
-
-// Upload step: 'form' | 'tags'
 const uploadStep = ref<'form' | 'tags'>('form')
 const uploadedAsset = ref<Asset | null>(null)
 const tagsLoading = ref(false)
@@ -42,11 +39,11 @@ const tagSuggestions = ref<Tag[]>([])
 let tagPollTimer: ReturnType<typeof setTimeout> | null = null
 let tagPollCount = 0
 
-// Type filter chips — each maps to a (type, subType) pair
+// Type filter chips
 const typeFilters = [
   { key: 'image', label: '图片', type: 'image', subType: '' },
   { key: 'video', label: '视频', type: 'video', subType: '' },
-  { key: 'sfx', label: '音效', type: 'audio', subType: 'sfx' },
+  { key: 'sfx',   label: '音效', type: 'audio', subType: 'sfx' },
   { key: 'music', label: '音乐', type: 'audio', subType: 'bgm' },
 ]
 
@@ -55,7 +52,6 @@ const activeFilterKey = computed(() =>
 )
 
 function setTypeFilter(f: typeof typeFilters[number]) {
-  // toggle off if already active
   if (activeFilterKey.value === f.key) {
     filterType.value = ''
     filterSubType.value = ''
@@ -66,22 +62,40 @@ function setTypeFilter(f: typeof typeFilters[number]) {
   page.value = 1
 }
 
+// ─── Batch selection ──────────────────────────────────────────────────────────
 
-// Selected assets (for batch ops)
 const selected = ref<Set<number>>(new Set())
 const selectMode = ref(false)
+
+const allSelected = computed(() =>
+  assets.value.length > 0 && assets.value.every(a => selected.value.has(a.id))
+)
+const anySelected = computed(() => selected.value.size > 0)
+const indeterminate = computed(() => anySelected.value && !allSelected.value)
+
+// sync indeterminate DOM property (not an HTML attribute)
+const selectAllRef = ref<HTMLInputElement | null>(null)
+watchEffect(() => {
+  if (selectAllRef.value) selectAllRef.value.indeterminate = indeterminate.value
+})
 
 function toggleSelectMode() {
   selectMode.value = !selectMode.value
   if (!selectMode.value) selected.value = new Set()
 }
 
-function selectAll() {
-  selected.value = new Set(assets.value.map(a => a.id))
+function toggleSelect(id: number) {
+  const s = new Set(selected.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selected.value = s
 }
 
-function isAllSelected() {
-  return assets.value.length > 0 && assets.value.every(a => selected.value.has(a.id))
+function toggleSelectAll() {
+  selected.value = allSelected.value ? new Set() : new Set(assets.value.map(a => a.id))
+}
+
+function handleCardClick(asset: Asset) {
+  if (selectMode.value && activeScope.value === 'personal') toggleSelect(asset.id)
 }
 
 // ─── Load ─────────────────────────────────────────────────────────────────────
@@ -95,15 +109,14 @@ async function load() {
       page_size: pageSize,
       sort: sortBy.value,
     }
-    if (searchQ.value) params.q = searchQ.value
-    if (filterType.value) params.type = filterType.value
+    if (searchQ.value)       params.q        = searchQ.value
+    if (filterType.value)    params.type     = filterType.value
     if (filterSubType.value) params.sub_type = filterSubType.value
-    if (filterSource.value) params.source = filterSource.value
-    if (filterStatus.value) params.status = filterStatus.value
+    if (filterSource.value)  params.source   = filterSource.value
 
     const res = await assetApi.searchAssets(params)
     assets.value = res?.data?.items ?? []
-    total.value = res?.data?.total ?? 0
+    total.value  = res?.data?.total ?? 0
   } catch (e: any) {
     toast.error('加载失败：' + (e.message || ''))
   } finally {
@@ -113,10 +126,9 @@ async function load() {
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
-watch([activeScope, page, filterType, filterSubType, filterSource, filterStatus, sortBy], load)
+watch([activeScope, page, filterType, filterSubType, filterSource, sortBy], load)
 onMounted(load)
 
-// Debounced search
 let searchTimer: ReturnType<typeof setTimeout>
 watch(searchQ, () => {
   clearTimeout(searchTimer)
@@ -170,12 +182,8 @@ function pollForTags() {
         return
       }
     } catch {}
-    tagPollCount++
-    if (tagPollCount < 6) {
-      pollForTags()
-    } else {
-      tagsLoading.value = false
-    }
+    if (++tagPollCount < 6) pollForTags()
+    else tagsLoading.value = false
   }, 2000)
 }
 
@@ -184,9 +192,7 @@ async function removeAssetTag(tag: Tag) {
   try {
     await assetApi.removeTag(uploadedAsset.value.id, tag.id)
     assetTags.value = assetTags.value.filter(t => t.id !== tag.id)
-  } catch (e: any) {
-    toast.error('删除标签失败')
-  }
+  } catch { toast.error('删除标签失败') }
 }
 
 async function addAssetTag() {
@@ -194,17 +200,12 @@ async function addAssetTag() {
   if (!name || !uploadedAsset.value) return
   try {
     const res = await assetApi.addTags(uploadedAsset.value.id, [name])
-    const added = res?.data ?? []
-    for (const t of added) {
-      if (!assetTags.value.find(x => x.id === t.id)) {
-        assetTags.value.push(t)
-      }
+    for (const t of (res?.data ?? [])) {
+      if (!assetTags.value.find(x => x.id === t.id)) assetTags.value.push(t)
     }
     newTagInput.value = ''
     tagSuggestions.value = []
-  } catch (e: any) {
-    toast.error('添加标签失败')
-  }
+  } catch { toast.error('添加标签失败') }
 }
 
 let suggestTimer: ReturnType<typeof setTimeout>
@@ -228,27 +229,25 @@ function selectSuggestion(tag: Tag) {
 
 function closeUploadDialog() {
   if (tagPollTimer) clearTimeout(tagPollTimer)
-  showUpload.value = false
-  uploadStep.value = 'form'
-  uploadFile.value = null
+  showUpload.value  = false
+  uploadStep.value  = 'form'
+  uploadFile.value  = null
   uploadTitle.value = ''
   uploadedAsset.value = null
-  assetTags.value = []
+  assetTags.value   = []
   newTagInput.value = ''
   tagSuggestions.value = []
   tagsLoading.value = false
 }
 
-// ─── Share Workflow ───────────────────────────────────────────────────────────
+// ─── Single asset actions ─────────────────────────────────────────────────────
 
 async function requestShare(asset: Asset) {
   try {
     await assetApi.requestShare(asset.id)
     toast.success('已申请共享，正在自动审核...')
     await load()
-  } catch (e: any) {
-    toast.error('申请失败：' + (e.message || ''))
-  }
+  } catch (e: any) { toast.error('申请失败：' + (e.message || '')) }
 }
 
 async function withdrawShare(asset: Asset) {
@@ -257,9 +256,7 @@ async function withdrawShare(asset: Asset) {
     await assetApi.withdrawShare(asset.id)
     toast.success('已撤回共享')
     await load()
-  } catch (e: any) {
-    toast.error('操作失败：' + (e.message || ''))
-  }
+  } catch (e: any) { toast.error('操作失败：' + (e.message || '')) }
 }
 
 async function deleteAsset(asset: Asset) {
@@ -268,43 +265,30 @@ async function deleteAsset(asset: Asset) {
     await assetApi.softDeleteAsset(asset.id)
     toast.success('已移入回收站')
     await load()
-  } catch (e: any) {
-    toast.error('删除失败：' + (e.message || ''))
-  }
+  } catch (e: any) { toast.error('删除失败：' + (e.message || '')) }
 }
 
-// ─── Batch ────────────────────────────────────────────────────────────────────
-
-function toggleSelect(id: number) {
-  const s = new Set(selected.value)
-  if (s.has(id)) s.delete(id)
-  else s.add(id)
-  selected.value = s
-}
+// ─── Batch actions ────────────────────────────────────────────────────────────
 
 async function batchDelete() {
-  if (!selected.value.size || !confirm(`确认删除选中的 ${selected.value.size} 个素材？将移入回收站`)) return
+  if (!anySelected.value || !confirm(`确认删除选中的 ${selected.value.size} 个素材？将移入回收站`)) return
   try {
     await assetApi.batchDelete([...selected.value])
     selected.value = new Set()
     toast.success('已批量删除')
     await load()
-  } catch (e: any) {
-    toast.error('批量删除失败：' + (e.message || ''))
-  }
+  } catch (e: any) { toast.error('批量删除失败：' + (e.message || '')) }
 }
 
 async function batchShare() {
-  if (!selected.value.size) return
+  if (!anySelected.value) return
   try {
     const res = await assetApi.batchShareRequest([...selected.value])
     const r = res?.data
     toast.success(`已提交 ${r?.submitted ?? 0} 个，失败 ${r?.failed ?? 0} 个`)
     selected.value = new Set()
     await load()
-  } catch (e: any) {
-    toast.error('批量申请共享失败：' + (e.message || ''))
-  }
+  } catch (e: any) { toast.error('批量申请共享失败：' + (e.message || '')) }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -312,9 +296,9 @@ async function batchShare() {
 function statusBadge(asset: Asset) {
   if (asset.scope === 'public') return { text: '已共享', cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' }
   switch (asset.status) {
-    case 'pending_review': return { text: '审核中', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' }
-    case 'rejected': return { text: '已拒绝', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }
-    case 'withdrawn': return { text: '已撤回', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' }
+    case 'pending_review': return { text: '审核中',  cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' }
+    case 'rejected':       return { text: '已拒绝',  cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }
+    case 'withdrawn':      return { text: '已撤回',  cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' }
     default: return null
   }
 }
@@ -327,7 +311,7 @@ function formatSize(bytes?: number) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
@@ -377,7 +361,7 @@ function formatSize(bytes?: number) {
       >{{ t.label }}</button>
     </div>
 
-    <!-- Filters -->
+    <!-- Filters row -->
     <div class="flex flex-wrap gap-3 items-center">
       <input
         v-model="searchQ"
@@ -385,7 +369,6 @@ function formatSize(bytes?: number) {
         placeholder="搜索素材..."
         class="px-3 py-1.5 text-sm border border-gray-700 rounded-lg bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
       />
-
       <select
         v-if="activeScope === 'personal'"
         v-model="filterSource"
@@ -410,36 +393,40 @@ function formatSize(bytes?: number) {
     <Transition name="slide-up">
       <div
         v-if="selectMode && activeScope === 'personal'"
-        class="flex items-center gap-3 px-4 py-2.5 bg-blue-950/60 border border-blue-800 rounded-xl flex-wrap"
+        class="flex items-center gap-3 px-4 py-2.5 bg-blue-950/60 border border-blue-800 rounded-xl"
       >
+        <!-- Select all checkbox (indeterminate handled via ref + watchEffect) -->
         <input
+          ref="selectAllRef"
           type="checkbox"
-          class="w-4 h-4 rounded cursor-pointer"
-          :checked="isAllSelected()"
-          :indeterminate="selected.size > 0 && !isAllSelected()"
-          @change="isAllSelected() ? selected = new Set() : selectAll()"
+          class="w-4 h-4 rounded cursor-pointer accent-blue-500"
+          :checked="allSelected"
+          @change="toggleSelectAll"
         />
-        <span class="text-sm text-blue-300 font-medium min-w-[60px]">
-          {{ selected.size > 0 ? `已选 ${selected.size} 个` : `共 ${assets.length} 个` }}
+        <span class="text-sm text-blue-300 font-medium w-24 shrink-0">
+          {{ anySelected ? `已选 ${selected.size} 个` : `共 ${assets.length} 个` }}
         </span>
-        <div class="h-4 w-px bg-blue-800" />
+        <div class="h-4 w-px bg-blue-800 shrink-0" />
         <button
-          :disabled="selected.size === 0"
-          class="text-sm text-blue-400 hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          :disabled="!anySelected"
+          class="text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           @click="batchShare"
         >申请共享</button>
         <button
-          :disabled="selected.size === 0"
-          class="text-sm text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          :disabled="!anySelected"
+          class="text-sm text-red-400 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           @click="batchDelete"
         >删除</button>
-        <button class="text-sm text-gray-500 hover:text-gray-300 ml-auto" @click="selected = new Set()">取消选择</button>
+        <button
+          class="text-sm text-gray-500 hover:text-gray-300 transition-colors ml-auto"
+          @click="selected = new Set()"
+        >取消选择</button>
       </div>
     </Transition>
 
-    <!-- Loading -->
+    <!-- Loading skeleton -->
     <div v-if="loading && !assets.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-      <div v-for="i in 12" :key="i" class="aspect-square rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse" />
+      <div v-for="i in 12" :key="i" class="aspect-square rounded-xl bg-gray-700 animate-pulse" />
     </div>
 
     <!-- Empty -->
@@ -455,11 +442,13 @@ function formatSize(bytes?: number) {
       <div
         v-for="asset in assets"
         :key="asset.id"
-        class="relative group rounded-xl overflow-hidden bg-gray-900 border border-gray-700 hover:shadow-md transition-shadow cursor-pointer"
-        :class="{ 'ring-2 ring-blue-500': selected.has(asset.id) }"
-        @click="selectMode && activeScope === 'personal' ? toggleSelect(asset.id) : undefined"
+        class="relative group rounded-xl overflow-hidden bg-gray-900 border transition-all cursor-pointer"
+        :class="selected.has(asset.id)
+          ? 'border-blue-500 ring-2 ring-blue-500'
+          : 'border-gray-700 hover:border-gray-500 hover:shadow-md'"
+        @click="handleCardClick(asset)"
       >
-        <!-- Checkbox (personal only) -->
+        <!-- Checkbox overlay (personal only) -->
         <div
           v-if="activeScope === 'personal'"
           class="absolute top-2 left-2 z-10 transition-opacity"
@@ -469,7 +458,7 @@ function formatSize(bytes?: number) {
           <input
             type="checkbox"
             :checked="selected.has(asset.id)"
-            class="w-4 h-4 rounded cursor-pointer"
+            class="w-4 h-4 rounded cursor-pointer accent-blue-500"
             @change.stop="toggleSelect(asset.id)"
           />
         </div>
@@ -481,9 +470,12 @@ function formatSize(bytes?: number) {
           :class="statusBadge(asset)!.cls"
         >{{ statusBadge(asset)!.text }}</div>
 
-        <!-- Thumbnail -->
+        <!-- Thumbnail — NuxtLink disabled in selectMode to prevent navigation -->
         <div class="relative">
-          <NuxtLink :to="`/assets/${asset.id}`">
+          <component
+            :is="selectMode && activeScope === 'personal' ? 'div' : NuxtLink"
+            v-bind="selectMode && activeScope === 'personal' ? {} : { to: `/assets/${asset.id}` }"
+          >
             <div class="aspect-square bg-gray-800">
               <img
                 v-if="asset.thumbnail_url || (asset.type === 'image' && asset.storage_url)"
@@ -495,10 +487,11 @@ function formatSize(bytes?: number) {
                 {{ asset.type === 'video' ? '🎬' : asset.sub_type === 'bgm' ? '🎼' : asset.type === 'audio' ? '🎵' : '📄' }}
               </div>
             </div>
-          </NuxtLink>
-          <!-- Play button overlay for video/audio -->
+          </component>
+
+          <!-- Play button for video/audio (hidden in selectMode) -->
           <button
-            v-if="asset.type === 'video' || asset.type === 'audio'"
+            v-if="!selectMode && (asset.type === 'video' || asset.type === 'audio')"
             class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30"
             @click.stop="playingAsset = asset"
           >
@@ -508,6 +501,7 @@ function formatSize(bytes?: number) {
               </svg>
             </div>
           </button>
+
           <!-- Duration badge -->
           <div
             v-if="asset.duration && (asset.type === 'video' || asset.type === 'audio')"
@@ -519,28 +513,30 @@ function formatSize(bytes?: number) {
         <div class="p-2">
           <p class="text-xs font-medium text-white truncate">{{ asset.title }}</p>
           <div class="flex items-center justify-between mt-1">
-            <span class="text-xs text-gray-400 dark:text-gray-500">{{ formatSize(asset.file_size) }}</span>
-            <!-- Actions -->
-            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span class="text-xs text-gray-400">{{ formatSize(asset.file_size) }}</span>
+            <!-- Per-card actions (hidden in selectMode) -->
+            <div v-if="!selectMode" class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <template v-if="activeScope === 'personal'">
                 <button
                   v-if="asset.scope === 'personal' && asset.status === 'active'"
-                  class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  class="text-xs text-blue-400 hover:underline"
                   @click.stop="requestShare(asset)"
                 >共享</button>
                 <button
                   v-else-if="asset.scope === 'public'"
-                  class="text-xs text-orange-500 hover:underline"
+                  class="text-xs text-orange-400 hover:underline"
                   @click.stop="withdrawShare(asset)"
                 >撤回</button>
                 <button
-                  class="text-xs text-red-500 hover:underline"
+                  class="text-xs text-red-400 hover:underline"
                   @click.stop="deleteAsset(asset)"
                 >删除</button>
               </template>
               <template v-else>
                 <span class="flex items-center gap-0.5 text-xs text-gray-400">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
                   {{ asset.like_count }}
                 </span>
               </template>
@@ -554,13 +550,13 @@ function formatSize(bytes?: number) {
     <div v-if="totalPages > 1" class="flex items-center justify-center gap-2">
       <button
         :disabled="page <= 1"
-        class="px-3 py-1.5 rounded-lg text-sm border border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
+        class="px-3 py-1.5 rounded-lg text-sm border border-gray-700 disabled:opacity-40 hover:bg-gray-800 transition-colors"
         @click="page--"
       >上一页</button>
       <span class="text-sm text-gray-400">{{ page }} / {{ totalPages }}</span>
       <button
         :disabled="page >= totalPages"
-        class="px-3 py-1.5 rounded-lg text-sm border border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
+        class="px-3 py-1.5 rounded-lg text-sm border border-gray-700 disabled:opacity-40 hover:bg-gray-800 transition-colors"
         @click="page++"
       >下一页</button>
     </div>
@@ -570,43 +566,32 @@ function formatSize(bytes?: number) {
       <div v-if="playingAsset" class="fixed inset-0 z-[400] flex items-center justify-center p-4" @click.self="playingAsset = null">
         <div class="absolute inset-0 bg-black/80" @click="playingAsset = null" />
         <div class="relative max-w-3xl w-full">
-          <!-- Close button -->
           <button
             class="absolute -top-10 right-0 text-white/70 hover:text-white text-sm flex items-center gap-1"
             @click="playingAsset = null"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
             关闭
           </button>
-
-          <!-- Video player -->
           <template v-if="playingAsset.type === 'video'">
-            <video
-              :src="playingAsset.storage_url"
-              controls
-              autoplay
-              class="w-full rounded-xl shadow-2xl bg-black max-h-[75vh]"
-              @click.stop
-            />
+            <video :src="playingAsset.storage_url" controls autoplay class="w-full rounded-xl shadow-2xl bg-black max-h-[75vh]" @click.stop />
             <p class="text-white/70 text-sm mt-2 text-center truncate">{{ playingAsset.title }}</p>
           </template>
-
-          <!-- Audio player -->
           <template v-else-if="playingAsset.type === 'audio'">
             <div class="bg-gray-900 border border-gray-700 rounded-2xl p-8 text-center shadow-2xl" @click.stop>
               <div class="text-6xl mb-4">{{ playingAsset.sub_type === 'bgm' ? '🎼' : '🎵' }}</div>
               <p class="text-white font-semibold text-lg mb-1 truncate">{{ playingAsset.title }}</p>
               <p class="text-gray-400 text-sm mb-6">
                 {{ playingAsset.sub_type === 'bgm' ? '背景音乐' : '音效' }}
-                <span v-if="playingAsset.duration" class="ml-2">{{ playingAsset.duration >= 60 ? Math.floor(playingAsset.duration/60) + ':' + String(Math.round(playingAsset.duration%60)).padStart(2,'0') : playingAsset.duration.toFixed(0) + 's' }}</span>
+                <span v-if="playingAsset.duration" class="ml-2">
+                  {{ playingAsset.duration >= 60
+                    ? Math.floor(playingAsset.duration/60) + ':' + String(Math.round(playingAsset.duration%60)).padStart(2,'0')
+                    : playingAsset.duration.toFixed(0) + 's' }}
+                </span>
               </p>
-              <audio
-                :src="playingAsset.storage_url"
-                controls
-                autoplay
-                :loop="playingAsset.sub_type === 'bgm'"
-                class="w-full"
-              />
+              <audio :src="playingAsset.storage_url" controls autoplay :loop="playingAsset.sub_type === 'bgm'" class="w-full" />
             </div>
           </template>
         </div>
@@ -616,11 +601,8 @@ function formatSize(bytes?: number) {
     <!-- Upload Dialog -->
     <div v-if="showUpload" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="closeUploadDialog">
       <div class="bg-gray-900 rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
-
-        <!-- Step 1: File selection -->
         <template v-if="uploadStep === 'form'">
           <h3 class="text-lg font-semibold text-white mb-4">上传素材</h3>
-
           <div
             class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 transition-colors mb-4"
             @click="($refs.fileInput as HTMLInputElement)?.click()"
@@ -629,19 +611,14 @@ function formatSize(bytes?: number) {
             <p v-if="!uploadFile" class="text-gray-400 text-sm">点击或拖拽文件到此处</p>
             <p v-else class="text-gray-300 text-sm font-medium">{{ uploadFile.name }}</p>
           </div>
-
           <input
             v-model="uploadTitle"
             type="text"
             placeholder="素材标题（可选）"
             class="w-full px-3 py-2 text-sm border border-gray-700 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
           />
-
           <div class="flex gap-3 justify-end">
-            <button
-              class="px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg"
-              @click="closeUploadDialog"
-            >取消</button>
+            <button class="px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg" @click="closeUploadDialog">取消</button>
             <button
               :disabled="!uploadFile || uploading"
               class="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
@@ -650,14 +627,11 @@ function formatSize(bytes?: number) {
           </div>
         </template>
 
-        <!-- Step 2: AI tag editing -->
         <template v-else>
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-white">AI 标签分析</h3>
             <span class="text-xs text-gray-400">{{ uploadedAsset?.title }}</span>
           </div>
-
-          <!-- Loading state -->
           <div v-if="tagsLoading" class="flex items-center gap-2 py-3 mb-4">
             <svg class="w-4 h-4 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -665,8 +639,6 @@ function formatSize(bytes?: number) {
             </svg>
             <span class="text-sm text-gray-400">AI 分析中，请稍候...</span>
           </div>
-
-          <!-- Tags display -->
           <div class="mb-4">
             <p class="text-xs text-gray-400 mb-2">{{ tagsLoading ? '' : (assetTags.length ? 'AI 已识别以下标签，可点击 × 删除：' : '未识别到标签，请手动添加') }}</p>
             <div class="flex flex-wrap gap-2 min-h-[2rem]">
@@ -674,10 +646,10 @@ function formatSize(bytes?: number) {
                 v-for="tag in assetTags"
                 :key="tag.id"
                 class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                :class="tag.category === 'style' ? 'bg-purple-900/50 text-purple-300' :
-                        tag.category === 'mood' ? 'bg-yellow-900/50 text-yellow-300' :
-                        tag.category === 'subject' ? 'bg-blue-900/50 text-blue-300' :
-                        tag.category === 'color' ? 'bg-pink-900/50 text-pink-300' :
+                :class="tag.category === 'style'   ? 'bg-purple-900/50 text-purple-300' :
+                        tag.category === 'mood'    ? 'bg-yellow-900/50 text-yellow-300' :
+                        tag.category === 'subject' ? 'bg-blue-900/50 text-blue-300'   :
+                        tag.category === 'color'   ? 'bg-pink-900/50 text-pink-300'   :
                         'bg-gray-700 text-gray-300'"
               >
                 {{ tag.name }}
@@ -685,8 +657,6 @@ function formatSize(bytes?: number) {
               </span>
             </div>
           </div>
-
-          <!-- Add tag input -->
           <div class="relative mb-4">
             <div class="flex gap-2">
               <input
@@ -704,7 +674,6 @@ function formatSize(bytes?: number) {
                 @click="addAssetTag"
               >添加</button>
             </div>
-            <!-- Suggestions dropdown -->
             <div
               v-if="tagSuggestions.length"
               class="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto"
@@ -720,7 +689,6 @@ function formatSize(bytes?: number) {
               </button>
             </div>
           </div>
-
           <div class="flex justify-end">
             <button
               class="px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
@@ -728,16 +696,12 @@ function formatSize(bytes?: number) {
             >完成</button>
           </div>
         </template>
-
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-
 .slide-up-enter-active, .slide-up-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(8px); }
+.slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(6px); }
 </style>
