@@ -205,6 +205,7 @@ export interface CharacterLook {
   portrait?: string
   created_at: string
   updated_at: string
+  set_as_default?: boolean // 仅用于 PUT 请求体，设为默认形象
 }
 
 export interface CreateCharacterLookForm {

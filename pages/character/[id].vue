@@ -205,7 +205,7 @@ async function handleSetDefaultLook(look: CharacterLook) {
   if (character.value?.default_look_id === look.id) return
   settingDefaultLookId.value = look.id
   try {
-    await characterApi.updateLook(characterId, look.id, { set_as_default: true })
+    await characterApi.setDefaultLook(characterId, look.id)
     // 本地更新 character.default_look_id，避免重新拉取整个角色
     if (character.value) character.value.default_look_id = look.id
     toast.success(`「${look.label}」已设为默认形象`)

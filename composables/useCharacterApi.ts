@@ -94,6 +94,12 @@ export const useCharacterApi = () => {
       body: JSON.stringify(data),
     })
 
+  const setDefaultLook = (characterId: number, lookId: number) =>
+    request<ApiResponse<CharacterLook>>(`/characters/${characterId}/looks/${lookId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ set_as_default: true }),
+    })
+
   const deleteLook = (characterId: number, lookId: number) =>
     request<void>(`/characters/${characterId}/looks/${lookId}`, { method: 'DELETE' })
 
@@ -148,6 +154,7 @@ export const useCharacterApi = () => {
     listLooks,
     createLook,
     updateLook,
+    setDefaultLook,
     deleteLook,
     getActiveLook,
     generateLookPrompt,
