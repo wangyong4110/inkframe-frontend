@@ -54,6 +54,10 @@ const typeOptions = [
   { value: 'imaginary', label: '虚幻 (imaginary)' },
 ]
 
+function typeLabel(t: string) {
+  return typeOptions.find(o => o.value === t)?.label ?? t
+}
+
 function typeBadgeClass(t: string) {
   if (t === 'interior') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
   if (t === 'exterior') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -185,7 +189,7 @@ function goBack() {
               {{ anchor?.name || '场景' }}
             </h1>
             <span v-if="anchor?.type" class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" :class="typeBadgeClass(anchor.type)">
-              {{ anchor.type }}
+              {{ typeLabel(anchor.type) }}
             </span>
             <span v-if="anchor?.variant" class="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
               {{ anchor.variant }}
