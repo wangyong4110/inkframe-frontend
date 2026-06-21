@@ -109,7 +109,7 @@ export const useApi = () => {
 
     if (response.status === 401) {
       const errorBody = await response.json().catch(() => ({} as any))
-      const msg: string = errorBody?.message || errorBody?.data?.message || ''
+      const msg: string = errorBody?.message || errorBody?.data?.message || errorBody?.error || ''
 
       // Auth endpoints: 401 means wrong credentials, not expired session
       if (endpoint.startsWith('/auth/')) {
@@ -147,7 +147,7 @@ export const useApi = () => {
         throw new Error('Session expired')
       }
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      throw new Error(error.message || `HTTP error ${response.status}`)
+      throw new Error(error.message || error.error || `HTTP error ${response.status}`)
     }
 
     if (response.status === 204) {
@@ -189,7 +189,8 @@ export const useApi = () => {
 
     if (!response.ok) {
       if (response.status === 401) { await handle401(); throw new Error('Session expired') }
-      throw new Error(`HTTP error ${response.status}`)
+      const errJson = await response.json().catch(() => ({} as any))
+      throw new Error(errJson.message || errJson.error || `HTTP error ${response.status}`)
     }
 
     return response.blob()

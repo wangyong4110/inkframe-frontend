@@ -79,6 +79,7 @@ const tabs = [
 ]
 
 const loading = ref(true)
+const loadError = ref('')
 const novel = computed(() => novelStore.currentNovel)
 const chapters = computed(() => chapterStore.chapters)
 const novelChapterCount = computed(() => chapters.value.length)
@@ -326,6 +327,7 @@ async function triggerAnalysis(source?: string) {
 
 async function loadNovelData(id: number) {
   loading.value = true
+  loadError.value = ''
   try {
     await Promise.all([
       novelStore.fetchNovel(id),
@@ -334,6 +336,8 @@ async function loadNovelData(id: number) {
       videoStore.fetchVideos({ novel_id: id }),
       sceneAnchorStore.fetchAnchors(id),
     ])
+  } catch (e: any) {
+    loadError.value = e?.message || '数据加载失败'
   } finally {
     loading.value = false
   }
@@ -415,6 +419,14 @@ onMounted(async () => {
       <div class="grid grid-cols-4 gap-4 mt-6">
         <div v-for="i in 4" :key="i" class="h-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
       </div>
+    </div>
+    <!-- Load error -->
+    <div v-else-if="loadError && !novel" class="flex flex-col items-center justify-center py-24 gap-4 text-center">
+      <svg class="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+      </svg>
+      <p class="text-gray-400 text-sm">{{ loadError }}</p>
+      <button class="btn-secondary text-sm px-4 py-2" @click="loadNovelData(novelId)">重新加载</button>
     </div>
     <!-- Novel Header -->
     <div v-else-if="novel" class="card">

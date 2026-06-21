@@ -926,8 +926,13 @@ const tabs = [
 ]
 
 onMounted(async () => {
-  await refreshProject()
-  loading.value = false
+  try {
+    await refreshProject()
+  } catch {
+    // refreshProject already logs; swallow so loading.value still clears
+  } finally {
+    loading.value = false
+  }
   // If already running on page load, start project-level auto-refresh
   // (we don't have task_id from a previous session, so poll the project)
   if (isRunning.value) {

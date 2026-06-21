@@ -211,10 +211,14 @@ function computeDefaultWordCount(n: typeof novel.value): number {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    novelStore.fetchNovel(novelId),
-    characterStore.fetchCharacters(novelId),
-  ])
+  try {
+    await Promise.all([
+      novelStore.fetchNovel(novelId),
+      characterStore.fetchCharacters(novelId),
+    ])
+  } catch (e: any) {
+    toast.error('数据加载失败：' + (e?.message || '请刷新重试'))
+  }
   if (chapterNo && chapterNo > 0) {
     try {
       await chapterStore.fetchChapter(novelId, chapterNo)

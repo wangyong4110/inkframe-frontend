@@ -21,10 +21,18 @@ const completionPercent = computed(() => {
   return Math.round((completedShots.value.length / shots.value.length) * 100)
 })
 
-onMounted(() => {
+const toast = useToast()
+
+onMounted(async () => {
   if (!isNaN(videoId)) {
-    videoStore.fetchVideo(videoId)
-    videoStore.fetchStoryboard(videoId)
+    try {
+      await Promise.all([
+        videoStore.fetchVideo(videoId),
+        videoStore.fetchStoryboard(videoId),
+      ])
+    } catch (e: any) {
+      toast.error('视频数据加载失败：' + (e?.message || '请刷新重试'))
+    }
   }
 })
 </script>
