@@ -2,14 +2,14 @@ const url = ref('')
 const origUrl = ref('')     // URL when lightbox opened (for discard)
 const pendingUrl = ref('')  // URL after regeneration, not yet saved
 const visible = ref(false)
-const refineCallback = ref<((suggestion: string) => Promise<string>) | null>(null)
+const refineCallback = ref<((currentUrl: string, suggestion: string) => Promise<string>) | null>(null)
 const saveCallback = ref<((newUrl: string) => void) | null>(null)
 
 export function useImageLightbox() {
   // Open for view / refine (storyboard shots etc.)
   function openLightbox(
     src: string,
-    onRefine?: (suggestion: string) => Promise<string>,
+    onRefine?: (currentUrl: string, suggestion: string) => Promise<string>,
     onSave?: (newUrl: string) => void,
   ) {
     if (!src) return
@@ -26,7 +26,7 @@ export function useImageLightbox() {
     newUrl: string,
     originalUrl: string,
     onSave: (newUrl: string) => void,
-    onRefine?: (suggestion: string) => Promise<string>,
+    onRefine?: (currentUrl: string, suggestion: string) => Promise<string>,
   ) {
     if (!newUrl) return
     url.value = newUrl

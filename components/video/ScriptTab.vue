@@ -1135,7 +1135,7 @@ defineExpose({ loadVideoProviders: async () => {
                 <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
               <template v-if="shot.image_url">
-                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
+                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
                 <button
                   v-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"

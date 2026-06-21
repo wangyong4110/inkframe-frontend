@@ -21,7 +21,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   aspectRatio?: string
   disabled?: boolean
-  onRefine?: (instruction: string) => Promise<string>
+  onRefine?: (currentUrl: string, instruction: string) => Promise<string>
   onSave?: (newUrl: string) => void
 }>(), {
   modelValue: '',

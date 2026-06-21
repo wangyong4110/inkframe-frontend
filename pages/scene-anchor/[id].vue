@@ -38,15 +38,6 @@ const generatingRefImage = ref(false)
 const uploadingRefImage = ref(false)
 const refImageFileInput = ref<HTMLInputElement | null>(null)
 
-// 对话式编辑
-interface EditMessage {
-  role: 'user' | 'assistant'
-  text?: string
-  imageUrl?: string
-}
-const editMessages = ref<EditMessage[]>([])
-const editInstruction = ref('')
-const editingImage = ref(false)
 
 const tabs = [
   { key: 'basic',  label: '场景信息' },
@@ -154,26 +145,6 @@ async function handleUploadRefImage(e: Event) {
   }
 }
 
-async function handleEditImage() {
-  const instr = editInstruction.value.trim()
-  if (!instr || editingImage.value) return
-  editMessages.value.push({ role: 'user', text: instr })
-  editInstruction.value = ''
-  const loadingIdx = editMessages.value.length
-  editMessages.value.push({ role: 'assistant' })
-  editingImage.value = true
-  try {
-    const updated = await api.editRefImage(anchorId, instr)
-    if (anchor.value) anchor.value = updated
-    editMessages.value[loadingIdx] = { role: 'assistant', imageUrl: updated.ref_image_url }
-    toast.success('编辑完成')
-  } catch (e: any) {
-    editMessages.value.splice(loadingIdx, 1)
-    toast.error('编辑失败：' + (e.message || '未知错误'))
-  } finally {
-    editingImage.value = false
-  }
-}
 
 function goBack() {
   novelId ? router.push(`/novel/${novelId}?tab=scene_anchors`) : router.back()
@@ -332,7 +303,7 @@ function goBack() {
             <div
               class="relative flex-shrink-0 w-56 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-200 dark:border-gray-600 cursor-pointer"
               style="aspect-ratio: 16/9"
-              @click="anchor?.ref_image_url && openLightbox(anchor.ref_image_url, (s) => editImage(lightboxUrl.value, s, novelId), async (url) => { const updated = await api.lockRefImage(anchorId, { image_url: url }); if (anchor) anchor = updated })"
+              @click="anchor?.ref_image_url && openLightbox(anchor.ref_image_url, (currentUrl, s) => editImage(currentUrl, s, novelId), async (url) => { const updated = await api.lockRefImage(anchorId, { image_url: url }); if (anchor) anchor = updated })"
             >
               <img
                 v-if="anchor?.ref_image_url"
@@ -415,73 +386,6 @@ function goBack() {
           </div>
         </div>
 
-        <!-- 对话式编辑卡片（有参考图时显示） -->
-        <div v-if="anchor?.ref_image_url" class="card p-6 space-y-4">
-          <div>
-            <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">对话式编辑</h3>
-            <p class="text-xs text-gray-400">用文字描述想要的改变，AI 将基于当前参考图进行编辑，每次编辑结果自动更新为新参考图。</p>
-          </div>
-
-          <!-- 消息历史 -->
-          <div v-if="editMessages.length > 0" class="space-y-3 max-h-80 overflow-y-auto pr-1">
-            <div v-for="(msg, i) in editMessages" :key="i">
-              <!-- 用户消息 -->
-              <div v-if="msg.role === 'user'" class="flex justify-end">
-                <div class="bg-primary-500 text-white text-sm px-3 py-2 rounded-2xl rounded-tr-sm max-w-[80%] break-words">
-                  {{ msg.text }}
-                </div>
-              </div>
-              <!-- AI 回复 -->
-              <div v-else class="flex justify-start">
-                <div class="max-w-[70%]">
-                  <!-- 加载中 -->
-                  <div v-if="!msg.imageUrl" class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-sm p-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 animate-spin text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                    <span class="text-xs text-gray-400">AI 编辑中…</span>
-                  </div>
-                  <!-- 图片结果 -->
-                  <img
-                    v-else
-                    :src="msg.imageUrl"
-                    class="rounded-2xl rounded-tl-sm cursor-pointer w-full object-cover"
-                    style="max-width: 280px; aspect-ratio: 16/9"
-                    alt="编辑结果"
-                    @click="openLightbox(msg.imageUrl!)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 输入区 -->
-          <div class="flex gap-2">
-            <input
-              v-model="editInstruction"
-              type="text"
-              class="input flex-1 text-sm"
-              :placeholder="isEn ? 'e.g. make it darker, add morning mist, warmer lighting...' : '如：让场景更暗，增加晨雾，使整体色调更冷…'"
-              :disabled="editingImage"
-              @keydown.enter.prevent="handleEditImage"
-            />
-            <button
-              class="btn-primary flex-shrink-0 px-3"
-              :disabled="editingImage || !editInstruction.trim()"
-              @click="handleEditImage"
-            >
-              <svg v-if="editingImage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-              </svg>
-              <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-              </svg>
-            </button>
-          </div>
-          <p class="text-xs text-gray-400">按 Enter 或点击发送，每轮编辑基于上一轮结果累积修改</p>
-        </div>
       </div>
     </template>
   </div>

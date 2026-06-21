@@ -32,7 +32,7 @@ function openAnchorImage(anchor: any) {
   if (!anchor.ref_image_url) return
   openLightbox(
     anchor.ref_image_url,
-    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    (currentUrl, instruction) => editImage(currentUrl, instruction, props.novelId),
     async (newUrl) => {
       await sceneAnchorStore.lockRefImage(anchor.id, newUrl)
     },

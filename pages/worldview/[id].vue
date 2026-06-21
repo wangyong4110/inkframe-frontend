@@ -141,7 +141,7 @@ function openEntityImage(entity: WorldviewEntity) {
   const wid = worldviewId.value
   openLightbox(
     entity.image_url,
-    (instruction) => editImage(lightboxUrl.value, instruction),
+    (currentUrl, instruction) => editImage(currentUrl, instruction),
     async (newUrl) => {
       const { updateEntity } = useWorldviewApi()
       await updateEntity(wid, entity.id, { image_url: newUrl })

@@ -31,7 +31,7 @@ function openCharacterImage(character: Character) {
   if (!src) return
   openLightbox(
     src,
-    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    (currentUrl, instruction) => editImage(currentUrl, instruction, props.novelId),
   )
 }
 

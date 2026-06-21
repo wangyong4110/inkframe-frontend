@@ -605,7 +605,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         <div class="flex items-start gap-3">
           <!-- Thumbnail -->
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
-            <img v-if="shot.image_url" :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (s) => editImage(lightboxUrl.value, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
+            <img v-if="shot.image_url" :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
             <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
           </div>
           <!-- Header -->

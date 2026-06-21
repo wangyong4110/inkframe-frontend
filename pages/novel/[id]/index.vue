@@ -112,7 +112,7 @@ function openCoverLightbox() {
   if (!novel.value?.cover_image || !isCoverUrl(novel.value.cover_image)) return
   openLightbox(
     novel.value.cover_image,
-    (instruction) => editImage(lightboxUrl.value, instruction, novelId),
+    (currentUrl, instruction) => editImage(currentUrl, instruction, novelId),
     saveCoverImage,
   )
 }

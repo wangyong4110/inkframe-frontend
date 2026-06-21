@@ -332,7 +332,7 @@ function goBack() {
             <h4 class="text-sm font-medium text-gray-900 dark:text-white">物品图片</h4>
             <p class="text-xs text-gray-500 mt-0.5">
               参考图（可选）：
-              <span v-if="referenceImagePreview" class="text-primary-500 cursor-pointer" @click="openLightbox(referenceImagePreview, (s) => editImage(lightboxUrl.value, s, novelId), (url) => { referenceImageUrl = url; referenceImagePreview = url })">已上传</span>
+              <span v-if="referenceImagePreview" class="text-primary-500 cursor-pointer" @click="openLightbox(referenceImagePreview, (currentUrl, s) => editImage(currentUrl, s, novelId), (url) => { referenceImageUrl = url; referenceImagePreview = url })">已上传</span>
               <span v-else class="cursor-pointer hover:text-gray-700" @click="fileInputRef?.click()">上传参考图</span>
               <span v-if="referenceImagePreview" class="ml-1 text-gray-400 cursor-pointer hover:text-red-500" @click="clearReferenceImage">（清除）</span>
             </p>
@@ -362,7 +362,7 @@ function goBack() {
             v-model="imageUrl"
             aspect-ratio="1/1"
             placeholder="物品图片"
-            :on-refine="(s: string) => editImage(lightboxUrl.value, s, novelId)"
+            :on-refine="(currentUrl: string, s: string) => editImage(currentUrl, s, novelId)"
             :on-save="(url: string) => { imageUrl = url; isDirty.value = true }"
             @error="toast.error"
           />

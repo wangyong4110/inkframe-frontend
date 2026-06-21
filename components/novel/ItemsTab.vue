@@ -40,7 +40,7 @@ function openItemImage(item: Item) {
   if (!item.image_url) return
   openLightbox(
     item.image_url,
-    (instruction) => editImage(lightboxUrl.value, instruction, props.novelId),
+    (currentUrl, instruction) => editImage(currentUrl, instruction, props.novelId),
     async (newUrl) => {
       try {
         await itemApi.updateItem(item.id, { image_url: newUrl })
