@@ -17,6 +17,7 @@ if (isNaN(anchorId)) {
   await navigateTo('/novel')
 }
 const novelId = parseInt(route.query.novelId as string)
+const chapterNo = parseInt(route.query.chapterNo as string)
 
 const activeTab = ref('basic')
 const saving = ref(false)
@@ -169,7 +170,13 @@ async function handleUploadRefImage(e: Event) {
 
 
 function goBack() {
-  novelId ? router.push(`/novel/${novelId}?tab=scene_anchors`) : router.back()
+  if (novelId && !isNaN(chapterNo)) {
+    router.push(`/novel/${novelId}/chapter/${chapterNo}?tab=scenes`)
+  } else if (novelId) {
+    router.push(`/novel/${novelId}?tab=scene_anchors`)
+  } else {
+    router.back()
+  }
 }
 </script>
 

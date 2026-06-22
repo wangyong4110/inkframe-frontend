@@ -172,11 +172,8 @@ export interface Character {
   description?: string       // 统一描述（外貌、性格、背景、说话风格等）
   inner_conflict?: string    // 内在矛盾
   core_desire?: string       // 核心渴望
-  arc_design?: string        // 弧光设计 JSON
-  current_arc_stage?: string // 当前弧光阶段（起点/考验/最低点/转折/终点）
-  default_look_id?: number     // 默认形象 ID
-  default_three_view?: string  // 默认形象的三视图（由服务层注入）
-  portrait?: string
+  default_look_id?: number   // 默认形象 ID
+  default_look?: CharacterLook // 默认形象完整对象（由服务层注入）
   // 配音设置
   voice_id?: string
   voice_speed?: number

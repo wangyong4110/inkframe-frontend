@@ -131,7 +131,7 @@ export const useVideoApi = () => {
     videoId: number,
     shotId: number,
     itemId: number,
-    data: Partial<Pick<ShotSFXItem, 'volume' | 'loop_enabled' | 'fade_in_ms' | 'fade_out_ms' | 'start_offset'>>,
+    data: Partial<Pick<ShotSFXItem, 'volume' | 'loop_enabled' | 'fade_in_ms' | 'fade_out_ms' | 'start_offset' | 'play_count'>>,
   ) =>
     request<ApiResponse<Record<string, unknown>>>(`/videos/${videoId}/shots/${shotId}/sfx-items/${itemId}`, {
       method: 'PUT',

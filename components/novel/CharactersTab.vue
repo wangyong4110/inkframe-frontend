@@ -27,7 +27,7 @@ const characters = computed(() => characterStore.characters)
 onMounted(() => characterStore.fetchCharacters(props.novelId))
 
 function openCharacterImage(character: Character) {
-  const src = character.default_three_view || character.portrait || ''
+  const src = character.default_look?.three_view_sheet || character.default_look?.face_closeup || character.default_look?.portrait || ''
   if (!src) return
   openLightbox(
     src,
@@ -240,8 +240,8 @@ async function confirmDeleteCharacter() {
         <!-- 图片区域 -->
         <div class="relative w-full h-32 overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
           <img
-            v-if="character.default_three_view || character.portrait"
-            :src="character.default_three_view || character.portrait"
+            v-if="character.default_look?.three_view_sheet || character.default_look?.face_closeup || character.default_look?.portrait"
+            :src="character.default_look?.three_view_sheet || character.default_look?.face_closeup || character.default_look?.portrait"
             class="w-full h-full object-cover cursor-zoom-in"
             :alt="character.name"
             @click.stop="openCharacterImage(character)"

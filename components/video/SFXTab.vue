@@ -273,9 +273,10 @@ async function toggleSFXItemDisabled(shot: StoryboardShot, item: ShotSFXItem) {
 
 // 通用部分更新（乐观更新 + API 保存）
 function patchItem(shotId: number, itemId: number, patch: Partial<ShotSFXItem>) {
-  const list = sfxItems.value[shotId] ?? []
+  const list = sfxItems.value[shotId]
+  if (!list) return
   const idx = list.findIndex(i => i.id === itemId)
-  if (idx !== -1) list[idx] = { ...list[idx], ...patch }
+  if (idx !== -1) list.splice(idx, 1, { ...list[idx], ...patch })
 }
 
 // 音量 – 实时拖动（@input），防抖 400ms 保存
@@ -316,7 +317,7 @@ const uploadUrl       = ref('')
 const uploadSfxType   = ref<'action' | 'ambient' | 'emotion'>('action')
 const uploadVolume    = ref(0.4)
 const uploadingFor    = ref<number | null>(null)
-const fileInputRef    = ref<HTMLInputElement | null>(null)
+const fileInputRef    = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
 const uploadPresetTag = ref<SFXTagDisplay | null>(null)
 
 // ── 素材库搜索 ─────────────────────────────────────────────────────────────────
@@ -399,7 +400,8 @@ function closeUploadPanel() {
 }
 
 async function doImportFile(shot: StoryboardShot) {
-  const file = fileInputRef.value?.files?.[0]
+  const inputEl = Array.isArray(fileInputRef.value) ? fileInputRef.value[0] : fileInputRef.value
+  const file = inputEl?.files?.[0]
   if (!file) { toast.error('请先选择音频文件'); return }
   const api = useVideoApi()
   uploadingFor.value = shot.id
@@ -782,28 +784,6 @@ defineExpose({ sfxItems, loadSFXItems })
                 <span class="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0" :class="sourceClass(item.source)">
                   {{ sourceLabel(item.source) }}
                 </span>
-
-                <!-- 类型 badge -->
-                <span
-                  v-if="item.sfx_type"
-                  class="text-[9px] px-1 py-0.5 rounded font-mono uppercase flex-shrink-0"
-                  :class="{
-                    'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400': item.sfx_type === 'action',
-                    'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': item.sfx_type === 'ambient',
-                    'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400': item.sfx_type === 'emotion',
-                  }"
-                  :title="{ action: '动作音（单次触发）', ambient: '环境底层音（循环）', emotion: '情绪点缀音' }[item.sfx_type]"
-                >{{ item.sfx_type[0] }}</span>
-
-                <!-- Loop 开关 -->
-                <button
-                  class="text-[10px] flex-shrink-0 transition-colors rounded px-0.5"
-                  :class="item.loop_enabled
-                    ? 'text-green-500 hover:text-green-600'
-                    : 'text-gray-300 dark:text-gray-600 hover:text-gray-500'"
-                  :title="item.loop_enabled ? '循环中（点击关闭）' : '不循环（点击开启）'"
-                  @click="toggleLoop(shot, item)"
-                >⟳</button>
 
                 <!-- 标签/描述（优先显示中文 prompt） -->
                 <span

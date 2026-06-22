@@ -1131,8 +1131,8 @@ defineExpose({ loadVideoProviders: async () => {
               <template v-for="charId in (shot.character_ids || [])" :key="charId">
                 <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                   <img
-                    v-if="characterById.get(charId)?.portrait"
-                    :src="characterById.get(charId)!.portrait"
+                    v-if="characterById.get(charId)?.default_look?.portrait"
+                    :src="characterById.get(charId)!.default_look!.portrait"
                     loading="lazy"
                     class="w-3 h-3 rounded-full object-cover"
                   />
@@ -1335,8 +1335,8 @@ defineExpose({ loadVideoProviders: async () => {
               <template v-for="charId in (shot.character_ids || [])" :key="charId">
                 <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                   <img
-                    v-if="characterById.get(charId)?.portrait"
-                    :src="characterById.get(charId)!.portrait"
+                    v-if="characterById.get(charId)?.default_look?.portrait"
+                    :src="characterById.get(charId)!.default_look!.portrait"
                     loading="lazy"
                     class="w-3 h-3 rounded-full object-cover"
                   />

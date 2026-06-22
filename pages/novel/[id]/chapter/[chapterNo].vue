@@ -5,7 +5,7 @@ import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
 import '@git-diff-view/vue/styles/diff-view.css'
 
-definePageMeta({ key: (route) => route.fullPath })
+definePageMeta({ key: (route) => route.path })
 
 const route = useRoute()
 const router = useRouter()
@@ -2642,7 +2642,7 @@ onUnmounted(() => {
                   v-for="anchor in chapterAnchors"
                   :key="anchor.id"
                   class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}`)"
+                  @click="router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}&chapterNo=${chapterNo}`)"
                 >
                   <!-- 参考图 -->
                   <div class="aspect-video bg-gray-100 dark:bg-gray-700 flex-shrink-0">
@@ -4031,7 +4031,7 @@ onUnmounted(() => {
             @click="handleBindCharacter(char.id)"
           >
             <div class="w-9 h-9 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-              <img v-if="char.default_three_view || char.portrait" :src="char.default_three_view || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
+              <img v-if="char.default_look?.three_view_sheet || char.default_look?.face_closeup || char.default_look?.portrait" :src="char.default_look?.three_view_sheet || char.default_look?.face_closeup || char.default_look?.portrait" class="w-full h-full object-cover" :alt="char.name" />
               <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
             </div>
             <div class="flex-1 min-w-0">

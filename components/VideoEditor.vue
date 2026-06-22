@@ -11,13 +11,17 @@ const videoStore = useVideoStore()
 const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
+const route = useRoute()
+const router = useRouter()
 
 const promptLanguage = computed(() => novelStore.currentNovel?.prompt_language ?? 'zh')
 const toast = useToast()
 const { confirm } = useConfirm()
 
 // ──────── Tabs ────────
-const activeTab = ref('script')
+const VALID_TABS = ['script', 'voice', 'bgm', 'sfx', 'timeline', 'export']
+const _initTab = VALID_TABS.includes(String(route.query.vtab)) ? String(route.query.vtab) : 'script'
+const activeTab = ref(_initTab)
 const tabLoading = ref(false)
 const PRODUCTION_TABS = ['voice', 'bgm', 'sfx', 'timeline', 'export']
 const isProductionTab = computed(() => PRODUCTION_TABS.includes(activeTab.value))
@@ -115,6 +119,11 @@ watch(() => videoStore.storyboardTaskStatus, (status) => {
 // When the user switches tabs rapidly, only the latest switch should
 // clear the loading spinner and run post-mount component calls.
 let tabSwitchVersion = 0
+
+// Sync active tab to URL query param so tabs are bookmarkable.
+watch(activeTab, (tab) => {
+  router.replace({ query: { ...route.query, vtab: tab } })
+})
 
 // Tab-change handler: snapshot cross-tab data before unmounting, then refresh
 watch(activeTab, async (tab) => {

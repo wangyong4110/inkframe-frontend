@@ -32,7 +32,6 @@ const character = ref({
   gender: '' as string,
   age: '' as string,
   description: '',
-  portrait: '',
   default_look_id: 0 as number | undefined,
 })
 
@@ -333,7 +332,6 @@ onMounted(async () => {
         gender: (c as any).gender ?? '',
         age: (c as any).age ?? '',
         description: c.description ?? '',
-        portrait: c.portrait ?? '',
         default_look_id: c.default_look_id ?? 0,
       }
     }
