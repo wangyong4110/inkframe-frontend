@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier } from '~/types'
+import type { StoryboardShot, VideoQualityTier, Character, SceneAnchor } from '~/types'
 import { SHOT_STATUS_LABELS, SHOT_STATUS_COLORS, QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
 import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
@@ -12,6 +12,9 @@ const videoStore = useVideoStore()
 const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
+const chapterStore = useChapterStore()
+const characterApi = useCharacterApi()
+const sceneAnchorApi = useSceneAnchorApi()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const { confirm } = useConfirm()
@@ -54,10 +57,56 @@ const anchorById = computed(() => {
   for (const a of anchors.value) map.set(a.id, a)
   return map
 })
+// Chapter-bound characters and anchors for dropdown filtering.
+// When a video is bound to a chapter, dropdowns only show items bound to that chapter.
+// Falls back to all novel-level items if no chapter bindings exist.
+const chapterBoundCharacters = ref<Character[]>([])
+const chapterBoundAnchors = ref<SceneAnchor[]>([])
+const chapterBoundLoaded = ref(false)
+
+async function fetchChapterBoundItems() {
+  const v = video.value
+  if (!v?.novel_id || !v?.chapter_id) {
+    chapterBoundLoaded.value = true
+    return
+  }
+  let no = chapterStore.chapters.find(c => c.id === v.chapter_id)?.chapter_no
+  if (!no) {
+    await chapterStore.fetchChapters(v.novel_id)
+    no = chapterStore.chapters.find(c => c.id === v.chapter_id)?.chapter_no
+  }
+  if (!no) {
+    chapterBoundLoaded.value = true
+    return
+  }
+  try {
+    const [charsRes, anchorsRes] = await Promise.all([
+      characterApi.getEffectiveCharacters(v.novel_id, no),
+      sceneAnchorApi.listChapterAnchors(v.novel_id, no),
+    ])
+    chapterBoundCharacters.value = (charsRes.data ?? []) as Character[]
+    chapterBoundAnchors.value = (anchorsRes.data ?? []) as SceneAnchor[]
+  } catch {
+    // fall back to all novel-level items
+  }
+  chapterBoundLoaded.value = true
+}
+
+watch(video, fetchChapterBoundItems, { immediate: true })
+
+// Dropdown-specific lists — chapter-filtered when bindings exist, full list otherwise.
+const dropdownAnchors = computed(() =>
+  chapterBoundLoaded.value && chapterBoundAnchors.value.length > 0
+    ? chapterBoundAnchors.value
+    : anchors.value
+)
+
 // Pre-computed map for O(1) unassigned-character lookups per shot.
-// Replaces the O(n*m) per-shot unassignedCharacters() function called inside v-for loops.
+// Uses chapter-bound characters when available so the dropdown stays scoped to the chapter.
 const unassignedCharsMap = computed(() => {
-  const allChars = characters.value
+  const allChars = chapterBoundLoaded.value && chapterBoundCharacters.value.length > 0
+    ? chapterBoundCharacters.value
+    : characters.value
   const result = new Map<number, (typeof allChars)[0][]>()
   for (const shot of shots.value) {
     const assignedIds = new Set(shot.character_ids ?? [])
@@ -68,7 +117,10 @@ const unassignedCharsMap = computed(() => {
 // Kept as fallback for any ad-hoc call outside the main v-for loop.
 function unassignedCharacters(shot: StoryboardShot) {
   const assigned = new Set(shot.character_ids ?? [])
-  return characters.value.filter(c => !assigned.has(c.id))
+  const pool = chapterBoundLoaded.value && chapterBoundCharacters.value.length > 0
+    ? chapterBoundCharacters.value
+    : characters.value
+  return pool.filter(c => !assigned.has(c.id))
 }
 
 // ── AI params ──
@@ -1041,7 +1093,7 @@ defineExpose({ loadVideoProviders: async () => {
                 @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
               >
                 <option value="">不绑定</option>
-                <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+                <option v-for="anchor in dropdownAnchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
               </select>
               <template v-if="shot.scene_anchor_id">
                 <div class="flex-1 flex items-center gap-1.5 min-w-0">
@@ -1230,7 +1282,7 @@ defineExpose({ loadVideoProviders: async () => {
                 @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
               >
                 <option value="">不绑定</option>
-                <option v-for="anchor in anchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+                <option v-for="anchor in dropdownAnchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
               </select>
               <template v-if="shot.scene_anchor_id">
                 <div class="flex items-center gap-1.5 min-w-0">
