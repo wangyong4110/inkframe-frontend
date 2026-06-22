@@ -269,7 +269,6 @@ const selectedAspectRatio = computed(() =>
       <div>
         <div class="flex items-center justify-between mb-1.5">
           <label class="field-label mb-0">写作风格</label>
-          <NuxtLink to="/style" class="text-xs text-primary-600 hover:underline">浏览风格库 →</NuxtLink>
         </div>
         <div class="flex items-center gap-2">
           <select
