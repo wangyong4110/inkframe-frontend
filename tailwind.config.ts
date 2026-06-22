@@ -105,5 +105,8 @@ export default {
       },
     },
   },
+  safelist: [
+    'aspect-[3/4]',
+  ],
   plugins: [],
 } satisfies Config

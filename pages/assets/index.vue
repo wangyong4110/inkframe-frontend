@@ -426,7 +426,7 @@ function formatSize(bytes?: number) {
 
     <!-- Loading skeleton -->
     <div v-if="loading && !assets.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-      <div v-for="i in 12" :key="i" class="aspect-square rounded-xl bg-gray-700 animate-pulse" />
+      <div v-for="i in 12" :key="i" class="aspect-[3/4] rounded-xl bg-gray-700 animate-pulse" />
     </div>
 
     <!-- Empty -->
@@ -476,7 +476,7 @@ function formatSize(bytes?: number) {
             :is="selectMode && activeScope === 'personal' ? 'div' : NuxtLink"
             v-bind="selectMode && activeScope === 'personal' ? {} : { to: `/assets/${asset.id}` }"
           >
-            <div class="aspect-square bg-gray-800">
+            <div class="aspect-[3/4] bg-gray-800">
               <img
                 v-if="asset.thumbnail_url || (asset.type === 'image' && asset.storage_url)"
                 :src="asset.thumbnail_url || asset.storage_url"
