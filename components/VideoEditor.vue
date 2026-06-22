@@ -110,6 +110,8 @@ watch(() => videoStore.storyboardTaskStatus, (status) => {
       toast.success('分镜脚本生成完成，请检查并确认')
     }
     videoStore.fetchStoryboard(props.videoId)
+    // 刷新 video 以获取 final_video_url（AI 生成完成后后端自动上传 OSS）
+    videoStore.fetchVideo(props.videoId)
   } else if (status === 'failed') {
     toast.error('分镜生成失败：' + (videoStore.error || ''))
   }
