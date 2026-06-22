@@ -177,7 +177,7 @@ const timelineSfxBlocksMap = computed(() => {
   const map = new Map<number, { item: (typeof props.sfxItems)[number][number]; top: number; height: number; left: number; width: number }[]>()
   for (const shot of shots.value) {
     const duration = timelineEffectiveDurationMap.value.get(shot.id) ?? DEFAULT_SHOT_DURATION_S
-    const items = (props.sfxItems[shot.id] ?? []).filter(i => !i.disabled && i.url)
+    const items = (props.sfxItems[shot.id] ?? []).filter(i => !i.disabled && (i.audio_url || i.url))
     if (items.length === 0) { map.set(shot.id, []); continue }
     const n = items.length
     const slotW = 100 / n
@@ -310,12 +310,12 @@ function timelineSyncMedia() {
   nextTick(() => {
     syncMediaEl(timelineVideoRef.value, shot.video_url, { volume: vol })
     syncMediaEl(timelineVoiceRef.value, props.shotAudioUrls[shot.id] || shot.audio_url, { volume: vol })
-    const activeSfxItems = (props.sfxItems[shot.id] ?? []).filter(i => !i.disabled && i.url)
+    const activeSfxItems = (props.sfxItems[shot.id] ?? []).filter(i => !i.disabled && (i.audio_url || i.url))
     const activeSfxItem = activeSfxItems.find(i =>
       seekTo >= (i.start_offset || 0) &&
       (!(i.duration_secs) || seekTo < (i.start_offset || 0) + i.duration_secs)
     ) ?? activeSfxItems[0]
-    const sfxUrl = activeSfxItem?.url || shot.sfx_url
+    const sfxUrl = activeSfxItem?.audio_url || activeSfxItem?.url || shot.sfx_url
     const sfxStartOffset = activeSfxItem?.start_offset ?? 0
     const sfxSeekTo = Math.max(0, seekTo - sfxStartOffset)
     const sfxMuted = timelineSfxMuted.value || timelineMuted.value ||

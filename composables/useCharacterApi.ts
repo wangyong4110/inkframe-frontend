@@ -36,19 +36,13 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ style: style ?? '', provider: provider ?? '' }),
     })
 
-  const generateFaceCloseup = (id: number, style?: string, provider?: string) =>
-    request<ApiResponse<{ task_id: string }>>(`/characters/${id}/face-closeup`, {
-      method: 'POST',
-      body: JSON.stringify({ style: style ?? '', provider: provider ?? '' }),
-    })
-
   const uploadPortrait = (id: number, file: File) =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
 
-  const uploadCharacterImage = (id: number, file: File, type: 'portrait' | 'three_view' | 'face_closeup') =>
+  const uploadCharacterImage = (id: number, file: File, type: 'portrait' | 'three_view') =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/image/upload?type=${type}`, file)
 
-  const uploadLookImage = (characterId: number, lookId: number, file: File, type: 'portrait' | 'three_view' | 'face_closeup') =>
+  const uploadLookImage = (characterId: number, lookId: number, file: File, type: 'portrait' | 'three_view') =>
     requestMultipart<{ url: string; look: CharacterLook }>(`/characters/${characterId}/looks/${lookId}/upload?type=${type}`, file)
 
   const previewVoice = (id: number, params?: {
@@ -112,7 +106,7 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ description }),
     })
 
-  const generateLookImages = (characterId: number, lookId: number, type: 'three_view' | 'face_closeup' | 'portrait', provider?: string) =>
+  const generateLookImages = (characterId: number, lookId: number, type: 'three_view' | 'portrait', provider?: string) =>
     request<ApiResponse<{ task_id: string }>>(`/characters/${characterId}/looks/${lookId}/images`, {
       method: 'POST',
       body: JSON.stringify({ type, provider: provider ?? '' }),
@@ -144,7 +138,6 @@ export const useCharacterApi = () => {
     deleteCharacter,
     generateCharacterProfile,
     generateThreeView,
-    generateFaceCloseup,
     uploadPortrait,
     uploadCharacterImage,
     uploadLookImage,

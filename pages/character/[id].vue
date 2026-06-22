@@ -258,7 +258,7 @@ async function handleFormGenerateThreeView() {
   }
 }
 
-async function handleGenerateLookImage(look: CharacterLook, type: 'three_view' | 'face_closeup') {
+async function handleGenerateLookImage(look: CharacterLook, type: 'three_view') {
   if (!await guardAiProvider('IMAGE')) return
   generatingLookImage.value = look.id
   try {
@@ -282,9 +282,9 @@ async function handleGenerateLookImage(look: CharacterLook, type: 'three_view' |
 
 const uploadingLookImage = ref<number | null>(null) // look id being uploaded
 const lookImageFileInput = ref<HTMLInputElement | null>(null)
-const pendingLookUpload = ref<{ look: CharacterLook; type: 'portrait' | 'three_view' | 'face_closeup' } | null>(null)
+const pendingLookUpload = ref<{ look: CharacterLook; type: 'portrait' | 'three_view' } | null>(null)
 
-function triggerLookUpload(look: CharacterLook, type: 'portrait' | 'three_view' | 'face_closeup') {
+function triggerLookUpload(look: CharacterLook, type: 'portrait' | 'three_view') {
   pendingLookUpload.value = { look, type }
   lookImageFileInput.value?.click()
 }

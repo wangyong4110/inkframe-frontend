@@ -139,7 +139,6 @@ const TYPE_LABELS: Record<string, string> = {
   voice_preview: '试音',
   image_gen: '图像',
   three_view: '三视图',
-  face_closeup: '近景图',
   char_gen: '角色生成',
   char_reanalyze: '角色重分析',
   char_image_gen: '角色图像',

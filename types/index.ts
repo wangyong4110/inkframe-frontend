@@ -198,7 +198,6 @@ export interface CharacterLook {
   description?: string  // 外观描述（中文）
   visual_prompt?: string // AI 图像生成英文 Prompt
   three_view_sheet?: string
-  face_closeup?: string
   portrait?: string
   created_at: string
   updated_at: string
@@ -462,7 +461,6 @@ export type AsyncTaskType =
   | 'voice_gen'
   | 'image_gen'
   | 'three_view'
-  | 'face_closeup'
   | 'char_gen'
   | 'item_extract'
   | 'plot_extract'
