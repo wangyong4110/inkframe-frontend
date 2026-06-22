@@ -139,6 +139,35 @@ watch(activeTab, async (tab) => {
     if (['bgm', 'export'].includes(tab)) {
       await videoStore.fetchVideo(props.videoId)
     }
+    // Timeline: load all cross-tab data before showing the component so audio URLs
+    // are ready the moment the user clicks play (avoids a race where sfxItems
+    // arrive after first render with stale/missing audio_url).
+    if (tab === 'timeline' || tab === 'export') {
+      if (version !== tabSwitchVersion) return
+      const { listBGMSegments, listVoiceSegments, listShotSFXItems } = useVideoApi()
+      const [bgmRes] = await Promise.allSettled([listBGMSegments(props.videoId)])
+      if (version !== tabSwitchVersion) return
+      if (bgmRes.status === 'fulfilled') _bgmSegments.value = bgmRes.value?.data ?? []
+
+      const segMap: Record<number, ShotVoiceSegment[]> = { ..._shotSegments.value }
+      const audioMap: Record<number, string> = { ..._shotAudioUrls.value }
+      await Promise.allSettled(shots.value.map(async (shot) => {
+        const res = await listVoiceSegments(props.videoId, shot.id).catch(() => null)
+        if (res) segMap[shot.id] = res?.data ?? []
+        if (shot.audio_url && !audioMap[shot.id]) audioMap[shot.id] = shot.audio_url
+      }))
+      if (version !== tabSwitchVersion) return
+      _shotSegments.value  = segMap
+      _shotAudioUrls.value = audioMap
+
+      const sfxMap: Record<number, ShotSFXItem[]> = { ..._sfxItems.value }
+      await Promise.allSettled(shots.value.map(async (shot) => {
+        const res = await listShotSFXItems(props.videoId, shot.id).catch(() => null)
+        if (res) sfxMap[shot.id] = res?.data ?? []
+      }))
+      if (version !== tabSwitchVersion) return
+      _sfxItems.value = sfxMap
+    }
   } finally {
     // Only clear the spinner if this is still the latest tab switch.
     if (version === tabSwitchVersion) {
@@ -168,42 +197,6 @@ watch(activeTab, async (tab) => {
     if (shot) await voiceTabRef.value?.loadSegments(shot)
     if (version !== tabSwitchVersion) return
     snapshotCrossTabData()
-  }
-  // Timeline: load all cross-tab data directly via API (source tabs are unmounted)
-  if (tab === 'timeline') {
-    const { listBGMSegments, listVoiceSegments, listShotSFXItems } = useVideoApi()
-    const [bgmRes] = await Promise.allSettled([listBGMSegments(props.videoId)])
-    if (version !== tabSwitchVersion) return
-    if (bgmRes.status === 'fulfilled') _bgmSegments.value = bgmRes.value?.data ?? []
-
-    // Voice segments + audio URL map
-    const segMap: Record<number, ShotVoiceSegment[]> = { ..._shotSegments.value }
-    const audioMap: Record<number, string> = { ..._shotAudioUrls.value }
-    const voiceResults = await Promise.allSettled(shots.value.map(async (shot) => {
-      const res = await listVoiceSegments(props.videoId, shot.id).catch(() => null)
-      if (res) segMap[shot.id] = res?.data ?? []
-      if (shot.audio_url && !audioMap[shot.id]) audioMap[shot.id] = shot.audio_url
-    }))
-    const voiceFailed = voiceResults.filter(r => r.status === 'rejected')
-    if (voiceFailed.length > 0) {
-      console.warn('Some voice segment loads failed:', voiceFailed)
-    }
-    if (version !== tabSwitchVersion) return
-    _shotSegments.value  = segMap
-    _shotAudioUrls.value = audioMap
-
-    // SFX items
-    const sfxMap: Record<number, ShotSFXItem[]> = { ..._sfxItems.value }
-    const sfxResults = await Promise.allSettled(shots.value.map(async (shot) => {
-      const res = await listShotSFXItems(props.videoId, shot.id).catch(() => null)
-      if (res) sfxMap[shot.id] = res?.data ?? []
-    }))
-    const sfxFailed = sfxResults.filter(r => r.status === 'rejected')
-    if (sfxFailed.length > 0) {
-      console.warn('Some SFX item loads failed:', sfxFailed)
-    }
-    if (version !== tabSwitchVersion) return
-    _sfxItems.value = sfxMap
   }
 })
 

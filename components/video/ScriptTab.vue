@@ -35,6 +35,8 @@ const shotImageInputRef = ref<HTMLInputElement | null>(null)
 const shotImageTargetId = ref<number | null>(null)
 // Maps shot.id → in-flight task_id for cancellation support
 const shotTaskIds = ref<Record<number, string>>({})
+// Tracks per-shot image generation in-flight (no server task_id needed for image gen)
+const generatingShotImageIds = ref<Record<number, boolean>>({})
 
 const confirmingScript = ref(false)
 const editingId = ref<number | null>(null)
@@ -452,12 +454,18 @@ async function handleGenerateShot(shot: StoryboardShot) {
 }
 
 async function doGenerateShotImage(shot: StoryboardShot) {
+  generatingShotImageIds.value[shot.id] = true
   try {
     const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
-    if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
+    if (!taskId) {
+      delete generatingShotImageIds.value[shot.id]
+      toast.error('生成失败：未获取到任务ID')
+      return
+    }
     toast.info(`镜头 #${shot.shot_no} 图片生成中…`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
+      delete generatingShotImageIds.value[shot.id]
       if (task.status === 'completed') {
         await videoStore.fetchStoryboard(props.videoId)
         toast.success(`镜头 #${shot.shot_no} 图片已生成`)
@@ -466,6 +474,7 @@ async function doGenerateShotImage(shot: StoryboardShot) {
       }
     })
   } catch (e: any) {
+    delete generatingShotImageIds.value[shot.id]
     toast.error('图片生成失败：' + (e.message || ''))
   }
 }
@@ -1382,16 +1391,26 @@ defineExpose({ loadVideoProviders: async () => {
               <template v-if="shot.status !== 'generating'">
                 <div class="ml-auto flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    class="text-[11px] py-0.5 px-2 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    class="text-[11px] py-0.5 px-2 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors inline-flex items-center gap-1"
+                    :class="{ 'opacity-50 cursor-not-allowed': generatingShotImageIds[shot.id] }"
+                    :disabled="!!generatingShotImageIds[shot.id]"
                     @click="handleGenerateShotImage(shot)"
                   >
-                    {{ shot.image_url ? '重新生成图片' : '生成图片' }}
+                    <svg v-if="generatingShotImageIds[shot.id]" class="w-3 h-3 animate-spin flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {{ generatingShotImageIds[shot.id] ? '生成中…' : (shot.image_url ? '重新生成图片' : '生成图片') }}
                   </button>
                   <button
-                    class="text-[11px] py-0.5 px-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                    class="text-[11px] py-0.5 px-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors inline-flex items-center gap-1"
+                    :class="{ 'opacity-50 cursor-not-allowed': shotTaskIds[shot.id] }"
+                    :disabled="!!shotTaskIds[shot.id]"
                     @click="handleGenerateShot(shot)"
                   >
-                    {{ shot.video_url ? '重新生成视频' : '生成视频' }}
+                    <svg v-if="shotTaskIds[shot.id]" class="w-3 h-3 animate-spin flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {{ shotTaskIds[shot.id] ? '生成中…' : (shot.video_url ? '重新生成视频' : '生成视频') }}
                   </button>
                 </div>
               </template>
