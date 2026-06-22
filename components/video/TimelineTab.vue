@@ -389,7 +389,13 @@ function timelineSeekToShot(idx: number) {
   timelineTotalElapsed.value = timelineOrderedShots.value
     .slice(0, idx)
     .reduce((s, sh) => s + timelineEffectiveDuration(sh), 0)
-  if (wasPlaying) timelinePlay()
+  const newShot = timelineOrderedShots.value[idx]
+  // 有视频时自动播放；无视频时至少同步媒体以显示图片首帧
+  if (wasPlaying || newShot?.video_url) {
+    timelinePlay()
+  } else {
+    timelineSyncMedia()
+  }
 }
 
 function timelineSeekByClick(e: MouseEvent) {

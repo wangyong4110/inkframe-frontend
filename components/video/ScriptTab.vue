@@ -1288,23 +1288,31 @@ defineExpose({ loadVideoProviders: async () => {
               <div v-if="uploadingShotId === shot.id" class="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
                 <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
-              <template v-if="shot.image_url">
-                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
-                <!-- Video preview button overlay -->
-                <button
-                  v-if="shot.video_url && uploadingShotId !== shot.id"
-                  class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover/thumb:opacity-100 transition-opacity z-10"
-                  title="预览视频"
+              <!-- 有视频时优先显示视频缩略图（hover 自动播放），点击打开预览 -->
+              <template v-if="shot.video_url && uploadingShotId !== shot.id">
+                <video
+                  :key="shot.video_url"
+                  :src="shot.video_url"
+                  :poster="shot.image_url || undefined"
+                  muted
+                  loop
+                  preload="metadata"
+                  class="w-full h-full object-cover cursor-pointer"
+                  title="点击预览视频"
+                  @mouseenter="($event.target as HTMLVideoElement).play().catch(() => {})"
+                  @mouseleave="($event.target as HTMLVideoElement).pause(); ($event.target as HTMLVideoElement).currentTime = 0"
                   @click.stop="openVideoPreview(shot)"
-                >
-                  <div class="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center shadow-md">
-                    <svg class="w-4 h-4 text-gray-800 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
-                </button>
+                />
+                <!-- 视频标记角标 -->
+                <div class="absolute bottom-1 left-1 flex items-center gap-0.5 bg-black/60 rounded px-1 py-0.5 pointer-events-none">
+                  <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                  <span class="text-[9px] text-white leading-none">视频</span>
+                </div>
+              </template>
+              <template v-else-if="shot.image_url">
+                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
                 <button
-                  v-else-if="uploadingShotId !== shot.id"
+                  v-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"
                   title="重新上传图片"
                   @click.stop="triggerShotImageUpload(shot.id)"
@@ -1324,19 +1332,6 @@ defineExpose({ loadVideoProviders: async () => {
                   停止
                 </button>
               </div>
-              <button
-                v-else-if="shot.video_url"
-                class="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
-                title="预览视频"
-                @click.stop="openVideoPreview(shot)"
-              >
-                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
-                  <svg class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-                <span class="text-[10px] leading-none">预览视频</span>
-              </button>
               <button
                 v-else
                 class="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors"
