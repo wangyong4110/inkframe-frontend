@@ -423,8 +423,7 @@ function handleReviewStoryboard() {
   openReviewPanel()
 }
 
-async function handleGenerateShot(shot: StoryboardShot) {
-  if (!await guardAiProvider('VIDEO')) return
+async function doGenerateShot(shot: StoryboardShot) {
   try {
     const res = await videoStore.generateShot(props.videoId, shot.id, selectedVideoProvider.value || undefined)
     const taskId = res?.task_id
@@ -446,8 +445,13 @@ async function handleGenerateShot(shot: StoryboardShot) {
   }
 }
 
-async function handleGenerateShotImage(shot: StoryboardShot) {
-  if (!await guardAiProvider('IMAGE')) return
+async function handleGenerateShot(shot: StoryboardShot) {
+  if (!await guardAiProvider('VIDEO')) return
+  if (confirmMissingThreeView(() => doGenerateShot(shot), [shot.id])) return
+  await doGenerateShot(shot)
+}
+
+async function doGenerateShotImage(shot: StoryboardShot) {
   try {
     const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); return }
@@ -464,6 +468,12 @@ async function handleGenerateShotImage(shot: StoryboardShot) {
   } catch (e: any) {
     toast.error('图片生成失败：' + (e.message || ''))
   }
+}
+
+async function handleGenerateShotImage(shot: StoryboardShot) {
+  if (!await guardAiProvider('IMAGE')) return
+  if (confirmMissingThreeView(() => doGenerateShotImage(shot), [shot.id])) return
+  await doGenerateShotImage(shot)
 }
 
 async function handleStopShot(shot: StoryboardShot) {
@@ -544,17 +554,8 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
   videoApi.updateShotImageUrl(props.videoId, shot.id, newUrl).catch(() => {})
 }
 
-async function handleGenerateImages() {
-  if (batchGeneratingImages.value) return
+async function doGenerateImages(pending: StoryboardShot[]) {
   batchGeneratingImages.value = true
-  if (!await guardAiProvider('IMAGE')) { batchGeneratingImages.value = false; return }
-  if (generatingStoryboard.value) {
-    toast.error('分镜脚本正在生成中，请等待完成后再生成图片')
-    batchGeneratingImages.value = false
-    return
-  }
-  const pending = shots.value.filter(s => !s.image_url && s.status !== 'generating' && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
-  if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); batchGeneratingImages.value = false; return }
   try {
     const taskId = await videoStore.batchGenerateShotImages(props.videoId, pending.map(s => s.id))
     if (!taskId) { toast.error('图片生成失败：未获取到任务ID'); batchGeneratingImages.value = false; return }
@@ -573,6 +574,19 @@ async function handleGenerateImages() {
     toast.error('图片生成失败：' + (e.message || ''))
     batchGeneratingImages.value = false
   }
+}
+
+async function handleGenerateImages() {
+  if (batchGeneratingImages.value) return
+  if (!await guardAiProvider('IMAGE')) return
+  if (generatingStoryboard.value) {
+    toast.error('分镜脚本正在生成中，请等待完成后再生成图片')
+    return
+  }
+  const pending = shots.value.filter(s => !s.image_url && s.status !== 'generating' && (s.status === 'pending' || s.status === 'failed' || s.status === 'completed'))
+  if (pending.length === 0) { toast.error('没有需要生成图片的镜头'); return }
+  if (confirmMissingThreeView(() => doGenerateImages(pending), pending.map(s => s.id))) return
+  await doGenerateImages(pending)
 }
 
 async function handleGenerateClips() {
@@ -713,6 +727,49 @@ onBeforeUnmount(() => {
     _refreshTimer = null
   }
 })
+
+// ── 三视图缺失检查 ────────────────────────────────────────────────────────────
+const router = useRouter()
+const showMissingThreeViewModal = ref(false)
+const missingThreeViewChars = ref<{ id: number; name: string }[]>([])
+let _pendingGenerateAction: (() => void) | null = null
+
+function collectMissingThreeView(shotIds: number[]): { id: number; name: string }[] {
+  const targetShots = shots.value.filter(s => shotIds.includes(s.id))
+  const seen = new Set<number>()
+  const missing: { id: number; name: string }[] = []
+  for (const shot of targetShots) {
+    for (const charId of (shot.character_ids ?? [])) {
+      if (seen.has(charId)) continue
+      seen.add(charId)
+      const char = characterById.value.get(charId)
+      if (char && !char.default_look?.three_view_sheet) {
+        missing.push({ id: charId, name: char.name })
+      }
+    }
+  }
+  return missing
+}
+
+function confirmMissingThreeView(action: () => void, shotIds: number[]): boolean {
+  const missing = collectMissingThreeView(shotIds)
+  if (missing.length === 0) return false
+  missingThreeViewChars.value = missing
+  _pendingGenerateAction = action
+  showMissingThreeViewModal.value = true
+  return true
+}
+
+function proceedGenerateAnyway() {
+  showMissingThreeViewModal.value = false
+  _pendingGenerateAction?.()
+  _pendingGenerateAction = null
+}
+
+function goToCharacterLooks(charId: number) {
+  const novelId = video.value?.novel_id
+  router.push(`/character/${charId}?tab=looks${novelId ? `&novelId=${novelId}` : ''}`)
+}
 
 // Expose for parent
 defineExpose({ loadVideoProviders: async () => {
@@ -1129,15 +1186,24 @@ defineExpose({ loadVideoProviders: async () => {
             <div class="mt-1 flex items-center gap-2 flex-wrap">
               <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
               <template v-for="charId in (shot.character_ids || [])" :key="charId">
-                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                <span
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                  :class="characterById.get(charId)?.default_look?.three_view_sheet
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'"
+                  :title="characterById.get(charId)?.default_look?.three_view_sheet ? '' : '该角色缺少三视图，生成图片时将不包含角色形象'"
+                >
                   <img
                     v-if="characterById.get(charId)?.default_look?.portrait"
                     :src="characterById.get(charId)!.default_look!.portrait"
                     loading="lazy"
                     class="w-3 h-3 rounded-full object-cover"
                   />
+                  <svg v-else-if="!characterById.get(charId)?.default_look?.three_view_sheet" class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
                   {{ characterById.get(charId)?.name || charId }}
-                  <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
+                  <button class="hover:text-red-400 ml-0.5 leading-none" :class="characterById.get(charId)?.default_look?.three_view_sheet ? 'text-blue-400' : 'text-orange-400'" @click="removeCharFromShot(shot, charId)">×</button>
                 </span>
               </template>
               <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
@@ -1333,15 +1399,24 @@ defineExpose({ loadVideoProviders: async () => {
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
               <template v-for="charId in (shot.character_ids || [])" :key="charId">
-                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                <span
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                  :class="characterById.get(charId)?.default_look?.three_view_sheet
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'"
+                  :title="characterById.get(charId)?.default_look?.three_view_sheet ? '' : '该角色缺少三视图，生成图片时将不包含角色形象'"
+                >
                   <img
                     v-if="characterById.get(charId)?.default_look?.portrait"
                     :src="characterById.get(charId)!.default_look!.portrait"
                     loading="lazy"
                     class="w-3 h-3 rounded-full object-cover"
                   />
+                  <svg v-else-if="!characterById.get(charId)?.default_look?.three_view_sheet" class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
                   {{ characterById.get(charId)?.name || charId }}
-                  <button class="text-blue-400 hover:text-red-400 ml-0.5 leading-none" @click="removeCharFromShot(shot, charId)">×</button>
+                  <button class="hover:text-red-400 ml-0.5 leading-none" :class="characterById.get(charId)?.default_look?.three_view_sheet ? 'text-blue-400' : 'text-orange-400'" @click="removeCharFromShot(shot, charId)">×</button>
                 </span>
               </template>
               <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
@@ -1377,6 +1452,52 @@ defineExpose({ loadVideoProviders: async () => {
       :visible="showReviewPanel"
       @close="showReviewPanel = false"
     />
+
+    <!-- 三视图缺失提示 Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showMissingThreeViewModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50" @click="showMissingThreeViewModal = false" />
+          <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
+            <!-- Header -->
+            <div class="flex items-start gap-3 mb-4">
+              <div class="flex-shrink-0 w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
+                <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">部分角色缺少三视图</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">以下角色没有生成三视图，图片生成时将无法使用角色参考图，人物形象可能不一致。</p>
+              </div>
+            </div>
+
+            <!-- Character list -->
+            <ul class="mb-5 space-y-2">
+              <li
+                v-for="char in missingThreeViewChars"
+                :key="char.id"
+                class="flex items-center justify-between px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800"
+              >
+                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ char.name }}</span>
+                <button
+                  class="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-200 font-medium underline underline-offset-2"
+                  @click="goToCharacterLooks(char.id)"
+                >
+                  去生成三视图 →
+                </button>
+              </li>
+            </ul>
+
+            <!-- Actions -->
+            <div class="flex gap-3 justify-end">
+              <button class="btn-secondary text-sm" @click="showMissingThreeViewModal = false">取消</button>
+              <button class="btn-primary text-sm" @click="proceedGenerateAnyway">仍然生成</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
