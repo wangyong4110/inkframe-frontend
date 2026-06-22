@@ -58,6 +58,26 @@ const activeFilterKey = computed(() =>
   typeFilters.find(f => f.type === filterType.value && f.subType === filterSubType.value)?.key ?? ''
 )
 
+// 当前 type chip 对应的文件 accept 和素材类型
+const uploadAccept = computed(() => {
+  switch (activeFilterKey.value) {
+    case 'image': return 'image/*'
+    case 'video': return 'video/*'
+    case 'sfx':
+    case 'music': return 'audio/*'
+    default: return 'image/*,video/*,audio/*'
+  }
+})
+const uploadTypeLabel = computed(() => {
+  switch (activeFilterKey.value) {
+    case 'image': return '图片'
+    case 'video': return '视频'
+    case 'sfx':   return '音效'
+    case 'music': return '音乐'
+    default: return '素材'
+  }
+})
+
 function setTypeFilter(f: typeof typeFilters[number]) {
   if (activeFilterKey.value === f.key) {
     filterType.value = ''
@@ -163,9 +183,11 @@ async function doUpload() {
   try {
     const mime = uploadFile.value.type
     const type = mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'image'
+    const subType = filterSubType.value || undefined
     const res = await assetApi.uploadAsset(uploadFile.value, {
       title: uploadTitle.value || uploadFile.value.name,
       type,
+      sub_type: subType,
     })
     uploadedAsset.value = res?.data ?? null
     assetTags.value = uploadedAsset.value?.tags ?? []
@@ -330,21 +352,6 @@ function formatSize(bytes?: number) {
         <h1 class="text-2xl font-bold text-white">素材</h1>
         <p class="text-sm text-gray-400 mt-0.5">管理个人素材，探索公共素材库</p>
       </div>
-      <div class="flex items-center gap-3">
-        <NuxtLink to="/assets/crawl" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">爬取管理</NuxtLink>
-        <button
-          v-if="activeScope === 'personal'"
-          class="px-3 py-2 text-sm font-medium rounded-lg border transition-colors"
-          :class="selectMode
-            ? 'border-blue-500 bg-blue-600/20 text-blue-400'
-            : 'border-gray-700 text-gray-300 hover:text-white hover:border-gray-500'"
-          @click="toggleSelectMode"
-        >{{ selectMode ? '退出批量' : '批量操作' }}</button>
-        <button
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          @click="showUpload = true"
-        >上传素材</button>
-      </div>
     </div>
 
     <!-- Tabs -->
@@ -399,6 +406,18 @@ function formatSize(bytes?: number) {
         <option v-if="activeScope === 'public'" value="like_count">最多点赞</option>
         <option v-if="activeScope === 'public'" value="value_score">价值分</option>
       </select>
+      <!-- 快速上传当前类型素材 -->
+      <button
+        v-if="activeScope === 'personal'"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-700 rounded-lg text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
+        :title="`上传${uploadTypeLabel}`"
+        @click="showUpload = true"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        上传{{ uploadTypeLabel }}
+      </button>
     </div>
 
     <!-- Batch action bar -->
@@ -614,12 +633,12 @@ function formatSize(bytes?: number) {
     <div v-if="showUpload" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="closeUploadDialog">
       <div class="bg-gray-900 rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
         <template v-if="uploadStep === 'form'">
-          <h3 class="text-lg font-semibold text-white mb-4">上传素材</h3>
+          <h3 class="text-lg font-semibold text-white mb-4">上传{{ uploadTypeLabel }}</h3>
           <div
             class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 transition-colors mb-4"
             @click="($refs.fileInput as HTMLInputElement)?.click()"
           >
-            <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*" @change="onFileChange" />
+            <input ref="fileInput" type="file" class="hidden" :accept="uploadAccept" @change="onFileChange" />
             <p v-if="!uploadFile" class="text-gray-400 text-sm">点击或拖拽文件到此处</p>
             <p v-else class="text-gray-300 text-sm font-medium">{{ uploadFile.name }}</p>
           </div>

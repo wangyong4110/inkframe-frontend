@@ -12,6 +12,7 @@ const menuItems = [
   { path: '/sysadmin/audit-logs', label: '审计日志', icon: '📋' },
   { path: '/sysadmin/content-review', label: '内容审核', icon: '🔍' },
   { path: '/sysadmin/assets', label: '资产治理', icon: '🗂️' },
+  { path: '/sysadmin/assets/crawl', label: '素材爬取', icon: '🕷️' },
   { path: '/sysadmin/notifications', label: '系统通知', icon: '🔔' },
   { path: '/sysadmin/experiments', label: 'AI 实验', icon: '🧪' },
   { path: '/sysadmin/settings', label: '系统设置', icon: '⚙️' },
@@ -19,6 +20,7 @@ const menuItems = [
 
 const isActive = (path: string) => {
   if (path === '/sysadmin') return route.path === '/sysadmin'
+  if (path === '/sysadmin/assets') return route.path === '/sysadmin/assets'
   return route.path.startsWith(path)
 }
 
