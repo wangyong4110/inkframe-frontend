@@ -103,6 +103,10 @@ const storyboardForm = ref({
   mode: 'slideshow' as 'slideshow' | 'video',
 })
 
+watch(() => novelStore.currentNovel?.image_style, (style) => {
+  if (style) storyboardForm.value.art_style = style
+}, { immediate: true })
+
 const VIDEO_MODES = [
   { id: 'slideshow' as const, name: '图片解说', desc: '每镜一图+动效，低成本' },
   { id: 'video' as const, name: 'AI 视频', desc: '逐帧视频，需视频API' },
@@ -118,7 +122,7 @@ const ART_STYLES = [
   { id: 'anime', name: '动漫' },
   { id: 'realistic', name: '写实' },
   { id: 'watercolor', name: '水彩' },
-  { id: 'ink', name: '水墨' },
+  { id: 'ink_painting', name: '水墨' },
 ]
 
 async function handleCreateStoryboard() {
@@ -1364,7 +1368,7 @@ async function handleGenerateScript() {
     generatingScript.value = true
     try {
       const title = `${novel.value?.title || '小说'} 第${chapterNo}章`
-      const video = await videoStore.createVideo({ novelId, chapterId: chapter.value.id, title, artStyle: 'anime', aspectRatio: '16:9', frameRate: 24, qualityTier: 'draft', mode: 'slideshow' })
+      const video = await videoStore.createVideo({ novelId, chapterId: chapter.value.id, title, artStyle: novel.value?.image_style || 'anime', aspectRatio: '16:9', frameRate: 24, qualityTier: 'draft', mode: 'slideshow' })
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
