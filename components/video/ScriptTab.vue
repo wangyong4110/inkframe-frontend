@@ -1122,10 +1122,10 @@ defineExpose({ loadVideoProviders: async () => {
                 {{ shot.description || '（无场景描述）' }}
               </p>
             </template>
-            <p v-if="shot.prompt" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.prompt">
+            <p v-if="shot.prompt" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 line-clamp-2" :title="shot.prompt">
               <span class="text-blue-400 dark:text-blue-500 mr-1">img:</span>{{ shot.prompt }}
             </p>
-            <p v-else-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 truncate" :title="shot.description">
+            <p v-else-if="shot.narration && shot.description" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5 line-clamp-2" :title="shot.description">
               <span class="text-gray-300 dark:text-gray-600 mr-1">img:</span>{{ shot.description }}
             </p>
 
@@ -1155,7 +1155,7 @@ defineExpose({ loadVideoProviders: async () => {
             </div>
             <!-- Failed status: error detail + retry button -->
             <div v-if="shot.status === 'failed'" class="mt-2 flex items-start gap-2">
-              <p v-if="shot.error_message" class="text-xs text-red-500 mt-1 truncate flex-1" :title="shot.error_message">
+              <p v-if="shot.error_message" class="text-xs text-red-500 mt-1 line-clamp-2 flex-1" :title="shot.error_message">
                 {{ shot.error_message }}
               </p>
               <button
@@ -1354,7 +1354,7 @@ defineExpose({ loadVideoProviders: async () => {
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <p class="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug">
+                  <p class="text-sm text-gray-800 dark:text-gray-200 line-clamp-3 leading-snug">
                     {{ shot.narration || shot.description || '（无描述）' }}
                   </p>
                   <p v-if="shot.dialogue" class="text-xs text-primary-500 dark:text-primary-400 italic mt-0.5 line-clamp-1">
