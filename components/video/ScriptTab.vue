@@ -931,10 +931,10 @@ defineExpose({ loadVideoProviders: async () => {
 
       <!-- Script mode (not confirmed): text-focused cards -->
       <template v-if="!isScriptConfirmed">
-        <template v-for="shot in pagedShots" :key="shot.id">
+        <template v-for="(shot, shotIdx) in pagedShots" :key="shot.id">
         <div
           class="card overflow-hidden"
-          :class="dragShotId === shot.id ? 'opacity-40' : ''"
+          :class="[dragShotId === shot.id ? 'opacity-40' : '', shotIdx % 2 === 1 ? 'shot-card-alt' : '']"
           :draggable="editingId !== shot.id"
           @dragstart="onDragStart($event, shot.id)"
           @dragover="onDragOver"
@@ -1262,7 +1262,7 @@ defineExpose({ loadVideoProviders: async () => {
 
       <!-- Production mode (confirmed): asset-generation cards -->
       <template v-else>
-        <div v-for="shot in pagedShots" :key="shot.id" class="card p-3">
+        <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="card p-3" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
           <div class="flex gap-3">
             <!-- Thumbnail -->
             <div class="group/thumb w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center relative" style="min-height: 72px;">
@@ -1521,6 +1521,13 @@ defineExpose({ loadVideoProviders: async () => {
 </template>
 
 <style scoped>
+.shot-card-alt {
+  background-color: #f3f4f6;
+}
+.dark .shot-card-alt {
+  background-color: #161e2e;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
