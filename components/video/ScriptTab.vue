@@ -780,6 +780,20 @@ function goToCharacterLooks(charId: number) {
   router.push(`/character/${charId}?tab=looks${novelId ? `&novelId=${novelId}` : ''}`)
 }
 
+// ── Video preview modal ──
+const previewVideoUrl = ref<string | null>(null)
+const previewVideoShotNo = ref<number | null>(null)
+
+function openVideoPreview(shot: StoryboardShot) {
+  previewVideoUrl.value = shot.video_url || null
+  previewVideoShotNo.value = shot.shot_no
+}
+
+function closeVideoPreview() {
+  previewVideoUrl.value = null
+  previewVideoShotNo.value = null
+}
+
 // Expose for parent
 defineExpose({ loadVideoProviders: async () => {
   const res = await videoApi.getVideoProviders()
@@ -1271,8 +1285,21 @@ defineExpose({ loadVideoProviders: async () => {
               </div>
               <template v-if="shot.image_url">
                 <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
+                <!-- Video preview button overlay -->
                 <button
-                  v-if="uploadingShotId !== shot.id"
+                  v-if="shot.video_url && uploadingShotId !== shot.id"
+                  class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover/thumb:opacity-100 transition-opacity z-10"
+                  title="预览视频"
+                  @click.stop="openVideoPreview(shot)"
+                >
+                  <div class="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center shadow-md">
+                    <svg class="w-4 h-4 text-gray-800 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </button>
+                <button
+                  v-else-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"
                   title="重新上传图片"
                   @click.stop="triggerShotImageUpload(shot.id)"
@@ -1292,6 +1319,19 @@ defineExpose({ loadVideoProviders: async () => {
                   停止
                 </button>
               </div>
+              <button
+                v-else-if="shot.video_url"
+                class="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                title="预览视频"
+                @click.stop="openVideoPreview(shot)"
+              >
+                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                  <svg class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+                <span class="text-[10px] leading-none">预览视频</span>
+              </button>
               <button
                 v-else
                 class="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors"
@@ -1325,9 +1365,22 @@ defineExpose({ loadVideoProviders: async () => {
                   </div>
                 </div>
                 <div class="flex-shrink-0 flex flex-col items-end gap-2">
-                  <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="SHOT_STATUS_COLORS[shot.status]">
-                    {{ SHOT_STATUS_LABELS[shot.status] }}
-                  </span>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      v-if="shot.video_url"
+                      class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/60 transition-colors"
+                      title="点击预览视频"
+                      @click.stop="openVideoPreview(shot)"
+                    >
+                      <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      视频
+                    </button>
+                    <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="SHOT_STATUS_COLORS[shot.status]">
+                      {{ SHOT_STATUS_LABELS[shot.status] }}
+                    </span>
+                  </div>
                   <!-- Kling 模式徽标 -->
                   <span
                     v-if="shotKlingMode(shot) === 'pro'"
@@ -1513,6 +1566,33 @@ defineExpose({ loadVideoProviders: async () => {
               <button class="btn-secondary text-sm" @click="showMissingThreeViewModal = false">取消</button>
               <button class="btn-primary text-sm" @click="proceedGenerateAnyway">仍然生成</button>
             </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Video preview modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="previewVideoUrl" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="closeVideoPreview">
+          <div class="absolute inset-0 bg-black/75" @click="closeVideoPreview" />
+          <div class="relative bg-black rounded-xl shadow-2xl overflow-hidden w-full max-w-2xl">
+            <div class="flex items-center justify-between px-3 py-2 bg-gray-900/80">
+              <span class="text-sm font-medium text-gray-300">镜头 #{{ previewVideoShotNo }} 视频预览</span>
+              <button class="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors" @click="closeVideoPreview">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <video
+              :key="previewVideoUrl"
+              :src="previewVideoUrl"
+              controls
+              autoplay
+              loop
+              class="w-full max-h-[70vh] bg-black"
+            />
           </div>
         </div>
       </Transition>
