@@ -33,8 +33,6 @@ const deleteConfirmMatch = computed(() =>
 
 // AI model lists per task type (loaded async; silently ignored if API unavailable)
 const availableModels = ref<AIModel[]>([])
-const imageModels = ref<AIModel[]>([])
-const videoModels = ref<AIModel[]>([])
 const ttsModels = ref<AIModel[]>([])
 
 const selectedWritingPreset = ref(WRITING_PRESETS[0]?.id ?? '')
@@ -74,20 +72,6 @@ const settingsCCOptions = [
   { label: '300章', value: 300 },
 ]
 
-const videoTypes = [
-  {
-    value: 'narration',
-    label: '图片解说',
-    icon: '🖼️',
-    desc: '静态图片 + 旁白/字幕，成本低、易批量生产',
-  },
-  {
-    value: 'animation',
-    label: '动画',
-    icon: '🎬',
-    desc: 'AI 生成连续动画帧，画面更生动',
-  },
-]
 
 const ASPECT_RATIOS = [
   { value: '21:9', label: '21:9', iconW: 28, iconH: 12 },
@@ -133,15 +117,13 @@ function iconGradient(value: string | undefined) {
 onMounted(async () => {
   try {
     const modelApi = useModelApi()
-    const taskTypes = ['chapter', 'image_gen', 'video_gen', 'voice_gen'] as const
+    const taskTypes = ['chapter', 'voice_gen'] as const
     const modelResps = await Promise.allSettled(taskTypes.map(t => modelApi.getAvailableModels(t)))
     taskTypes.forEach((t, i) => {
       const r = modelResps[i]
       if (r.status === 'fulfilled') {
         const models = ((r.value as any).data as AIModel[]).filter((m: AIModel) => m.is_active && m.is_available)
         if (t === 'chapter') availableModels.value = models
-        else if (t === 'image_gen') imageModels.value = models
-        else if (t === 'video_gen') videoModels.value = models
         else if (t === 'voice_gen') ttsModels.value = models
       }
     })
@@ -164,13 +146,10 @@ async function handleWritingPresetSelect(presetId: string) {
   }
 }
 
-type ModelField = 'ai_model' | 'image_model' | 'video_model' | 'tts_model'
+type ModelField = 'ai_model'
 
 const modelConfigs = computed(() => [
-  { label: 'LLM 模型',  field: 'ai_model'    as ModelField, models: availableModels.value },
-  { label: '图片模型', field: 'image_model'  as ModelField, models: imageModels.value },
-  { label: '视频模型', field: 'video_model'  as ModelField, models: videoModels.value },
-  { label: '语音模型', field: 'tts_model'    as ModelField, models: ttsModels.value },
+  { label: 'LLM 模型', field: 'ai_model' as ModelField, models: availableModels.value },
 ])
 
 function handleModelChange(field: ModelField, value: string) {
@@ -428,30 +407,6 @@ async function confirmDeleteNovel() {
     <div class="card p-6 space-y-4">
       <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">视频配置</h3>
 
-      <!-- 视频类型 -->
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">视频类型</label>
-        <div class="grid grid-cols-2 gap-3">
-          <button
-            v-for="vt in videoTypes"
-            :key="vt.value"
-            type="button"
-            class="relative flex flex-col gap-1 rounded-lg border-2 p-4 text-left transition-colors"
-            :class="(novel?.video_type ?? 'animation') === vt.value
-              ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'"
-            @click="novelStore.updateNovel(novelId, { video_type: vt.value })"
-          >
-            <span class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
-              <span class="text-base">{{ vt.icon }}</span>
-              {{ vt.label }}
-            </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{{ vt.desc }}</span>
-            <span v-if="(novel?.video_type ?? 'animation') === vt.value"
-              class="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary-500" />
-          </button>
-        </div>
-      </div>
 
 
       <div class="grid grid-cols-2 gap-4">
