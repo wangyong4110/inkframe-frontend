@@ -617,7 +617,7 @@ defineExpose({ sfxItems, loadSFXItems })
         </div>
 
         <!-- 镜头卡片 -->
-        <div class="card overflow-hidden">
+        <div class="card overflow-hidden" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
           <!-- 镜头头部 -->
           <div class="flex items-start gap-3 p-3">
             <!-- 镜号 + 时长 -->
@@ -1148,3 +1148,12 @@ defineExpose({ sfxItems, loadSFXItems })
     </div>
   </div>
 </template>
+
+<style scoped>
+.shot-card-alt {
+  background-color: #e8edf5;
+}
+.dark .shot-card-alt {
+  background-color: #1a2640;
+}
+</style>

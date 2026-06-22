@@ -601,7 +601,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
       </template>
     </Teleport>
     <div class="space-y-2">
-      <div v-for="shot in pagedShots" :key="shot.id" class="card p-4">
+      <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="card p-4" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
         <div class="flex items-start gap-3">
           <!-- Thumbnail -->
           <div class="w-20 h-12 bg-gray-900 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center">
@@ -806,3 +806,12 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
     </div>
   </div>
 </template>
+
+<style scoped>
+.shot-card-alt {
+  background-color: #e8edf5;
+}
+.dark .shot-card-alt {
+  background-color: #1a2640;
+}
+</style>

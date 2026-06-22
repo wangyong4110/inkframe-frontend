@@ -946,15 +946,17 @@ defineExpose({ loadVideoProviders: async () => {
       <!-- Script mode (not confirmed): text-focused cards -->
       <template v-if="!isScriptConfirmed">
         <template v-for="(shot, shotIdx) in pagedShots" :key="shot.id">
-        <div
-          class="card overflow-hidden"
-          :class="[dragShotId === shot.id ? 'opacity-40' : '', shotIdx % 2 === 1 ? 'shot-card-alt' : '']"
-          :draggable="editingId !== shot.id"
-          @dragstart="onDragStart($event, shot.id)"
-          @dragover="onDragOver"
-          @drop="onDrop($event, shot.id)"
-          @dragend="dragShotId = null"
-        >
+        <div class="flex items-start gap-2">
+          <span class="w-7 text-right text-xs font-medium text-gray-400 dark:text-gray-500 flex-shrink-0 select-none pt-3">#{{ shot.shot_no }}</span>
+          <div
+            class="card overflow-hidden flex-1"
+            :class="[dragShotId === shot.id ? 'opacity-40' : '', shotIdx % 2 === 1 ? 'shot-card-alt' : '']"
+            :draggable="editingId !== shot.id"
+            @dragstart="onDragStart($event, shot.id)"
+            @dragover="onDragOver"
+            @drop="onDrop($event, shot.id)"
+            @dragend="dragShotId = null"
+          >
           <!-- Editing mode -->
           <div v-if="editingId === shot.id" class="p-4 space-y-3">
             <div class="flex items-center justify-between mb-1">
@@ -1239,6 +1241,7 @@ defineExpose({ loadVideoProviders: async () => {
               </select>
             </div>
           </div>
+          </div>
         </div>
 
         <!-- Insert shot between cards -->
@@ -1276,7 +1279,9 @@ defineExpose({ loadVideoProviders: async () => {
 
       <!-- Production mode (confirmed): asset-generation cards -->
       <template v-else>
-        <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="card p-3" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
+        <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="flex items-start gap-2">
+          <span class="w-7 text-right text-xs font-medium text-gray-400 dark:text-gray-500 flex-shrink-0 select-none pt-3">#{{ shot.shot_no }}</span>
+          <div class="card p-3 flex-1" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
           <div class="flex gap-3">
             <!-- Thumbnail -->
             <div class="group/thumb w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center relative" style="min-height: 72px;">
@@ -1501,6 +1506,7 @@ defineExpose({ loadVideoProviders: async () => {
               </select>
             </div>
           </div>
+          </div>
         </div>
       </template>
 
@@ -1602,10 +1608,10 @@ defineExpose({ loadVideoProviders: async () => {
 
 <style scoped>
 .shot-card-alt {
-  background-color: #f3f4f6;
+  background-color: #e8edf5;
 }
 .dark .shot-card-alt {
-  background-color: #161e2e;
+  background-color: #1a2640;
 }
 
 .fade-enter-active,

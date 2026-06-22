@@ -477,6 +477,7 @@ async function confirmDeleteChapter() {
         :class="{
           'opacity-40 scale-[0.98]': dragSrcIndex === idx,
           'ring-2 ring-indigo-400 ring-offset-1': dragOverIndex === idx && dragSrcIndex !== idx,
+          'chapter-row-alt': idx % 2 === 1,
         }"
         @dragstart="onDragStart(idx, $event)"
         @dragover="onDragOver(idx, $event)"
@@ -858,5 +859,11 @@ async function confirmDeleteChapter() {
 .slide-up-leave-to {
   transform: translateX(-50%) translateY(20px);
   opacity: 0;
+}
+.chapter-row-alt {
+  background-color: #e8edf5;
+}
+.dark .chapter-row-alt {
+  background-color: #1a2640;
 }
 </style>
