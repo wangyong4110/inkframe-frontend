@@ -5,10 +5,25 @@ definePageMeta({ auth: true })
 
 const assetApi = useAssetApi()
 const toast = useToast()
+const route = useRoute()
+const router = useRouter()
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const activeScope = ref<'personal' | 'public'>('personal')
+// Type filter chips (defined early so URL init can use it)
+const typeFilters = [
+  { key: 'image', label: '图片', type: 'image', subType: '' },
+  { key: 'video', label: '视频', type: 'video', subType: '' },
+  { key: 'sfx',   label: '音效', type: 'audio', subType: 'sfx' },
+  { key: 'music', label: '音乐', type: 'audio', subType: 'bgm' },
+]
+
+// Initialize from URL query params so the page is shareable / bookmarkable.
+const _initScope = route.query.scope === 'public' ? 'public' : 'personal'
+const _initTypeKey = String(route.query.type || 'image')
+const _initFilter = typeFilters.find(f => f.key === _initTypeKey) ?? typeFilters[0]
+
+const activeScope = ref<'personal' | 'public'>(_initScope)
 const assets = ref<Asset[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -17,8 +32,8 @@ const pageSize = 24
 
 // Filters
 const searchQ = ref('')
-const filterType = ref('image')
-const filterSubType = ref('')
+const filterType = ref(_initFilter.type)
+const filterSubType = ref(_initFilter.subType)
 const filterSource = ref('')
 const sortBy = ref('created_at')
 
@@ -38,14 +53,6 @@ const newTagInput = ref('')
 const tagSuggestions = ref<Tag[]>([])
 let tagPollTimer: ReturnType<typeof setTimeout> | null = null
 let tagPollCount = 0
-
-// Type filter chips
-const typeFilters = [
-  { key: 'image', label: '图片', type: 'image', subType: '' },
-  { key: 'video', label: '视频', type: 'video', subType: '' },
-  { key: 'sfx',   label: '音效', type: 'audio', subType: 'sfx' },
-  { key: 'music', label: '音乐', type: 'audio', subType: 'bgm' },
-]
 
 const activeFilterKey = computed(() =>
   typeFilters.find(f => f.type === filterType.value && f.subType === filterSubType.value)?.key ?? ''
@@ -128,6 +135,11 @@ const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
 watch([activeScope, page, filterType, filterSubType, filterSource, sortBy], load)
 onMounted(load)
+
+// Sync scope + type filter to URL so the page is bookmarkable.
+watch([activeScope, activeFilterKey], ([scope, typeKey]) => {
+  router.replace({ query: { scope, type: typeKey || undefined } })
+})
 
 let searchTimer: ReturnType<typeof setTimeout>
 watch(searchQ, () => {
@@ -426,7 +438,7 @@ function formatSize(bytes?: number) {
 
     <!-- Loading skeleton -->
     <div v-if="loading && !assets.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-      <div v-for="i in 12" :key="i" class="aspect-[3/4] rounded-xl bg-gray-700 animate-pulse" />
+      <div v-for="i in 12" :key="i" style="aspect-ratio: 3/4" class="rounded-xl bg-gray-700 animate-pulse" />
     </div>
 
     <!-- Empty -->
@@ -476,7 +488,7 @@ function formatSize(bytes?: number) {
             :is="selectMode && activeScope === 'personal' ? 'div' : NuxtLink"
             v-bind="selectMode && activeScope === 'personal' ? {} : { to: `/assets/${asset.id}` }"
           >
-            <div class="aspect-[3/4] bg-gray-800">
+            <div style="aspect-ratio: 3/4" class="bg-gray-800">
               <img
                 v-if="asset.thumbnail_url || (asset.type === 'image' && asset.storage_url)"
                 :src="asset.thumbnail_url || asset.storage_url"
