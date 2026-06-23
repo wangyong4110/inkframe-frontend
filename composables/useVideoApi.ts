@@ -338,6 +338,16 @@ export const useVideoApi = () => {
     })
   }
 
+  const uploadShotVideo = async (videoId: number, shotId: number, file: File): Promise<ApiResponse<StoryboardShot>> => {
+    const uploadRes = await requestMultipart<{ url: string }>('/upload/video', file)
+    const url = uploadRes?.url
+    if (!url) throw new Error('视频上传失败')
+    return request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/storyboard/${shotId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ video_url: url }),
+    })
+  }
+
   const synthesizeVideo = (id: number) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${id}/synthesize`, { method: 'POST' })
 
@@ -439,6 +449,7 @@ export const useVideoApi = () => {
     toggleBGMSegment,
     updateBGMSegment,
     uploadShotImage,
+    uploadShotVideo,
     synthesizeVideo,
     publishVideo,
     unpublishVideo,

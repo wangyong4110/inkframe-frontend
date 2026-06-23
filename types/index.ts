@@ -248,7 +248,6 @@ export type EntityType = 'location' | 'organization' | 'artifact' | 'race' | 'cr
 export type VideoQualityTier = 'draft' | 'preview' | 'final'
 
 export type VideoMode = 'video' | 'slideshow'
-export type VideoScriptStatus = 'draft' | 'confirmed'
 
 export interface Video {
   id: number
@@ -257,7 +256,6 @@ export interface Video {
   uuid: string
   title: string
   status: VideoStatus
-  script_status?: VideoScriptStatus
   mode?: VideoMode
   quality_tier?: VideoQualityTier
   frame_rate: number
@@ -353,7 +351,6 @@ export interface StoryboardShot {
   character_ids?: number[]
   sfx_url?: string      // 音效文件URL
   sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
-  sfx_volume?: number   // 混音音量（0=自动）
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
   negative_prompt?: string
   motion_prompt?: string

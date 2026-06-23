@@ -2754,6 +2754,7 @@ onUnmounted(() => {
                 pageMode === 'script' && videoEditorRef?.activeTab === 'sfx' ? '音效助手' :
                 pageMode === 'script' && videoEditorRef?.activeTab === 'bgm' ? '背景音乐助手' :
                 pageMode === 'script' && videoEditorRef?.activeTab === 'voice' ? '配音字幕助手' :
+                pageMode === 'script' && videoEditorRef?.activeTab === 'video_gen' ? '视频生成助手' :
                 'AI 助手'
               }}
             </p>
@@ -2767,6 +2768,7 @@ onUnmounted(() => {
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
                 videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
                 videoEditorRef?.activeTab === 'voice' ? '配音模式 & 字幕' :
+                videoEditorRef?.activeTab === 'video_gen' ? '生成进度 & 操作' :
                 '脚本'
               }}
             </p>
@@ -2774,7 +2776,7 @@ onUnmounted(() => {
           <div class="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
             <!-- 高级参数 trigger（视频子 tab 时隐藏） -->
             <button
-              v-if="!(pageMode === 'script' && ['timeline','sfx','bgm','voice'].includes(videoEditorRef?.activeTab ?? ''))"
+              v-if="!(pageMode === 'script' && ['timeline','sfx','bgm','voice','video_gen'].includes(videoEditorRef?.activeTab ?? ''))"
               class="w-6 h-6 flex items-center justify-center rounded transition-colors"
               :class="showAdvancedParams ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'"
               title="高级参数"
@@ -3474,6 +3476,9 @@ onUnmounted(() => {
             <!-- ── 视频预览（时间线 tab 激活时）：接收 VideoEditor 内 Teleport 传送的播放器 ── -->
             <div v-if="videoEditorRef?.activeTab === 'timeline'" id="timeline-player-slot" />
 
+            <!-- ── 视频生成 AI 助手（video_gen tab 激活时）── -->
+            <div v-else-if="videoEditorRef?.activeTab === 'video_gen'" id="video-gen-ai-slot" />
+
             <!-- ── 音效 AI 助手（sfx tab 激活时）：接收 VideoEditor 内 Teleport 传送的音效助手 ── -->
             <div v-else-if="videoEditorRef?.activeTab === 'sfx'" id="sfx-ai-slot" />
 
@@ -3566,6 +3571,16 @@ onUnmounted(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                 </svg>
                 {{ generatingScript ? '创建中…' : videoStore.generating ? '生成中…' : videoStore.storyboard.length > 0 ? '更新分镜脚本' : '生成分镜脚本' }}
+              </button>
+              <button
+                v-if="videoStore.storyboard.length > 0"
+                class="w-full px-4 py-2.5 text-sm font-medium btn-secondary rounded-lg transition-colors flex items-center justify-center gap-2"
+                @click="videoEditorRef?.reviewStoryboard()"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                AI 审查
               </button>
             </div>
           </template>

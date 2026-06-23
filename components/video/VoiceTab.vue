@@ -30,7 +30,13 @@ const loadingSegments = ref<Record<number, boolean>>({})
 const expandedSegmentShotId = ref<number | null>(null)
 const generatingSegmentVoice = ref<Record<number, boolean>>({})
 const newSegmentText = ref<Record<string | number, string>>({})
+const newSegmentSpeaker = ref<Record<number, string>>({})
+const newSegmentEmotion = ref<Record<number, string>>({})
+const appendFormShotId = ref<number | null>(null)
+const segmentEmotions = ref<Record<number, string>>({})
 const insertAfterSeqNo = ref<Record<number, number | null>>({})
+
+const EMOTION_OPTIONS = ['', '平静', '温馨', '激动', '悲伤', '开心', '愤怒', '神秘']
 
 // Sync audio URLs from storyboard
 watch(shots, (list) => {
@@ -175,10 +181,17 @@ async function handleAppendSegment(shot: StoryboardShot) {
   if (!text) return
   try {
     const api = useVideoApi()
-    const res = await api.appendVoiceSegment(props.videoId, shot.id, { text })
-    shotSegments.value[shot.id] = [...(shotSegments.value[shot.id] || []), res.data!]
-    invalidateSegmentCache(shot.id)
+    const speaker = newSegmentSpeaker.value[shot.id] || undefined
+    const res = await api.appendVoiceSegment(props.videoId, shot.id, { text, speaker })
+    const updated = [...(shotSegments.value[shot.id] || []), res.data!]
+    shotSegments.value[shot.id] = updated
+    segmentCache.set(shot.id, updated)
+    if (res.data && newSegmentEmotion.value[shot.id]) {
+      segmentEmotions.value[res.data.id] = newSegmentEmotion.value[shot.id]
+    }
     newSegmentText.value[shot.id] = ''
+    appendFormShotId.value = null
+    expandedSegmentShotId.value = shot.id
   } catch (e: any) {
     toast.error('添加片段失败：' + (e.message || ''))
   }
@@ -361,6 +374,10 @@ function playSegmentAudio(seg: ShotVoiceSegment, videoId: number, shot: { id: nu
   currentAudio.onended = () => { playingSegId.value = null }
   currentAudio.onerror = () => { playingSegId.value = null }
 }
+
+onMounted(async () => {
+  await Promise.allSettled(shots.value.map(s => loadSegments(s)))
+})
 
 onUnmounted(() => {
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
@@ -600,6 +617,11 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         </div>
       </template>
     </Teleport>
+    <!-- 生成进度 -->
+    <div v-if="shots.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
+      生成进度 {{ Object.keys(shotAudioUrls).length }} / {{ shots.length }}
+    </div>
+
     <div class="space-y-2">
       <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="card p-4" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
         <div class="flex items-start gap-3">
@@ -611,33 +633,40 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
           <!-- Header -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-2 mb-1">
-              <div class="flex items-center gap-1.5">
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">镜头 {{ shot.shot_no }}</p>
-                <span
-                  v-if="shot.emotional_tone"
-                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                  :class="emotionClass(shot.emotional_tone)"
-                  :title="`情感基调：${shot.emotional_tone}`"
-                >{{ shot.emotional_tone }}</span>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">#{{ shot.shot_no }}</span>
+                <p class="text-xs text-gray-600 dark:text-gray-300 truncate" :title="shot.description">{{ shot.description }}</p>
               </div>
-              <div class="flex items-center gap-1.5">
-                <!-- Legacy single-voice button -->
+              <div class="flex items-center gap-1">
+                <!-- 生成配音 icon -->
                 <button
-                  class="text-xs py-0.5 px-2 rounded border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-primary-600 hover:border-primary-300 transition-colors"
+                  class="p-1.5 rounded-lg transition-colors"
+                  :class="generatingVoice[shot.id]
+                    ? 'text-primary-400 bg-primary-50 dark:bg-primary-900/30'
+                    : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
                   :disabled="generatingVoice[shot.id]"
+                  :title="generatingVoice[shot.id] ? '生成中…' : '生成配音'"
                   @click="handleGenerateVoice(shot)"
                 >
-                  {{ generatingVoice[shot.id] ? '生成中…' : '生成配音' }}
+                  <svg v-if="generatingVoice[shot.id]" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
                 </button>
-                <!-- Expand segments -->
+                <!-- 多段配音 icon -->
                 <button
-                  class="text-xs py-0.5 px-2 rounded border transition-colors"
-                  :class="expandedSegmentShotId === shot.id
-                    ? 'border-primary-400 text-primary-600 bg-primary-50 dark:bg-primary-900/20'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-primary-600 hover:border-primary-300'"
+                  class="p-1.5 rounded-lg transition-colors"
+                  :class="(expandedSegmentShotId === shot.id || (shotSegments[shot.id]?.length ?? 0) > 0)
+                    ? 'text-primary-600 bg-primary-50 dark:bg-primary-900/30'
+                    : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
+                  :title="(shotSegments[shot.id]?.length ?? 0) > 0 ? `多段配音（${shotSegments[shot.id].length} 段）` : '多段配音'"
                   @click="toggleSegmentExpand(shot)"
                 >
-                  多段配音 {{ expandedSegmentShotId === shot.id ? '▲' : '▼' }}
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -651,6 +680,12 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   {{ parseDialogue(shot.dialogue).speaker || '未知角色' }} ▾
                 </button>
               </div>
+              <span
+                v-if="shot.emotional_tone"
+                class="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mt-0.5"
+                :class="emotionClass(shot.emotional_tone)"
+                :title="`情感基调：${shot.emotional_tone}`"
+              >{{ shot.emotional_tone }}</span>
               <!-- 对白内联编辑 -->
               <template v-if="editingShotId === shot.id && editingField === 'dialogue'">
                 <textarea
@@ -679,6 +714,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             <template v-else>
               <!-- 旁白内联编辑 -->
               <div v-if="editingShotId === shot.id && editingField === 'narration'" class="flex items-start gap-1.5">
+                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5">旁白</span>
                 <textarea
                   v-model="editingText"
                   rows="2"
@@ -692,21 +728,29 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   <button class="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700" @click="cancelEdit">取消</button>
                 </div>
               </div>
-              <p
-                v-else
-                class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded px-1 -mx-1 transition-colors"
-                title="点击编辑旁白"
-                @click="startEditNarration(shot)"
-              >
-                {{ shot.narration || shot.description || '（无台词）' }}
-              </p>
+              <div v-else class="flex items-start gap-1.5">
+                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5">旁白</span>
+                <span
+                  v-if="shot.emotional_tone"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mt-0.5"
+                  :class="emotionClass(shot.emotional_tone)"
+                  :title="`情感基调：${shot.emotional_tone}`"
+                >{{ shot.emotional_tone }}</span>
+                <p
+                  class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded px-1 -mx-1 transition-colors"
+                  title="点击编辑旁白"
+                  @click="startEditNarration(shot)"
+                >
+                  {{ shot.narration || shot.description || '（无台词）' }}
+                </p>
+              </div>
             </template>
             <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-1.5 w-full h-8" />
           </div>
         </div>
 
-        <!-- Multi-segment panel -->
-        <div v-if="expandedSegmentShotId === shot.id" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+        <!-- Multi-segment panel: show when explicitly expanded OR shot already has segments -->
+        <div v-if="expandedSegmentShotId === shot.id || (shotSegments[shot.id]?.length ?? 0) > 0" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <div v-if="loadingSegments[shot.id]" class="text-xs text-gray-400 py-2 text-center">加载中…</div>
           <div v-else class="space-y-2">
             <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">语音片段列表（按顺序播放）</p>
@@ -717,8 +761,21 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   {{ seg.seq_no }}
                 </span>
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ seg.text }}</p>
-                  <p v-if="seg.speaker" class="text-xs text-gray-400 mt-0.5">角色：{{ seg.speaker }}</p>
+                  <div class="flex items-start gap-1.5">
+                    <span
+                      v-if="seg.speaker"
+                      class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
+                    >{{ seg.speaker }}</span>
+                    <span
+                      v-else
+                      class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
+                    >旁白</span>
+                    <span
+                      v-if="segmentEmotions[seg.id]"
+                      class="text-xs px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
+                    >{{ segmentEmotions[seg.id] }}</span>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ seg.text }}</p>
+                  </div>
                   <audio v-if="seg.audio_path" :src="`/api/v1/videos/${props.videoId}/shots/${shot.id}/segments/${seg.id}/audio`" controls class="mt-1 w-full h-7" />
                 </div>
                 <div class="flex-shrink-0 flex items-center gap-1">
@@ -784,7 +841,23 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             </template>
 
             <!-- Append new segment -->
-            <div class="flex items-center gap-2 pt-1">
+            <div v-if="appendFormShotId === shot.id" class="flex items-center gap-2 pt-1">
+              <select
+                v-model="newSegmentSpeaker[shot.id]"
+                class="input text-xs py-1 flex-shrink-0 w-24"
+                title="角色"
+              >
+                <option value="">旁白</option>
+                <option v-for="c in characters" :key="c.id" :value="c.name">{{ c.name }}</option>
+              </select>
+              <select
+                v-model="newSegmentEmotion[shot.id]"
+                class="input text-xs py-1 flex-shrink-0 w-20"
+                title="情绪"
+              >
+                <option value="">情绪</option>
+                <option v-for="e in EMOTION_OPTIONS.filter(Boolean)" :key="e" :value="e">{{ e }}</option>
+              </select>
               <input
                 v-model="newSegmentText[shot.id]"
                 class="input text-sm flex-1"
@@ -792,7 +865,18 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 @keydown.enter="handleAppendSegment(shot)"
               />
               <button class="btn-primary text-xs py-1 px-2.5" @click="handleAppendSegment(shot)">追加</button>
+              <button class="btn-outline text-xs py-1 px-2" @click="appendFormShotId = null">取消</button>
             </div>
+            <button
+              v-else
+              class="mt-1 text-xs text-gray-400 hover:text-primary-500 transition-colors flex items-center gap-1"
+              @click="appendFormShotId = shot.id"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              添加片段
+            </button>
           </div>
         </div>
       </div>

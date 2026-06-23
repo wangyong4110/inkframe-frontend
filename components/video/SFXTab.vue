@@ -79,12 +79,6 @@ function displayLabel(t: SFXTagDisplay): string {
   return t.tag
 }
 
-// ── 场景分组辅助 ──────────────────────────────────────────────────────────────
-function isNewScene(shot: StoryboardShot, idx: number): boolean {
-  if (!shot.scene) return false
-  if (idx === 0) return true
-  return shot.scene !== pagedShots.value[idx - 1].scene
-}
 
 // ── source badge ───────────────────────────────────────────────────────────────
 const SOURCE_LABELS: Record<string, string> = {
@@ -599,6 +593,11 @@ defineExpose({ sfxItems, loadSFXItems })
       </div>
     </Teleport>
 
+    <!-- 生成进度 -->
+    <div v-if="shots.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
+      生成进度 {{ Object.values(sfxItems).filter((arr: any) => arr.length > 0).length }} / {{ shots.length }}
+    </div>
+
     <!-- 镜头列表 -->
     <div class="space-y-2">
       <template v-if="shots.length === 0">
@@ -606,35 +605,36 @@ defineExpose({ sfxItems, loadSFXItems })
       </template>
 
       <template v-for="(shot, shotIdx) in pagedShots" :key="shot.id">
-        <!-- 场景分组标题（场景切换时显示）-->
-        <div
-          v-if="isNewScene(shot, shotIdx)"
-          class="flex items-center gap-2 px-1 pt-2"
-        >
-          <span class="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">场景</span>
-          <span class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">{{ shot.scene }}</span>
-          <span class="flex-1 h-px bg-gray-100 dark:bg-gray-700" />
-        </div>
-
         <!-- 镜头卡片 -->
         <div class="card overflow-hidden" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">
           <!-- 镜头头部 -->
           <div class="flex items-start gap-3 p-3">
-            <!-- 镜号 + 时长 -->
-            <div class="flex-shrink-0 text-right mt-0.5">
-              <span class="text-xs font-bold text-gray-400 block">镜 {{ shot.shot_no }}</span>
+            <!-- 分镜图片 / 镜号 -->
+            <div class="flex-shrink-0 w-14 h-14 rounded overflow-hidden bg-gray-100 dark:bg-gray-700 relative">
+              <img
+                v-if="shot.image_url"
+                :src="shot.image_url"
+                class="w-full h-full object-cover"
+                :alt="`镜 ${shot.shot_no}`"
+              />
+              <div v-else class="w-full h-full flex flex-col items-center justify-center">
+                <span class="text-xs font-bold text-gray-400">镜 {{ shot.shot_no }}</span>
+                <span v-if="shot.duration" class="text-[10px] text-gray-300 dark:text-gray-600">{{ shot.duration.toFixed(1) }}s</span>
+              </div>
               <span
-                v-if="shot.duration"
-                class="text-[10px] text-gray-300 dark:text-gray-600 block"
-                title="镜头时长"
+                v-if="shot.image_url && shot.duration"
+                class="absolute bottom-0 right-0 bg-black/50 text-white text-[9px] px-1 leading-4"
               >{{ shot.duration.toFixed(1) }}s</span>
             </div>
 
             <div class="flex-1 min-w-0">
-              <!-- 旁白预览 -->
-              <p class="text-sm text-gray-700 dark:text-gray-300 line-clamp-1">
-                {{ shot.narration || shot.description || '（无描述）' }}
-              </p>
+              <!-- 镜号 + 旁白同一行 -->
+              <div class="flex items-baseline gap-1.5 min-w-0">
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">#{{ shot.shot_no }}</span>
+                <p class="text-sm text-gray-700 dark:text-gray-300 line-clamp-1 min-w-0">
+                  {{ shot.narration || shot.description || '（无描述）' }}
+                </p>
+              </div>
 
               <!-- 音效标签 -->
               <div class="mt-1">
@@ -731,18 +731,6 @@ defineExpose({ sfxItems, loadSFXItems })
                 </div>
               </div>
             </div>
-
-            <!-- 上传音效按钮 -->
-            <button
-              class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-              :class="{ 'text-orange-500 bg-orange-50 dark:bg-orange-900/20': uploadPanelFor === shot.id }"
-              title="上传音效（本地文件或 URL）"
-              @click="uploadPanelFor === shot.id ? closeUploadPanel() : openUploadPanel(shot.id)"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-            </button>
 
             <!-- 单镜头重新生成按钮 -->
             <button
@@ -932,10 +920,6 @@ defineExpose({ sfxItems, loadSFXItems })
             </template>
           </div>
 
-          <!-- 空状态 -->
-          <div v-else-if="!sfxItemsLoading" class="px-3 py-2 text-xs text-gray-400 italic">
-            {{ (sfxTagsMap.get(shot.id) ?? []).length > 0 ? '已分析搜索词，点击「生成全部音效」匹配音频' : '点击「AI 分析标签」或「生成全部音效」' }}
-          </div>
 
           <!-- 上传面板 -->
           <div

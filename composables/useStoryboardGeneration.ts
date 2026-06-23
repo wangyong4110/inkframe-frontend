@@ -21,8 +21,8 @@ export function useStoryboardGeneration() {
   const { confirm } = useConfirm()
 
   async function generateStoryboard(params: GenerateStoryboardParams): Promise<void> {
-    const isConfirmed = videoStore.currentVideo?.script_status === 'confirmed'
-    if (isConfirmed) {
+    const hasShots = videoStore.storyboard.length > 0
+    if (hasShots) {
       if (!confirm('重新生成将清空当前脚本，是否继续？')) return
     }
     try {

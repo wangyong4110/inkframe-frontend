@@ -2,6 +2,7 @@
 import type { VideoBGMSegment, ShotVoiceSegment, ShotSFXItem } from '~/types'
 import ScriptTab from '~/components/video/ScriptTab.vue'
 import VoiceTab from '~/components/video/VoiceTab.vue'
+import VideoGenTab from '~/components/video/VideoGenTab.vue'
 import BGMTab from '~/components/video/BGMTab.vue'
 import SFXTab from '~/components/video/SFXTab.vue'
 import TimelineTab from '~/components/video/TimelineTab.vue'
@@ -19,22 +20,22 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 // ──────── Tabs ────────
-const VALID_TABS = ['script', 'voice', 'bgm', 'sfx', 'timeline', 'export']
+const VALID_TABS = ['script', 'voice', 'video_gen', 'sfx', 'bgm', 'timeline', 'export']
 const _initTab = VALID_TABS.includes(String(route.query.vtab)) ? String(route.query.vtab) : 'script'
 const activeTab = ref(_initTab)
 const tabLoading = ref(false)
-const PRODUCTION_TABS = ['voice', 'bgm', 'sfx', 'timeline', 'export']
+const PRODUCTION_TABS = ['voice', 'video_gen', 'sfx', 'bgm', 'timeline', 'export']
 const isProductionTab = computed(() => PRODUCTION_TABS.includes(activeTab.value))
 
-const isScriptConfirmed = computed(() => videoStore.currentVideo?.script_status === 'confirmed')
 const shots = computed(() => videoStore.storyboard)
-const productionEnabled = computed(() => isScriptConfirmed.value && shots.value.length > 0)
+const productionEnabled = computed(() => shots.value.length > 0)
 
 const TABS = computed(() => [
   { key: 'script',   label: '分镜脚本', locked: false },
   { key: 'voice',    label: '配音字幕', locked: false },
-  { key: 'bgm',      label: '背景音乐', locked: false },
+  { key: 'video_gen', label: '视频生成', locked: false },
   { key: 'sfx',      label: '音效',     locked: false },
+  { key: 'bgm',      label: '背景音乐', locked: false },
   { key: 'timeline', label: '时间线',   locked: false },
   { key: 'export',   label: '导出',     locked: false },
 ])
@@ -44,6 +45,7 @@ const scriptTabRef = ref<InstanceType<typeof ScriptTab> | null>(null)
 const voiceTabRef  = ref<InstanceType<typeof VoiceTab>  | null>(null)
 const bgmTabRef    = ref<InstanceType<typeof BGMTab>    | null>(null)
 const sfxTabRef    = ref<InstanceType<typeof SFXTab>    | null>(null)
+const videoGenTabRef = ref<InstanceType<typeof VideoGenTab> | null>(null)
 
 // Cross-tab data — persisted at shell level so TimelineTab always has fresh data
 // even when the originating tab is unmounted (v-if=false).
@@ -86,10 +88,6 @@ async function load() {
   }
 }
 
-// Trigger ScriptTab.loadVideoProviders() as soon as the ref becomes available
-watch(scriptTabRef, (ref) => {
-  if (ref) ref.loadVideoProviders()
-}, { immediate: true })
 
 onMounted(load)
 
@@ -107,7 +105,7 @@ watch(() => props.videoId, () => {
 watch(() => videoStore.storyboardTaskStatus, (status) => {
   if (status === 'completed') {
     if (videoStore.storyboardTaskIsNew) {
-      toast.success('分镜脚本生成完成，请检查并确认')
+      toast.success('分镜脚本生成完成')
     }
     videoStore.fetchStoryboard(props.videoId)
     // 刷新 video 以获取 final_video_url（AI 生成完成后后端自动上传 OSS）
@@ -135,7 +133,7 @@ watch(activeTab, async (tab) => {
   const version = ++tabSwitchVersion
   tabLoading.value = true
   try {
-    if (['script', 'voice', 'sfx', 'timeline', 'export'].includes(tab)) {
+    if (['script', 'voice', 'video_gen', 'sfx', 'timeline', 'export'].includes(tab)) {
       await videoStore.fetchStoryboard(props.videoId)
     }
     if (['bgm', 'export'].includes(tab)) {
@@ -228,8 +226,12 @@ async function generateStoryboard(
   })
 }
 
+function reviewStoryboard() {
+  scriptTabRef.value?.handleReviewStoryboard()
+}
+
 // Expose for parent pages (e.g. chapter page's AI panel)
-defineExpose({ activeTab, generateStoryboard })
+defineExpose({ activeTab, generateStoryboard, reviewStoryboard })
 </script>
 
 <template>
@@ -283,7 +285,7 @@ defineExpose({ activeTab, generateStoryboard })
       <svg class="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
       </svg>
-      <p class="text-sm text-gray-500 dark:text-gray-400">请先在「分镜脚本」页生成并确认分镜</p>
+      <p class="text-sm text-gray-500 dark:text-gray-400">请先在「分镜脚本」页生成分镜</p>
     </div>
 
     <div
@@ -308,6 +310,13 @@ defineExpose({ activeTab, generateStoryboard })
         <VoiceTab
           v-if="activeTab === 'voice'"
           ref="voiceTabRef"
+          :video-id="props.videoId"
+        />
+
+        <!-- ── Video Gen Tab ── -->
+        <VideoGenTab
+          v-if="activeTab === 'video_gen'"
+          ref="videoGenTabRef"
           :video-id="props.videoId"
         />
 
