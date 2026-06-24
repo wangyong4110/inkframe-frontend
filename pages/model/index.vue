@@ -5,7 +5,7 @@ import type { ModelProvider, AIModel, McpTool } from '~/types'
 const toast = useToast()
 
 // ── tabs ────────────────────────────────────────────────────────────────────
-const activeTab = ref<'providers' | 'mcp' | 'test' | 'mapping'>('providers')
+const activeTab = ref<'providers' | 'mcp'>('providers')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TAB 1 — 模型提供商 (unchanged logic)
@@ -19,6 +19,7 @@ const {
   testProvider: apiTestProvider,
   fetchProviderModels,
   getProviderTemplates,
+  syncProviderGroup,
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
@@ -29,24 +30,72 @@ const filteredProviders = computed(() =>
   )
 )
 
-// 尚未配置密钥的系统级语音/音效供应商，引导用户直接编辑而非新建
-const unconfiguredVoiceProviders = computed(() =>
-  providers.value.filter(p =>
-    p.tenant_id === 0 &&
-    (p.type === 'voice' || p.type === 'tts' || p.type === 'sfx') &&
-    !(p.has_key ?? (p.api_key?.trim() !== '' && p.api_key?.trim() !== '****'))
-  )
-)
+
+const TYPE_LABELS: Record<string, string> = {
+  llm: '大语言模型', embedding: '文本嵌入', image: '文生图', img2img: '图生图',
+  video: '文生视频', voice: '语音合成', sfx: '音效', music: '背景音乐',
+}
+
+type ProviderGroup = {
+  key: number           // canonical.id（作为 expandedModels/providerModels 的 key）
+  isGroup: boolean
+  groupName: string
+  canonical: ModelProvider
+  members: ModelProvider[]
+  typeBadges: string[]
+}
+
+const providerGroups = computed((): ProviderGroup[] => {
+  const byGroup: Record<string, ModelProvider[]> = {}
+  const soloList: ModelProvider[] = []
+  for (const p of filteredProviders.value) {
+    if (p.group_name) {
+      if (!byGroup[p.group_name]) byGroup[p.group_name] = []
+      byGroup[p.group_name].push(p)
+    } else {
+      soloList.push(p)
+    }
+  }
+  const groups: ProviderGroup[] = []
+  for (const p of soloList) {
+    groups.push({ key: p.id, isGroup: false, groupName: '', canonical: p, members: [p], typeBadges: [] })
+  }
+  for (const [gName, members] of Object.entries(byGroup)) {
+    const canonical = members.find(m => m.is_group_canonical) ?? members[0]
+    const loadedModels = providerModels.value[canonical.id] ?? []
+    const typeBadges = [...new Set(loadedModels.map(m => TYPE_LABELS[m.type || ''] || m.type || '').filter(Boolean))]
+    groups.push({ key: canonical.id, isGroup: true, groupName: gName, canonical, members, typeBadges })
+  }
+  return groups
+})
 const listLoading = ref(false)
 const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
 const providerLoading = ref(false)
 const testingId = ref<number | null>(null)
-const revealedKeys = ref<Set<number>>(new Set())
+const hiddenKeys = ref<Set<number>>(new Set())
 
-// 从云商接口获取模型列表
+// 模型列表（优先 DB 已录入，其次云商接口）
 const providerModelList = ref<string[]>([])
 const fetchingModels = ref(false)
+
+// 从 DB 加载指定提供商已录入的模型，有结果返回 true（此时跳过云商接口拉取）
+async function loadDbModelsForProvider(providerName: string): Promise<boolean> {
+  if (!providerName || providerName === 'custom') return false
+  // 优先找系统提供商（tenant_id=0），其次任何同名提供商
+  const match = providers.value.find(p => p.name === providerName && p.tenant_id === 0)
+    ?? providers.value.find(p => p.name === providerName)
+  if (!match) return false
+  try {
+    const res = await getModels({ provider_id: match.id })
+    const names = ((res.data ?? []) as AIModel[]).map(m => m.name)
+    if (names.length > 0) {
+      providerModelList.value = names
+      return true
+    }
+  } catch { /* 静默失败，回退后续逻辑 */ }
+  return false
+}
 
 // Ollama 无需 API Key
 const isNoKeyProvider = computed(() => {
@@ -79,20 +128,21 @@ async function doFetchProviderModels() {
 }
 
 const providerForm = ref({
-  name: '', display_name: '', type: 'llm',
+  name: '', display_name: '',
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
   timeout: 0,      // 秒，0 = 使用默认值 300s
   concurrency: 0,  // 最大并发数，0 = 不限制
   rate_limit: 0,   // 请求/分钟，0 = 不限制
-  max_tokens: 0,   // 最大输出 token 数，0 = 使用模型默认值
+  groupName: '',   // 同源分组标识（如 "kling"），空=独立供应商
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
 type ProviderOption = {
   name: string; label: string; endpoint: string; needsSecretKey: boolean
-  noApiKey?: boolean; staticModels?: string[]; type?: string
+  noApiKey?: boolean; staticModels?: string[]
   needsApiVersion?: boolean; deploymentBased?: boolean
   apiVersionHint?: string; configHint?: string
+  groupName?: string; isGroupCanonical?: boolean
 }
 const PROVIDER_OPTIONS = ref<ProviderOption[]>([
   { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
@@ -102,20 +152,25 @@ async function loadProviderTemplates() {
   try {
     const res = await getProviderTemplates()
     const templates = res.data ?? []
+    // 分组供应商只展示 canonical（代表），去掉同组其他子供应商；按展示名字母排序
     PROVIDER_OPTIONS.value = [
-      ...templates.map((t: any) => ({
-        name:             t.name,
-        label:            t.display_name,
-        endpoint:         t.api_endpoint,
-        needsSecretKey:   t.needs_secret_key,
-        noApiKey:         t.no_api_key ?? false,
-        staticModels:     t.static_models,
-        type:             t.type,
-        needsApiVersion:  t.needs_api_version ?? false,
-        deploymentBased:  t.deployment_based ?? false,
-        apiVersionHint:   t.api_version_hint ?? '',
-        configHint:       t.config_hint ?? '',
-      })),
+      ...templates
+        .filter((t: any) => !t.group_name || t.is_group_canonical)
+        .map((t: any) => ({
+          name:             t.name,
+          label:            t.display_name,
+          endpoint:         t.api_endpoint,
+          needsSecretKey:   t.needs_secret_key,
+          noApiKey:         t.no_api_key ?? false,
+          staticModels:     t.static_models,
+          needsApiVersion:  t.needs_api_version ?? false,
+          deploymentBased:  t.deployment_based ?? false,
+          apiVersionHint:   t.api_version_hint ?? '',
+          configHint:       t.config_hint ?? '',
+          groupName:        t.group_name ?? '',
+          isGroupCanonical: t.is_group_canonical ?? false,
+        }))
+        .sort((a: ProviderOption, b: ProviderOption) => a.label.localeCompare(b.label, 'zh')),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
     ]
   } catch {
@@ -123,17 +178,12 @@ async function loadProviderTemplates() {
   }
 }
 
-// 按当前选中类型过滤的供应商选项（类型未设置或为 custom 时显示全部）
-const filteredProviderOptions = computed(() => {
-  const type = providerForm.value.type
-  if (!type) return PROVIDER_OPTIONS.value
-  return PROVIDER_OPTIONS.value.filter(opt => opt.name === 'custom' || !opt.type || opt.type === type)
-})
+const filteredProviderOptions = computed(() => PROVIDER_OPTIONS.value)
 
 // 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
 const HARDCODED_NEEDS_SECRET_KEY = new Set([
-  'volcengine-visual', 'volcengine-i2i', 'doubao-speech-v1',
-  'kling', 'kling-sfx', 'kling-tts', 'kling-image', 'kling-i2i',
+  'volcengine-visual', 'doubao-speech-v1',
+  'kling', 'kling-sfx', 'kling-tts', 'kling-image',
 ])
 
 // 当前选中提供商是否需要 AK/SK 双密钥
@@ -221,54 +271,50 @@ const selectedProviderEndpoint = computed(() => {
   return opt?.endpoint ?? ''
 })
 
-// 根据"提供商标识-类型"规则生成显示名称（仅新建时自动填充）
 function autoDisplayName() {
-  if (editingProvider.value) return  // 编辑已有提供商时不覆盖
+  if (editingProvider.value) return
   const name = providerForm.value.name
-  const type = providerForm.value.type
-  if (name) providerForm.value.display_name = type ? `${name}-${type}` : name
+  if (name) providerForm.value.display_name = name
 }
 
 function onProviderSelect() {
   const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
   if (!opt || opt.name === 'custom') return
-  // 切换供应商时始终更新端点为该供应商的默认值，用户可在下方输入框中覆盖
   providerForm.value.api_endpoint = opt.endpoint
-  // 若有 apiVersionHint（如 Azure），自动填充 api_version 默认值
   if (opt.apiVersionHint && !providerForm.value.api_version) {
     providerForm.value.api_version = opt.apiVersionHint
   }
-  // 若提供商有静态模型列表，直接填充（无需再请求 /models 接口）
   if (opt.staticModels && opt.staticModels.length > 0) {
     providerModelList.value = opt.staticModels
   } else {
     providerModelList.value = []
   }
-  // 自动生成显示名称
+  // 同步分组标识（分组供应商只需配置一次）
+  providerForm.value.groupName = opt.groupName ?? ''
   autoDisplayName()
 }
 
-// 类型变化时：若当前已选供应商与新类型不符则清空，并同步更新显示名称
-watch(() => providerForm.value.type, (newType) => {
-  if (!editingProvider.value) {
-    const opt = PROVIDER_OPTIONS.value.find(o => o.name === providerForm.value.name)
-    if (opt && opt.type && opt.type !== newType) {
-      providerForm.value.name = ''
-      providerForm.value.api_endpoint = ''
-      providerModelList.value = []
-    }
-  }
-  autoDisplayName()
-})
-
 // 填完端点和 Key 后自动获取模型列表（静默，失败则回退手动输入）
+// 优先级：① DB 已录入模型  ② staticModels  ③ 云商 /models 接口
 // Ollama：只需端点即可触发（无需 Key）
 let _autoFetchTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   [() => providerForm.value.api_endpoint, () => providerForm.value.api_key, () => providerForm.value.name],
-  ([endpoint, apiKey]) => {
+  async ([endpoint, apiKey, name]) => {
     if (_autoFetchTimer) { clearTimeout(_autoFetchTimer); _autoFetchTimer = null }
     providerModelList.value = []
+
+    // ① DB 优先
+    if (await loadDbModelsForProvider(name as string)) return
+
+    // ② 静态模型列表（如 kling、volcengine 等写死在模板里的）
+    const opt = PROVIDER_OPTIONS.value.find(o => o.name === name)
+    if (opt?.staticModels?.length) {
+      providerModelList.value = opt.staticModels
+      return
+    }
+
+    // ③ 云商接口（需要端点 + Key）
     const providerId = editingProvider.value?.id
     const noKey = isNoKeyProvider.value
     if (!endpoint || (!apiKey && !providerId && !noKey)) return
@@ -289,7 +335,6 @@ watch(
   }
 )
 
-// 按提供商类型过滤模型列表（基于名称模式，外部 API 不返回类型元数据）
 const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> = {
   llm:       { exclude: /tts|whisper|dall-e|embedding|text-embedding|image-gen|video|audio-gen/i },
   image:     { include: /dall|image|img|draw|flux|stable|wanx|seedream|visual|t2i|text.to.image/i },
@@ -299,17 +344,7 @@ const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> 
   embedding: { include: /embed/i },
   sfx:       { include: /sfx|sound|audio|effect|elevenlabs|\d+s$/i },
 }
-const filteredProviderModelList = computed(() => {
-  const f = MODEL_TYPE_FILTER[providerForm.value.type]
-  if (!f) return providerModelList.value
-  const list = providerModelList.value.filter(m => {
-    if (f.include && !f.include.test(m)) return false
-    if (f.exclude && f.exclude.test(m)) return false
-    return true
-  })
-  // 若过滤后为空则回退到完整列表（避免全部被过滤掉）
-  return list.length > 0 ? list : providerModelList.value
-})
+const filteredProviderModelList = computed(() => providerModelList.value)
 
 // 下拉搜索状态
 const showModelDropdown = ref(false)
@@ -341,6 +376,18 @@ const PROVIDER_COLORS: Record<string, string> = {
 }
 function providerColor(name: string) {
   return PROVIDER_COLORS[name.toLowerCase()] ?? 'bg-gray-100 text-gray-600'
+}
+
+// 从模板列表中查找官方展示名（如 "azure" → "Azure OpenAI"）
+const providerTemplateNameMap = computed(() => {
+  const map: Record<string, string> = {}
+  for (const opt of PROVIDER_OPTIONS.value) {
+    if (opt.name !== 'custom') map[opt.name] = opt.label
+  }
+  return map
+})
+function providerTemplateName(name: string) {
+  return providerTemplateNameMap.value[name] ?? name
 }
 
 const PROVIDER_CONSOLE_URL: Record<string, string> = {
@@ -394,6 +441,12 @@ async function loadProviders() {
   try {
     const res = await getProviders()
     providers.value = ((res as any).data as ModelProvider[]) || []
+    // Keep selection if still valid, else auto-select first
+    const groups = providerGroups.value
+    if (!groups.find(g => g.key === selectedGroupKey.value))
+      selectedGroupKey.value = groups[0]?.key ?? null
+    // Fire parallel model loads for all groups (non-blocking)
+    groups.forEach(g => loadGroupModels(g))
   } catch (e: any) {
     toast.error('加载提供商失败：' + (e.message || ''))
   } finally {
@@ -403,36 +456,64 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', type: 'llm', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0, max_tokens: 0 }
+  providerForm.value = { name: '', display_name: '', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0, groupName: '' }
   providerModelList.value = []
   showProviderModal.value = true
 }
-function openEditProvider(p: ModelProvider) {
+async function openEditProvider(group: ProviderGroup) {
+  const p = group.canonical
   editingProvider.value = p
-  const knownTypes = ['llm', 'image', 'img2img', 'video', 'voice', 'embedding', 'sfx']
-  const pType = knownTypes.includes(p.type || '') ? (p.type as string) : 'llm'
-  providerForm.value = { name: p.name, display_name: p.display_name || '', type: pType,
-    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '', is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0, rate_limit: p.rate_limit ?? 0, max_tokens: p.max_tokens ?? 0 }
+  providerForm.value = {
+    name: p.name, display_name: p.display_name || '',
+    api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '',
+    is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0,
+    rate_limit: p.rate_limit ?? 0,
+    groupName: group.groupName,
+  }
   providerModelList.value = []
   showProviderModal.value = true
+  await loadDbModelsForProvider(p.name)
 }
 async function submitProviderForm() {
   if (!providerForm.value.name.trim()) { toast.error('标识名不能为空'); return }
   providerLoading.value = true
   try {
     if (editingProvider.value) {
-      const payload: Record<string, unknown> = { ...providerForm.value }
-      if (!payload.api_key) delete payload.api_key
-      if (!payload.api_secret_key) delete payload.api_secret_key
-      await updateProvider(editingProvider.value.id, payload as any)
-      toast.success('提供商更新成功')
+      if (providerForm.value.groupName) {
+        await syncProviderGroup({
+          group_name: providerForm.value.groupName,
+          api_key: providerForm.value.api_key,
+          api_secret_key: providerForm.value.api_secret_key || undefined,
+          api_version: providerForm.value.api_version || undefined,
+          is_active: providerForm.value.is_active,
+        })
+        toast.success('供应商组更新成功')
+      } else {
+        const payload: Record<string, unknown> = { ...providerForm.value }
+        delete payload.groupName
+        if (!payload.api_key) delete payload.api_key
+        if (!payload.api_secret_key) delete payload.api_secret_key
+        await updateProvider(editingProvider.value.id, payload as any)
+        toast.success('提供商更新成功')
+      }
     } else {
       if (!isNoKeyProvider.value && !providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
       if (selectedProviderNeedsSecretKey.value && !providerForm.value.api_secret_key.trim()) {
         toast.error('该提供商需要 Secret Key（SK）'); providerLoading.value = false; return
       }
-      await createProvider(providerForm.value)
-      toast.success('提供商创建成功')
+      if (providerForm.value.groupName) {
+        await syncProviderGroup({
+          group_name: providerForm.value.groupName,
+          api_key: providerForm.value.api_key,
+          api_secret_key: providerForm.value.api_secret_key || undefined,
+          api_version: providerForm.value.api_version || undefined,
+          is_active: providerForm.value.is_active,
+        })
+        toast.success('供应商组创建成功')
+      } else {
+        await createProvider(providerForm.value)
+        toast.success('提供商创建成功')
+      }
     }
     showProviderModal.value = false
     await loadProviders()
@@ -442,10 +523,18 @@ async function submitProviderForm() {
     providerLoading.value = false
   }
 }
-async function handleDeleteProvider(id: number) {
-  if (!confirm('确认删除该提供商？此操作不可撤销。')) return
-  try { await deleteProvider(id); toast.success('提供商已删除'); await loadProviders() }
-  catch (e: any) { toast.error(e.message || '删除失败') }
+async function handleDeleteGroup(group: ProviderGroup) {
+  const label = group.isGroup
+    ? `「${providerTemplateName(group.canonical.name)}」组（共 ${group.members.length} 个子供应商）`
+    : providerTemplateName(group.canonical.name)
+  if (!confirm(`确认删除 ${label}？此操作不可撤销。`)) return
+  try {
+    for (const p of group.members) {
+      if (p.tenant_id !== 0) await deleteProvider(p.id)
+    }
+    toast.success(group.isGroup ? '供应商组已删除' : '提供商已删除')
+    await loadProviders()
+  } catch (e: any) { toast.error(e.message || '删除失败') }
 }
 async function handleTestProvider(id: number) {
   testingId.value = id
@@ -457,7 +546,7 @@ async function handleTestProvider(id: number) {
   finally { testingId.value = null }
 }
 function toggleReveal(id: number) {
-  const s = new Set(revealedKeys.value); s.has(id) ? s.delete(id) : s.add(id); revealedKeys.value = s
+  const s = new Set(hiddenKeys.value); s.has(id) ? s.delete(id) : s.add(id); hiddenKeys.value = s
 }
 function maskKey(key?: string) {
   if (!key || key === '****') return '—'
@@ -468,85 +557,252 @@ function maskKey(key?: string) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Provider Models — inline model management per provider
 // ═══════════════════════════════════════════════════════════════════════════
-const { createModel, deleteModel } = useModelApi()
+const { createModel, updateModel, deleteModel } = useModelApi()
 const providerModels = ref<Record<number, AIModel[]>>({})
-const expandedModels = ref<Set<number>>(new Set())
-const addModelForms = ref<Record<number, { name: string; tasks: string; saving: boolean }>>({})
-
-const TASK_TYPE_OPTIONS = [
-  { value: 'chapter',    label: 'LLM 生成' },
-  { value: 'image_gen',  label: '图像生成' },
-  { value: 'img2img_gen',label: '图生图' },
-  { value: 'video_gen',  label: '视频生成' },
-  { value: 'voice_gen',  label: '语音合成' },
-  { value: 'sfx_gen',    label: '文生音效' },
-  { value: 'embedding',  label: '向量嵌入' },
-]
-
-async function toggleProviderModels(providerId: number) {
-  const s = new Set(expandedModels.value)
-  if (s.has(providerId)) {
-    s.delete(providerId)
-  } else {
-    s.add(providerId)
-    if (!providerModels.value[providerId]) {
-      await refreshProviderModels(providerId)
-    }
-  }
-  expandedModels.value = s
+const selectedGroupKey = ref<number | null>(null)
+const selectedGroup = computed(() =>
+  providerGroups.value.find(g => g.key === selectedGroupKey.value) ?? null
+)
+function selectGroup(key: number) {
+  selectedGroupKey.value = key
+}
+function modelTypeSummary(groupKey: number): Record<string, number> {
+  const models = providerModels.value[groupKey] ?? []
+  const order = ['llm', 'embedding', 'image', 'img2img', 'video', 'voice', 'sfx', 'music']
+  const raw: Record<string, number> = {}
+  for (const m of models) { const t = m.type || 'llm'; raw[t] = (raw[t] || 0) + 1 }
+  const sorted: Record<string, number> = {}
+  for (const t of order) if (raw[t]) sorted[t] = raw[t]
+  for (const t of Object.keys(raw)) if (!sorted[t]) sorted[t] = raw[t]
+  return sorted
 }
 
-async function refreshProviderModels(providerId: number) {
+const MODEL_TYPE_OPTIONS = [
+  { value: 'llm',        label: 'LLM — 大语言模型' },
+  { value: 'embedding',  label: 'Embedding — 文本嵌入' },
+  { value: 'image',      label: 'Text-to-Image — 文生图' },
+  { value: 'img2img',    label: 'Image-to-Image — 图生图' },
+  { value: 'video',      label: 'Text-to-Video — 视频生成' },
+  { value: 'voice',      label: 'TTS — 语音合成' },
+  { value: 'sfx',        label: 'SFX — 文生音效' },
+  { value: 'music',      label: 'BGM — 背景音乐' },
+]
+
+// Helpers
+function fmtCtx(n: number): string {
+  if (!n) return ''
+  if (n >= 1000) return Math.round(n / 1000) + 'K'
+  return String(n)
+}
+function qualityDots(q: number): boolean[] {
+  const filled = Math.round(q * 5)
+  return Array.from({ length: 5 }, (_, i) => i < filled)
+}
+function groupModelsByType(models: AIModel[]): Record<string, AIModel[]> {
+  const order = ['llm', 'embedding', 'image', 'img2img', 'video', 'voice', 'sfx', 'music']
+  const map: Record<string, AIModel[]> = {}
+  for (const m of models) {
+    const t = m.type || 'llm'
+    if (!map[t]) map[t] = []
+    map[t].push(m)
+  }
+  // Sort by canonical order, unknown types at end
+  const sorted: Record<string, AIModel[]> = {}
+  for (const t of order) if (map[t]) sorted[t] = map[t]
+  for (const t of Object.keys(map)) if (!sorted[t]) sorted[t] = map[t]
+  return sorted
+}
+const TYPE_BADGE_COLORS: Record<string, string> = {
+  llm:       'bg-blue-50  dark:bg-blue-900/30  text-blue-600  dark:text-blue-400',
+  embedding: 'bg-cyan-50  dark:bg-cyan-900/30  text-cyan-600  dark:text-cyan-400',
+  image:     'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
+  img2img:   'bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400',
+  video:     'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
+  voice:     'bg-teal-50  dark:bg-teal-900/30  text-teal-600  dark:text-teal-400',
+  sfx:       'bg-pink-50  dark:bg-pink-900/30  text-pink-600  dark:text-pink-400',
+  music:     'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
+}
+function typeBadgeColor(t: string) {
+  return TYPE_BADGE_COLORS[t] ?? 'bg-gray-100 dark:bg-gray-700/60 text-gray-500 dark:text-gray-400'
+}
+
+// Per-group model loading state
+const modelsLoading = ref<Set<number>>(new Set())
+async function loadGroupModels(group: ProviderGroup) {
+  modelsLoading.value = new Set([...modelsLoading.value, group.key])
   try {
-    const res = await getModels({ provider_id: providerId })
-    providerModels.value = { ...providerModels.value, [providerId]: ((res as any).data as AIModel[]) || [] }
+    const allModels: AIModel[] = []
+    for (const p of group.members) {
+      const res = await getModels({ provider_id: p.id })
+      allModels.push(...(((res as any).data as AIModel[]) || []))
+    }
+    providerModels.value = { ...providerModels.value, [group.key]: allModels }
+  } catch { /* silent - background load */ } finally {
+    const s = new Set(modelsLoading.value); s.delete(group.key); modelsLoading.value = s
+  }
+}
+
+// Edit-model modal state
+const editModelModal = ref<{
+  show: boolean
+  saving: boolean
+  groupKey: number
+  modelId: number
+  displayName: string
+  type: string
+  maxTokens: number
+  quality: number
+  timeout: number
+  concurrency: number
+  rateLimit: number
+  costPer1K: number
+}>({ show: false, saving: false, groupKey: 0, modelId: 0, displayName: '', type: '', maxTokens: 0, quality: 0, timeout: 0, concurrency: 0, rateLimit: 0, costPer1K: 0 })
+
+function openEditModel(groupKey: number, m: AIModel) {
+  editModelModal.value = {
+    show: true, saving: false, groupKey, modelId: m.id,
+    displayName: m.display_name ?? '',
+    type: m.type ?? 'llm',
+    maxTokens: m.max_tokens ?? 0,
+    quality: m.quality ?? 0,
+    timeout: (m as any).timeout ?? 0,
+    concurrency: (m as any).concurrency ?? 0,
+    rateLimit: (m as any).rate_limit ?? 0,
+    costPer1K: (m as any).cost_per_1k ?? 0,
+  }
+}
+function closeEditModel() { editModelModal.value.show = false }
+async function handleEditModel() {
+  const e = editModelModal.value
+  e.saving = true
+  try {
+    const updated = await updateModel(e.modelId, {
+      display_name: e.displayName,
+      type: e.type,
+      max_tokens: e.maxTokens || undefined,
+      quality: e.quality > 0 ? e.quality : undefined,
+      timeout: e.timeout || undefined,
+      concurrency: e.concurrency || undefined,
+      rate_limit: e.rateLimit || undefined,
+      cost_per_1k: e.costPer1K || undefined,
+    })
+    const models = providerModels.value[e.groupKey]
+    if (models) {
+      const idx = models.findIndex(m => m.id === e.modelId)
+      if (idx !== -1 && updated?.data) models[idx] = updated.data
+    }
+    toast.success('模型已更新')
+    closeEditModel()
+  } catch (err: any) {
+    toast.error(err.message || '保存失败')
+  } finally {
+    e.saving = false
+  }
+}
+
+// Add-model modal state
+const addModelModal = ref<{
+  show: boolean
+  providerId: number
+  groupKey: number
+  name: string
+  type: string
+  maxTokens: number
+  timeout: number
+  concurrency: number
+  rateLimit: number
+  saving: boolean
+  availableModels: string[]  // 该 provider 支持的模型列表（有则用下拉，无则自由输入）
+}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, availableModels: [] })
+
+async function refreshGroupModels(group: ProviderGroup) {
+  try {
+    const allModels: AIModel[] = []
+    for (const p of group.members) {
+      const res = await getModels({ provider_id: p.id })
+      allModels.push(...(((res as any).data as AIModel[]) || []))
+    }
+    providerModels.value = { ...providerModels.value, [group.key]: allModels }
   } catch (e: any) {
     toast.error('操作失败：' + (e?.message || '未知错误'))
   }
 }
 
-function openAddModelForm(providerId: number, providerType: string) {
-  const defaultTask = providerType === 'image' ? 'image_gen'
-    : providerType === 'img2img' ? 'img2img_gen'
-    : providerType === 'video' ? 'video_gen'
-    : providerType === 'voice' ? 'voice_gen'
-    : providerType === 'sfx' ? 'sfx_gen'
-    : providerType === 'embedding' ? 'embedding'
-    : 'chapter'
-  addModelForms.value = { ...addModelForms.value, [providerId]: { name: '', tasks: defaultTask, saving: false } }
-}
-
-function closeAddModelForm(providerId: number) {
-  const forms = { ...addModelForms.value }
-  delete forms[providerId]
-  addModelForms.value = forms
-}
-
-async function handleCreateModel(providerId: number) {
-  const form = addModelForms.value[providerId]
-  if (!form || !form.name.trim()) return
-  form.saving = true
-  try {
-    const tasksJson = JSON.stringify([form.tasks])
-    await createModel({ provider_id: providerId, model_id: form.name.trim(), name: form.name.trim(), task_types: tasksJson })
-    toast.success('模型已添加')
-    closeAddModelForm(providerId)
-    await refreshProviderModels(providerId)
-  } catch (e: any) {
-    toast.error(e.message || '添加失败')
-  } finally {
-    if (form) form.saving = false
+function openAddModelForm(group: ProviderGroup) {
+  const loadedModels = providerModels.value[group.key] ?? []
+  const existingType = loadedModels.find(m => m.type)?.type ?? 'llm'
+  // 从模板取支持的模型列表，过滤掉已录入的
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === group.canonical.name)
+  const alreadyAdded = new Set(loadedModels.map(m => m.name))
+  const available = (opt?.staticModels ?? []).filter(n => !alreadyAdded.has(n))
+  addModelModal.value = {
+    show: true, providerId: group.canonical.id, groupKey: group.key,
+    name: available[0] ?? '', type: existingType,
+    maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
+    availableModels: available,
   }
 }
 
-async function handleDeleteModel(providerId: number, modelId: number) {
+function closeAddModelModal() {
+  addModelModal.value.show = false
+}
+
+async function handleCreateModelModal() {
+  const m = addModelModal.value
+  if (!m.name.trim()) return
+  m.saving = true
+  const typeToTask: Record<string, string> = {
+    llm: 'chapter', embedding: 'embedding', image: 'image_gen', img2img: 'img2img_gen',
+    video: 'video_gen', voice: 'voice_gen', sfx: 'sfx_gen', music: 'music_gen',
+  }
+  try {
+    const tasksJson = JSON.stringify([typeToTask[m.type] || 'chapter'])
+    await createModel({
+      provider_id: m.providerId,
+      model_id: m.name.trim(),
+      name: m.name.trim(),
+      task_types: tasksJson,
+      type: m.type || undefined,
+      max_tokens: m.maxTokens || undefined,
+      timeout: m.timeout || undefined,
+      concurrency: m.concurrency || undefined,
+      rate_limit: m.rateLimit || undefined,
+    })
+    toast.success('模型已添加')
+    closeAddModelModal()
+    const group = providerGroups.value.find(g => g.key === m.groupKey)
+    if (group) await refreshGroupModels(group)
+  } catch (e: any) {
+    toast.error(e.message || '添加失败')
+  } finally {
+    m.saving = false
+  }
+}
+
+async function handleDeleteModel(groupKey: number, modelId: number) {
   if (!confirm('确认删除该模型？')) return
   try {
     await deleteModel(modelId)
     toast.success('模型已删除')
-    await refreshProviderModels(providerId)
+    const group = providerGroups.value.find(g => g.key === groupKey)
+    if (group) await refreshGroupModels(group)
   } catch (e: any) {
     toast.error(e.message || '删除失败')
+  }
+}
+
+async function handleToggleModel(groupKey: number, model: AIModel) {
+  const newActive = !model.is_active
+  try {
+    await updateModel(model.id, { is_active: newActive })
+    // Optimistically update local state
+    const models = providerModels.value[groupKey]
+    if (models) {
+      const m = models.find(m => m.id === model.id)
+      if (m) m.is_active = newActive
+    }
+  } catch (e: any) {
+    toast.error(e.message || '操作失败')
   }
 }
 
@@ -736,99 +992,6 @@ async function toggleModelBinding(modelId: number) {
   finally { bindSaving.value = false }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TAB 3 — 模型测试 & A/B 对比
-// ═══════════════════════════════════════════════════════════════════════════
-const { testModelPrompt } = useModelApi()
-
-// ── Single model test panel ──────────────────────────────────────────────────
-const testPanel = reactive({
-  open: false,
-  provider: null as ModelProvider | null,
-  prompt: '写一句话介绍人工智能。',
-  loading: false,
-  result: '',
-  error: '',
-  stats: null as { latency_ms: number; tokens: number } | null,
-})
-
-function openTestPanel(p: ModelProvider) {
-  testPanel.provider = p
-  testPanel.open = true
-  testPanel.result = ''
-  testPanel.error = ''
-  testPanel.stats = null
-}
-
-async function runModelTest() {
-  if (!testPanel.provider) return
-  testPanel.loading = true
-  testPanel.result = ''
-  testPanel.error = ''
-  testPanel.stats = null
-  try {
-    const res = await testModelPrompt({
-      provider_id: testPanel.provider.id,
-      prompt: testPanel.prompt,
-    })
-    const d = (res as any).data
-    testPanel.result = d?.content || ''
-    testPanel.stats = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
-  } catch (err: any) {
-    testPanel.error = err?.message || '测试失败'
-  } finally {
-    testPanel.loading = false
-  }
-}
-
-// ── A/B comparison ────────────────────────────────────────────────────────────
-const abTest = reactive({
-  modelA: null as number | null,
-  modelB: null as number | null,
-  prompt: '写一段300字的武侠小说开篇。',
-  loading: false,
-  resultA: '',
-  resultB: '',
-  errorA: '',
-  errorB: '',
-  statsA: null as { latency_ms: number; tokens: number } | null,
-  statsB: null as { latency_ms: number; tokens: number } | null,
-})
-
-async function runABTest() {
-  if (!abTest.modelA || !abTest.modelB) {
-    toast.error('请选择两个模型')
-    return
-  }
-  abTest.loading = true
-  abTest.resultA = ''
-  abTest.resultB = ''
-  abTest.errorA = ''
-  abTest.errorB = ''
-  abTest.statsA = null
-  abTest.statsB = null
-
-  const [resA, resB] = await Promise.allSettled([
-    testModelPrompt({ provider_id: abTest.modelA, prompt: abTest.prompt }),
-    testModelPrompt({ provider_id: abTest.modelB, prompt: abTest.prompt }),
-  ])
-
-  if (resA.status === 'fulfilled') {
-    const d = (resA.value as any).data
-    abTest.resultA = d?.content || ''
-    abTest.statsA = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
-  } else {
-    abTest.errorA = (resA as any).reason?.message || '失败'
-  }
-  if (resB.status === 'fulfilled') {
-    const d = (resB.value as any).data
-    abTest.resultB = d?.content || ''
-    abTest.statsB = { latency_ms: d?.latency_ms || 0, tokens: d?.tokens || 0 }
-  } else {
-    abTest.errorB = (resB as any).reason?.message || '失败'
-  }
-  abTest.loading = false
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ── lifecycle ────────────────────────────────────────────────────────────────
@@ -854,19 +1017,8 @@ watch(activeTab, (tab) => {
           配置 AI 供应商、管理 MCP 工具并绑定到对应模型
         </p>
       </div>
-      <template v-if="activeTab === 'providers'">
-        <button
-          class="btn-primary flex items-center gap-1.5"
-          @click="openAddProvider"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
-          添加提供商
-        </button>
-      </template>
       <button
-        v-else-if="activeTab === 'mcp'"
+        v-if="activeTab === 'mcp'"
         class="btn-primary flex items-center gap-1.5"
         @click="openAddMcp"
       >
@@ -901,15 +1053,6 @@ watch(activeTab, (tab) => {
             {{ mcpTools.length }}
           </span>
         </button>
-        <button
-          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
-          :class="activeTab === 'test'
-            ? 'border-primary-500 text-primary-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-          @click="activeTab = 'test'"
-        >
-          生成测试
-        </button>
       </nav>
     </div>
 
@@ -930,7 +1073,7 @@ watch(activeTab, (tab) => {
         </div>
       </div>
 
-      <div v-else-if="filteredProviders.length === 0" class="card p-12 text-center">
+      <div v-else-if="providerGroups.length === 0" class="card p-12 text-center">
         <div class="mx-auto w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
           <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
@@ -941,147 +1084,413 @@ watch(activeTab, (tab) => {
         <button class="btn-primary mx-auto" @click="openAddProvider">立即添加</button>
       </div>
 
-      <div v-else class="space-y-4">
-        <div v-for="p in filteredProviders" :key="p.id" class="card overflow-hidden">
-          <div class="px-5 py-4 flex items-center gap-4">
-            <div class="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold shrink-0" :class="providerColor(p.name)">
-              {{ (p.display_name || p.name).charAt(0).toUpperCase() }}
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-gray-900 dark:text-white">{{ p.display_name || p.name }}</span>
-                <span class="text-xs text-gray-400 font-mono">{{ p.name }}</span>
-                <span v-if="p.tenant_id === 0" class="px-1.5 py-0.5 text-xs rounded bg-blue-50 text-blue-600 border border-blue-200">系统</span>
-                <span v-else class="px-1.5 py-0.5 text-xs rounded bg-violet-50 text-violet-600 border border-violet-200">租户私有</span>
-                <span class="px-1.5 py-0.5 text-xs rounded-full font-medium" :class="p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
-                  {{ p.is_active ? '已启用' : '已禁用' }}
-                </span>
-              </div>
-              <div class="mt-1 flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-                <span v-if="p.type" class="font-medium">{{
-                  p.type === 'llm' ? 'LLM'
-                  : p.type === 'image' ? '文生图'
-                  : p.type === 'img2img' ? '图生图'
-                  : p.type === 'video' ? '视频生成'
-                  : p.type === 'voice' ? '语音合成'
-                  : p.type === 'sfx' ? '文生音效'
-                  : p.type === 'embedding' ? '向量嵌入'
-                  : p.type
-                }}</span>
-                <span v-if="p.api_endpoint" class="font-mono truncate max-w-xs">{{ p.api_endpoint }}</span>
-                <span v-if="p.api_version">模型：<span class="font-mono">{{ p.api_version }}</span></span>
-                <span v-if="p.timeout" class="font-mono">超时 {{ p.timeout }}s</span>
-                <span v-if="p.concurrency" class="font-mono">并发 {{ p.concurrency }}</span>
-                <span v-if="p.rate_limit" class="font-mono">限速 {{ p.rate_limit }}/min</span>
-                <span v-if="p.max_tokens" class="font-mono">{{ p.max_tokens.toLocaleString() }} tokens</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <a
-                v-if="providerConsoleUrl(p.name)"
-                :href="providerConsoleUrl(p.name)"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1 text-gray-500 hover:text-primary-600"
-                title="前往官方控制台"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                </svg>
-                控制台
-              </a>
-              <button class="btn-outline text-xs px-3 py-1.5" :disabled="testingId === p.id" @click="handleTestProvider(p.id)">
-                <span v-if="testingId === p.id" class="flex items-center gap-1">
-                  <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  测试中
-                </span>
-                <span v-else>测试连接</span>
-              </button>
-              <button class="btn-ghost text-xs px-3 py-1.5 text-blue-600 hover:text-blue-700" @click="openTestPanel(p); activeTab = 'test'">生成测试</button>
-              <button class="btn-ghost text-xs px-3 py-1.5" @click="openEditProvider(p)">编辑</button>
-              <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" :disabled="p.tenant_id === 0" @click="handleDeleteProvider(p.id)">删除</button>
-            </div>
-          </div>
-          <!-- Ollama 无需 API Key，显示本地服务提示 -->
-          <div v-if="p.name === 'ollama'" class="px-5 py-3 bg-lime-50 dark:bg-lime-900/10 border-t border-lime-100 dark:border-lime-800 flex items-center gap-2">
-            <svg class="w-3.5 h-3.5 text-lime-600 dark:text-lime-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-            <span class="text-xs text-lime-700 dark:text-lime-300">本地服务 · 无需 API Key</span>
-            <code class="text-xs font-mono text-lime-600 dark:text-lime-400">{{ p.api_endpoint || 'http://localhost:11434/v1' }}</code>
-          </div>
-          <div v-else class="px-5 py-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
-            <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-            </svg>
-            <span class="text-xs text-gray-500 mr-1">API Key</span>
-            <code class="text-xs font-mono flex-1 text-gray-700 dark:text-gray-300 tracking-wider">
-              {{ revealedKeys.has(p.id) ? (p.api_key || '—') : maskKey(p.api_key) }}
-            </code>
-            <button v-if="p.api_key && p.api_key !== '—'" class="text-xs text-gray-400 hover:text-gray-600 underline" @click="toggleReveal(p.id)">
-              {{ revealedKeys.has(p.id) ? '隐藏' : '显示' }}
-            </button>
-            <button class="text-xs text-primary-600 hover:text-primary-700 underline ml-2" @click="openEditProvider(p)">更改密钥</button>
-          </div>
-          <!-- 可灵系列：共用 API Key 提示 -->
-          <div v-if="['kling','kling-sfx','kling-tts','kling-image','kling-i2i'].includes(p.name)" class="px-5 py-2 bg-fuchsia-50 dark:bg-fuchsia-900/10 border-t border-fuchsia-100 dark:border-fuchsia-800 flex items-center gap-2">
-            <svg class="w-3.5 h-3.5 text-fuchsia-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <span class="text-xs text-fuchsia-700 dark:text-fuchsia-300">可灵四能力（视频/音效/语音/图像）共用同一对 Access Key + Secret Key · JWT（HS256）鉴权 · 端点 <code class="font-mono">https://api.klingai.com</code></span>
-          </div>
+      <div v-else class="flex gap-0 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden" style="min-height:540px">
 
-          <!-- Model section header -->
-          <div class="px-5 py-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/30 dark:bg-gray-800/20">
-            <button class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" @click="toggleProviderModels(p.id)">
-              <svg class="w-3.5 h-3.5 transition-transform duration-150" :class="expandedModels.has(p.id) ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        <!-- ═══ LEFT: Provider list ═══ -->
+        <div class="w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
+          <!-- Column header -->
+          <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/60 flex items-center justify-between bg-gray-50/80 dark:bg-gray-800/60">
+            <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">供应商</span>
+            <span class="text-xs font-mono text-gray-400">{{ providerGroups.length }}</span>
+          </div>
+          <!-- List -->
+          <div class="flex-1 overflow-y-auto">
+            <button v-for="group in providerGroups" :key="group.key"
+                    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors relative border-b border-gray-100 dark:border-gray-700/40 last:border-b-0"
+                    :class="selectedGroupKey === group.key
+                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'"
+                    @click="selectGroup(group.key)">
+              <!-- Active indicator bar -->
+              <span v-if="selectedGroupKey === group.key"
+                    class="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500"></span>
+              <!-- Logo -->
+              <div class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 overflow-hidden"
+                   :class="providerColor(group.canonical.name)">
+                <ProviderLogo :name="group.canonical.name" class="w-4 h-4" />
+              </div>
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                    {{ providerTemplateName(group.canonical.name) }}
+                  </span>
+                </div>
+                <!-- Type summary badges -->
+                <div class="mt-0.5 flex flex-wrap gap-1">
+                  <template v-if="modelsLoading.has(group.key)">
+                    <div class="h-3.5 w-14 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+                  </template>
+                  <template v-else-if="Object.keys(modelTypeSummary(group.key)).length">
+                    <span v-for="(cnt, mtype) in modelTypeSummary(group.key)" :key="mtype"
+                          class="px-1 py-0 text-xs font-mono font-semibold rounded leading-5"
+                          :class="typeBadgeColor(String(mtype))">
+                      {{ TYPE_LABELS[String(mtype)] || mtype }}×{{ cnt }}
+                    </span>
+                  </template>
+                  <span v-else class="text-xs text-gray-400">暂无模型</span>
+                </div>
+              </div>
+            </button>
+          </div>
+          <!-- Add provider -->
+          <div class="shrink-0 border-t border-gray-100 dark:border-gray-700/50 p-2">
+            <button class="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    @click="openAddProvider">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
               </svg>
-              <span class="font-medium">模型</span>
-              <span v-if="providerModels[p.id]?.length" class="px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 font-mono">{{ providerModels[p.id].length }}</span>
-              <span v-else-if="providerModels[p.id]?.length === 0" class="text-gray-400 italic">暂无</span>
-            </button>
-            <button v-if="expandedModels.has(p.id) && !addModelForms[p.id]" class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1" @click="openAddModelForm(p.id, p.type)">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              添加模型
+              添加供应商
             </button>
           </div>
+        </div>
 
-          <!-- Model rows -->
-          <div v-if="expandedModels.has(p.id)" class="divide-y divide-gray-100 dark:divide-gray-700/50">
-            <div v-if="!providerModels[p.id]?.length && !addModelForms[p.id]" class="px-5 py-4 text-xs text-gray-400 text-center italic">
-              暂无模型 · 点击「添加模型」后即可在项目设置中选用
+        <!-- ═══ RIGHT: Provider detail ═══ -->
+        <div class="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+
+          <!-- No selection -->
+          <div v-if="!selectedGroup" class="h-full flex items-center justify-center">
+            <div class="text-center text-gray-400">
+              <svg class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6M12 9v6"/>
+              </svg>
+              <p class="text-sm">从左侧选择提供商</p>
+            </div>
+          </div>
+
+          <template v-else>
+            <!-- ── 供应商 header ── -->
+            <div class="px-6 py-4 flex items-center gap-4 border-b border-gray-100 dark:border-gray-700/50">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
+                   :class="providerColor(selectedGroup.canonical.name)">
+                <ProviderLogo :name="selectedGroup.canonical.name" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h2 class="font-semibold text-base text-gray-900 dark:text-white">
+                    {{ providerTemplateName(selectedGroup.canonical.name) }}
+                  </h2>
+                  <span v-if="selectedGroup.canonical.tenant_id === 0"
+                        class="px-1.5 py-0.5 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700">系统</span>
+                </div>
+                <div class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
+                  </svg>
+                  <code class="truncate">{{ selectedGroup.canonical.api_endpoint || '—' }}</code>
+                </div>
+              </div>
+              <!-- Actions -->
+              <div class="flex items-center gap-1 shrink-0">
+                <a v-if="providerConsoleUrl(selectedGroup.canonical.name)"
+                   :href="providerConsoleUrl(selectedGroup.canonical.name)" target="_blank" rel="noopener noreferrer"
+                   class="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="官方控制台">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                  </svg>
+                </a>
+                <button class="p-1.5 rounded text-gray-400 hover:text-green-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        :disabled="testingId === selectedGroup.canonical.id"
+                        title="测试连接"
+                        @click="handleTestProvider(selectedGroup.canonical.id)">
+                  <svg v-if="testingId === selectedGroup.canonical.id" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </button>
+                <button class="p-1.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="编辑"
+                        @click="openEditProvider(selectedGroup)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </button>
+                <button class="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="删除"
+                        :disabled="selectedGroup.members.every(m => m.tenant_id === 0)"
+                        @click="handleDeleteGroup(selectedGroup)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            <div v-for="m in (providerModels[p.id] || [])" :key="m.id"
-                 class="px-5 py-2.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
-              <span class="flex-1 text-sm font-mono text-gray-800 dark:text-gray-200 truncate">{{ m.name }}</span>
-              <span v-if="m.suitable_tasks" class="text-xs text-gray-400 font-mono">{{ m.suitable_tasks }}</span>
-              <button class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1" aria-label="删除模型" @click="handleDeleteModel(p.id, m.id)">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            <!-- ── 凭证行 ── -->
+            <div v-if="selectedGroup.canonical.name === 'ollama'"
+                 class="px-6 py-2.5 border-b border-gray-100 dark:border-gray-700/50 bg-emerald-50/60 dark:bg-emerald-900/10 flex items-center gap-2">
+              <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+              <span class="text-xs text-emerald-700 dark:text-emerald-300">本地服务 · 无需 API Key</span>
+            </div>
+            <div v-else class="px-6 py-2.5 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/40 dark:bg-gray-800/20 flex items-center gap-3">
+              <svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+              </svg>
+              <span class="text-xs text-gray-500 shrink-0">API Key</span>
+              <code class="text-xs font-mono flex-1 text-gray-600 dark:text-gray-400 tracking-wider truncate">
+                {{ !hiddenKeys.has(selectedGroup.key) ? (selectedGroup.canonical.api_key || '—') : maskKey(selectedGroup.canonical.api_key) }}
+              </code>
+              <button v-if="selectedGroup.canonical.api_key && selectedGroup.canonical.api_key !== '—'"
+                      class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
+                      @click="toggleReveal(selectedGroup.key)">
+                {{ !hiddenKeys.has(selectedGroup.key) ? '隐藏' : '显示' }}
+              </button>
+              <button class="text-xs text-primary-600 hover:text-primary-700 shrink-0"
+                      @click="openEditProvider(selectedGroup)">更改密钥</button>
+            </div>
+
+            <!-- ── 分组提示 ── -->
+            <div v-if="selectedGroup.isGroup"
+                 class="px-6 py-2 border-b border-gray-100 dark:border-gray-700/50 bg-violet-50/40 dark:bg-violet-900/10 flex items-center gap-1.5">
+              <svg class="w-3 h-3 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span class="text-xs text-violet-700 dark:text-violet-300">
+                子供应商：{{ selectedGroup.members.map(m => m.name).join(' · ') }}，共享同一套凭证
+              </span>
+            </div>
+
+            <!-- ── 模型区域 header ── -->
+            <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                模型
+                <span v-if="providerModels[selectedGroup.key]?.length"
+                      class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 font-mono">
+                  {{ providerModels[selectedGroup.key].length }}
+                </span>
+              </h3>
+              <button class="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 transition-colors"
+                      @click="openAddModelForm(selectedGroup)">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                添加模型
               </button>
             </div>
 
-            <!-- Inline add form -->
-            <div v-if="addModelForms[p.id]" class="px-5 py-3 bg-primary-50/50 dark:bg-primary-900/10 flex items-center gap-3">
-              <input
-                v-model="addModelForms[p.id].name"
-                type="text"
-                class="input text-sm flex-1"
-                placeholder="模型名称，如 gpt-4o"
-                @keydown.enter="handleCreateModel(p.id)"
-              />
-              <select v-model="addModelForms[p.id].tasks" class="input text-sm w-36">
-                <option v-for="t in TASK_TYPE_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+            <!-- 模型加载骨架 -->
+            <div v-if="modelsLoading.has(selectedGroup.key)" class="px-6 py-5 space-y-3">
+              <div v-for="i in 4" :key="i" class="flex items-center gap-4 animate-pulse">
+                <div class="w-2 h-2 rounded-full bg-gray-200 dark:bg-gray-700"></div>
+                <div class="h-4 rounded bg-gray-200 dark:bg-gray-700" :style="{ width: i % 2 === 0 ? '40%' : '55%' }"></div>
+                <div class="h-4 w-12 rounded bg-gray-200 dark:bg-gray-700 ml-auto"></div>
+                <div class="h-4 w-8 rounded bg-gray-200 dark:bg-gray-700"></div>
+              </div>
+            </div>
+
+            <!-- 模型空状态 -->
+            <div v-else-if="!providerModels[selectedGroup.key]?.length"
+                 class="px-6 py-16 text-center">
+              <p class="text-sm text-gray-400 italic mb-4">暂无模型 · 添加后可在任务配置中选用</p>
+              <button class="btn-primary text-sm px-5 py-2" @click="openAddModelForm(selectedGroup)">
+                + 添加第一个模型
+              </button>
+            </div>
+
+            <!-- 模型表格 -->
+            <table v-else class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-100 dark:border-gray-700/50 text-xs text-gray-500 dark:text-gray-400 bg-gray-50/60 dark:bg-gray-800/30">
+                  <th class="px-6 py-2.5 text-left font-medium w-8"></th>
+                  <th class="px-3 py-2.5 text-left font-medium">模型名称</th>
+                  <th class="px-3 py-2.5 text-left font-medium w-28">类型</th>
+                  <th class="px-3 py-2.5 text-right font-medium w-24">上下文</th>
+                  <th class="px-3 py-2.5 text-left font-medium w-28">质量</th>
+                  <th class="px-3 py-2.5 text-center font-medium w-20">启用</th>
+                  <th class="px-3 py-2.5 text-right font-medium w-20"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 dark:divide-gray-700/30">
+                <tr v-for="m in (providerModels[selectedGroup.key] || [])" :key="m.id"
+                    class="group/row transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/30"
+                    :class="!m.is_active ? 'opacity-50' : ''">
+                  <!-- 状态点 -->
+                  <td class="px-6 py-3">
+                    <span class="block w-1.5 h-1.5 rounded-full mx-auto"
+                          :class="m.is_active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'"></span>
+                  </td>
+                  <!-- 模型名 + 显示名 -->
+                  <td class="px-3 py-3">
+                    <code class="font-mono text-gray-800 dark:text-gray-200">{{ m.name }}</code>
+                    <div v-if="m.display_name && m.display_name !== m.name"
+                         class="text-gray-400 dark:text-gray-500 text-xs mt-0.5 truncate max-w-xs">
+                      {{ m.display_name }}
+                    </div>
+                  </td>
+                  <!-- 类型 -->
+                  <td class="px-3 py-3">
+                    <span v-if="m.type" class="px-2 py-0.5 rounded text-xs font-mono font-semibold"
+                          :class="typeBadgeColor(m.type)">
+                      {{ TYPE_LABELS[m.type] || m.type }}
+                    </span>
+                  </td>
+                  <!-- 上下文 -->
+                  <td class="px-3 py-3 text-right">
+                    <span v-if="m.max_tokens" class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ fmtCtx(m.max_tokens) }}</span>
+                    <span v-else class="text-gray-300 dark:text-gray-600 text-xs">—</span>
+                  </td>
+                  <!-- 质量 -->
+                  <td class="px-3 py-3">
+                    <span v-if="m.quality > 0" class="inline-flex gap-0.5 items-center">
+                      <span v-for="(filled, qi) in qualityDots(m.quality)" :key="qi"
+                            class="w-1.5 h-1.5 rounded-full"
+                            :class="filled ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'" />
+                    </span>
+                    <span v-else class="text-gray-300 dark:text-gray-600 text-xs">—</span>
+                  </td>
+                  <!-- 启用 -->
+                  <td class="px-3 py-3 text-center">
+                    <button type="button" role="switch" :aria-checked="m.is_active"
+                            class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus:outline-none"
+                            :class="m.is_active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'"
+                            @click="handleToggleModel(selectedGroup.key, m)">
+                      <span class="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-150"
+                            :class="m.is_active ? 'translate-x-4' : 'translate-x-0'"></span>
+                    </button>
+                  </td>
+                  <!-- 操作 -->
+                  <td class="px-3 py-3 text-right">
+                    <span class="inline-flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                      <button class="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              aria-label="编辑" @click="openEditModel(selectedGroup.key, m)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                      </button>
+                      <button class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                              aria-label="删除" @click="handleDeleteModel(selectedGroup.key, m.id)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+          </template>
+        </div>
+
+      </div>
+
+      <!-- Add Model Modal (inside providers template to keep v-else-if chain intact) -->
+      <Teleport to="body">
+        <div v-if="addModelModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeAddModelModal">
+          <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">添加模型</h3>
+
+            <!-- 模型类型 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">模型类型</label>
+              <select v-model="addModelModal.type" class="input text-sm w-full">
+                <option v-for="t in MODEL_TYPE_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
-              <button class="btn-primary text-xs px-3 py-1.5" :disabled="addModelForms[p.id].saving" @click="handleCreateModel(p.id)">
-                {{ addModelForms[p.id].saving ? '保存中...' : '确认' }}
+            </div>
+
+            <!-- 模型名 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">模型名称 <span class="text-red-500">*</span></label>
+              <select v-if="addModelModal.availableModels.length" v-model="addModelModal.name" class="input text-sm w-full">
+                <option value="" disabled>请选择模型</option>
+                <option v-for="m in addModelModal.availableModels" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <input v-else v-model="addModelModal.name" type="text" class="input text-sm w-full" placeholder="如 gpt-4o、claude-3-5-sonnet-20241022" @keydown.enter="handleCreateModelModal" />
+            </div>
+
+            <!-- 4-column grid -->
+            <div class="grid grid-cols-4 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">请求超时（秒）</label>
+                <input v-model.number="addModelModal.timeout" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 默认 300s</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">最大并发数</label>
+                <input v-model.number="addModelModal.concurrency" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">限速（次/分）</label>
+                <input v-model.number="addModelModal.rateLimit" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">最大 Tokens</label>
+                <input v-model.number="addModelModal.maxTokens" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-2 pt-1">
+              <button class="btn-ghost text-sm px-4 py-2" @click="closeAddModelModal">取消</button>
+              <button class="btn-primary text-sm px-4 py-2" :disabled="addModelModal.saving || !addModelModal.name.trim()" @click="handleCreateModelModal">
+                {{ addModelModal.saving ? '保存中...' : '添加' }}
               </button>
-              <button class="btn-ghost text-xs px-3 py-1.5" @click="closeAddModelForm(p.id)">取消</button>
             </div>
           </div>
         </div>
-      </div>
+      </Teleport>
+
+      <!-- Edit Model Modal -->
+      <Teleport to="body">
+        <div v-if="editModelModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeEditModel">
+          <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">编辑模型</h3>
+
+            <!-- 显示名称 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">显示名称</label>
+              <input v-model="editModelModal.displayName" type="text" class="input text-sm w-full" placeholder="用户友好的名称，如 GPT-4o" />
+            </div>
+
+            <!-- 模型类型 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">模型类型</label>
+              <select v-model="editModelModal.type" class="input text-sm w-full">
+                <option v-for="t in MODEL_TYPE_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
+
+            <!-- 参数网格 (4列，与添加模型保持一致) -->
+            <div class="grid grid-cols-4 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">请求超时（秒）</label>
+                <input v-model.number="editModelModal.timeout" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 默认 300s</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">最大并发数</label>
+                <input v-model.number="editModelModal.concurrency" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">限速（次/分）</label>
+                <input v-model.number="editModelModal.rateLimit" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">最大 Tokens</label>
+                <input v-model.number="editModelModal.maxTokens" type="number" min="0" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-2 pt-1">
+              <button class="btn-ghost text-sm px-4 py-2" @click="closeEditModel">取消</button>
+              <button class="btn-primary text-sm px-4 py-2" :disabled="editModelModal.saving" @click="handleEditModel">
+                {{ editModelModal.saving ? '保存中...' : '保存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
     </template>
 
@@ -1185,122 +1594,6 @@ watch(activeTab, (tab) => {
       </div>
     </template>
 
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- TAB 3: 生成测试 & A/B 对比                                           -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <template v-else-if="activeTab === 'test'">
-      <!-- Single model test panel -->
-      <div class="card p-6 mb-6">
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">模型生成测试</h3>
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">选择提供商</label>
-          <select
-            v-model="testPanel.provider"
-            class="input"
-          >
-            <option :value="null" disabled>请选择提供商</option>
-            <option v-for="p in filteredProviders" :key="p.id" :value="p">
-              {{ p.display_name || p.name }}
-            </option>
-          </select>
-        </div>
-        <div class="mb-3">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">测试提示词</label>
-          <textarea
-            v-model="testPanel.prompt"
-            class="input h-24 resize-none"
-            placeholder="输入测试提示词..."
-          />
-        </div>
-        <div class="flex gap-2 mb-4">
-          <button
-            class="btn-primary"
-            :disabled="testPanel.loading || !testPanel.provider"
-            @click="runModelTest"
-          >
-            <svg v-if="testPanel.loading" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-            {{ testPanel.loading ? '生成中...' : '发送' }}
-          </button>
-          <button
-            v-if="testPanel.result || testPanel.error"
-            class="btn-ghost"
-            @click="testPanel.result = ''; testPanel.error = ''; testPanel.stats = null"
-          >
-            清除
-          </button>
-        </div>
-        <div v-if="testPanel.result" class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ testPanel.result }}</div>
-        <div v-if="testPanel.error" class="mt-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-4 py-3">{{ testPanel.error }}</div>
-        <div v-if="testPanel.stats" class="mt-2 flex items-center gap-4 text-xs text-gray-400">
-          <span>耗时: <span class="font-mono text-gray-600 dark:text-gray-300">{{ testPanel.stats.latency_ms }}ms</span></span>
-          <span>Tokens: <span class="font-mono text-gray-600 dark:text-gray-300">{{ testPanel.stats.tokens }}</span></span>
-        </div>
-      </div>
-
-      <!-- A/B Test Panel -->
-      <div class="card p-6">
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">A/B 模型对比</h3>
-        <div class="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型 A</label>
-            <select v-model="abTest.modelA" class="input">
-              <option :value="null" disabled>请选择</option>
-              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">{{ p.display_name || p.name }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型 B</label>
-            <select v-model="abTest.modelB" class="input">
-              <option :value="null" disabled>请选择</option>
-              <option v-for="p in filteredProviders" :key="p.id" :value="p.id">{{ p.display_name || p.name }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="mb-3">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">对比提示词</label>
-          <textarea v-model="abTest.prompt" class="input h-20 resize-none" placeholder="测试提示词..." />
-        </div>
-        <button
-          class="btn-primary mb-6"
-          :disabled="abTest.loading || !abTest.modelA || !abTest.modelB"
-          @click="runABTest"
-        >
-          <svg v-if="abTest.loading" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          {{ abTest.loading ? '对比中...' : '开始对比' }}
-        </button>
-
-        <div v-if="abTest.resultA || abTest.resultB || abTest.errorA || abTest.errorB" class="grid grid-cols-2 gap-4">
-          <!-- Model A result -->
-          <div class="bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800 p-4">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-semibold text-blue-700 dark:text-blue-300">
-                模型 A — {{ filteredProviders.find(p => p.id === abTest.modelA)?.display_name || '—' }}
-              </span>
-              <span v-if="abTest.statsA" class="text-xs text-blue-500 font-mono">{{ abTest.statsA.latency_ms }}ms · {{ abTest.statsA.tokens }}tok</span>
-            </div>
-            <div v-if="abTest.resultA" class="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ abTest.resultA }}</div>
-            <div v-if="abTest.errorA" class="text-sm text-red-500">{{ abTest.errorA }}</div>
-          </div>
-          <!-- Model B result -->
-          <div class="bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-800 p-4">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                模型 B — {{ filteredProviders.find(p => p.id === abTest.modelB)?.display_name || '—' }}
-              </span>
-              <span v-if="abTest.statsB" class="text-xs text-emerald-500 font-mono">{{ abTest.statsB.latency_ms }}ms · {{ abTest.statsB.tokens }}tok</span>
-            </div>
-            <div v-if="abTest.resultB" class="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ abTest.resultB }}</div>
-            <div v-if="abTest.errorB" class="text-sm text-red-500">{{ abTest.errorB }}</div>
-          </div>
-        </div>
-      </div>
-    </template>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <!-- MODAL: Add / Edit Provider                                          -->
@@ -1321,24 +1614,14 @@ watch(activeTab, (tab) => {
             </div>
             <div class="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">模型类型</label>
-                <select v-if="!editingProvider" v-model="providerForm.type" class="input">
-                  <option value="llm">LLM（语言模型）</option>
-                  <option value="image">图像生成（文生图）</option>
-                  <option value="img2img">图生图</option>
-                  <option value="video">视频生成</option>
-                  <option value="voice">语音合成</option>
-                  <option value="sfx">文生音效</option>
-                  <option value="embedding">向量嵌入</option>
-                </select>
-                <div v-else class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ providerForm.type }}</div>
-              </div>
-              <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   提供商 <span class="text-red-500">*</span>
                   <span class="text-xs text-gray-400 font-normal ml-1">（唯一标识，创建后不可修改）</span>
                 </label>
-                <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingProvider.name }}</div>
+                <div v-if="editingProvider" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">
+                  {{ providerTemplateName(editingProvider.name) }}
+                  <span class="ml-2 text-xs font-mono opacity-60">{{ editingProvider.name }}</span>
+                </div>
                 <select v-else v-model="providerForm.name" class="input" @change="onProviderSelect">
                   <option value="" disabled>请选择供应商</option>
                   <option v-for="opt in filteredProviderOptions" :key="opt.name" :value="opt.name">{{ opt.label }}</option>
@@ -1358,11 +1641,6 @@ watch(activeTab, (tab) => {
                     前往官网获取 API Key
                   </a>
                 </div>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
-                <input v-model="providerForm.display_name" type="text" class="input" placeholder="如：doubao-voice" />
-                <p class="mt-1 text-xs text-gray-400">默认按「提供商标识-类型」生成，可自定义</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">API 端点</label>
@@ -1411,9 +1689,9 @@ watch(activeTab, (tab) => {
                   autocomplete="new-password" />
                 <p v-if="credentialMeta.skHint" class="mt-1 text-xs text-gray-400">{{ credentialMeta.skHint }}</p>
               </div>
-              <div>
+              <div v-if="credentialMeta.versionLabel">
                 <div class="flex items-center justify-between mb-1.5">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ credentialMeta.versionLabel || '默认模型名' }}</label>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ credentialMeta.versionLabel }}</label>
                   <span v-if="fetchingModels" class="flex items-center gap-1 text-xs text-gray-400">
                     <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -1461,58 +1739,6 @@ watch(activeTab, (tab) => {
                     {{ credentialMeta.versionHint || '未指定模型时的兜底默认值，不影响下方模型列表；填写端点和 Key 后自动获取' }}
                   </p>
                 </div>
-              </div>
-              <!-- 超时 + 并发度 + 限速 + MaxTokens -->
-              <div class="grid grid-cols-4 gap-3">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">请求超时（秒）</label>
-                  <input
-                    v-model.number="providerForm.timeout"
-                    type="number" min="0" step="30"
-                    class="input font-mono text-sm"
-                    placeholder="0" />
-                  <p class="mt-0.5 text-xs text-gray-400">0 = 默认 300s</p>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大并发数</label>
-                  <input
-                    v-model.number="providerForm.concurrency"
-                    type="number" min="0" step="1"
-                    class="input font-mono text-sm"
-                    placeholder="0" />
-                  <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">限速（次/分）</label>
-                  <input
-                    v-model.number="providerForm.rate_limit"
-                    type="number" min="0" step="10"
-                    class="input font-mono text-sm"
-                    placeholder="0" />
-                  <p class="mt-0.5 text-xs text-gray-400">0 = 不限制</p>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大 Tokens</label>
-                  <input
-                    v-model.number="providerForm.max_tokens"
-                    type="number" min="0" step="1024"
-                    class="input font-mono text-sm"
-                    placeholder="0" />
-                  <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认；常见上限：GPT-4o / Azure 32768，Claude 16384，Doubao / Deepseek 16384</p>
-                  <p v-if="providerForm.max_tokens > 32768" class="mt-0.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
-                    超过 32768 可能导致部分模型（如 Azure GPT-4o）返回 400 错误，建议不超过模型实际支持值
-                  </p>
-                </div>
-              </div>
-              <div class="flex items-center gap-3 py-1">
-                <button type="button" role="switch" :aria-checked="providerForm.is_active"
-                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-                  :class="providerForm.is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-                  @click="providerForm.is_active = !providerForm.is_active">
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="providerForm.is_active ? 'translate-x-6' : 'translate-x-1'" />
-                </button>
-                <span class="text-sm text-gray-700 dark:text-gray-300">启用该提供商</span>
               </div>
             </div>
             <div v-if="!editingProvider" class="mx-6 mb-0 mt-1 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex items-start gap-2 text-xs text-blue-700 dark:text-blue-300 shrink-0">
@@ -1732,8 +1958,8 @@ watch(activeTab, (tab) => {
                     <p class="text-xs text-gray-400 font-mono truncate">{{ model.name }}</p>
                   </div>
                   <div class="flex items-center gap-1.5 shrink-0 text-xs text-gray-400">
-                    <span v-if="model.suitable_tasks" class="truncate max-w-[100px]">
-                      {{ model.suitable_tasks }}
+                    <span v-if="model.type" class="truncate max-w-[100px]">
+                      {{ model.type }}
                     </span>
                     <span v-if="!model.is_available" class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">不可用</span>
                   </div>

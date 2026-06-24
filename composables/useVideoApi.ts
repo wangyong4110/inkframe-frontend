@@ -298,19 +298,19 @@ export const useVideoApi = () => {
   const listVoiceSegments = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
 
-  const appendVoiceSegment = (videoId: number, shotId: number, data: { text: string; speaker?: string; voice_id?: string }) =>
+  const appendVoiceSegment = (videoId: number, shotId: number, data: { text: string; speaker?: string; emotion?: string; language?: string; voice_id?: string }) =>
     request<ApiResponse<ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
 
-  const insertVoiceSegment = (videoId: number, shotId: number, afterSeqNo: number, data: { text: string; speaker?: string; voice_id?: string }) =>
+  const insertVoiceSegment = (videoId: number, shotId: number, afterSeqNo: number, data: { text: string; speaker?: string; emotion?: string; language?: string; voice_id?: string }) =>
     request<ApiResponse<ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments/insert`, {
       method: 'POST',
       body: JSON.stringify({ after_seq_no: afterSeqNo, ...data }),
     })
 
-  const updateVoiceSegment = (videoId: number, shotId: number, segId: number, data: { text?: string; speaker?: string; voice_id?: string }) =>
+  const updateVoiceSegment = (videoId: number, shotId: number, segId: number, data: { text?: string; speaker?: string; emotion?: string; language?: string; voice_id?: string }) =>
     request<ApiResponse<ShotVoiceSegment>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}`, {
       method: 'PUT',
       body: JSON.stringify(data),

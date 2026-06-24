@@ -34,11 +34,32 @@ export const useModelApi = () => {
     model_id: string
     name: string
     task_types: string
+    type?: string
     max_tokens?: number
+    timeout?: number
+    concurrency?: number
+    rate_limit?: number
     is_default?: boolean
   }) =>
     request<ApiResponse<AIModel>>('/models', {
       method: 'POST',
+      body: JSON.stringify(data),
+    })
+
+  const updateModel = (id: number, data: Partial<{
+    name: string
+    display_name: string
+    type: string
+    max_tokens: number
+    quality: number
+    timeout: number
+    concurrency: number
+    rate_limit: number
+    cost_per_1k: number
+    is_active: boolean
+  }>) =>
+    request<ApiResponse<AIModel>>(`/models/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     })
 
@@ -48,7 +69,6 @@ export const useModelApi = () => {
   const createProvider = (data: {
     name: string
     display_name?: string
-    type: string
     api_endpoint: string
     api_key: string
     api_version?: string
@@ -62,7 +82,6 @@ export const useModelApi = () => {
   const updateProvider = (id: number, data: Partial<{
     name: string
     display_name: string
-    type: string
     api_endpoint: string
     api_key: string
     api_version: string
@@ -90,6 +109,18 @@ export const useModelApi = () => {
   const getProviderTemplates = () =>
     request<ApiResponse<ProviderTemplate[]>>('/model-providers/templates')
 
+  const syncProviderGroup = (data: {
+    group_name: string
+    api_key: string
+    api_secret_key?: string
+    api_version?: string
+    is_active: boolean
+  }) =>
+    request<ApiResponse<ModelProvider>>('/model-providers/sync-group', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+
   const testModelPrompt = (data: { provider_id: number; prompt: string }) =>
     request<ApiResponse<{ content: string; tokens: number; latency_ms: number }>>('/models/test-prompt', {
       method: 'POST',
@@ -114,6 +145,7 @@ export const useModelApi = () => {
     getAvailableModels,
     selectModel,
     createModel,
+    updateModel,
     deleteModel,
     createProvider,
     updateProvider,
@@ -121,6 +153,7 @@ export const useModelApi = () => {
     testProvider,
     fetchProviderModels,
     getProviderTemplates,
+    syncProviderGroup,
     testModelPrompt,
     getTaskMappings,
     updateTaskMapping,

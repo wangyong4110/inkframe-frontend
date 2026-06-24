@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <defs>
+    <linearGradient id="az-a" x1="0.978" x2="0.188" y1="0.173" y2="0.978" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#114a8b"/>
+      <stop offset="1" stop-color="#0669bc"/>
+    </linearGradient>
+    <linearGradient id="az-b" x1="0.1" x2="0.775" y1="0.3" y2="0.7" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#3ccbf4"/>
+      <stop offset="1" stop-color="#2892df"/>
+    </linearGradient>
+  </defs>
+  <path d="M33.338 6.544h27.742L33.966 83.114a4.393 4.393 0 0 1-4.164 2.994H8.8a4.395 4.395 0 0 1-4.147-5.864L27.174 9.538A4.395 4.395 0 0 1 33.338 6.544z" fill="url(#az-a)"/>
+  <path d="M71.978 60.628H38.051a2.027 2.027 0 0 0-1.382 3.512L58.17 82.699a4.418 4.418 0 0 0 3.008 1.408h24.868z" fill="#0078d4"/>
+  <path d="M33.338 6.544a4.35 4.35 0 0 0-6.195.038L4.691 80.108A4.372 4.372 0 0 0 8.8 86.107h21.177a4.714 4.714 0 0 0 3.616-2.993l5.19-15.29 18.54 17.287a4.474 4.474 0 0 0 2.819 1h24.608L71.895 60.628H46.155L62.97 9.536A4.418 4.418 0 0 0 58.8 3.886L33.338 6.544z" fill="url(#az-b)"/>
+</svg>

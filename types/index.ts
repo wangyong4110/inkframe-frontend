@@ -391,6 +391,8 @@ export interface ShotVoiceSegment {
   seq_no: number
   text: string
   speaker?: string
+  emotion?: string
+  language?: string
   voice_id?: string
   audio_path?: string
   duration_secs?: number
@@ -496,7 +498,6 @@ export interface ModelProvider {
   tenant_id: number
   name: string
   display_name?: string
-  type?: string
   api_endpoint?: string
   api_key?: string
   api_secret_key?: string
@@ -505,9 +506,10 @@ export interface ModelProvider {
   timeout?: number              // HTTP 超时秒数，0 或未设置表示使用默认值 300s
   concurrency?: number          // 最大并发调用数，0 或未设置表示不限制
   rate_limit?: number           // 请求/分钟限速，0 或未设置表示不限制
-  max_tokens?: number           // 最大输出 token 数，0 或未设置表示使用模型默认值
   has_key?: boolean
   health_status?: 'healthy' | 'degraded' | 'down'
+  group_name?: string           // 同源分组标识（如 "kling"）
+  is_group_canonical?: boolean  // 是否为该组的 UI 代表
   created_at?: string
   updated_at?: string
 }
@@ -515,10 +517,11 @@ export interface ModelProvider {
 export interface ProviderTemplate {
   name: string
   display_name: string
-  type: string
   api_endpoint: string
   needs_secret_key: boolean
   static_models?: string[]
+  group_name?: string
+  is_group_canonical?: boolean
 }
 
 export interface AIModel {
@@ -527,13 +530,15 @@ export interface AIModel {
   provider?: ModelProvider
   name: string
   display_name: string
-  description?: string
-  is_active: boolean
-  is_available: boolean
+  type?: string
+  max_tokens?: number
+  timeout?: number
+  concurrency?: number
+  rate_limit?: number
   quality: number
   cost_per_1k: number
-  context_window: number
-  suitable_tasks?: string
+  is_active: boolean
+  is_available: boolean
 }
 
 export interface TaskModelConfig {

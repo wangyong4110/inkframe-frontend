@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="22" fill="#12B7F5"/>
+  <!-- Tencent penguin simplified -->
+  <ellipse cx="50" cy="42" rx="22" ry="26" fill="white"/>
+  <ellipse cx="50" cy="48" rx="14" ry="16" fill="#12B7F5"/>
+  <!-- eyes -->
+  <ellipse cx="43" cy="38" rx="5" ry="6" fill="white"/>
+  <ellipse cx="57" cy="38" rx="5" ry="6" fill="white"/>
+  <circle cx="44" cy="39" r="3" fill="#1a1a1a"/>
+  <circle cx="58" cy="39" r="3" fill="#1a1a1a"/>
+  <circle cx="45" cy="38" r="1.2" fill="white"/>
+  <circle cx="59" cy="38" r="1.2" fill="white"/>
+  <!-- beak -->
+  <ellipse cx="50" cy="48" rx="5" ry="3" fill="#F5A623"/>
+  <!-- wings -->
+  <ellipse cx="26" cy="55" rx="8" ry="14" fill="white" transform="rotate(-15 26 55)"/>
+  <ellipse cx="74" cy="55" rx="8" ry="14" fill="white" transform="rotate(15 74 55)"/>
+  <!-- feet -->
+  <ellipse cx="43" cy="76" rx="7" ry="4" fill="#F5A623"/>
+  <ellipse cx="57" cy="76" rx="7" ry="4" fill="#F5A623"/>
+</svg>

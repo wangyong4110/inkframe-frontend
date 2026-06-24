@@ -32,11 +32,72 @@ const generatingSegmentVoice = ref<Record<number, boolean>>({})
 const newSegmentText = ref<Record<string | number, string>>({})
 const newSegmentSpeaker = ref<Record<number, string>>({})
 const newSegmentEmotion = ref<Record<number, string>>({})
+const newSegmentLanguage = ref<Record<number, string>>({})
 const appendFormShotId = ref<number | null>(null)
 const segmentEmotions = ref<Record<number, string>>({})
 const insertAfterSeqNo = ref<Record<number, number | null>>({})
+const editingSegId = ref<number | null>(null)
+const editingSegText = ref('')
+
+async function handleSegmentEmotionChange(shot: StoryboardShot, seg: ShotVoiceSegment, emotion: string) {
+  const prev = seg.emotion || segmentEmotions.value[seg.id] || ''
+  segmentEmotions.value[seg.id] = emotion
+  try {
+    await videoApi.updateVoiceSegment(props.videoId, shot.id, seg.id, { text: seg.text, speaker: seg.speaker, emotion, language: seg.language })
+    const updated = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, emotion } : s)
+    shotSegments.value[shot.id] = updated
+    segmentCache.set(shot.id, updated)
+  } catch (e: any) {
+    toast.error('情绪保存失败：' + (e.message || ''))
+    segmentEmotions.value[seg.id] = prev
+  }
+}
+
+async function handleSegmentLanguageChange(shot: StoryboardShot, seg: ShotVoiceSegment, language: string) {
+  const prev = seg.language || ''
+  try {
+    await videoApi.updateVoiceSegment(props.videoId, shot.id, seg.id, { text: seg.text, speaker: seg.speaker, emotion: seg.emotion, language })
+    const updated = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, language } : s)
+    shotSegments.value[shot.id] = updated
+    segmentCache.set(shot.id, updated)
+  } catch (e: any) {
+    toast.error('方言保存失败：' + (e.message || ''))
+    const reverted = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, language: prev } : s)
+    shotSegments.value[shot.id] = reverted
+    segmentCache.set(shot.id, reverted)
+  }
+}
+
+async function saveSegmentText(shot: StoryboardShot, seg: ShotVoiceSegment) {
+  if (editingSegId.value !== seg.id) return
+  const text = editingSegText.value.trim()
+  editingSegId.value = null  // 立即退出编辑态，不等 API
+  if (!text || text === seg.text) return
+  // 乐观更新本地
+  const updated = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, text } : s)
+  shotSegments.value[shot.id] = updated
+  segmentCache.set(shot.id, updated)
+  try {
+    await videoApi.updateVoiceSegment(props.videoId, shot.id, seg.id, { text, speaker: seg.speaker, emotion: seg.emotion || segmentEmotions[seg.id], language: seg.language })
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || ''))
+    // 回滚本地
+    const reverted = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, text: seg.text } : s)
+    shotSegments.value[shot.id] = reverted
+    segmentCache.set(shot.id, reverted)
+  }
+}
 
 const EMOTION_OPTIONS = ['', '平静', '温馨', '激动', '悲伤', '开心', '愤怒', '神秘']
+
+const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: '',       label: '普通话' },
+  { value: 'zh-yue', label: '粤语' },
+  { value: 'zh-scu', label: '四川话' },
+  { value: 'zh-nan', label: '闽南语' },
+  { value: 'zh-wu',  label: '吴语' },
+  { value: 'en',     label: 'English' },
+]
 
 // Sync audio URLs from storyboard
 watch(shots, (list) => {
@@ -182,14 +243,14 @@ async function handleAppendSegment(shot: StoryboardShot) {
   try {
     const api = useVideoApi()
     const speaker = newSegmentSpeaker.value[shot.id] || undefined
-    const res = await api.appendVoiceSegment(props.videoId, shot.id, { text, speaker })
+    const emotion = newSegmentEmotion.value[shot.id] || undefined
+    const language = newSegmentLanguage.value[shot.id] || undefined
+    const res = await api.appendVoiceSegment(props.videoId, shot.id, { text, speaker, emotion, language })
     const updated = [...(shotSegments.value[shot.id] || []), res.data!]
     shotSegments.value[shot.id] = updated
     segmentCache.set(shot.id, updated)
-    if (res.data && newSegmentEmotion.value[shot.id]) {
-      segmentEmotions.value[res.data.id] = newSegmentEmotion.value[shot.id]
-    }
     newSegmentText.value[shot.id] = ''
+    newSegmentLanguage.value[shot.id] = ''
     appendFormShotId.value = null
     expandedSegmentShotId.value = shot.id
   } catch (e: any) {
@@ -351,9 +412,30 @@ async function handleChangeDialogueSpeaker(shot: StoryboardShot, newSpeaker: str
   }
 }
 
-// ── Audio segment playback preview ──
+// ── Audio playback ──
 const playingSegId = ref<number | null>(null)
+const playingShotId = ref<number | null>(null)
 let currentAudio: HTMLAudioElement | null = null
+
+function playShotAudio(shot: StoryboardShot) {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  if (playingShotId.value === shot.id) { playingShotId.value = null; return }
+  const url = shotAudioUrls.value[shot.id]
+  if (!url) { toast.warning('请先生成该镜头配音'); return }
+  playingShotId.value = shot.id
+  currentAudio = new Audio(url)
+  currentAudio.play()
+  currentAudio.onended = () => { playingShotId.value = null }
+  currentAudio.onerror = () => { playingShotId.value = null }
+}
+
+async function clearShotField(shot: StoryboardShot, field: 'dialogue' | 'narration') {
+  try {
+    await videoStore.updateShot(props.videoId, shot.id, { [field]: '' } as any)
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || ''))
+  }
+}
 
 function playSegmentAudio(seg: ShotVoiceSegment, videoId: number, shot: { id: number }) {
   if (currentAudio) {
@@ -630,39 +712,20 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
             <img v-if="shot.image_url" :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, novelStore.currentNovel?.id), (u) => saveShotImage(shot, u))" />
             <span v-else class="text-xs text-gray-500">#{{ shot.shot_no }}</span>
           </div>
-          <!-- Header -->
+          <!-- Content -->
           <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between gap-2 mb-1">
-              <div class="flex items-center gap-1.5 min-w-0">
+            <!-- Top row: #N + description + mic + blue + -->
+            <div class="flex items-start justify-between gap-2 mb-2">
+              <div class="flex items-baseline gap-1.5 min-w-0">
                 <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">#{{ shot.shot_no }}</span>
                 <p class="text-xs text-gray-600 dark:text-gray-300 truncate" :title="shot.description">{{ shot.description }}</p>
               </div>
-              <div class="flex items-center gap-1">
-                <!-- 生成配音 icon -->
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <!-- 添加片段 -->
                 <button
-                  class="p-1.5 rounded-lg transition-colors"
-                  :class="generatingVoice[shot.id]
-                    ? 'text-primary-400 bg-primary-50 dark:bg-primary-900/30'
-                    : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
-                  :disabled="generatingVoice[shot.id]"
-                  :title="generatingVoice[shot.id] ? '生成中…' : '生成配音'"
-                  @click="handleGenerateVoice(shot)"
-                >
-                  <svg v-if="generatingVoice[shot.id]" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                  </svg>
-                </button>
-                <!-- 多段配音 icon -->
-                <button
-                  class="p-1.5 rounded-lg transition-colors"
-                  :class="(expandedSegmentShotId === shot.id || (shotSegments[shot.id]?.length ?? 0) > 0)
-                    ? 'text-primary-600 bg-primary-50 dark:bg-primary-900/30'
-                    : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
-                  :title="(shotSegments[shot.id]?.length ?? 0) > 0 ? `多段配音（${shotSegments[shot.id].length} 段）` : '多段配音'"
-                  @click="toggleSegmentExpand(shot)"
+                  class="p-1 rounded text-gray-400 hover:text-primary-500 dark:hover:text-primary-400 transition-colors"
+                  title="添加语音片段"
+                  @click="appendFormShotId = (appendFormShotId === shot.id ? null : shot.id)"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -670,129 +733,130 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 </button>
               </div>
             </div>
-            <!-- Dialogue shot: character badge + text -->
-            <div v-if="shot.dialogue && !shot.narration" class="flex items-start gap-1.5">
-              <div class="flex-shrink-0">
-                <button
-                  class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors font-medium whitespace-nowrap"
-                  @click.stop="openSpeakerDropdown($event, shot)"
-                >
-                  {{ parseDialogue(shot.dialogue).speaker || '未知角色' }} ▾
+
+            <!-- Shot built-in dialogue / narration — always visible -->
+            <div v-if="shot.dialogue" class="flex items-center gap-1.5 mb-1.5">
+              <button
+                class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 font-medium whitespace-nowrap flex-shrink-0"
+                @click="openSpeakerDropdown($event, shot)"
+              >{{ parseDialogue(shot.dialogue).speaker || '旁白' }} ▾</button>
+              <span v-if="shot.emotional_tone" class="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0" :class="emotionClass(shot.emotional_tone)">{{ shot.emotional_tone }}</span>
+              <p
+                v-if="editingShotId !== shot.id || editingField !== 'dialogue'"
+                class="text-sm italic text-primary-500 dark:text-primary-400 flex-1 line-clamp-1 cursor-text"
+                @click="startEditDialogueText(shot)"
+              >{{ parseDialogue(shot.dialogue).text }}</p>
+              <input
+                v-else
+                v-model="editingText"
+                class="flex-1 text-sm italic text-primary-500 dark:text-primary-400 bg-transparent border-b border-primary-300 focus:outline-none py-0.5 px-1"
+                :ref="(el) => el && (el as HTMLInputElement).focus()"
+                @keydown.enter="saveEdit(shot)"
+                @keydown.esc="cancelEdit"
+                @blur="saveEdit(shot)"
+              />
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button class="p-1 rounded transition-colors" :class="playingShotId === shot.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'" :title="playingShotId === shot.id ? '停止' : '播放'" @click="playShotAudio(shot)">
+                  <svg v-if="playingShotId === shot.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+                <button class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors" :disabled="generatingVoice[shot.id]" title="生成配音" @click="handleGenerateVoice(shot)">
+                  <svg v-if="generatingVoice[shot.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                </button>
+                <button class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="清除对白" @click="clearShotField(shot, 'dialogue')">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
-              <span
-                v-if="shot.emotional_tone"
-                class="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mt-0.5"
-                :class="emotionClass(shot.emotional_tone)"
-                :title="`情感基调：${shot.emotional_tone}`"
-              >{{ shot.emotional_tone }}</span>
-              <!-- 对白内联编辑 -->
-              <template v-if="editingShotId === shot.id && editingField === 'dialogue'">
-                <textarea
-                  v-model="editingText"
-                  rows="2"
-                  class="flex-1 text-sm rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400"
-                  autofocus
-                  @keydown.enter.ctrl="saveEdit(shot)"
-                  @keydown.escape="cancelEdit"
-                />
-                <div class="flex flex-col gap-1 ml-1">
-                  <button class="text-[10px] px-1.5 py-0.5 rounded bg-primary-500 text-white hover:bg-primary-600" @click="saveEdit(shot)">保存</button>
-                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700" @click="cancelEdit">取消</button>
-                </div>
-              </template>
-              <p
-                v-else
-                class="text-sm italic text-blue-500 dark:text-blue-400 leading-relaxed line-clamp-2 flex-1 cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/10 rounded px-1 -mx-1 transition-colors"
-                title="点击编辑对白"
-                @click="startEditDialogueText(shot)"
-              >
-                {{ parseDialogue(shot.dialogue).text }}
-              </p>
             </div>
-            <!-- Narration / description shot -->
-            <template v-else>
-              <!-- 旁白内联编辑 -->
-              <div v-if="editingShotId === shot.id && editingField === 'narration'" class="flex items-start gap-1.5">
-                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5">旁白</span>
-                <textarea
-                  v-model="editingText"
-                  rows="2"
-                  class="flex-1 text-sm rounded border border-primary-400 dark:border-primary-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary-400"
-                  autofocus
-                  @keydown.enter.ctrl="saveEdit(shot)"
-                  @keydown.escape="cancelEdit"
-                />
-                <div class="flex flex-col gap-1 ml-1">
-                  <button class="text-[10px] px-1.5 py-0.5 rounded bg-primary-500 text-white hover:bg-primary-600" @click="saveEdit(shot)">保存</button>
-                  <button class="text-[10px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700" @click="cancelEdit">取消</button>
-                </div>
+            <div v-if="shot.narration || (!shot.dialogue && shot.description)" class="flex items-center gap-1.5 mb-1.5">
+              <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 font-medium whitespace-nowrap flex-shrink-0">旁白</span>
+              <span v-if="shot.emotional_tone" class="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0" :class="emotionClass(shot.emotional_tone)">{{ shot.emotional_tone }}</span>
+              <p
+                v-if="editingShotId !== shot.id || editingField !== 'narration'"
+                class="text-sm italic text-primary-500 dark:text-primary-400 flex-1 line-clamp-1 cursor-text"
+                @click="startEditNarration(shot)"
+              >{{ shot.narration || shot.description }}</p>
+              <input
+                v-else
+                v-model="editingText"
+                class="flex-1 text-sm italic text-primary-500 dark:text-primary-400 bg-transparent border-b border-primary-300 focus:outline-none py-0.5 px-1"
+                :ref="(el) => el && (el as HTMLInputElement).focus()"
+                @keydown.enter="saveEdit(shot)"
+                @keydown.esc="cancelEdit"
+                @blur="saveEdit(shot)"
+              />
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button class="p-1 rounded transition-colors" :class="playingShotId === shot.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'" :title="playingShotId === shot.id ? '停止' : '播放'" @click="playShotAudio(shot)">
+                  <svg v-if="playingShotId === shot.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+                <button class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors" :disabled="generatingVoice[shot.id]" title="生成配音" @click="handleGenerateVoice(shot)">
+                  <svg v-if="generatingVoice[shot.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                </button>
+                <button class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="清除旁白" @click="clearShotField(shot, 'narration')">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
               </div>
-              <div v-else class="flex items-start gap-1.5">
-                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5">旁白</span>
-                <span
-                  v-if="shot.emotional_tone"
-                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mt-0.5"
-                  :class="emotionClass(shot.emotional_tone)"
-                  :title="`情感基调：${shot.emotional_tone}`"
-                >{{ shot.emotional_tone }}</span>
-                <p
-                  class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded px-1 -mx-1 transition-colors"
-                  title="点击编辑旁白"
-                  @click="startEditNarration(shot)"
+            </div>
+
+            <!-- Segment rows (inline, no collapsible panel) -->
+            <div v-if="loadingSegments[shot.id]" class="text-xs text-gray-400 py-1">加载中…</div>
+            <div v-else class="space-y-1.5">
+              <div
+                v-for="seg in (shotSegments[shot.id] || [])"
+                :key="seg.id"
+                class="flex items-center gap-1.5"
+              >
+                <!-- Character dropdown -->
+                <button
+                  class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 font-medium whitespace-nowrap flex-shrink-0"
+                >{{ seg.speaker || '旁白' }} ▾</button>
+                <!-- Emotion -->
+                <select
+                  :value="seg.emotion || segmentEmotions[seg.id] || ''"
+                  class="text-[10px] px-1 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  :class="(seg.emotion || segmentEmotions[seg.id]) ? emotionClass(seg.emotion || segmentEmotions[seg.id]) : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'"
+                  @change="handleSegmentEmotionChange(shot, seg, ($event.target as HTMLSelectElement).value)"
                 >
-                  {{ shot.narration || shot.description || '（无台词）' }}
-                </p>
-              </div>
-            </template>
-            <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-1.5 w-full h-8" />
-          </div>
-        </div>
-
-        <!-- Multi-segment panel: show when explicitly expanded OR shot already has segments -->
-        <div v-if="expandedSegmentShotId === shot.id || (shotSegments[shot.id]?.length ?? 0) > 0" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-          <div v-if="loadingSegments[shot.id]" class="text-xs text-gray-400 py-2 text-center">加载中…</div>
-          <div v-else class="space-y-2">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">语音片段列表（按顺序播放）</p>
-
-            <template v-for="seg in (shotSegments[shot.id] || [])" :key="seg.id">
-              <div class="flex items-start gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                <span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-600 text-xs flex items-center justify-center text-gray-500 font-bold mt-0.5">
-                  {{ seg.seq_no }}
-                </span>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-start gap-1.5">
-                    <span
-                      v-if="seg.speaker"
-                      class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
-                    >{{ seg.speaker }}</span>
-                    <span
-                      v-else
-                      class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
-                    >旁白</span>
-                    <span
-                      v-if="segmentEmotions[seg.id]"
-                      class="text-xs px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 font-medium whitespace-nowrap flex-shrink-0 mt-0.5"
-                    >{{ segmentEmotions[seg.id] }}</span>
-                    <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ seg.text }}</p>
-                  </div>
-                  <audio v-if="seg.audio_path" :src="`/api/v1/videos/${props.videoId}/shots/${shot.id}/segments/${seg.id}/audio`" controls class="mt-1 w-full h-7" />
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-1">
+                  <option value="">情绪</option>
+                  <option v-for="e in EMOTION_OPTIONS.filter(Boolean)" :key="e" :value="e">{{ e }}</option>
+                </select>
+                <!-- Language / Dialect -->
+                <select
+                  :value="seg.language || ''"
+                  class="text-[10px] px-1 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-400"
+                  :class="seg.language ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'"
+                  @change="handleSegmentLanguageChange(shot, seg, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="opt in LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+                <!-- Text -->
+                <p
+                  v-if="editingSegId !== seg.id"
+                  class="text-sm italic text-primary-500 dark:text-primary-400 flex-1 line-clamp-1 cursor-text"
+                  @click="editingSegId = seg.id; editingSegText = seg.text"
+                >{{ seg.text }}</p>
+                <input
+                  v-else
+                  :ref="(el) => el && (el as HTMLInputElement).focus()"
+                  v-model="editingSegText"
+                  class="flex-1 text-sm italic text-primary-500 dark:text-primary-400 bg-transparent border-b border-primary-300 focus:outline-none py-0.5 px-1"
+                  @keydown.enter="saveSegmentText(shot, seg)"
+                  @keydown.esc="editingSegId = null"
+                  @blur="saveSegmentText(shot, seg)"
+                />
+                <!-- Actions -->
+                <div class="flex items-center gap-0.5 flex-shrink-0">
                   <button
                     class="p-1 rounded transition-colors"
-                    :class="playingSegId === seg.id
-                      ? 'text-primary-600 bg-primary-50 dark:bg-primary-900/30'
-                      : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
+                    :class="playingSegId === seg.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
                     :title="playingSegId === seg.id ? '停止播放' : (seg.audio_path ? '播放' : '请先生成配音')"
                     @click="playSegmentAudio(seg, props.videoId, shot)"
                   >
-                    <svg v-if="playingSegId === seg.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <rect x="6" y="6" width="12" height="12" rx="1" />
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+                    <svg v-if="playingSegId === seg.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                   </button>
                   <button
                     class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
@@ -800,83 +864,58 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                     title="生成配音"
                     @click="handleGenerateSegmentVoice(shot, seg)"
                   >
-                    <svg v-if="generatingSegmentVoice[seg.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
+                    <svg v-if="generatingSegmentVoice[seg.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                   </button>
                   <button
                     class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                     title="删除此片段"
                     @click="handleDeleteSegment(shot, seg)"
                   >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
               </div>
-              <!-- Insert between segments -->
-              <div class="relative flex items-center justify-center h-5 group">
-                <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-px bg-gray-100 dark:bg-gray-700 group-hover:bg-primary-200 transition-colors" />
-                <button
-                  class="relative z-10 text-[10px] text-gray-400 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hover:text-primary-600 hover:border-primary-300"
-                  @click="insertAfterSeqNo[shot.id] = (insertAfterSeqNo[shot.id] === seg.seq_no ? null : seg.seq_no)"
-                >+ 在此插入</button>
-              </div>
-              <!-- Insert form -->
-              <div v-if="insertAfterSeqNo[shot.id] === seg.seq_no" class="flex items-center gap-2 pl-7">
-                <input
-                  :value="(newSegmentText as any)[`${shot.id}_ins_${seg.seq_no}`] || ''"
-                  class="input text-sm flex-1"
-                  placeholder="新片段文本…"
-                  @input="(e) => { (newSegmentText as any)[`${shot.id}_ins_${seg.seq_no}`] = (e.target as HTMLInputElement).value }"
-                  @keydown.enter="handleInsertSegment(shot, seg.seq_no)"
-                />
-                <button class="btn-primary text-xs py-1 px-2" @click="handleInsertSegment(shot, seg.seq_no)">插入</button>
-                <button class="btn-outline text-xs py-1 px-2" @click="insertAfterSeqNo[shot.id] = null">取消</button>
-              </div>
-            </template>
 
-            <!-- Append new segment -->
-            <div v-if="appendFormShotId === shot.id" class="flex items-center gap-2 pt-1">
-              <select
-                v-model="newSegmentSpeaker[shot.id]"
-                class="input text-xs py-1 flex-shrink-0 w-24"
-                title="角色"
-              >
-                <option value="">旁白</option>
-                <option v-for="c in characters" :key="c.id" :value="c.name">{{ c.name }}</option>
-              </select>
-              <select
-                v-model="newSegmentEmotion[shot.id]"
-                class="input text-xs py-1 flex-shrink-0 w-20"
-                title="情绪"
-              >
-                <option value="">情绪</option>
-                <option v-for="e in EMOTION_OPTIONS.filter(Boolean)" :key="e" :value="e">{{ e }}</option>
-              </select>
-              <input
-                v-model="newSegmentText[shot.id]"
-                class="input text-sm flex-1"
-                placeholder="添加新片段文本…"
-                @keydown.enter="handleAppendSegment(shot)"
-              />
-              <button class="btn-primary text-xs py-1 px-2.5" @click="handleAppendSegment(shot)">追加</button>
-              <button class="btn-outline text-xs py-1 px-2" @click="appendFormShotId = null">取消</button>
+              <!-- Append form (shown when + clicked) -->
+              <div v-if="appendFormShotId === shot.id" class="flex items-center gap-1.5">
+                <select
+                  v-model="newSegmentSpeaker[shot.id]"
+                  class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 font-medium flex-shrink-0 focus:outline-none"
+                >
+                  <option value="">旁白</option>
+                  <option v-for="c in characters" :key="c.id" :value="c.name">{{ c.name }}</option>
+                </select>
+                <select
+                  v-model="newSegmentEmotion[shot.id]"
+                  class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium flex-shrink-0 focus:outline-none"
+                >
+                  <option value="">情绪</option>
+                  <option v-for="e in EMOTION_OPTIONS.filter(Boolean)" :key="e" :value="e">{{ e }}</option>
+                </select>
+                <select
+                  v-model="newSegmentLanguage[shot.id]"
+                  class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium flex-shrink-0 focus:outline-none"
+                >
+                  <option v-for="opt in LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+                <input
+                  v-model="newSegmentText[shot.id]"
+                  class="flex-1 text-sm italic text-primary-500 dark:text-primary-400 bg-transparent border-b border-gray-200 dark:border-gray-600 focus:border-primary-400 focus:outline-none py-0.5 px-1 placeholder-gray-400"
+                  placeholder="输入台词，按 Enter 追加…"
+                  autofocus
+                  @keydown.enter="handleAppendSegment(shot)"
+                />
+                <button
+                  v-if="(newSegmentText[shot.id] || '').trim()"
+                  class="text-xs text-primary-500 hover:text-primary-600 flex-shrink-0 font-medium"
+                  @click="handleAppendSegment(shot)"
+                >追加</button>
+                <button class="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0" @click="appendFormShotId = null">✕</button>
+              </div>
             </div>
-            <button
-              v-else
-              class="mt-1 text-xs text-gray-400 hover:text-primary-500 transition-colors flex items-center gap-1"
-              @click="appendFormShotId = shot.id"
-            >
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-              添加片段
-            </button>
+
+            <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-2 w-full h-8" />
           </div>
         </div>
       </div>

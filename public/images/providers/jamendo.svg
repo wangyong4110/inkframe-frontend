@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="22" fill="#EB4424"/>
+  <!-- music note -->
+  <rect x="44" y="28" width="8" height="38" rx="4" fill="white"/>
+  <rect x="55" y="24" width="8" height="34" rx="4" fill="white"/>
+  <ellipse cx="40" cy="66" rx="10" ry="7" fill="white"/>
+  <ellipse cx="51" cy="58" rx="10" ry="7" fill="white"/>
+</svg>
