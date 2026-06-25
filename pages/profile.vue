@@ -529,6 +529,12 @@ const avatarInitial = computed(() =>
       </div>
     </div>
 
+    <!-- ── Audit logs ────────────────────────────────────────────────── -->
+    <div class="card p-6">
+      <h2 class="text-base font-semibold text-gray-100 mb-4">我的操作记录</h2>
+      <AuditLogPanel mode="user" />
+    </div>
+
     <!-- ── Danger zone ─────────────────────────────────────────────────── -->
     <div class="mt-6 p-5 rounded-2xl bg-red-950/20 border border-red-900/40">
       <h2 class="text-base font-semibold text-red-400 mb-1">危险区域</h2>

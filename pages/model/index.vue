@@ -19,7 +19,6 @@ const {
   testProvider: apiTestProvider,
   fetchProviderModels,
   getProviderTemplates,
-  syncProviderGroup,
 } = useModelApi()
 
 const providers = ref<ModelProvider[]>([])
@@ -38,36 +37,21 @@ const TYPE_LABELS: Record<string, string> = {
 
 type ProviderGroup = {
   key: number           // canonical.id（作为 expandedModels/providerModels 的 key）
-  isGroup: boolean
-  groupName: string
+  isGroup: false
   canonical: ModelProvider
   members: ModelProvider[]
   typeBadges: string[]
 }
 
-const providerGroups = computed((): ProviderGroup[] => {
-  const byGroup: Record<string, ModelProvider[]> = {}
-  const soloList: ModelProvider[] = []
-  for (const p of filteredProviders.value) {
-    if (p.group_name) {
-      if (!byGroup[p.group_name]) byGroup[p.group_name] = []
-      byGroup[p.group_name].push(p)
-    } else {
-      soloList.push(p)
-    }
-  }
-  const groups: ProviderGroup[] = []
-  for (const p of soloList) {
-    groups.push({ key: p.id, isGroup: false, groupName: '', canonical: p, members: [p], typeBadges: [] })
-  }
-  for (const [gName, members] of Object.entries(byGroup)) {
-    const canonical = members.find(m => m.is_group_canonical) ?? members[0]
-    const loadedModels = providerModels.value[canonical.id] ?? []
-    const typeBadges = [...new Set(loadedModels.map(m => TYPE_LABELS[m.type || ''] || m.type || '').filter(Boolean))]
-    groups.push({ key: canonical.id, isGroup: true, groupName: gName, canonical, members, typeBadges })
-  }
-  return groups
-})
+const providerGroups = computed((): ProviderGroup[] =>
+  filteredProviders.value.map(p => ({
+    key: p.id,
+    isGroup: false as const,
+    canonical: p,
+    members: [p],
+    typeBadges: [],
+  }))
+)
 const listLoading = ref(false)
 const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
@@ -130,10 +114,6 @@ async function doFetchProviderModels() {
 const providerForm = ref({
   name: '', display_name: '',
   api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true,
-  timeout: 0,      // 秒，0 = 使用默认值 300s
-  concurrency: 0,  // 最大并发数，0 = 不限制
-  rate_limit: 0,   // 请求/分钟，0 = 不限制
-  groupName: '',   // 同源分组标识（如 "kling"），空=独立供应商
 })
 
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
@@ -142,7 +122,6 @@ type ProviderOption = {
   noApiKey?: boolean; staticModels?: string[]
   needsApiVersion?: boolean; deploymentBased?: boolean
   apiVersionHint?: string; configHint?: string
-  groupName?: string; isGroupCanonical?: boolean
 }
 const PROVIDER_OPTIONS = ref<ProviderOption[]>([
   { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
@@ -152,23 +131,19 @@ async function loadProviderTemplates() {
   try {
     const res = await getProviderTemplates()
     const templates = res.data ?? []
-    // 分组供应商只展示 canonical（代表），去掉同组其他子供应商；按展示名字母排序
     PROVIDER_OPTIONS.value = [
       ...templates
-        .filter((t: any) => !t.group_name || t.is_group_canonical)
         .map((t: any) => ({
-          name:             t.name,
-          label:            t.display_name,
-          endpoint:         t.api_endpoint,
-          needsSecretKey:   t.needs_secret_key,
-          noApiKey:         t.no_api_key ?? false,
-          staticModels:     t.static_models,
-          needsApiVersion:  t.needs_api_version ?? false,
-          deploymentBased:  t.deployment_based ?? false,
-          apiVersionHint:   t.api_version_hint ?? '',
-          configHint:       t.config_hint ?? '',
-          groupName:        t.group_name ?? '',
-          isGroupCanonical: t.is_group_canonical ?? false,
+          name:            t.name,
+          label:           t.display_name,
+          endpoint:        t.api_endpoint,
+          needsSecretKey:  t.needs_secret_key,
+          noApiKey:        t.no_api_key ?? false,
+          staticModels:    t.static_models,
+          needsApiVersion: t.needs_api_version ?? false,
+          deploymentBased: t.deployment_based ?? false,
+          apiVersionHint:  t.api_version_hint ?? '',
+          configHint:      t.config_hint ?? '',
         }))
         .sort((a: ProviderOption, b: ProviderOption) => a.label.localeCompare(b.label, 'zh')),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
@@ -182,8 +157,7 @@ const filteredProviderOptions = computed(() => PROVIDER_OPTIONS.value)
 
 // 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
 const HARDCODED_NEEDS_SECRET_KEY = new Set([
-  'volcengine-visual', 'doubao-speech-v1',
-  'kling', 'kling-sfx', 'kling-tts', 'kling-image',
+  'volcengine-visual', 'doubao-speech-v1', 'kling',
 ])
 
 // 当前选中提供商是否需要 AK/SK 双密钥
@@ -224,32 +198,12 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
   kling: {
     akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key',
     skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
-    skHint: '可灵四个提供商（视频/音效/语音/图像）使用同一对 AK/SK，通过 JWT（HS256）鉴权，端点统一为 https://api.klingai.com',
-  },
-  'kling-sfx': {
-    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-tts / kling-image 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
-    skHint: '可灵文生音效（kling-sfx）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
-  },
-  'kling-tts': {
-    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-image 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
-    skHint: '可灵语音合成（kling-tts）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
-  },
-  'kling-image': {
-    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-tts 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
-    skHint: '可灵图像生成（kling-image）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
+    skHint: '可灵一个供应商同时支持视频/音效/语音/图像，使用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'volcengine-i2i': {
     akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey（与 volcengine-visual 共用）',
     skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
     skHint: '即梦AI 图生图与文生图使用相同的 AK/SK，均通过 HMAC-SHA256 签名鉴权',
-  },
-  'kling-i2i': {
-    akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key（与 kling / kling-sfx / kling-tts / kling-image 共用）',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '可灵 Secret Key',
-    skHint: '可灵图生图（kling-i2i）与其他可灵提供商共用同一对 AK/SK，通过 JWT（HS256）鉴权',
   },
   'elevenlabs-sfx': {
     akLabel: 'API Key', akPlaceholder: 'ElevenLabs API Key（xi-api-key 鉴权，0.5~22 秒音效生成）',
@@ -289,8 +243,6 @@ function onProviderSelect() {
   } else {
     providerModelList.value = []
   }
-  // 同步分组标识（分组供应商只需配置一次）
-  providerForm.value.groupName = opt.groupName ?? ''
   autoDisplayName()
 }
 
@@ -340,7 +292,7 @@ const MODEL_TYPE_FILTER: Record<string, { include?: RegExp; exclude?: RegExp }> 
   image:     { include: /dall|image|img|draw|flux|stable|wanx|seedream|visual|t2i|text.to.image/i },
   img2img:   { include: /i2i|img2img|seededit|dreamo|seed3l|portrait|inpaint|edit|style|refine/i },
   voice:     { include: /tts|whisper|voice|audio|speech/i },
-  video:     { include: /video|sora|kling|seedance/i },
+  video:     { include: /video|sora|kling/i },
   embedding: { include: /embed/i },
   sfx:       { include: /sfx|sound|audio|effect|elevenlabs|\d+s$/i },
 }
@@ -364,14 +316,9 @@ const PROVIDER_COLORS: Record<string, string> = {
   ollama:             'bg-lime-100    text-lime-700',
   'volcengine-visual':'bg-amber-100   text-amber-700',
   'volcengine-i2i':   'bg-amber-100   text-amber-700',
-  seedance:           'bg-violet-100  text-violet-700',
   'doubao-speech':    'bg-teal-100    text-teal-700',
   'doubao-speech-v1': 'bg-teal-100    text-teal-700',
   kling:              'bg-fuchsia-100 text-fuchsia-700',
-  'kling-sfx':        'bg-fuchsia-100 text-fuchsia-700',
-  'kling-tts':        'bg-fuchsia-100 text-fuchsia-700',
-  'kling-image':      'bg-fuchsia-100 text-fuchsia-700',
-  'kling-i2i':        'bg-fuchsia-100 text-fuchsia-700',
   'elevenlabs-sfx':   'bg-green-100   text-green-700',
 }
 function providerColor(name: string) {
@@ -398,7 +345,7 @@ const PROVIDER_CONSOLE_URL: Record<string, string> = {
   xai:                 'https://console.x.ai',
   mistral:             'https://console.mistral.ai/api-keys',
   meta:                'https://llama.meta.com/docs/getting_started',
-  // LLM — 国内
+  // LLM — 国内（doubao 含 Seedance 视频；qianwen 含 CosyVoice/QwenTTS/HappyHorse）
   doubao:              'https://console.volcengine.com/ark',
   deepseek:            'https://platform.deepseek.com/api_keys',
   qianwen:             'https://dashscope.console.aliyun.com/apiKey',
@@ -410,20 +357,13 @@ const PROVIDER_CONSOLE_URL: Record<string, string> = {
   // 图像生成
   'volcengine-visual': 'https://console.volcengine.com/visual-intelligence',
   'volcengine-i2i':    'https://console.volcengine.com/visual-intelligence',
-  // 视频 & 图像（可灵）
+  // 可灵（视频/音效/语音/图像共用同一 AK/SK）
   kling:               'https://klingai.com/dev-platform/personal-info',
-  'kling-sfx':         'https://klingai.com/dev-platform/personal-info',
-  'kling-tts':         'https://klingai.com/dev-platform/personal-info',
-  'kling-image':       'https://klingai.com/dev-platform/personal-info',
-  'kling-i2i':         'https://klingai.com/dev-platform/personal-info',
-  // 视频（Seedance/豆包）
-  seedance:            'https://console.volcengine.com/ark',
-  // 语音合成
+  // 豆包语音（独立凭证，与 doubao LLM 不同）
   'doubao-speech':     'https://console.volcengine.com/speech',
   'doubao-speech-v1':  'https://console.volcengine.com/speech',
   'baidu-tts':         'https://ai.baidu.com/tech/speech',
   'minimax-tts':       'https://platform.minimax.chat/user-center/basic-information/interface-key',
-  'aliyun-tts':        'https://dashscope.console.aliyun.com/apiKey',
   'tencent-tts':       'https://console.cloud.tencent.com/tts',
   // 音效
   'elevenlabs-sfx':    'https://elevenlabs.io/app/settings/api-keys',
@@ -456,7 +396,7 @@ async function loadProviders() {
 
 function openAddProvider() {
   editingProvider.value = null
-  providerForm.value = { name: '', display_name: '', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true, timeout: 0, concurrency: 0, rate_limit: 0, groupName: '' }
+  providerForm.value = { name: '', display_name: '', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true }
   providerModelList.value = []
   showProviderModal.value = true
 }
@@ -466,9 +406,7 @@ async function openEditProvider(group: ProviderGroup) {
   providerForm.value = {
     name: p.name, display_name: p.display_name || '',
     api_endpoint: p.api_endpoint || '', api_key: '', api_secret_key: '', api_version: p.api_version || '',
-    is_active: p.is_active, timeout: p.timeout ?? 0, concurrency: p.concurrency ?? 0,
-    rate_limit: p.rate_limit ?? 0,
-    groupName: group.groupName,
+    is_active: p.is_active,
   }
   providerModelList.value = []
   showProviderModal.value = true
@@ -479,41 +417,18 @@ async function submitProviderForm() {
   providerLoading.value = true
   try {
     if (editingProvider.value) {
-      if (providerForm.value.groupName) {
-        await syncProviderGroup({
-          group_name: providerForm.value.groupName,
-          api_key: providerForm.value.api_key,
-          api_secret_key: providerForm.value.api_secret_key || undefined,
-          api_version: providerForm.value.api_version || undefined,
-          is_active: providerForm.value.is_active,
-        })
-        toast.success('供应商组更新成功')
-      } else {
-        const payload: Record<string, unknown> = { ...providerForm.value }
-        delete payload.groupName
-        if (!payload.api_key) delete payload.api_key
-        if (!payload.api_secret_key) delete payload.api_secret_key
-        await updateProvider(editingProvider.value.id, payload as any)
-        toast.success('提供商更新成功')
-      }
+      const payload: Record<string, unknown> = { ...providerForm.value }
+      if (!payload.api_key) delete payload.api_key
+      if (!payload.api_secret_key) delete payload.api_secret_key
+      await updateProvider(editingProvider.value.id, payload as any)
+      toast.success('提供商更新成功')
     } else {
       if (!isNoKeyProvider.value && !providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
       if (selectedProviderNeedsSecretKey.value && !providerForm.value.api_secret_key.trim()) {
         toast.error('该提供商需要 Secret Key（SK）'); providerLoading.value = false; return
       }
-      if (providerForm.value.groupName) {
-        await syncProviderGroup({
-          group_name: providerForm.value.groupName,
-          api_key: providerForm.value.api_key,
-          api_secret_key: providerForm.value.api_secret_key || undefined,
-          api_version: providerForm.value.api_version || undefined,
-          is_active: providerForm.value.is_active,
-        })
-        toast.success('供应商组创建成功')
-      } else {
-        await createProvider(providerForm.value)
-        toast.success('提供商创建成功')
-      }
+      await createProvider(providerForm.value)
+      toast.success('提供商创建成功')
     }
     showProviderModal.value = false
     await loadProviders()
@@ -524,15 +439,13 @@ async function submitProviderForm() {
   }
 }
 async function handleDeleteGroup(group: ProviderGroup) {
-  const label = group.isGroup
-    ? `「${providerTemplateName(group.canonical.name)}」组（共 ${group.members.length} 个子供应商）`
-    : providerTemplateName(group.canonical.name)
+  const label = providerTemplateName(group.canonical.name)
   if (!confirm(`确认删除 ${label}？此操作不可撤销。`)) return
   try {
     for (const p of group.members) {
       if (p.tenant_id !== 0) await deleteProvider(p.id)
     }
-    toast.success(group.isGroup ? '供应商组已删除' : '提供商已删除')
+    toast.success('提供商已删除')
     await loadProviders()
   } catch (e: any) { toast.error(e.message || '删除失败') }
 }
@@ -655,8 +568,7 @@ const editModelModal = ref<{
   timeout: number
   concurrency: number
   rateLimit: number
-  costPer1K: number
-}>({ show: false, saving: false, groupKey: 0, modelId: 0, displayName: '', type: '', maxTokens: 0, quality: 0, timeout: 0, concurrency: 0, rateLimit: 0, costPer1K: 0 })
+}>({ show: false, saving: false, groupKey: 0, modelId: 0, displayName: '', type: '', maxTokens: 0, quality: 0.8, timeout: 0, concurrency: 0, rateLimit: 0 })
 
 function openEditModel(groupKey: number, m: AIModel) {
   editModelModal.value = {
@@ -664,11 +576,10 @@ function openEditModel(groupKey: number, m: AIModel) {
     displayName: m.display_name ?? '',
     type: m.type ?? 'llm',
     maxTokens: m.max_tokens ?? 0,
-    quality: m.quality ?? 0,
+    quality: m.quality ?? 0.8,
     timeout: (m as any).timeout ?? 0,
     concurrency: (m as any).concurrency ?? 0,
     rateLimit: (m as any).rate_limit ?? 0,
-    costPer1K: (m as any).cost_per_1k ?? 0,
   }
 }
 function closeEditModel() { editModelModal.value.show = false }
@@ -684,7 +595,6 @@ async function handleEditModel() {
       timeout: e.timeout || undefined,
       concurrency: e.concurrency || undefined,
       rate_limit: e.rateLimit || undefined,
-      cost_per_1k: e.costPer1K || undefined,
     })
     const models = providerModels.value[e.groupKey]
     if (models) {
@@ -707,13 +617,14 @@ const addModelModal = ref<{
   groupKey: number
   name: string
   type: string
+  quality: number
   maxTokens: number
   timeout: number
   concurrency: number
   rateLimit: number
   saving: boolean
   availableModels: string[]  // 该 provider 支持的模型列表（有则用下拉，无则自由输入）
-}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, availableModels: [] })
+}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, availableModels: [] })
 
 async function refreshGroupModels(group: ProviderGroup) {
   try {
@@ -738,7 +649,7 @@ function openAddModelForm(group: ProviderGroup) {
   addModelModal.value = {
     show: true, providerId: group.canonical.id, groupKey: group.key,
     name: available[0] ?? '', type: existingType,
-    maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
+    quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
     availableModels: available,
   }
 }
@@ -763,6 +674,7 @@ async function handleCreateModelModal() {
       name: m.name.trim(),
       task_types: tasksJson,
       type: m.type || undefined,
+      quality: m.quality || undefined,
       max_tokens: m.maxTokens || undefined,
       timeout: m.timeout || undefined,
       concurrency: m.concurrency || undefined,
@@ -1090,8 +1002,17 @@ watch(activeTab, (tab) => {
         <div class="w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
           <!-- Column header -->
           <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/60 flex items-center justify-between bg-gray-50/80 dark:bg-gray-800/60">
-            <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">供应商</span>
-            <span class="text-xs font-mono text-gray-400">{{ providerGroups.length }}</span>
+            <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              供应商
+              <span class="ml-1 font-mono font-normal normal-case text-gray-400">{{ providerGroups.length }}</span>
+            </span>
+            <button class="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
+                    @click="openAddProvider">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              添加
+            </button>
           </div>
           <!-- List -->
           <div class="flex-1 overflow-y-auto">
@@ -1131,16 +1052,6 @@ watch(activeTab, (tab) => {
                   <span v-else class="text-xs text-gray-400">暂无模型</span>
                 </div>
               </div>
-            </button>
-          </div>
-          <!-- Add provider -->
-          <div class="shrink-0 border-t border-gray-100 dark:border-gray-700/50 p-2">
-            <button class="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                    @click="openAddProvider">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-              </svg>
-              添加供应商
             </button>
           </div>
         </div>
@@ -1243,16 +1154,6 @@ watch(activeTab, (tab) => {
                       @click="openEditProvider(selectedGroup)">更改密钥</button>
             </div>
 
-            <!-- ── 分组提示 ── -->
-            <div v-if="selectedGroup.isGroup"
-                 class="px-6 py-2 border-b border-gray-100 dark:border-gray-700/50 bg-violet-50/40 dark:bg-violet-900/10 flex items-center gap-1.5">
-              <svg class="w-3 h-3 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-              <span class="text-xs text-violet-700 dark:text-violet-300">
-                子供应商：{{ selectedGroup.members.map(m => m.name).join(' · ') }}，共享同一套凭证
-              </span>
-            </div>
 
             <!-- ── 模型区域 header ── -->
             <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 flex items-center justify-between">
@@ -1263,7 +1164,7 @@ watch(activeTab, (tab) => {
                   {{ providerModels[selectedGroup.key].length }}
                 </span>
               </h3>
-              <button class="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 transition-colors"
+              <button class="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
                       @click="openAddModelForm(selectedGroup)">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1402,8 +1303,13 @@ watch(activeTab, (tab) => {
               <input v-else v-model="addModelModal.name" type="text" class="input text-sm w-full" placeholder="如 gpt-4o、claude-3-5-sonnet-20241022" @keydown.enter="handleCreateModelModal" />
             </div>
 
-            <!-- 4-column grid -->
-            <div class="grid grid-cols-4 gap-3">
+            <!-- 2-column grid -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">质量评分</label>
+                <input v-model.number="addModelModal.quality" type="number" min="0" max="1" step="0.01" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0–1，选模优先级</p>
+              </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">请求超时（秒）</label>
                 <input v-model.number="addModelModal.timeout" type="number" min="0" class="input text-sm w-full" placeholder="0" />
@@ -1457,8 +1363,13 @@ watch(activeTab, (tab) => {
               </select>
             </div>
 
-            <!-- 参数网格 (4列，与添加模型保持一致) -->
-            <div class="grid grid-cols-4 gap-3">
+            <!-- 参数网格 (2列) -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">质量评分</label>
+                <input v-model.number="editModelModal.quality" type="number" min="0" max="1" step="0.01" class="input text-sm w-full" placeholder="0" />
+                <p class="mt-0.5 text-xs text-gray-400">0–1，选模优先级</p>
+              </div>
               <div>
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">请求超时（秒）</label>
                 <input v-model.number="editModelModal.timeout" type="number" min="0" class="input text-sm w-full" placeholder="0" />
