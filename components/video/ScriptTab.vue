@@ -28,6 +28,7 @@ const uploadingShotId = ref<number | null>(null)
 const shotImageInputRef = ref<HTMLInputElement | null>(null)
 const shotImageTargetId = ref<number | null>(null)
 const editingId = ref<number | null>(null)
+const generatingImageShotIds = ref<Set<number>>(new Set())
 const editForm = ref<Partial<StoryboardShot & { emotional_tone: string }>>({})
 const savingEdit = ref(false)
 
@@ -487,6 +488,19 @@ async function handleInsertShot(afterShotNo: number) {
   }
 }
 
+async function handleGenerateShotImage(shot: StoryboardShot) {
+  if (generatingImageShotIds.value.has(shot.id)) return
+  generatingImageShotIds.value = new Set([...generatingImageShotIds.value, shot.id])
+  try {
+    await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
+    scheduleRefresh()
+  } catch (e: any) {
+    toast.error('图片生成失败：' + (e?.message || ''))
+  } finally {
+    generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
+  }
+}
+
 async function handleCopyShot(shot: StoryboardShot) {
   try {
     await videoApi.copyShot(props.videoId, shot.id, -1)
@@ -727,23 +741,6 @@ defineExpose({ handleReviewStoryboard })
                       </button>
                     </div>
                   </div>
-                  <!-- Action buttons -->
-                  <div class="flex items-center gap-0.5 flex-shrink-0">
-                    <span
-                      v-if="shotKlingMode(shot) === 'pro'"
-                      class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 mr-1"
-                      title="此镜头将使用 Kling Pro 模式"
-                    >PRO</span>
-                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="编辑" @click="startEdit(shot)">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                    </button>
-                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="复制此镜头" @click="handleCopyShot(shot)">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    </button>
-                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="删除此镜头" @click="handleDeleteShot(shot)">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                  </div>
                 </div>
 
                 <!-- Metadata tags -->
@@ -817,6 +814,32 @@ defineExpose({ handleReviewStoryboard })
                   </span>
                 </div>
               </template>
+              <!-- Action buttons -->
+              <div class="ml-auto flex items-center gap-0.5 flex-shrink-0">
+                <span
+                  v-if="shotKlingMode(shot) === 'pro'"
+                  class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 mr-1"
+                  title="此镜头将使用 Kling Pro 模式"
+                >PRO</span>
+                <button
+                  class="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  :title="shot.image_url ? '重新生成图片' : '生成图片'"
+                  :disabled="generatingImageShotIds.has(shot.id) || uploadingShotId === shot.id"
+                  @click="handleGenerateShotImage(shot)"
+                >
+                  <svg v-if="generatingImageShotIds.has(shot.id)" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                </button>
+                <button class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="编辑" @click="startEdit(shot)">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </button>
+                <button class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="复制此镜头" @click="handleCopyShot(shot)">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
+                <button class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="删除此镜头" @click="handleDeleteShot(shot)">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+              </div>
             </div>
             <!-- Character binding row -->
             <div class="mt-1 flex items-center gap-2 flex-wrap">
