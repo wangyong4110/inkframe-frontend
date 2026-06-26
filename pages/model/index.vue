@@ -476,11 +476,34 @@ const selectedGroupKey = ref<number | null>(null)
 const selectedGroup = computed(() =>
   providerGroups.value.find(g => g.key === selectedGroupKey.value) ?? null
 )
+
+const modelFilter = ref<{ type: string; status: 'all' | 'enabled' | 'disabled' }>({ type: '', status: 'all' })
+
+const availableModelTypes = computed(() => {
+  if (!selectedGroup.value) return []
+  const models = providerModels.value[selectedGroup.value.key] ?? []
+  const seen = new Set<string>()
+  models.forEach(m => { if (m.type) seen.add(m.type) })
+  return [...seen]
+})
+
+const filteredGroupModels = computed(() => {
+  if (!selectedGroup.value) return []
+  const models = providerModels.value[selectedGroup.value.key] ?? []
+  return models.filter(m => {
+    if (modelFilter.value.type && m.type !== modelFilter.value.type) return false
+    if (modelFilter.value.status === 'enabled' && !m.is_active) return false
+    if (modelFilter.value.status === 'disabled' && m.is_active) return false
+    return true
+  })
+})
+
 function selectGroup(key: number) {
   selectedGroupKey.value = key
+  modelFilter.value = { type: '', status: 'all' }
 }
 function modelTypeSummary(groupKey: number): Record<string, number> {
-  const models = providerModels.value[groupKey] ?? []
+  const models = (providerModels.value[groupKey] ?? []).filter(m => m.is_active)
   const order = ['llm', 'embedding', 'image', 'img2img', 'video', 'voice', 'sfx', 'music']
   const raw: Record<string, number> = {}
   for (const m of models) { const t = m.type || 'llm'; raw[t] = (raw[t] || 0) + 1 }
@@ -1006,12 +1029,12 @@ watch(activeTab, (tab) => {
               供应商
               <span class="ml-1 font-mono font-normal normal-case text-gray-400">{{ providerGroups.length }}</span>
             </span>
-            <button class="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
+            <button class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white transition-colors shadow ring-1 ring-primary-500"
                     @click="openAddProvider">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
               </svg>
-              添加
+              添加供应商
             </button>
           </div>
           <!-- List -->
@@ -1143,13 +1166,8 @@ watch(activeTab, (tab) => {
               </svg>
               <span class="text-xs text-gray-500 shrink-0">API Key</span>
               <code class="text-xs font-mono flex-1 text-gray-600 dark:text-gray-400 tracking-wider truncate">
-                {{ !hiddenKeys.has(selectedGroup.key) ? (selectedGroup.canonical.api_key || '—') : maskKey(selectedGroup.canonical.api_key) }}
+                {{ maskKey(selectedGroup.canonical.api_key) }}
               </code>
-              <button v-if="selectedGroup.canonical.api_key && selectedGroup.canonical.api_key !== '—'"
-                      class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
-                      @click="toggleReveal(selectedGroup.key)">
-                {{ !hiddenKeys.has(selectedGroup.key) ? '隐藏' : '显示' }}
-              </button>
               <button class="text-xs text-primary-600 hover:text-primary-700 shrink-0"
                       @click="openEditProvider(selectedGroup)">更改密钥</button>
             </div>
@@ -1161,7 +1179,7 @@ watch(activeTab, (tab) => {
                 模型
                 <span v-if="providerModels[selectedGroup.key]?.length"
                       class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 font-mono">
-                  {{ providerModels[selectedGroup.key].length }}
+                  {{ filteredGroupModels.length }}<template v-if="filteredGroupModels.length !== (providerModels[selectedGroup.key]?.length ?? 0)">/{{ providerModels[selectedGroup.key]?.length }}</template>
                 </span>
               </h3>
               <button class="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
@@ -1196,17 +1214,34 @@ watch(activeTab, (tab) => {
             <table v-else class="w-full text-sm">
               <thead>
                 <tr class="border-b border-gray-100 dark:border-gray-700/50 text-xs text-gray-500 dark:text-gray-400 bg-gray-50/60 dark:bg-gray-800/30">
-                  <th class="px-6 py-2.5 text-left font-medium w-8"></th>
-                  <th class="px-3 py-2.5 text-left font-medium">模型名称</th>
-                  <th class="px-3 py-2.5 text-left font-medium w-28">类型</th>
-                  <th class="px-3 py-2.5 text-right font-medium w-24">上下文</th>
-                  <th class="px-3 py-2.5 text-left font-medium w-28">质量</th>
-                  <th class="px-3 py-2.5 text-center font-medium w-20">启用</th>
-                  <th class="px-3 py-2.5 text-right font-medium w-20"></th>
+                  <th class="px-6 py-2 text-left font-medium w-8"></th>
+                  <th class="px-3 py-2 text-left font-medium">模型名称</th>
+                  <!-- 类型列：含下拉筛选 -->
+                  <th class="px-3 py-2 text-left font-medium w-36">
+                    <select v-model="modelFilter.type"
+                            class="w-full text-xs font-medium bg-transparent border-0 cursor-pointer focus:outline-none focus:ring-0 text-gray-500 dark:text-gray-400"
+                            :class="modelFilter.type ? 'text-primary-600 dark:text-primary-400' : ''">
+                      <option value="">类型</option>
+                      <option v-for="t in availableModelTypes" :key="t" :value="t">{{ TYPE_LABELS[t] || t }}</option>
+                    </select>
+                  </th>
+                  <th class="px-3 py-2 text-right font-medium w-24">上下文</th>
+                  <th class="px-3 py-2 text-left font-medium w-28">质量</th>
+                  <!-- 启用列：含状态筛选 -->
+                  <th class="px-3 py-2 text-center font-medium w-28">
+                    <select v-model="modelFilter.status"
+                            class="w-full text-xs font-medium bg-transparent border-0 cursor-pointer focus:outline-none focus:ring-0 text-gray-500 dark:text-gray-400 text-center"
+                            :class="modelFilter.status !== 'all' ? 'text-primary-600 dark:text-primary-400' : ''">
+                      <option value="all">全部</option>
+                      <option value="enabled">已启用</option>
+                      <option value="disabled">已禁用</option>
+                    </select>
+                  </th>
+                  <th class="px-3 py-2 text-right font-medium w-20"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-gray-700/30">
-                <tr v-for="m in (providerModels[selectedGroup.key] || [])" :key="m.id"
+                <tr v-for="m in filteredGroupModels" :key="m.id"
                     class="group/row transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/30"
                     :class="!m.is_active ? 'opacity-50' : ''">
                   <!-- 状态点 -->
@@ -1651,10 +1686,6 @@ watch(activeTab, (tab) => {
                   </p>
                 </div>
               </div>
-            </div>
-            <div v-if="!editingProvider" class="mx-6 mb-0 mt-1 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 flex items-start gap-2 text-xs text-blue-700 dark:text-blue-300 shrink-0">
-              <svg class="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              保存后，点击供应商卡片底部「模型」展开区域，可添加该提供商支持的具体模型
             </div>
             <div class="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700 shrink-0">
               <button class="btn-outline" @click="showProviderModal = false">取消</button>
