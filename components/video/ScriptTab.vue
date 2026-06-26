@@ -492,11 +492,18 @@ async function handleGenerateShotImage(shot: StoryboardShot) {
   if (generatingImageShotIds.value.has(shot.id)) return
   generatingImageShotIds.value = new Set([...generatingImageShotIds.value, shot.id])
   try {
-    await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
-    scheduleRefresh()
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
+    if (taskId) {
+      useTaskStore().trackTask(taskId, () => {
+        generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
+        videoStore.fetchStoryboard(props.videoId)
+      })
+    } else {
+      generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
+      scheduleRefresh()
+    }
   } catch (e: any) {
     toast.error('图片生成失败：' + (e?.message || ''))
-  } finally {
     generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
   }
 }
