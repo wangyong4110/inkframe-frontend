@@ -74,10 +74,32 @@ const noVoiceConfigured = computed(
   () => !voiceModelsLoading.value && !voiceModelsLoadFailed.value && voiceModels.value.length === 0
 )
 
+// ─── Filters ─────────────────────────────────────────────────────────────────
+
+const filterGender   = ref('')   // '' | 'male' | 'female' | 'neutral'
+const filterAgeGroup = ref('')   // '' | 'child' | 'teen' | 'adult' | 'elder'
+
+const GENDER_OPTIONS = [
+  { value: '',        label: '全部性别' },
+  { value: 'female',  label: '女声' },
+  { value: 'male',    label: '男声' },
+  { value: 'neutral', label: '中性' },
+]
+
+const AGE_OPTIONS = [
+  { value: '',      label: '全部年龄' },
+  { value: 'child', label: '儿童' },
+  { value: 'teen',  label: '少年' },
+  { value: 'adult', label: '成年' },
+  { value: 'elder', label: '老年' },
+]
+
 // Groups: [{ key, label, voices: [{id, label}] }]
 const voiceGroups = computed(() => {
   const map: Record<string, { key: string; label: string; voices: { id: string; label: string }[] }> = {}
   for (const m of voiceModels.value) {
+    if (filterGender.value && m.gender && m.gender !== filterGender.value) continue
+    if (filterAgeGroup.value && m.age_group && m.age_group !== filterAgeGroup.value) continue
     const key = m.provider?.name ?? 'unknown'
     const label = m.provider?.display_name ?? key
     if (!map[key]) map[key] = { key, label, voices: [] }
@@ -85,6 +107,13 @@ const voiceGroups = computed(() => {
   }
   return Object.values(map)
 })
+
+// 筛选后是否有音色（用于提示无结果）
+const noFilteredVoices = computed(() =>
+  !voiceModelsLoading.value && !voiceModelsLoadFailed.value &&
+  voiceModels.value.length > 0 &&
+  voiceGroups.value.length === 0
+)
 
 const allKnownIds = computed(() => voiceModels.value.map(m => m.name))
 
@@ -318,6 +347,32 @@ defineExpose({
     <div>
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
 
+      <!-- 筛选行（有音色数据时才显示） -->
+      <div v-if="!noVoiceConfigured && !voiceModelsLoadFailed && voiceModels.length > 0" class="flex gap-2 mb-2">
+        <div class="relative flex-1">
+          <select
+            v-model="filterGender"
+            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 pr-7 text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-blue-400"
+          >
+            <option v-for="g in GENDER_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</option>
+          </select>
+          <svg class="absolute right-2 top-2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+        <div class="relative flex-1">
+          <select
+            v-model="filterAgeGroup"
+            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 pr-7 text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-blue-400"
+          >
+            <option v-for="a in AGE_OPTIONS" :key="a.value" :value="a.value">{{ a.label }}</option>
+          </select>
+          <svg class="absolute right-2 top-2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </div>
+
       <!-- 未配置语音合成模型提示（替代下拉框） -->
       <div v-if="noVoiceConfigured" class="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-3 text-xs text-amber-700 dark:text-amber-300">
         <svg class="mt-0.5 shrink-0 w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -331,6 +386,10 @@ defineExpose({
 
       <!-- 预设模式：下拉选择 -->
       <template v-else-if="!showCustomInput">
+        <!-- 筛选后无结果提示 -->
+        <p v-if="noFilteredVoices" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+          当前筛选条件下无匹配音色，请调整筛选。
+        </p>
         <div class="relative">
           <select
             :value="voiceId"

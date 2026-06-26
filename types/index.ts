@@ -538,6 +538,8 @@ export interface AIModel {
   quality: number
   cost_per_1k: number
   is_active: boolean
+  gender?: string    // male / female / neutral（仅 voice 类型）
+  age_group?: string // child / teen / adult / elder（仅 voice 类型）
 }
 
 export interface TaskModelConfig {

@@ -57,6 +57,7 @@ const showProviderModal = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
 const providerLoading = ref(false)
 const testingId = ref<number | null>(null)
+const validationState = ref<{ status: 'idle' | 'testing' | 'ok' | 'error'; message: string }>({ status: 'idle', message: '' })
 const hiddenKeys = ref<Set<number>>(new Set())
 
 // 模型列表（优先 DB 已录入，其次云商接口）
@@ -398,6 +399,7 @@ function openAddProvider() {
   editingProvider.value = null
   providerForm.value = { name: '', display_name: '', api_endpoint: '', api_key: '', api_secret_key: '', api_version: '', is_active: true }
   providerModelList.value = []
+  validationState.value = { status: 'idle', message: '' }
   showProviderModal.value = true
 }
 async function openEditProvider(group: ProviderGroup) {
@@ -409,33 +411,55 @@ async function openEditProvider(group: ProviderGroup) {
     is_active: p.is_active,
   }
   providerModelList.value = []
+  validationState.value = { status: 'idle', message: '' }
   showProviderModal.value = true
   await loadDbModelsForProvider(p.name)
 }
 async function submitProviderForm() {
   if (!providerForm.value.name.trim()) { toast.error('标识名不能为空'); return }
   providerLoading.value = true
+  validationState.value = { status: 'idle', message: '' }
+  let savedId: number | null = null
   try {
     if (editingProvider.value) {
       const payload: Record<string, unknown> = { ...providerForm.value }
       if (!payload.api_key) delete payload.api_key
       if (!payload.api_secret_key) delete payload.api_secret_key
-      await updateProvider(editingProvider.value.id, payload as any)
-      toast.success('提供商更新成功')
+      const res = await updateProvider(editingProvider.value.id, payload as any)
+      savedId = editingProvider.value.id
     } else {
       if (!isNoKeyProvider.value && !providerForm.value.api_key.trim()) { toast.error('新增提供商时 API Key 不能为空'); providerLoading.value = false; return }
       if (selectedProviderNeedsSecretKey.value && !providerForm.value.api_secret_key.trim()) {
         toast.error('该提供商需要 Secret Key（SK）'); providerLoading.value = false; return
       }
-      await createProvider(providerForm.value)
-      toast.success('提供商创建成功')
+      const res = await createProvider(providerForm.value)
+      savedId = (res as any)?.data?.id ?? null
     }
-    showProviderModal.value = false
     await loadProviders()
   } catch (e: any) {
     toast.error(e.message || '操作失败')
-  } finally {
     providerLoading.value = false
+    return
+  }
+  providerLoading.value = false
+
+  // 自动校验授权信息
+  if (savedId && !isNoKeyProvider.value) {
+    validationState.value = { status: 'testing', message: '' }
+    try {
+      const res = await apiTestProvider(savedId)
+      const d = (res as any)?.data
+      if (d?.status === 'ok') {
+        validationState.value = { status: 'ok', message: '授权有效' }
+        setTimeout(() => { showProviderModal.value = false }, 1500)
+      } else {
+        validationState.value = { status: 'error', message: d?.error || '校验失败' }
+      }
+    } catch (e: any) {
+      validationState.value = { status: 'error', message: e.message || '校验请求失败' }
+    }
+  } else {
+    showProviderModal.value = false
   }
 }
 async function handleDeleteGroup(group: ProviderGroup) {
@@ -490,12 +514,14 @@ const availableModelTypes = computed(() => {
 const filteredGroupModels = computed(() => {
   if (!selectedGroup.value) return []
   const models = providerModels.value[selectedGroup.value.key] ?? []
-  return models.filter(m => {
-    if (modelFilter.value.type && m.type !== modelFilter.value.type) return false
-    if (modelFilter.value.status === 'enabled' && !m.is_active) return false
-    if (modelFilter.value.status === 'disabled' && m.is_active) return false
-    return true
-  })
+  return models
+    .filter(m => {
+      if (modelFilter.value.type && m.type !== modelFilter.value.type) return false
+      if (modelFilter.value.status === 'enabled' && !m.is_active) return false
+      if (modelFilter.value.status === 'disabled' && m.is_active) return false
+      return true
+    })
+    .sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0))
 })
 
 function selectGroup(key: number) {
@@ -1687,15 +1713,32 @@ watch(activeTab, (tab) => {
                 </div>
               </div>
             </div>
-            <div class="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700 shrink-0">
-              <button class="btn-outline" @click="showProviderModal = false">取消</button>
-              <button class="btn-primary min-w-[80px]" :disabled="providerLoading" @click="submitProviderForm">
-                <span v-if="providerLoading" class="flex items-center gap-1.5">
-                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  保存中...
-                </span>
-                <span v-else>{{ editingProvider ? '保存更改' : '添加' }}</span>
-              </button>
+            <div class="px-6 py-4 flex items-center justify-between gap-3 border-t border-gray-100 dark:border-gray-700 shrink-0">
+              <!-- 校验状态 -->
+              <div class="flex-1 min-w-0">
+                <div v-if="validationState.status === 'testing'" class="flex items-center gap-1.5 text-sm text-gray-500">
+                  <svg class="w-4 h-4 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  校验授权中...
+                </div>
+                <div v-else-if="validationState.status === 'ok'" class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+                  <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                  授权有效，即将关闭
+                </div>
+                <div v-else-if="validationState.status === 'error'" class="flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400">
+                  <svg class="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <span class="truncate">{{ validationState.message }}</span>
+                </div>
+              </div>
+              <div class="flex gap-3 shrink-0">
+                <button class="btn-outline" @click="showProviderModal = false">取消</button>
+                <button class="btn-primary min-w-[80px]" :disabled="providerLoading || validationState.status === 'testing'" @click="submitProviderForm">
+                  <span v-if="providerLoading" class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                    保存中...
+                  </span>
+                  <span v-else>{{ editingProvider ? '保存更改' : '添加' }}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
