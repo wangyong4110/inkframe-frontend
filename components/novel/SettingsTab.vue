@@ -68,7 +68,7 @@ onMounted(async () => {
     const modelApi = useModelApi()
     const voiceResp = await modelApi.getAvailableModels('voice_gen').catch(() => null)
     if (voiceResp)
-      ttsModels.value = ((voiceResp as any).data as AIModel[]).filter((m: AIModel) => m.is_active && m.is_available)
+      ttsModels.value = ((voiceResp as any).data as AIModel[]).filter((m: AIModel) => m.is_active)
   } catch { /* non-critical */ }
 })
 

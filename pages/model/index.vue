@@ -1903,7 +1903,6 @@ watch(activeTab, (tab) => {
                     <span v-if="model.type" class="truncate max-w-[100px]">
                       {{ model.type }}
                     </span>
-                    <span v-if="!model.is_available" class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">不可用</span>
                   </div>
                 </label>
               </div>

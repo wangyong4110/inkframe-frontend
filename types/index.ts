@@ -538,7 +538,6 @@ export interface AIModel {
   quality: number
   cost_per_1k: number
   is_active: boolean
-  is_available: boolean
 }
 
 export interface TaskModelConfig {
