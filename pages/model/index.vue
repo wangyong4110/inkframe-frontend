@@ -678,6 +678,7 @@ const addModelModal = ref<{
   providerId: number
   groupKey: number
   name: string
+  displayName: string
   type: string
   quality: number
   maxTokens: number
@@ -687,7 +688,7 @@ const addModelModal = ref<{
   saving: boolean
   loadingModels: boolean
   availableModels: string[]
-}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, loadingModels: false, availableModels: [] })
+}>({ show: false, providerId: 0, groupKey: 0, name: '', displayName: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, loadingModels: false, availableModels: [] })
 
 async function refreshGroupModels(group: ProviderGroup) {
   try {
@@ -710,7 +711,7 @@ async function openAddModelForm(group: ProviderGroup) {
   const staticAvailable = (opt?.staticModels ?? []).filter(n => !alreadyAdded.has(n))
   addModelModal.value = {
     show: true, providerId: group.canonical.id, groupKey: group.key,
-    name: '', type: existingType,
+    name: '', displayName: '', type: existingType,
     quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
     loadingModels: true,
     availableModels: staticAvailable,
@@ -743,6 +744,7 @@ async function handleCreateModelModal() {
       provider_id: m.providerId,
       model_id: m.name.trim(),
       name: m.name.trim(),
+      display_name: m.name.trim(),
       task_types: tasksJson,
       type: m.type || undefined,
       quality: m.quality || undefined,
@@ -1389,18 +1391,26 @@ watch(activeTab, (tab) => {
                 <span v-if="addModelModal.loadingModels" class="ml-1 text-gray-400 font-normal">（加载中…）</span>
                 <span v-else-if="addModelModal.availableModels.length" class="ml-1 text-gray-400 font-normal">（{{ addModelModal.availableModels.length }} 个可选）</span>
               </label>
-              <input
+              <!-- 有模型列表：下拉选择 -->
+              <select
+                v-if="!addModelModal.loadingModels && addModelModal.availableModels.length"
                 v-model="addModelModal.name"
-                list="add-model-datalist"
+                class="input text-sm w-full"
+                @keydown.enter="handleCreateModelModal"
+              >
+                <option value="">请选择模型…</option>
+                <option v-for="m in addModelModal.availableModels" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <!-- 无列表或加载中：手动输入 -->
+              <input
+                v-else
+                v-model="addModelModal.name"
                 type="text"
                 class="input text-sm w-full"
                 placeholder="如 gpt-4o、claude-3-5-sonnet-20241022"
                 autocomplete="off"
                 @keydown.enter="handleCreateModelModal"
               />
-              <datalist id="add-model-datalist">
-                <option v-for="m in addModelModal.availableModels" :key="m" :value="m" />
-              </datalist>
             </div>
 
             <!-- 2-column grid -->
