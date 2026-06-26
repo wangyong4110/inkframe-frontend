@@ -438,6 +438,10 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
   videoApi.updateShotImageUrl(props.videoId, shot.id, newUrl).catch(() => {})
 }
 
+function openShotLightbox(shot: StoryboardShot) {
+  if (!shot.image_url) return
+  openLightbox(shot.image_url)
+}
 
 async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null) {
   try {
@@ -691,7 +695,13 @@ defineExpose({ handleReviewStoryboard })
                   <div class="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
                 <template v-if="shot.image_url && uploadingShotId !== shot.id">
-                  <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover" />
+                  <img
+                    :src="shot.image_url"
+                    loading="lazy"
+                    class="w-full h-full object-cover cursor-zoom-in"
+                    title="点击查看大图"
+                    @click.stop="openShotLightbox(shot)"
+                  />
                   <button
                     class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"
                     title="重新上传图片"
