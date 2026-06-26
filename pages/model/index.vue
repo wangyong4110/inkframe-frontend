@@ -120,7 +120,9 @@ const providerForm = ref({
 // 提供商模板列表 — 从后端 /model-providers/templates 动态加载，末尾追加"自定义"
 type ProviderOption = {
   name: string; label: string; endpoint: string; needsSecretKey: boolean
-  noApiKey?: boolean; staticModels?: string[]
+  noApiKey?: boolean
+  staticModels?: string[]
+  staticModelsByType?: Record<string, string[]>
   needsApiVersion?: boolean; deploymentBased?: boolean
   apiVersionHint?: string; configHint?: string
 }
@@ -135,16 +137,17 @@ async function loadProviderTemplates() {
     PROVIDER_OPTIONS.value = [
       ...templates
         .map((t: any) => ({
-          name:            t.name,
-          label:           t.display_name,
-          endpoint:        t.api_endpoint,
-          needsSecretKey:  t.needs_secret_key,
-          noApiKey:        t.no_api_key ?? false,
-          staticModels:    t.static_models,
-          needsApiVersion: t.needs_api_version ?? false,
-          deploymentBased: t.deployment_based ?? false,
-          apiVersionHint:  t.api_version_hint ?? '',
-          configHint:      t.config_hint ?? '',
+          name:               t.name,
+          label:              t.display_name,
+          endpoint:           t.api_endpoint,
+          needsSecretKey:     t.needs_secret_key,
+          noApiKey:           t.no_api_key ?? false,
+          staticModels:       t.static_models,
+          staticModelsByType: t.static_models_by_type,
+          needsApiVersion:    t.needs_api_version ?? false,
+          deploymentBased:    t.deployment_based ?? false,
+          apiVersionHint:     t.api_version_hint ?? '',
+          configHint:         t.config_hint ?? '',
         }))
         .sort((a: ProviderOption, b: ProviderOption) => a.label.localeCompare(b.label, 'zh')),
       { name: 'custom', label: '自定义', endpoint: '', needsSecretKey: false },
@@ -152,6 +155,13 @@ async function loadProviderTemplates() {
   } catch {
     // 加载失败时保留默认"自定义"选项，不影响其他功能
   }
+}
+
+function getModelsForType(opt: ProviderOption | undefined, type: string, alreadyAdded: Set<string>): string[] {
+  const list = opt?.staticModelsByType
+    ? (opt.staticModelsByType[type] ?? [])
+    : (opt?.staticModels ?? [])
+  return list.filter(n => !alreadyAdded.has(n))
 }
 
 const filteredProviderOptions = computed(() => {
@@ -629,7 +639,7 @@ function openEditModel(groupKey: number, m: AIModel) {
   const opt = group ? PROVIDER_OPTIONS.value.find(o => o.name === group.canonical.name) : null
   const loadedModels = providerModels.value[groupKey] ?? []
   const otherNames = new Set(loadedModels.filter(lm => lm.id !== m.id).map(lm => lm.name))
-  const available = (opt?.staticModels ?? []).filter(n => !otherNames.has(n))
+  const available = getModelsForType(opt, m.type ?? 'llm', otherNames)
   editModelModal.value = {
     show: true, saving: false, groupKey, modelId: m.id,
     name: m.name ?? '',
@@ -677,6 +687,7 @@ const addModelModal = ref<{
   show: boolean
   providerId: number
   groupKey: number
+  providerName: string
   name: string
   displayName: string
   type: string
@@ -688,7 +699,7 @@ const addModelModal = ref<{
   saving: boolean
   loadingModels: boolean
   availableModels: string[]
-}>({ show: false, providerId: 0, groupKey: 0, name: '', displayName: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, loadingModels: false, availableModels: [] })
+}>({ show: false, providerId: 0, groupKey: 0, providerName: '', name: '', displayName: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, loadingModels: false, availableModels: [] })
 
 async function refreshGroupModels(group: ProviderGroup) {
   try {
@@ -708,23 +719,40 @@ async function openAddModelForm(group: ProviderGroup) {
   const existingType = loadedModels.find(m => m.type)?.type ?? 'llm'
   const opt = PROVIDER_OPTIONS.value.find(o => o.name === group.canonical.name)
   const alreadyAdded = new Set(loadedModels.map(m => m.name))
-  const staticAvailable = (opt?.staticModels ?? []).filter(n => !alreadyAdded.has(n))
+  const initialModels = getModelsForType(opt, existingType, alreadyAdded)
+
+  // ollama 支持实时拉取，openai 有静态列表（不需要再调 live API）
+  const supportsLiveModels = group.canonical.name === 'ollama'
+
   addModelModal.value = {
     show: true, providerId: group.canonical.id, groupKey: group.key,
+    providerName: group.canonical.name,
     name: '', displayName: '', type: existingType,
     quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
-    loadingModels: true,
-    availableModels: staticAvailable,
+    loadingModels: supportsLiveModels,
+    availableModels: initialModels,
   }
-  try {
-    const res = await fetchProviderModels({ provider_id: group.canonical.id })
-    const fetched = res.data?.models ?? []
-    const merged = [...new Set([...staticAvailable, ...fetched])].filter(n => !alreadyAdded.has(n))
-    if (addModelModal.value.show) addModelModal.value.availableModels = merged
-  } catch { /* 静默失败，保留静态列表 */ } finally {
-    if (addModelModal.value.show) addModelModal.value.loadingModels = false
+
+  if (supportsLiveModels) {
+    try {
+      const res = await fetchProviderModels({ provider_id: group.canonical.id })
+      const fetched = res.data?.models ?? []
+      const merged = [...new Set([...initialModels, ...fetched])].filter(n => !alreadyAdded.has(n))
+      if (addModelModal.value.show) addModelModal.value.availableModels = merged
+    } catch { /* 静默失败，保留静态列表 */ } finally {
+      if (addModelModal.value.show) addModelModal.value.loadingModels = false
+    }
   }
 }
+
+watch(() => addModelModal.value.type, (newType) => {
+  if (!addModelModal.value.show) return
+  const loadedModels = providerModels.value[addModelModal.value.groupKey] ?? []
+  const alreadyAdded = new Set(loadedModels.map(m => m.name))
+  const opt = PROVIDER_OPTIONS.value.find(o => o.name === addModelModal.value.providerName)
+  addModelModal.value.availableModels = getModelsForType(opt, newType, alreadyAdded)
+  addModelModal.value.name = ''
+})
 
 function closeAddModelModal() {
   addModelModal.value.show = false
