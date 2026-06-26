@@ -42,6 +42,9 @@ async function confirmDeleteNovel() {
 
 // ── 旁白音色（异步加载 TTS 模型列表）────────────────────────────────────────
 const ttsModels = ref<AIModel[]>([])
+const voiceGenderFilter = ref('male')
+const voiceAgeFilter = ref('adult')
+
 const NARRATION_FALLBACK_VOICES = [
   { id: 'nova',    label: 'Nova — 女声·活泼' },
   { id: 'shimmer', label: 'Shimmer — 女声·温柔' },
@@ -50,11 +53,31 @@ const NARRATION_FALLBACK_VOICES = [
   { id: 'fable',   label: 'Fable — 男声·权威' },
   { id: 'alloy',   label: 'Alloy — 中性·平衡' },
 ]
+
+const GENDER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'male', label: '男声' },
+  { value: 'female', label: '女声' },
+  { value: 'neutral', label: '中性' },
+]
+const AGE_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'child', label: '少年' },
+  { value: 'teen', label: '青年' },
+  { value: 'adult', label: '中年' },
+  { value: 'elder', label: '长者' },
+]
+
 const narrationVoiceGroups = computed(() => {
   if (ttsModels.value.length === 0)
     return [{ key: 'openai', label: 'OpenAI', voices: NARRATION_FALLBACK_VOICES }]
+  const filtered = ttsModels.value.filter(m => {
+    if (voiceGenderFilter.value && m.gender && m.gender !== voiceGenderFilter.value) return false
+    if (voiceAgeFilter.value && m.age_group && m.age_group !== voiceAgeFilter.value) return false
+    return true
+  })
   const map: Record<string, { key: string; label: string; voices: { id: string; label: string }[] }> = {}
-  for (const m of ttsModels.value) {
+  for (const m of filtered) {
     const key = m.provider?.name ?? 'unknown'
     const label = m.provider?.display_name ?? key
     if (!map[key]) map[key] = { key, label, voices: [] }
@@ -398,6 +421,27 @@ const selectedAspectRatio = computed(() =>
       <!-- 旁白音色 -->
       <div>
         <label class="field-label">旁白音色</label>
+        <!-- 筛选条件（仅有 TTS 数据时显示） -->
+        <div v-if="ttsModels.length > 0" class="flex flex-wrap gap-x-4 gap-y-1.5 mb-2">
+          <div class="flex gap-1">
+            <button v-for="opt in GENDER_OPTIONS" :key="opt.value"
+              class="px-2 py-0.5 rounded text-xs border transition-colors"
+              :class="voiceGenderFilter === opt.value
+                ? 'bg-primary-600 border-primary-500 text-white'
+                : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+              @click="voiceGenderFilter = opt.value"
+            >{{ opt.label }}</button>
+          </div>
+          <div class="flex gap-1">
+            <button v-for="opt in AGE_OPTIONS" :key="opt.value"
+              class="px-2 py-0.5 rounded text-xs border transition-colors"
+              :class="voiceAgeFilter === opt.value
+                ? 'bg-primary-600 border-primary-500 text-white'
+                : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+              @click="voiceAgeFilter = opt.value"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
         <select :value="novel?.narration_voice ?? ''" class="input"
           @change="(e) => novelStore.updateNovel(novelId, { narration_voice: (e.target as HTMLSelectElement).value })">
           <option value="">自动（alloy）</option>

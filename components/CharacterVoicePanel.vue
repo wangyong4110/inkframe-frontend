@@ -76,23 +76,43 @@ const noVoiceConfigured = computed(
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 
-const filterGender   = ref('')   // '' | 'male' | 'female' | 'neutral'
-const filterAgeGroup = ref('')   // '' | 'child' | 'teen' | 'adult' | 'elder'
-
 const GENDER_OPTIONS = [
-  { value: '',        label: '全部性别' },
+  { value: '',        label: '全部' },
   { value: 'female',  label: '女声' },
   { value: 'male',    label: '男声' },
   { value: 'neutral', label: '中性' },
 ]
 
 const AGE_OPTIONS = [
-  { value: '',      label: '全部年龄' },
-  { value: 'child', label: '儿童' },
-  { value: 'teen',  label: '少年' },
-  { value: 'adult', label: '成年' },
-  { value: 'elder', label: '老年' },
+  { value: '',      label: '全部' },
+  { value: 'child', label: '少年' },
+  { value: 'teen',  label: '青年' },
+  { value: 'adult', label: '中年' },
+  { value: 'elder', label: '长者' },
 ]
+
+function inferAgeGroup(age: string | undefined): string {
+  if (!age) return 'adult'
+  const n = parseInt(age.replace(/[^0-9]/g, ''))
+  if (!isNaN(n)) {
+    if (n < 13) return 'child'
+    if (n <= 25) return 'teen'
+    if (n <= 60) return 'adult'
+    return 'elder'
+  }
+  if (/童|儿|幼/.test(age)) return 'child'
+  if (/少年|青少|青年/.test(age)) return 'teen'
+  if (/老|长者|爷|奶|暮/.test(age)) return 'elder'
+  return 'adult'
+}
+
+function charGender(char: typeof props.character): string {
+  const g = char.gender ?? ''
+  return ['male', 'female', 'neutral'].includes(g) ? g : ''
+}
+
+const filterGender   = ref(charGender(props.character))
+const filterAgeGroup = ref(inferAgeGroup(props.character.age))
 
 // Groups: [{ key, label, voices: [{id, label}] }]
 const voiceGroups = computed(() => {
@@ -182,7 +202,7 @@ onMounted(async () => {
   }
 })
 
-watch(() => props.character, (c) => {
+watch(() => props.character, (c, prev) => {
   if (suppressWatch.value) return
   const { lang, dialect } = parseLang((c as any).voice_language)
   selectedLang.value    = lang
@@ -193,6 +213,11 @@ watch(() => props.character, (c) => {
   audioUrl.value        = c.voice_sample ?? ''
   showCustomInput.value = false
   checkCustom(voiceId.value)
+  // 切换角色时重置筛选为新角色的性别/年龄
+  if (c.id !== prev?.id) {
+    filterGender.value   = charGender(c)
+    filterAgeGroup.value = inferAgeGroup(c.age)
+  }
 }, { deep: true })
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -348,28 +373,24 @@ defineExpose({
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
 
       <!-- 筛选行（有音色数据时才显示） -->
-      <div v-if="!noVoiceConfigured && !voiceModelsLoadFailed && voiceModels.length > 0" class="flex gap-2 mb-2">
-        <div class="relative flex-1">
-          <select
-            v-model="filterGender"
-            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 pr-7 text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-blue-400"
-          >
-            <option v-for="g in GENDER_OPTIONS" :key="g.value" :value="g.value">{{ g.label }}</option>
-          </select>
-          <svg class="absolute right-2 top-2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-          </svg>
+      <div v-if="!noVoiceConfigured && !voiceModelsLoadFailed && voiceModels.length > 0" class="flex flex-wrap gap-x-3 gap-y-1.5 mb-2">
+        <div class="flex gap-1">
+          <button v-for="opt in GENDER_OPTIONS" :key="opt.value"
+            class="px-2 py-0.5 rounded text-xs border transition-colors"
+            :class="filterGender === opt.value
+              ? 'bg-blue-500 border-blue-400 text-white'
+              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+            @click="filterGender = opt.value"
+          >{{ opt.label }}</button>
         </div>
-        <div class="relative flex-1">
-          <select
-            v-model="filterAgeGroup"
-            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 pr-7 text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-blue-400"
-          >
-            <option v-for="a in AGE_OPTIONS" :key="a.value" :value="a.value">{{ a.label }}</option>
-          </select>
-          <svg class="absolute right-2 top-2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-          </svg>
+        <div class="flex gap-1">
+          <button v-for="opt in AGE_OPTIONS" :key="opt.value"
+            class="px-2 py-0.5 rounded text-xs border transition-colors"
+            :class="filterAgeGroup === opt.value
+              ? 'bg-blue-500 border-blue-400 text-white'
+              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+            @click="filterAgeGroup = opt.value"
+          >{{ opt.label }}</button>
         </div>
       </div>
 

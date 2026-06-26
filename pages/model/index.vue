@@ -154,7 +154,10 @@ async function loadProviderTemplates() {
   }
 }
 
-const filteredProviderOptions = computed(() => PROVIDER_OPTIONS.value)
+const filteredProviderOptions = computed(() => {
+  const added = new Set(providerGroups.value.map(g => g.canonical.name))
+  return PROVIDER_OPTIONS.value.filter(o => !added.has(o.name))
+})
 
 // 始终需要 AK/SK 双密钥的提供商（不依赖后端 DB 中的 needs_secret_key 字段）
 const HARDCODED_NEEDS_SECRET_KEY = new Set([
@@ -610,6 +613,8 @@ const editModelModal = ref<{
   saving: boolean
   groupKey: number
   modelId: number
+  name: string
+  availableModels: string[]
   displayName: string
   type: string
   maxTokens: number
@@ -617,11 +622,18 @@ const editModelModal = ref<{
   timeout: number
   concurrency: number
   rateLimit: number
-}>({ show: false, saving: false, groupKey: 0, modelId: 0, displayName: '', type: '', maxTokens: 0, quality: 0.8, timeout: 0, concurrency: 0, rateLimit: 0 })
+}>({ show: false, saving: false, groupKey: 0, modelId: 0, name: '', availableModels: [], displayName: '', type: '', maxTokens: 0, quality: 0.8, timeout: 0, concurrency: 0, rateLimit: 0 })
 
 function openEditModel(groupKey: number, m: AIModel) {
+  const group = providerGroups.value.find(g => g.key === groupKey)
+  const opt = group ? PROVIDER_OPTIONS.value.find(o => o.name === group.canonical.name) : null
+  const loadedModels = providerModels.value[groupKey] ?? []
+  const otherNames = new Set(loadedModels.filter(lm => lm.id !== m.id).map(lm => lm.name))
+  const available = (opt?.staticModels ?? []).filter(n => !otherNames.has(n))
   editModelModal.value = {
     show: true, saving: false, groupKey, modelId: m.id,
+    name: m.name ?? '',
+    availableModels: available,
     displayName: m.display_name ?? '',
     type: m.type ?? 'llm',
     maxTokens: m.max_tokens ?? 0,
@@ -637,6 +649,7 @@ async function handleEditModel() {
   e.saving = true
   try {
     const updated = await updateModel(e.modelId, {
+      name: e.name.trim() || undefined,
       display_name: e.displayName,
       type: e.type,
       max_tokens: e.maxTokens || undefined,
@@ -672,8 +685,9 @@ const addModelModal = ref<{
   concurrency: number
   rateLimit: number
   saving: boolean
-  availableModels: string[]  // 该 provider 支持的模型列表（有则用下拉，无则自由输入）
-}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, availableModels: [] })
+  loadingModels: boolean
+  availableModels: string[]
+}>({ show: false, providerId: 0, groupKey: 0, name: '', type: '', quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false, loadingModels: false, availableModels: [] })
 
 async function refreshGroupModels(group: ProviderGroup) {
   try {
@@ -688,18 +702,26 @@ async function refreshGroupModels(group: ProviderGroup) {
   }
 }
 
-function openAddModelForm(group: ProviderGroup) {
+async function openAddModelForm(group: ProviderGroup) {
   const loadedModels = providerModels.value[group.key] ?? []
   const existingType = loadedModels.find(m => m.type)?.type ?? 'llm'
-  // 从模板取支持的模型列表，过滤掉已录入的
   const opt = PROVIDER_OPTIONS.value.find(o => o.name === group.canonical.name)
   const alreadyAdded = new Set(loadedModels.map(m => m.name))
-  const available = (opt?.staticModels ?? []).filter(n => !alreadyAdded.has(n))
+  const staticAvailable = (opt?.staticModels ?? []).filter(n => !alreadyAdded.has(n))
   addModelModal.value = {
     show: true, providerId: group.canonical.id, groupKey: group.key,
-    name: available[0] ?? '', type: existingType,
+    name: '', type: existingType,
     quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
-    availableModels: available,
+    loadingModels: true,
+    availableModels: staticAvailable,
+  }
+  try {
+    const res = await fetchProviderModels({ provider_id: group.canonical.id })
+    const fetched = res.data?.models ?? []
+    const merged = [...new Set([...staticAvailable, ...fetched])].filter(n => !alreadyAdded.has(n))
+    if (addModelModal.value.show) addModelModal.value.availableModels = merged
+  } catch { /* 静默失败，保留静态列表 */ } finally {
+    if (addModelModal.value.show) addModelModal.value.loadingModels = false
   }
 }
 
@@ -1267,7 +1289,7 @@ watch(activeTab, (tab) => {
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-gray-700/30">
-                <tr v-for="m in filteredGroupModels" :key="m.id"
+                <tr v-for="m in filteredGroupModels" :key="m.id || ('v-' + m.name)"
                     class="group/row transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/30"
                     :class="!m.is_active ? 'opacity-50' : ''">
                   <!-- 状态点 -->
@@ -1306,30 +1328,36 @@ watch(activeTab, (tab) => {
                   </td>
                   <!-- 启用 -->
                   <td class="px-3 py-3 text-center">
-                    <button type="button" role="switch" :aria-checked="m.is_active"
-                            class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus:outline-none"
-                            :class="m.is_active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'"
-                            @click="handleToggleModel(selectedGroup.key, m)">
-                      <span class="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-150"
-                            :class="m.is_active ? 'translate-x-4' : 'translate-x-0'"></span>
-                    </button>
+                    <template v-if="m.id">
+                      <button type="button" role="switch" :aria-checked="m.is_active"
+                              class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 focus:outline-none"
+                              :class="m.is_active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'"
+                              @click="handleToggleModel(selectedGroup.key, m)">
+                        <span class="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-150"
+                              :class="m.is_active ? 'translate-x-4' : 'translate-x-0'"></span>
+                      </button>
+                    </template>
+                    <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
                   </td>
                   <!-- 操作 -->
                   <td class="px-3 py-3 text-right">
-                    <span class="inline-flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                      <button class="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                              aria-label="编辑" @click="openEditModel(selectedGroup.key, m)">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                      </button>
-                      <button class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                              aria-label="删除" @click="handleDeleteModel(selectedGroup.key, m.id)">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                        </svg>
-                      </button>
-                    </span>
+                    <template v-if="m.id">
+                      <span class="inline-flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                        <button class="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                aria-label="编辑" @click="openEditModel(selectedGroup.key, m)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                          </svg>
+                        </button>
+                        <button class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                aria-label="删除" @click="handleDeleteModel(selectedGroup.key, m.id)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                          </svg>
+                        </button>
+                      </span>
+                    </template>
+                    <span v-else class="text-xs text-gray-400 dark:text-gray-600 opacity-0 group-hover/row:opacity-100">音色</span>
                   </td>
                 </tr>
               </tbody>
@@ -1356,12 +1384,23 @@ watch(activeTab, (tab) => {
 
             <!-- 模型名 -->
             <div>
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">模型名称 <span class="text-red-500">*</span></label>
-              <select v-if="addModelModal.availableModels.length" v-model="addModelModal.name" class="input text-sm w-full">
-                <option value="" disabled>请选择模型</option>
-                <option v-for="m in addModelModal.availableModels" :key="m" :value="m">{{ m }}</option>
-              </select>
-              <input v-else v-model="addModelModal.name" type="text" class="input text-sm w-full" placeholder="如 gpt-4o、claude-3-5-sonnet-20241022" @keydown.enter="handleCreateModelModal" />
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                模型名称 <span class="text-red-500">*</span>
+                <span v-if="addModelModal.loadingModels" class="ml-1 text-gray-400 font-normal">（加载中…）</span>
+                <span v-else-if="addModelModal.availableModels.length" class="ml-1 text-gray-400 font-normal">（{{ addModelModal.availableModels.length }} 个可选）</span>
+              </label>
+              <input
+                v-model="addModelModal.name"
+                list="add-model-datalist"
+                type="text"
+                class="input text-sm w-full"
+                placeholder="如 gpt-4o、claude-3-5-sonnet-20241022"
+                autocomplete="off"
+                @keydown.enter="handleCreateModelModal"
+              />
+              <datalist id="add-model-datalist">
+                <option v-for="m in addModelModal.availableModels" :key="m" :value="m" />
+              </datalist>
             </div>
 
             <!-- 2-column grid -->
@@ -1409,6 +1448,22 @@ watch(activeTab, (tab) => {
         <div v-if="editModelModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeEditModel">
           <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">编辑模型</h3>
+
+            <!-- 模型名称 -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">模型名称 <span class="text-red-500">*</span></label>
+              <input
+                v-model="editModelModal.name"
+                list="edit-model-datalist"
+                type="text"
+                class="input text-sm w-full"
+                placeholder="如 gpt-4o、claude-3-5-sonnet-20241022"
+                autocomplete="off"
+              />
+              <datalist id="edit-model-datalist">
+                <option v-for="m in editModelModal.availableModels" :key="m" :value="m" />
+              </datalist>
+            </div>
 
             <!-- 显示名称 -->
             <div>

@@ -15,6 +15,7 @@ const menuItems = [
   { path: '/sysadmin/assets/crawl', label: '素材爬取', icon: '🕷️' },
   { path: '/sysadmin/notifications', label: '系统通知', icon: '🔔' },
   { path: '/sysadmin/experiments', label: 'AI 实验', icon: '🧪' },
+  { path: '/sysadmin/feedback', label: '用户反馈', icon: '💬' },
   { path: '/sysadmin/settings', label: '系统设置', icon: '⚙️' },
 ]
 

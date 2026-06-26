@@ -379,4 +379,7 @@ const breadcrumbs = computed(() => {
 
   <!-- AI Provider Guard Modal -->
   <AiProviderGuardModal />
+
+  <!-- Feedback Widget -->
+  <FeedbackWidget />
 </template>
