@@ -238,8 +238,8 @@ async function doGenerateShot(shot: StoryboardShot) {
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
       delete shotTaskIds.value[shot.id]
+      await videoStore.fetchStoryboard(props.videoId)
       if (task.status === 'completed') {
-        await videoStore.fetchStoryboard(props.videoId)
         toast.success(`镜头 #${shot.shot_no} 素材已生成`)
       } else if (task.status !== 'cancelled') {
         toast.error(`镜头 #${shot.shot_no} 生成失败`)
