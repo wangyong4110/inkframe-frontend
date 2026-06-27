@@ -146,8 +146,11 @@ export const useApi = () => {
         await handle401()
         throw new Error('Session expired')
       }
-      const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      throw new Error(error.message || error.error || `HTTP error ${response.status}`)
+      const errorBody = await response.json().catch(() => ({ message: 'Request failed' }))
+      const err = new Error(errorBody.message || errorBody.error || `HTTP error ${response.status}`) as Error & Record<string, unknown>
+      // 把响应体所有字段（如 existing_id、code）附加到 Error 上，方便调用方检查
+      Object.assign(err, errorBody)
+      throw err
     }
 
     if (response.status === 204) {

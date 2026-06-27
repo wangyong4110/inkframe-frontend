@@ -450,8 +450,25 @@ async function submitProviderForm() {
     }
     await loadProviders()
   } catch (e: any) {
-    toast.error(e.message || '操作失败')
     providerLoading.value = false
+    // 409 冲突：提供商已存在，直接跳转编辑已有记录
+    if (e.code === 409 && e.existing_id) {
+      await loadProviders()
+      const existing = providers.value.find(p => p.id === e.existing_id)
+      if (existing) {
+        toast.error('该名称的提供商已存在，已自动切换为编辑模式')
+        editingProvider.value = existing
+        providerForm.value = {
+          name: existing.name, display_name: existing.display_name || '',
+          api_endpoint: existing.api_endpoint || '', api_key: '', api_secret_key: '',
+          api_version: existing.api_version || '', is_active: existing.is_active,
+        }
+      } else {
+        toast.error(e.message || '该名称的提供商已存在，请在列表中找到并编辑')
+      }
+      return
+    }
+    toast.error(e.message || '操作失败')
     return
   }
   providerLoading.value = false
