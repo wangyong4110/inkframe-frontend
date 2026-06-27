@@ -126,11 +126,18 @@ async function handleGenerateVoice(shot: StoryboardShot) {
     if (mainTaskId) {
       taskStore.trackTask(mainTaskId, async (task) => {
         if (task.status === 'completed') {
-          const base = ((task.data as any)?.audio_url as string | undefined)
-            || `/api/v1/videos/${props.videoId}/storyboard/${shot.id}/audio`
-          const sep = base.includes('?') ? '&' : '?'
-          shotAudioUrls.value[shot.id] = `${base}${sep}t=${Date.now()}`
           await videoStore.fetchStoryboard(props.videoId)
+          // Sync audio URL from fresh storyboard data (only set when audio actually exists)
+          const freshShot = shots.value.find(s => s.id === shot.id)
+          if (freshShot?.audio_url) {
+            const sep = freshShot.audio_url.includes('?') ? '&' : '?'
+            shotAudioUrls.value[shot.id] = `${freshShot.audio_url}${sep}t=${Date.now()}`
+          } else {
+            delete shotAudioUrls.value[shot.id]
+          }
+          // Reload segments — GenerateShotAudio may have created a new segment
+          invalidateSegmentCache(shot.id)
+          await loadSegments(shot)
         } else {
           toast.error(`镜头 #${shot.shot_no} 主配音生成失败`)
         }
@@ -696,8 +703,8 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
               </div>
             </div>
 
-            <!-- Shot built-in dialogue / narration — always visible -->
-            <div v-if="shot.dialogue" class="flex items-center gap-1.5 mb-1.5">
+            <!-- Shot built-in dialogue / narration — hidden once segments exist -->
+            <div v-if="shot.dialogue && !(shotSegments[shot.id]?.length)" class="flex items-center gap-1.5 mb-1.5">
               <button
                 class="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 font-medium whitespace-nowrap flex-shrink-0"
                 @click="openSpeakerDropdown($event, shot)"
@@ -727,7 +734,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 </button>
               </div>
             </div>
-            <div v-if="shot.narration || (!shot.dialogue && shot.description)" class="flex items-center gap-1.5 mb-1.5">
+            <div v-if="(shot.narration || (!shot.dialogue && shot.description)) && !(shotSegments[shot.id]?.length)" class="flex items-center gap-1.5 mb-1.5">
               <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 font-medium whitespace-nowrap flex-shrink-0">旁白</span>
               <span v-if="shot.emotional_tone" class="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0" :class="emotionClass(shot.emotional_tone)">{{ shot.emotional_tone }}</span>
               <p
