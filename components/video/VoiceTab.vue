@@ -275,6 +275,7 @@ async function handleInsertSegment(shot: StoryboardShot, afterSeqNo: number) {
 }
 
 async function handleDeleteSegment(shot: StoryboardShot, seg: ShotVoiceSegment) {
+  if (!confirm(`确认删除第 ${seg.seq_no} 段配音？`)) return
   try {
     const api = useVideoApi()
     await api.deleteVoiceSegment(props.videoId, shot.id, seg.id)
@@ -412,22 +413,6 @@ async function handleChangeDialogueSpeaker(shot: StoryboardShot, newSpeaker: str
   }
 }
 
-// ── Audio playback ──
-const playingShotId = ref<number | null>(null)
-let currentAudio: HTMLAudioElement | null = null
-
-function playShotAudio(shot: StoryboardShot) {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null }
-  if (playingShotId.value === shot.id) { playingShotId.value = null; return }
-  const url = shotAudioUrls.value[shot.id]
-  if (!url) { toast.warning('请先生成该镜头配音'); return }
-  playingShotId.value = shot.id
-  currentAudio = new Audio(url)
-  currentAudio.play()
-  currentAudio.onended = () => { playingShotId.value = null }
-  currentAudio.onerror = () => { playingShotId.value = null }
-}
-
 async function clearShotField(shot: StoryboardShot, field: 'dialogue' | 'narration') {
   try {
     await videoStore.updateShot(props.videoId, shot.id, { [field]: '' } as any)
@@ -440,9 +425,7 @@ onMounted(async () => {
   await Promise.allSettled(shots.value.map(s => loadSegments(s)))
 })
 
-onUnmounted(() => {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null }
-})
+onUnmounted(() => {})
 
 // ── 内联编辑旁白 / 对白 ──────────────────────────────────────────────────────
 const editingShotId = ref<number | null>(null)
@@ -735,10 +718,6 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 @blur="saveEdit(shot)"
               />
               <div class="flex items-center gap-0.5 flex-shrink-0">
-                <button class="p-1 rounded transition-colors" :class="playingShotId === shot.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'" :title="playingShotId === shot.id ? '停止' : '播放'" @click="playShotAudio(shot)">
-                  <svg v-if="playingShotId === shot.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
-                  <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                </button>
                 <button class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors" :disabled="generatingVoice[shot.id]" title="生成配音" @click="handleGenerateVoice(shot)">
                   <svg v-if="generatingVoice[shot.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
@@ -766,10 +745,6 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 @blur="saveEdit(shot)"
               />
               <div class="flex items-center gap-0.5 flex-shrink-0">
-                <button class="p-1 rounded transition-colors" :class="playingShotId === shot.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'" :title="playingShotId === shot.id ? '停止' : '播放'" @click="playShotAudio(shot)">
-                  <svg v-if="playingShotId === shot.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
-                  <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                </button>
                 <button class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors" :disabled="generatingVoice[shot.id]" title="生成配音" @click="handleGenerateVoice(shot)">
                   <svg v-if="generatingVoice[shot.id]" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
@@ -885,7 +860,7 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
               </div>
             </div>
 
-            <audio v-if="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-2 w-full h-8" />
+            <audio v-if="shotAudioUrls[shot.id]" :key="shotAudioUrls[shot.id]" :src="shotAudioUrls[shot.id]" controls class="mt-2 w-full h-8" />
           </div>
         </div>
       </div>
