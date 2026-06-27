@@ -413,7 +413,6 @@ async function handleChangeDialogueSpeaker(shot: StoryboardShot, newSpeaker: str
 }
 
 // ── Audio playback ──
-const playingSegId = ref<number | null>(null)
 const playingShotId = ref<number | null>(null)
 let currentAudio: HTMLAudioElement | null = null
 
@@ -435,26 +434,6 @@ async function clearShotField(shot: StoryboardShot, field: 'dialogue' | 'narrati
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || ''))
   }
-}
-
-function playSegmentAudio(seg: ShotVoiceSegment, videoId: number, shot: { id: number }) {
-  if (currentAudio) {
-    currentAudio.pause()
-    currentAudio = null
-  }
-  if (playingSegId.value === seg.id) {
-    playingSegId.value = null
-    return
-  }
-  if (!seg.audio_path) {
-    toast.warning('请先生成该段配音')
-    return
-  }
-  playingSegId.value = seg.id
-  currentAudio = new Audio(`/api/v1/videos/${videoId}/shots/${shot.id}/segments/${seg.id}/audio`)
-  currentAudio.play()
-  currentAudio.onended = () => { playingSegId.value = null }
-  currentAudio.onerror = () => { playingSegId.value = null }
 }
 
 onMounted(async () => {
@@ -849,15 +828,6 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                 />
                 <!-- Actions -->
                 <div class="flex items-center gap-0.5 flex-shrink-0">
-                  <button
-                    class="p-1 rounded transition-colors"
-                    :class="playingSegId === seg.id ? 'text-primary-600' : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
-                    :title="playingSegId === seg.id ? '停止播放' : (seg.audio_path ? '播放' : '请先生成配音')"
-                    @click="playSegmentAudio(seg, props.videoId, shot)"
-                  >
-                    <svg v-if="playingSegId === seg.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                  </button>
                   <button
                     class="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
                     :disabled="generatingSegmentVoice[seg.id]"
