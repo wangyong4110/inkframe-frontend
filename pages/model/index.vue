@@ -204,10 +204,10 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
   'doubao-speech-v1': {
     akLabel: 'App ID', akPlaceholder: '火山引擎应用 App ID（如 6762154031）',
     skLabel: 'Access Token', skPlaceholder: '火山引擎 Access Token',
-    skHint: '豆包语音合成 V1 使用 App ID + Access Token 鉴权，在火山引擎方舟控制台「语音技术」页面获取',
+    skHint: '豆包语音合成 V1 使用 App ID + Access Token 鉴权，在火山引擎控制台「语音技术」页面获取。注意：_uranus_bigtts 系列音色需使用豆包语音 V3，V1 不支持',
     versionLabel: 'Cluster（集群）',
-    versionPlaceholder: 'volcano_mega',
-    versionHint: 'volcano_mega：豆包2.0大模型音色（_uranus_bigtts / _tob）；volcano_tts：经典音色（BV001_streaming 等）',
+    versionPlaceholder: 'volcano_tts',
+    versionHint: 'volcano_tts：经典音色（BV001_streaming 等）；volcano_mega：月亮系列大模型音色（_moon_bigtts）',
   },
   kling: {
     akLabel: 'Access Key（AK）', akPlaceholder: '可灵 Access Key',
@@ -374,8 +374,8 @@ const PROVIDER_CONSOLE_URL: Record<string, string> = {
   // 可灵（视频/音效/语音/图像共用同一 AK/SK）
   kling:               'https://klingai.com/dev-platform/personal-info',
   // 豆包语音（独立凭证，与 doubao LLM 不同）
-  'doubao-speech':     'https://console.volcengine.com/speech',
-  'doubao-speech-v1':  'https://console.volcengine.com/speech',
+  'doubao-speech':     'https://console.volcengine.com/speech/new/overview?projectName=default',
+  'doubao-speech-v1':  'https://console.volcengine.com/speech/new/overview?projectName=default',
   'baidu-tts':         'https://ai.baidu.com/tech/speech',
   'minimax-tts':       'https://platform.minimax.chat/user-center/basic-information/interface-key',
   'tencent-tts':       'https://console.cloud.tencent.com/tts',
