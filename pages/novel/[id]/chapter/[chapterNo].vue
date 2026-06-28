@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
+import type { PlotPoint, ChapterVersion, CharacterLook, DramaTemplate } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
@@ -1100,6 +1100,30 @@ async function handleGenerateOutline() {
   }
 }
 
+// ── 剧本模板 ───────────────────────────────────────────────────────────────────
+const dramaTemplates = ref<DramaTemplate[]>([])
+// 默认读取小说上保存的模板；用户可在右侧面板临时覆盖
+const selectedDramaTemplateId = ref<number>(0)
+const loadingDramaTemplates = ref(false)
+
+async function loadDramaTemplates() {
+  if (dramaTemplates.value.length > 0) return
+  loadingDramaTemplates.value = true
+  try {
+    const api = useDramaTemplateApi()
+    const res = await api.listTemplates()
+    dramaTemplates.value = res.data ?? []
+    // 回填：用小说上保存的模板 ID 作为默认值
+    if (!selectedDramaTemplateId.value && novel.value?.drama_template_id) {
+      selectedDramaTemplateId.value = novel.value.drama_template_id
+    }
+  } catch {
+    // silent
+  } finally {
+    loadingDramaTemplates.value = false
+  }
+}
+
 // ── 全小说大纲生成 ─────────────────────────────────────────────────────────────
 const generatingNovelOutline = ref(false)
 
@@ -1111,6 +1135,7 @@ async function handleGenerateNovelOutline() {
       max_tokens: advMaxTokens.value || undefined,
       temperature: advTemperature.value || undefined,
       timeout_seconds: advTimeoutSeconds.value || undefined,
+      drama_template_id: selectedDramaTemplateId.value || undefined,
     }
     const taskId = await novelStore.generateOutline(novelId, 10, prompt.value || undefined, overrides)
     if (!taskId) {
@@ -2930,6 +2955,34 @@ onUnmounted(() => {
             <div v-if="outlinePanelTab === 'generate'" class="p-4 space-y-4">
               <div class="space-y-3">
                 <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">生成整部小说的章节大纲，包含所有章节标题和剧情提要。</p>
+
+                <!-- 剧本模板（读取小说设置，可临时切换） -->
+                <div>
+                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                    剧本模板
+                    <span class="font-normal text-gray-400">（在小说创建时设置）</span>
+                  </label>
+                  <div class="relative">
+                    <select
+                      v-model="selectedDramaTemplateId"
+                      class="w-full text-xs px-2.5 py-1.5 pr-7 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500 appearance-none"
+                      @focus="loadDramaTemplates"
+                    >
+                      <option :value="0">不使用模板</option>
+                      <option v-for="t in dramaTemplates" :key="t.id" :value="t.id">
+                        {{ t.name }}（{{ t.genre }}）
+                      </option>
+                    </select>
+                    <svg class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </div>
+                  <p
+                    v-if="selectedDramaTemplateId && dramaTemplates.find(t => t.id === selectedDramaTemplateId)"
+                    class="mt-1 text-[10px] text-primary-600 dark:text-primary-400 leading-relaxed"
+                  >{{ dramaTemplates.find(t => t.id === selectedDramaTemplateId)?.core_hook }}</p>
+                </div>
+
                 <div>
                   <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">补充提示 <span class="font-normal text-gray-400">（可选）</span></label>
                   <textarea

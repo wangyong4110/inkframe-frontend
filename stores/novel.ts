@@ -189,7 +189,7 @@ export const useNovelStore = defineStore('novel', {
       }
     },
 
-    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number }): Promise<string> {
+    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number; drama_template_id?: number }): Promise<string> {
       this.loading = true
       this.error = null
 

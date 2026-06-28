@@ -2,7 +2,7 @@
 import { marked } from 'marked'
 import type { CrawlProgress } from '~/composables/useCrawlApi'
 import { getAuthToken } from '~/utils/auth'
-import type { Novel } from '~/types'
+import type { Novel, DramaTemplate } from '~/types'
 
 function renderMarkdown(text: string): string {
   return marked.parse(text, { async: false }) as string
@@ -56,6 +56,7 @@ onMounted(async () => {
   } catch {
     hasLLMProvider.value = null // 检查失败保持 null，不静默放行
   }
+  loadDramaTemplates()
 })
 
 function selectAIGenerate() {
@@ -354,7 +355,32 @@ const aiForm = reactive({
   cover_image: 'ai', // 默认使用 AI 生成封面
   prompt_language: 'zh',
   chapter_mode: 'sequential', // sequential=连贯剧情 / independent=独立成篇
+  drama_template_id: 0,
 })
+
+// ── 剧本模板 ────────────────────────────────────────────────────────────────────
+const dramaTemplates = ref<DramaTemplate[]>([])
+const loadingDramaTemplates = ref(false)
+const dramaTemplatesLoaded = ref(false)
+
+async function loadDramaTemplates() {
+  if (dramaTemplatesLoaded.value) return
+  loadingDramaTemplates.value = true
+  try {
+    const api = useDramaTemplateApi()
+    const res = await api.listTemplates()
+    dramaTemplates.value = res.data ?? []
+    dramaTemplatesLoaded.value = true
+  } catch {
+    // silent
+  } finally {
+    loadingDramaTemplates.value = false
+  }
+}
+
+const selectedDramaTemplate = computed(() =>
+  dramaTemplates.value.find(t => t.id === aiForm.drama_template_id) ?? null
+)
 const aiLoading = ref(false)
 const aiLoadingMsg = ref('创建中...')
 const aiError = ref('')
@@ -377,6 +403,7 @@ async function submitAI() {
     if (aiForm.cover_image !== 'ai') body.cover_image = aiForm.cover_image
     if (aiForm.target_word_count > 0) body.target_word_count = aiForm.target_word_count
     if (aiForm.target_chapters > 0) body.target_chapters = aiForm.target_chapters
+    if (aiForm.drama_template_id > 0) body.drama_template_id = aiForm.drama_template_id
     const data = await request<any>('/novels', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -1126,6 +1153,34 @@ async function rwSubmit() {
               <span>{{ mode.label }}</span>
               <span class="text-xs opacity-70">{{ mode.desc }}</span>
             </button>
+          </div>
+        </div>
+
+        <!-- 剧本模板 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            剧本模板 <span class="font-normal text-gray-400 dark:text-gray-500">（可选，适合短剧/爆款创作）</span>
+          </label>
+          <div class="relative">
+            <select
+              v-model="aiForm.drama_template_id"
+              class="w-full text-sm px-3 py-2 pr-8 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
+            >
+              <option :value="0">不使用模板</option>
+              <option v-for="t in dramaTemplates" :key="t.id" :value="t.id">
+                {{ t.name }}（{{ t.genre }}）
+              </option>
+            </select>
+            <svg class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </div>
+          <div
+            v-if="selectedDramaTemplate"
+            class="mt-1.5 px-3 py-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 text-xs"
+          >
+            <p class="font-medium text-purple-700 dark:text-purple-300">{{ selectedDramaTemplate.core_hook }}</p>
+            <p class="text-purple-600/70 dark:text-purple-400/70 mt-0.5 leading-relaxed line-clamp-2">{{ selectedDramaTemplate.description }}</p>
           </div>
         </div>
 

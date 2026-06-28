@@ -25,6 +25,7 @@ export interface Novel {
   chapter_mode?: string     // sequential=连贯剧情（默认）/ independent=独立成篇
   auto_review_rounds?: number    // 生成后自动审查轮次：0=关闭，1-3=开启
   auto_review_min_score?: number // 提前停止阈值（0-100），默认80
+  drama_template_id?: number     // 剧本模板 ID（0=不使用）
   core_theme?: string  // 全书核心主题（如"信任比力量更难获得"）
   reference_style?: string  // 参考作品
   channel?: string
@@ -249,6 +250,19 @@ export type VideoQualityTier = 'draft' | 'preview' | 'final'
 
 export type VideoMode = 'video' | 'slideshow'
 
+export interface VideoRenderConfig {
+  resolution?: string
+  frame_rate?: number
+  aspect_ratio?: string
+  art_style?: string
+  pacing?: string
+  target_duration?: number
+  quality_tier?: string
+  visual_mode?: string
+  three_d_style?: string
+  generate_audio?: boolean | null  // Seedance 2.0/1.5：true=有声，false=静音，null/undefined=API默认(有声)
+}
+
 export interface Video {
   id: number
   novel_id: number
@@ -266,6 +280,7 @@ export interface Video {
   target_duration?: number               // 秒，0 或 undefined = 自动
   visual_mode?: 'standard' | 'hd' | '3d' | 'hd_3d'   // 视觉模式
   three_d_style?: 'cg' | 'pixar' | 'anime3d' | 'realistic3d' // 3D 风格
+  render_config?: VideoRenderConfig      // 后端完整渲染配置（含 generate_audio 等 Seedance 专属字段）
   total_shots: number
   url?: string
   // 合成与发布
@@ -1420,4 +1435,19 @@ export interface CollabEvent {
   user?: string
   summary?: string
   data?: Record<string, unknown>
+}
+
+export interface DramaTemplate {
+  id: number
+  name: string
+  genre: string
+  core_hook: string
+  description: string
+  three_act_beats: string
+  character_archetypes: string
+  emotion_curve_template: string
+  key_triggers: string
+  is_builtin: boolean
+  created_at: string
+  updated_at: string
 }

@@ -44,6 +44,7 @@ export const useNovelApi = () => {
     max_tokens?: number
     temperature?: number
     timeout_seconds?: number
+    drama_template_id?: number
   }) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${id}/outline`, {
       method: 'POST',

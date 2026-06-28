@@ -59,6 +59,19 @@ const totalShots = computed(() => shots.value.length)
 
 const videoProviders = ref<{ name: string; display_name: string }[]>([])
 const selectedVideoProvider = ref('')
+
+const generateAudio = computed(() => video.value?.render_config?.generate_audio ?? true)
+
+async function setGenerateAudio(val: boolean) {
+  try {
+    await videoStore.updateVideo(props.videoId, { generate_audio: val } as any)
+    await videoStore.fetchVideo(props.videoId)
+    toast.success(val ? '已开启环境音' : '已关闭环境音（静音模式）')
+  } catch (e: any) {
+    toast.error('设置失败：' + (e.message || ''))
+  }
+}
+
 const batchGeneratingImages = ref(false)
 const batchGeneratingClips = ref(false)
 const uploadingShotId = ref<number | null>(null)
@@ -728,15 +741,15 @@ defineExpose({
                     >
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                     </button>
-                    <!-- 生成视频图标按钮 -->
+                    <!-- 生成视频图标按钮（无视频时显示） -->
                     <button
-                      v-if="shot.status !== 'generating'"
+                      v-if="shot.status !== 'generating' && !shot.video_url"
                       class="p-1.5 rounded-lg transition-colors"
                       :class="shotTaskIds[shot.id]
                         ? 'text-primary-400 bg-primary-50 dark:bg-primary-900/30'
                         : 'text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30'"
                       :disabled="!!shotTaskIds[shot.id]"
-                      :title="shotTaskIds[shot.id] ? '生成中…' : (shot.video_url ? '重新生成视频' : '生成视频')"
+                      :title="shotTaskIds[shot.id] ? '生成中…' : '生成视频'"
                       @click.stop="handleGenerateShot(shot)"
                     >
                       <svg v-if="shotTaskIds[shot.id]" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -747,6 +760,25 @@ defineExpose({
                       </svg>
                     </button>
                   </div>
+                  <!-- 重新生成按钮（有视频时显示） -->
+                  <button
+                    v-if="shot.video_url && shot.status !== 'generating'"
+                    class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors"
+                    :class="shotTaskIds[shot.id]
+                      ? 'text-primary-500 bg-primary-50 dark:bg-primary-900/30 cursor-not-allowed'
+                      : 'text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 border border-gray-200 dark:border-gray-700'"
+                    :disabled="!!shotTaskIds[shot.id]"
+                    :title="shotTaskIds[shot.id] ? '生成中…' : '重新生成视频'"
+                    @click.stop="handleGenerateShot(shot)"
+                  >
+                    <svg v-if="shotTaskIds[shot.id]" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>{{ shotTaskIds[shot.id] ? '生成中…' : '重新生成' }}</span>
+                  </button>
                   <span
                     v-if="shotKlingMode(shot) === 'pro'"
                     class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
@@ -1017,6 +1049,26 @@ defineExpose({
             <option value="">默认</option>
             <option v-for="p in videoProviders" :key="p.name" :value="p.name">{{ p.display_name || p.name }}</option>
           </select>
+        </div>
+
+        <!-- Seedance 环境音 -->
+        <div v-if="video?.mode !== 'slideshow'">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            环境音生成 <span class="text-gray-400 font-normal">（Seedance 2.0/1.5）</span>
+          </label>
+          <button
+            class="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg border transition-colors"
+            :class="generateAudio
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+              : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800'"
+            @click="setGenerateAudio(!generateAudio)"
+          >
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 000 5.656" />
+            </svg>
+            {{ generateAudio ? '有声（环境音同步）' : '静音（手动配音）' }}
+          </button>
         </div>
 
         <!-- 操作按钮 -->
