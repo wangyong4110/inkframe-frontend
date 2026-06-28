@@ -747,7 +747,7 @@ async function openAddModelForm(group: ProviderGroup) {
     show: true, providerId: group.canonical.id, groupKey: group.key,
     providerName: group.canonical.name,
     name: '', displayName: '', type: existingType,
-    quality: 0.8, maxTokens: 0, timeout: 0, concurrency: 0, rateLimit: 0, saving: false,
+    quality: 0.8, maxTokens: 0, timeout: 0, concurrency: defaultConcurrencyForType(existingType), rateLimit: 0, saving: false,
     loadingModels: supportsLiveModels,
     availableModels: initialModels,
   }
@@ -764,6 +764,14 @@ async function openAddModelForm(group: ProviderGroup) {
   }
 }
 
+function defaultConcurrencyForType(type: string): number {
+  if (type === 'video') return 1
+  if (type === 'image' || type === 'img2img') return 1
+  if (type === 'voice' || type === 'sfx') return 5
+  if (type === 'llm' || type === 'embedding') return 10
+  return 0
+}
+
 watch(() => addModelModal.value.type, (newType) => {
   if (!addModelModal.value.show) return
   const loadedModels = providerModels.value[addModelModal.value.groupKey] ?? []
@@ -771,6 +779,7 @@ watch(() => addModelModal.value.type, (newType) => {
   const opt = PROVIDER_OPTIONS.value.find(o => o.name === addModelModal.value.providerName)
   addModelModal.value.availableModels = getModelsForType(opt, newType, alreadyAdded)
   addModelModal.value.name = ''
+  addModelModal.value.concurrency = defaultConcurrencyForType(newType)
 })
 
 function closeAddModelModal() {
