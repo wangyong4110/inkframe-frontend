@@ -231,11 +231,14 @@ onMounted(async () => {
   videoProviders.value = res?.data ?? []
 })
 
-// Returns true only when this shot has an active in-session task.
-// shot.status === 'generating' alone is unreliable after a page refresh because
-// the backend leaves the status as 'generating' when the browser is closed mid-task.
+// Tracks shot IDs whose video is being generated in the current session via batch operations.
+// shot.status === 'generating' is unreliable: the backend leaves it set when the browser
+// closes mid-task, making both buttons disappear on reload with no way to retry.
+// Per-shot generation uses shotTaskIds for its spinning-button state instead.
+const activeShotIds = ref<Set<number>>(new Set())
+
 function isActuallyGenerating(shot: StoryboardShot): boolean {
-  return shot.status === 'generating' && !!shotTaskIds.value[shot.id]
+  return activeShotIds.value.has(shot.id)
 }
 
 function shotKlingMode(shot: StoryboardShot): 'pro' | 'std' {
@@ -341,9 +344,11 @@ async function handleGenerateAll() {
   try {
     const taskId = await videoStore.batchGenerateShots(props.videoId, pending.map(s => s.id), video.value?.quality_tier, selectedVideoProvider.value || undefined)
     if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); return }
+    for (const s of pending) activeShotIds.value.add(s.id)
     toast.info(`${pending.length} 个镜头素材生成中…`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
+      for (const s of pending) activeShotIds.value.delete(s.id)
       if (task.status === 'completed') {
         await videoStore.fetchStoryboard(props.videoId)
         toast.success('全部镜头素材生成完成')
@@ -398,10 +403,12 @@ async function doGenerateClips() {
   try {
     const taskId = await videoStore.batchGenerateShotClips(props.videoId, pending.map(s => s.id))
     if (!taskId) { toast.error('视频生成失败：未获取到任务ID'); batchGeneratingClips.value = false; return }
+    for (const s of pending) activeShotIds.value.add(s.id)
     toast.info(`${pending.length} 个镜头视频生成中…`)
     const taskStore = useTaskStore()
     taskStore.trackTask(taskId, async (task) => {
       batchGeneratingClips.value = false
+      for (const s of pending) activeShotIds.value.delete(s.id)
       if (task.status === 'completed') {
         await videoStore.fetchStoryboard(props.videoId)
         toast.success('全部镜头视频生成完成')
@@ -411,6 +418,7 @@ async function doGenerateClips() {
     }, () => videoStore.fetchStoryboard(props.videoId))
   } catch (e: any) {
     toast.error('视频生成失败：' + (e.message || ''))
+    for (const s of pending) activeShotIds.value.delete(s.id)
     batchGeneratingClips.value = false
   }
 }
