@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import type { Novel, Video } from '~/types'
 
 definePageMeta({ layout: false, auth: false })
@@ -7,7 +7,28 @@ definePageMeta({ layout: false, auth: false })
 useHead({ title: '简影 - AI 小说转视频平台' })
 
 const authStore = useAuthStore()
+const router = useRouter()
 const platformApi = usePlatformApi()
+const userMenuOpen = ref(false)
+
+async function logout() {
+  await authStore.logout()
+  userMenuOpen.value = false
+  router.push('/')
+}
+
+function goProfile() {
+  userMenuOpen.value = false
+  router.push('/profile')
+}
+
+function onClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.user-menu-anchor')) userMenuOpen.value = false
+}
+
+onMounted(() => document.addEventListener('click', onClickOutside))
+onUnmounted(() => document.removeEventListener('click', onClickOutside))
 const publicNovelApi = usePublicNovelApi()
 const hotVideos = ref<Video[]>([])
 const hotNovels = ref<Novel[]>([])
@@ -144,9 +165,28 @@ const stats = [
             </NuxtLink>
           </template>
           <template v-else>
-            <span class="hidden sm:block text-sm text-gray-400">
-              {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
-            </span>
+            <div class="relative hidden sm:block user-menu-anchor">
+              <button
+                class="text-sm text-gray-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-gray-800"
+                @click="userMenuOpen = !userMenuOpen"
+              >
+                {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
+                <span class="ml-1 text-xs opacity-60">▾</span>
+              </button>
+              <div
+                v-if="userMenuOpen"
+                class="absolute right-0 mt-1 w-36 bg-gray-800 border border-gray-700 rounded-xl shadow-xl py-1 z-50"
+              >
+                <button
+                  class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                  @click="goProfile"
+                >个人资料</button>
+                <button
+                  class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700 hover:text-red-300 transition-colors"
+                  @click="logout"
+                >退出登录</button>
+              </div>
+            </div>
             <NuxtLink
               to="/novel"
               class="bg-violet-600 hover:bg-violet-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"

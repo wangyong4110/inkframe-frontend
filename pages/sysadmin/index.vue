@@ -50,24 +50,6 @@ const cards = computed(() => {
       </div>
     </div>
 
-    <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-        <h2 class="text-sm font-semibold text-gray-300 mb-3">快速导航</h2>
-        <div class="space-y-2">
-          <NuxtLink to="/sysadmin/tenants" class="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300">
-            → 管理租户
-          </NuxtLink>
-          <NuxtLink to="/sysadmin/users" class="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300">
-            → 管理用户
-          </NuxtLink>
-          <NuxtLink to="/sysadmin/tasks" class="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300">
-            → 监控任务
-          </NuxtLink>
-          <NuxtLink to="/sysadmin/settings" class="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300">
-            → 系统设置
-          </NuxtLink>
-        </div>
-      </div>
-    </div>
+
   </div>
 </template>

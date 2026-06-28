@@ -3,27 +3,58 @@ const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const menuItems = [
-  { path: '/sysadmin', label: '系统概览', icon: '📊' },
-  { path: '/sysadmin/tenants', label: '租户管理', icon: '🏢' },
-  { path: '/sysadmin/users', label: '用户管理', icon: '👥' },
-  { path: '/sysadmin/ai-infra', label: 'AI 基础设施', icon: '🤖' },
-  { path: '/sysadmin/tasks', label: '任务监控', icon: '⚙️' },
-  { path: '/sysadmin/audit-logs', label: '审计日志', icon: '📋' },
-  { path: '/sysadmin/content-review', label: '内容审核', icon: '🔍' },
-  { path: '/sysadmin/assets', label: '资产治理', icon: '🗂️' },
-  { path: '/sysadmin/assets/crawl', label: '素材爬取', icon: '🕷️' },
-  { path: '/sysadmin/notifications', label: '系统通知', icon: '🔔' },
-  { path: '/sysadmin/experiments', label: 'AI 实验', icon: '🧪' },
-  { path: '/sysadmin/feedback', label: '用户反馈', icon: '💬' },
+type MenuItem = { path: string; label: string; icon: string; children?: MenuItem[] }
+
+const menuItems: MenuItem[] = [
+  {
+    path: '/sysadmin/_system', label: '系统管理', icon: '🖥️',
+    children: [
+      { path: '/sysadmin', label: '系统概览', icon: '📊' },
+      { path: '/sysadmin/metrics', label: '系统指标', icon: '📈' },
+      { path: '/sysadmin/tasks', label: '任务监控', icon: '⚙️' },
+      { path: '/sysadmin/tasks/failures', label: '失败任务分析', icon: '⚠️' },
+      { path: '/sysadmin/notifications', label: '系统通知', icon: '🔔' },
+    ],
+  },
+  {
+    path: '/sysadmin/_users', label: '用户管理', icon: '👥',
+    children: [
+      { path: '/sysadmin/users', label: '用户管理', icon: '👤' },
+      { path: '/sysadmin/users/trend', label: '注册趋势', icon: '📉' },
+      { path: '/sysadmin/tenants', label: '租户管理', icon: '🏢' },
+      { path: '/sysadmin/audit-logs', label: '审计日志', icon: '📋' },
+      { path: '/sysadmin/feedback', label: '用户反馈', icon: '💬' },
+    ],
+  },
+  {
+    path: '/sysadmin/_assets', label: '资产管理', icon: '🗂️',
+    children: [
+      { path: '/sysadmin/assets', label: '资产治理', icon: '📦' },
+      { path: '/sysadmin/assets/crawl', label: '素材爬取', icon: '🕷️' },
+      { path: '/sysadmin/content-review', label: '内容审核', icon: '🔍' },
+      { path: '/sysadmin/content', label: '内容数据', icon: '📰' },
+    ],
+  },
+  {
+    path: '/sysadmin/_analytics', label: '数据分析', icon: '🤖',
+    children: [
+      { path: '/sysadmin/ai-usage', label: 'AI 用量统计', icon: '🔋' },
+    ],
+  },
   { path: '/sysadmin/settings', label: '系统设置', icon: '⚙️' },
 ]
 
+// Exact-match paths that have children at the same level (avoid false positives from startsWith)
+const EXACT_MATCH_PATHS = new Set(['/sysadmin/users', '/sysadmin/assets', '/sysadmin/tasks'])
+
 const isActive = (path: string) => {
-  if (path === '/sysadmin') return route.path === '/sysadmin'
-  if (path === '/sysadmin/assets') return route.path === '/sysadmin/assets'
-  return route.path.startsWith(path)
+  if (path.includes('/_')) return false
+  if (EXACT_MATCH_PATHS.has(path)) return route.path === path
+  return route.path === path || route.path.startsWith(path + '/')
 }
+
+const isGroupActive = (item: MenuItem) =>
+  item.children?.some(c => isActive(c.path)) ?? false
 
 async function logout() {
   await authStore.logout()
@@ -39,18 +70,42 @@ async function logout() {
         <div class="text-xs text-gray-500 mt-0.5">系统管理控制台</div>
       </div>
       <nav class="flex-1 py-2 overflow-y-auto">
-        <NuxtLink
-          v-for="item in menuItems"
-          :key="item.path"
-          :to="item.path"
-          class="flex items-center gap-2 px-4 py-2 text-sm transition-colors"
-          :class="isActive(item.path)
-            ? 'bg-indigo-900/50 text-indigo-300 font-medium'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'"
-        >
-          <span class="text-base leading-none">{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
-        </NuxtLink>
+        <template v-for="item in menuItems" :key="item.path">
+          <!-- 分组 -->
+          <template v-if="item.children">
+            <div
+              class="flex items-center gap-2 px-4 py-2 text-sm font-medium"
+              :class="isGroupActive(item) ? 'text-indigo-300' : 'text-gray-400'"
+            >
+              <span class="text-base leading-none">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </div>
+            <NuxtLink
+              v-for="child in item.children"
+              :key="child.path"
+              :to="child.path"
+              class="flex items-center gap-2 pl-8 pr-4 py-1.5 text-sm transition-colors"
+              :class="isActive(child.path)
+                ? 'bg-indigo-900/50 text-indigo-300 font-medium'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-gray-800'"
+            >
+              <span class="text-sm leading-none">{{ child.icon }}</span>
+              <span>{{ child.label }}</span>
+            </NuxtLink>
+          </template>
+          <!-- 普通项 -->
+          <NuxtLink
+            v-else
+            :to="item.path"
+            class="flex items-center gap-2 px-4 py-2 text-sm transition-colors"
+            :class="isActive(item.path)
+              ? 'bg-indigo-900/50 text-indigo-300 font-medium'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'"
+          >
+            <span class="text-base leading-none">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </NuxtLink>
+        </template>
       </nav>
       <div class="px-4 py-3 border-t border-gray-800">
         <div class="text-xs text-gray-500 mb-2 truncate">{{ authStore.user?.email }}</div>

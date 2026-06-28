@@ -4,9 +4,14 @@ import type {
   SysUser,
   SysTask,
   SysAuditLog,
+  SysMetrics,
   AIInfraStats,
   TenantStorageInfo,
   PagedResponse,
+  TaskFailureStat,
+  DayCount,
+  ContentOverview,
+  ModelUsageStat,
 } from '~/types/sysadmin'
 
 export function useSysAdminApi() {
@@ -15,6 +20,9 @@ export function useSysAdminApi() {
 
   const getOverview = () =>
     request<{ data: SysOverview }>(`${BASE}/overview`)
+
+  const getMetrics = () =>
+    request<{ data: SysMetrics }>(`${BASE}/metrics`)
 
   // Tenants
   const listTenants = (page = 1, size = 20, search = '', status = '') =>
@@ -123,8 +131,22 @@ export function useSysAdminApi() {
       body: JSON.stringify({ password }),
     })
 
+  // Analytics
+  const getTaskFailureStats = () =>
+    request<{ data: TaskFailureStat[] }>(`${BASE}/tasks/failure-stats`)
+
+  const getUserRegistrationTrend = (days = 30) =>
+    request<{ data: DayCount[] }>(`${BASE}/users/registration-trend?days=${days}`)
+
+  const getContentOverview = () =>
+    request<{ data: ContentOverview }>(`${BASE}/content/overview`)
+
+  const getModelUsageStats = (days = 30) =>
+    request<{ data: ModelUsageStat[] }>(`${BASE}/ai-usage/stats?days=${days}`)
+
   return {
     getOverview,
+    getMetrics,
     listTenants, getTenant, updateTenant, deleteTenant,
     listUsers, getUser, updateUser, impersonateUser, resetUserPassword,
     listTasks, cancelTask,
@@ -136,5 +158,6 @@ export function useSysAdminApi() {
     broadcastNotification, notifyTenant,
     listExperiments,
     changePassword,
+    getTaskFailureStats, getUserRegistrationTrend, getContentOverview, getModelUsageStats,
   }
 }

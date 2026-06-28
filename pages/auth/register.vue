@@ -20,10 +20,12 @@ const emailLoading = ref(false)
 const emailError = ref('')
 const emailPendingVerify = ref(false) // 注册成功，等待邮箱验证
 const emailVerifyExpiresIn = ref('') // 验证链接有效时长，来自服务端
+const usernameSuggestions = ref<string[]>([])
 
 async function registerWithEmail() {
   if (!agreed.value) { emailError.value = '请先阅读并同意使用条款和隐私政策'; return }
   emailError.value = ''
+  usernameSuggestions.value = []
   emailLoading.value = true
   try {
     const data = await request<any>('/auth/register', {
@@ -42,7 +44,12 @@ async function registerWithEmail() {
       toast.success(`验证邮件已发送至 ${emailForm.email}，请查收邮箱并点击链接完成验证`)
     }
   } catch (e: any) {
-    emailError.value = e.message || '注册失败'
+    if (e.suggestions?.length) {
+      emailError.value = '用户名已被使用，请换一个或选择下方推荐'
+      usernameSuggestions.value = e.suggestions
+    } else {
+      emailError.value = e.message || '注册失败'
+    }
   } finally {
     emailLoading.value = false
   }
@@ -165,7 +172,14 @@ onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
             <input v-model="(emailForm as any)[field.model]" :type="field.type" :required="field.required"
               :placeholder="field.placeholder" :minlength="field.model === 'password' ? 8 : undefined"
               :aria-label="field.label"
-              class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
+              class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-violet-500 transition-colors"
+              @input="field.model === 'username' && (usernameSuggestions = [])" />
+            <div v-if="field.model === 'username' && usernameSuggestions.length" class="mt-1.5 flex flex-wrap gap-1.5">
+              <span class="text-xs text-gray-500">推荐：</span>
+              <button v-for="s in usernameSuggestions" :key="s" type="button"
+                class="text-xs px-2 py-0.5 rounded-full bg-gray-700 hover:bg-violet-600 text-gray-300 hover:text-white transition-colors"
+                @click="emailForm.username = s; usernameSuggestions = []">{{ s }}</button>
+            </div>
           </div>
           <label class="flex items-start gap-2 cursor-pointer select-none">
             <input type="checkbox" v-model="agreed"

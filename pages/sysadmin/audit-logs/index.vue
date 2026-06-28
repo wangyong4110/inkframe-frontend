@@ -37,6 +37,34 @@ function handleFilter() {
   page.value = 1
   load()
 }
+
+const ACTION_NAMES: Record<string, string> = {
+  'auth.login': '登录',
+  'auth.logout': '登出',
+  'auth.register': '注册',
+  'auth.delete_account': '注销账号',
+  'auth.change_password': '修改密码',
+  'auth.reset_password': '重置密码',
+  'novel.create': '创建小说',
+  'novel.update': '编辑小说',
+  'novel.delete': '删除小说',
+  'chapter.create': '创建章节',
+  'chapter.update': '编辑章节',
+  'chapter.delete': '删除章节',
+  'chapter.generate': '生成章节',
+  'video.create': '创建视频',
+  'video.delete': '删除视频',
+  'sysadmin.settings_update': '更新系统设置',
+  'sysadmin.tenant_update': '编辑租户',
+  'sysadmin.tenant_delete': '删除租户',
+  'sysadmin.user_update': '编辑用户',
+  'sysadmin.reset_user_password': '重置用户密码',
+  'sysadmin.impersonate': '代入用户',
+}
+
+function actionLabel(action: string): string {
+  return ACTION_NAMES[action] ?? action
+}
 </script>
 
 <template>
@@ -80,9 +108,15 @@ function handleFilter() {
         <tbody class="divide-y divide-gray-800">
           <tr v-for="log in logs" :key="log.id" class="text-gray-300">
             <td class="py-2 pr-4 text-gray-500">{{ log.id }}</td>
-            <td class="py-2 pr-4">{{ log.user_id }}</td>
+            <td class="py-2 pr-4">
+              <span v-if="log.username">{{ log.username }}</span>
+              <span v-else class="text-gray-500">{{ log.user_id || '-' }}</span>
+            </td>
             <td class="py-2 pr-4">{{ log.tenant_id }}</td>
-            <td class="py-2 pr-4 text-xs font-mono">{{ log.action }}</td>
+            <td class="py-2 pr-4">
+              <span>{{ actionLabel(log.action) }}</span>
+              <span v-if="ACTION_NAMES[log.action] == null" class="ml-1 text-xs text-gray-500 font-mono">({{ log.action }})</span>
+            </td>
             <td class="py-2 pr-4 text-xs text-gray-400">{{ log.entity_type }}</td>
             <td class="py-2 pr-4 text-xs text-gray-400">{{ log.entity_id }}</td>
             <td class="py-2 text-xs text-gray-500">{{ new Date(log.created_at).toLocaleString() }}</td>
