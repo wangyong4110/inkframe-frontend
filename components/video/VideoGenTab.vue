@@ -78,6 +78,11 @@ const showMissingThreeViewModal = ref(false)
 const missingThreeViewChars = ref<{ id: number; name: string }[]>([])
 let _pendingGenerateAction: (() => void) | null = null
 
+const showMissingAssetsModal = ref(false)
+const missingImageCount = ref(0)
+const missingAudioCount = ref(0)
+let _pendingVideoAction: (() => void) | null = null
+
 const anchors = computed(() => sceneAnchorStore.anchors)
 const characters = computed(() => characterStore.characters)
 
@@ -253,6 +258,7 @@ async function doGenerateShot(shot: StoryboardShot) {
 async function handleGenerateShot(shot: StoryboardShot) {
   if (!await guardAiProvider('VIDEO')) return
   if (confirmMissingThreeView(() => doGenerateShot(shot), [shot.id])) return
+  if (confirmVideoReadiness(() => doGenerateShot(shot), [shot])) return
   await doGenerateShot(shot)
 }
 
@@ -364,12 +370,7 @@ async function handleGenerateImages() {
   await doGenerateImages(pending)
 }
 
-async function handleGenerateClips() {
-  if (!await guardAiProvider('VIDEO')) return
-  if (generatingStoryboard.value) {
-    toast.error('分镜脚本正在生成中，请等待完成后再生成视频')
-    return
-  }
+async function doGenerateClips() {
   const pending = shots.value.filter(s => s.image_url && !s.video_url)
   if (pending.length === 0) { toast.error('没有需要生成视频的镜头（请先生成图片）'); return }
   batchGeneratingClips.value = true
@@ -391,6 +392,18 @@ async function handleGenerateClips() {
     toast.error('视频生成失败：' + (e.message || ''))
     batchGeneratingClips.value = false
   }
+}
+
+async function handleGenerateClips() {
+  if (!await guardAiProvider('VIDEO')) return
+  if (generatingStoryboard.value) {
+    toast.error('分镜脚本正在生成中，请等待完成后再生成视频')
+    return
+  }
+  const shotsToCheck = shots.value.filter(s => !s.video_url)
+  if (shotsToCheck.length === 0) { toast.error('没有需要生成视频的镜头'); return }
+  if (confirmVideoReadiness(() => doGenerateClips(), shotsToCheck)) return
+  await doGenerateClips()
 }
 
 function triggerShotImageUpload(shotId: number) {
@@ -511,6 +524,27 @@ function proceedGenerateAnyway() {
   showMissingThreeViewModal.value = false
   _pendingGenerateAction?.()
   _pendingGenerateAction = null
+}
+
+function shotNeedsAudio(shot: StoryboardShot): boolean {
+  return !!(shot.narration?.trim() || shot.dialogue?.trim())
+}
+
+function confirmVideoReadiness(action: () => void, shotsToCheck: StoryboardShot[]): boolean {
+  const noImage = shotsToCheck.filter(s => !s.image_url).length
+  const noAudio = shotsToCheck.filter(s => shotNeedsAudio(s) && !s.audio_url).length
+  if (noImage === 0 && noAudio === 0) return false
+  missingImageCount.value = noImage
+  missingAudioCount.value = noAudio
+  _pendingVideoAction = action
+  showMissingAssetsModal.value = true
+  return true
+}
+
+function proceedVideoAnyway() {
+  showMissingAssetsModal.value = false
+  _pendingVideoAction?.()
+  _pendingVideoAction = null
 }
 
 function goToCharacterLooks(charId: number) {
@@ -863,6 +897,52 @@ defineExpose({
             <div class="flex gap-3 justify-end">
               <button class="btn-secondary text-sm" @click="showMissingThreeViewModal = false">取消</button>
               <button class="btn-primary text-sm" @click="proceedGenerateAnyway">仍然生成</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 缺少图片/配音提示 Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showMissingAssetsModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50" @click="showMissingAssetsModal = false" />
+          <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
+            <div class="flex items-start gap-3 mb-4">
+              <div class="flex-shrink-0 w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
+                <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">部分镜头尚未准备就绪</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">建议先生成图片和配音，再生成视频，以获得最佳效果。</p>
+              </div>
+            </div>
+            <ul class="mb-5 space-y-2">
+              <li
+                v-if="missingImageCount > 0"
+                class="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800"
+              >
+                <svg class="w-4 h-4 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span class="text-sm text-gray-800 dark:text-gray-200">{{ missingImageCount }} 个镜头未生成图片</span>
+              </li>
+              <li
+                v-if="missingAudioCount > 0"
+                class="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800"
+              >
+                <svg class="w-4 h-4 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                <span class="text-sm text-gray-800 dark:text-gray-200">{{ missingAudioCount }} 个镜头未生成配音</span>
+              </li>
+            </ul>
+            <div class="flex gap-3 justify-end">
+              <button class="btn-secondary text-sm" @click="showMissingAssetsModal = false">取消</button>
+              <button class="btn-primary text-sm" @click="proceedVideoAnyway">仍然生成</button>
             </div>
           </div>
         </div>

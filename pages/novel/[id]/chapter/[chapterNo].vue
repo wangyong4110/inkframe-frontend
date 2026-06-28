@@ -47,6 +47,14 @@ function pageModeClass(mode: PageMode) {
     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
 }
 
+const modeComplete = computed<Record<PageMode, boolean>>(() => ({
+  outline:   !!(chapter.value?.outline || chapter.value?.summary),
+  write:     !!(chapter.value?.content),
+  character: characters.value.length > 0,
+  scenes:    anchors.value.length > 0,
+  script:    chapterShots.value.length > 0 && chapterShots.value.every((s: any) => s.video_url),
+}))
+
 // ── 角色形象 ──────────────────────────────────────────────────────────────────
 const updateCharSnapshots = ref(false)
 const selectedCharacterIds = ref<number[]>([])
@@ -1958,11 +1966,36 @@ onUnmounted(() => {
       <!-- Mode toggle (centered) -->
       <div class="flex-1 flex justify-center">
         <div class="flex items-center bg-gray-100 dark:bg-gray-700/60 rounded-lg p-1 gap-1">
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
-          <button class="px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">脚本</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">
+            大纲
+            <span v-if="modeComplete.outline && pageMode !== 'outline'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
+              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">
+            写作
+            <span v-if="modeComplete.write && pageMode !== 'write'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
+              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">
+            角色
+            <span v-if="modeComplete.character && pageMode !== 'character'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
+              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">
+            场景
+            <span v-if="modeComplete.scenes && pageMode !== 'scenes'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
+              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">
+            视频
+            <span v-if="modeComplete.script && pageMode !== 'script'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
+              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </button>
         </div>
       </div>
 

@@ -283,6 +283,17 @@ export const useVideoApi = () => {
   const deleteShot = (videoId: number, shotId: number) =>
     request<void>(`/videos/${videoId}/shots/${shotId}`, { method: 'DELETE' })
 
+  const generateLipSync = (videoId: number, shotId: number, opts?: { audioUrl?: string; imageUrl?: string; model?: string }) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/lipsync`, {
+      method: 'POST',
+      body: JSON.stringify({ audio_url: opts?.audioUrl, image_url: opts?.imageUrl, model: opts?.model }),
+    })
+
+  const getLipSyncStatus = (videoId: number, shotId: number) =>
+    request<ApiResponse<{ task_id: string; status: string; video_url?: string }>>(`/videos/${videoId}/shots/${shotId}/lipsync/status`, {
+      method: 'GET',
+    })
+
   const reorderShot = (videoId: number, fromShotId: number, toShotId: number) =>
     request<ApiResponse<{ from_shot_no: number; to_shot_no: number }>>(`/videos/${videoId}/shots/reorder`, {
       method: 'POST',
@@ -463,5 +474,7 @@ export const useVideoApi = () => {
     unignoreSuggestion,
     applyReviewInserts,
     applyReviewDeletes,
+    generateLipSync,
+    getLipSyncStatus,
   }
 }
