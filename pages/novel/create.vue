@@ -381,6 +381,40 @@ async function loadDramaTemplates() {
 const selectedDramaTemplate = computed(() =>
   dramaTemplates.value.find(t => t.id === aiForm.drama_template_id) ?? null
 )
+
+// 小说类型 → 模板 genre 关键词映射
+const GENRE_TEMPLATE_KEYWORDS: Record<string, string[]> = {
+  '都市现代': ['都市', '现代'],
+  '言情爱情': ['都市', '现代', '古风'],
+  '历史古代': ['古风', '历史'],
+  '重生穿越': ['穿越', '重生', '都市', '古风'],
+  '宫斗宅斗': ['古风'],
+  '系统流':   ['都市', '玄幻', '系统'],
+  '玄幻奇幻': ['玄幻', '都市'],
+  '军事战争': ['现代', '军事'],
+  '青春校园': ['都市', '现代'],
+}
+
+function templateMatchesGenre(t: DramaTemplate, genre: string): boolean {
+  const keywords = GENRE_TEMPLATE_KEYWORDS[genre]
+  if (!keywords?.length) return false
+  return keywords.some(kw => t.genre.includes(kw))
+}
+
+const recommendedTemplates = computed(() =>
+  dramaTemplates.value.filter(t => templateMatchesGenre(t, aiForm.genre))
+)
+const otherTemplates = computed(() =>
+  dramaTemplates.value.filter(t => !templateMatchesGenre(t, aiForm.genre))
+)
+
+// 选类型时，若当前已选模板不在推荐列表，自动切换到第一个推荐模板
+watch(() => aiForm.genre, () => {
+  const recs = recommendedTemplates.value
+  if (recs.length > 0 && !recs.find(t => t.id === aiForm.drama_template_id)) {
+    aiForm.drama_template_id = recs[0].id
+  }
+})
 const aiLoading = ref(false)
 const aiLoadingMsg = ref('创建中...')
 const aiError = ref('')
@@ -1167,9 +1201,18 @@ async function rwSubmit() {
               class="w-full text-sm px-3 py-2 pr-8 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
             >
               <option :value="0">不使用模板</option>
-              <option v-for="t in dramaTemplates" :key="t.id" :value="t.id">
-                {{ t.name }}（{{ t.genre }}）
-              </option>
+              <!-- 推荐模板（与当前小说类型匹配） -->
+              <optgroup v-if="recommendedTemplates.length" label="★ 推荐（与当前类型匹配）">
+                <option v-for="t in recommendedTemplates" :key="t.id" :value="t.id">
+                  {{ t.name }}（{{ t.genre }}）
+                </option>
+              </optgroup>
+              <!-- 其他模板 -->
+              <optgroup :label="recommendedTemplates.length ? '其他模板' : '全部模板'">
+                <option v-for="t in otherTemplates" :key="t.id" :value="t.id">
+                  {{ t.name }}（{{ t.genre }}）
+                </option>
+              </optgroup>
             </select>
             <svg class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>

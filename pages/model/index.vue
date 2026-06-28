@@ -733,6 +733,12 @@ async function refreshGroupModels(group: ProviderGroup) {
   }
 }
 
+const addModelIsAzure = computed(() => addModelModal.value.providerName === 'azure')
+const editModelIsAzure = computed(() => {
+  const group = providerGroups.value.find(g => g.key === editModelModal.value.groupKey)
+  return group?.canonical.name === 'azure'
+})
+
 async function openAddModelForm(group: ProviderGroup) {
   const loadedModels = providerModels.value[group.key] ?? []
   const existingType = loadedModels.find(m => m.type)?.type ?? 'llm'
@@ -1633,8 +1639,8 @@ watch(activeTab, (tab) => {
                 <input v-model.number="addModelModal.maxTokens" type="number" min="0" class="input text-sm w-full" placeholder="0" />
                 <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
               </div>
-              <div class="col-span-2">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">API Version <span class="text-gray-400 font-normal">（仅 Azure）</span></label>
+              <div v-if="addModelIsAzure" class="col-span-2">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">API Version</label>
                 <input v-model="addModelModal.apiVersion" type="text" class="input text-sm w-full font-mono" placeholder="例：2025-04-01-preview" />
               </div>
             </div>
@@ -1713,8 +1719,8 @@ watch(activeTab, (tab) => {
                 <input v-model.number="editModelModal.maxTokens" type="number" min="0" class="input text-sm w-full" placeholder="0" />
                 <p class="mt-0.5 text-xs text-gray-400">0 = 模型默认</p>
               </div>
-              <div class="col-span-2">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">API Version <span class="text-gray-400 font-normal">（仅 Azure）</span></label>
+              <div v-if="editModelIsAzure" class="col-span-2">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">API Version</label>
                 <input v-model="editModelModal.apiVersion" type="text" class="input text-sm w-full font-mono" placeholder="例：2025-04-01-preview" />
               </div>
             </div>
