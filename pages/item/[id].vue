@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
 import type { Item } from '~/types'
 import { useItemApi } from '~/composables/useItemApi'
 
@@ -19,7 +20,9 @@ const novelId = parseInt(route.query.novelId as string)
 
 const activeTab = ref('profile')
 const saving = ref(false)
+const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const isDirty = ref(false)
+const dataLoaded = ref(false)
 const generatingImage = ref(false)
 
 // 使用小说配置的图像生成模型
@@ -153,7 +156,6 @@ const tabs = [
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 useUnsavedGuard(isDirty, '物品信息有未保存的修改，确认离开？')
-watch(form, () => { isDirty.value = true }, { deep: true })
 
 onMounted(async () => {
   if (novelId && novelStore.currentNovel?.id !== novelId) {
@@ -181,26 +183,45 @@ onMounted(async () => {
   }
   await nextTick()
   isDirty.value = false
+  dataLoaded.value = true
 })
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 async function handleSave() {
-  if (!form.value.name.trim()) { toast.error('物品名称不能为空'); return }
+  if (!form.value.name.trim()) return
+  if (saving.value) return
   saving.value = true
+  saveStatus.value = 'saving'
   try {
     await itemApi.updateItem(itemId, { ...form.value, image_url: imageUrl.value })
     isDirty.value = false
-    toast.success('保存成功')
+    saveStatus.value = 'saved'
+    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
   } catch (e: any) {
-    toast.error('保存失败：' + (e.message || '未知错误'))
+    saveStatus.value = 'error'
+    toast.error('自动保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
   }
 }
 
+const debouncedSave = useDebounceFn(handleSave, 800)
+
+watch(form, () => {
+  if (!dataLoaded.value) return
+  isDirty.value = true
+  debouncedSave()
+}, { deep: true })
+
+watch(imageUrl, () => {
+  if (!dataLoaded.value) return
+  isDirty.value = true
+  debouncedSave()
+})
+
 async function generateImage() {
   if (!await guardAiProvider('IMAGE')) return
-  // Save first so the backend has the latest visual_prompt
+  // 先同步保存最新 visual_prompt
   await handleSave()
   generatingImage.value = true
   imageTaskStatus.value = 'pending'
@@ -244,13 +265,23 @@ function goBack() {
           <p class="text-sm text-gray-500">物品编辑器</p>
         </div>
       </div>
-      <button class="btn-primary" :disabled="saving" @click="handleSave">
-        <svg v-if="saving" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-        </svg>
-        {{ saving ? '保存中…' : '保存' }}
-      </button>
+      <!-- 自动保存状态 -->
+      <transition name="fade">
+        <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
+          <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          保存中…
+        </span>
+        <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+          已自动保存
+        </span>
+        <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+      </transition>
     </div>
 
     <!-- Tabs -->
@@ -363,7 +394,7 @@ function goBack() {
             aspect-ratio="1/1"
             placeholder="物品图片"
             :on-refine="(currentUrl: string, s: string) => editImage(currentUrl, s, novelId)"
-            :on-save="(url: string) => { imageUrl = url; isDirty.value = true }"
+            :on-save="(url: string) => { imageUrl = url }"
             @error="toast.error"
           />
           <div v-if="generatingImage" class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
@@ -384,3 +415,8 @@ function goBack() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>

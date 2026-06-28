@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
 import type { CharacterLook, CreateCharacterLookForm } from '~/types'
 
 const characterStore = useCharacterStore()
@@ -20,9 +21,11 @@ const validTabs = ['profile', 'voice', 'looks']
 const initialTab = validTabs.includes(route.query.tab as string) ? (route.query.tab as string) : 'profile'
 const activeTab = ref(initialTab)
 const saving = ref(false)
+const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const reanalyzing = ref(false)
 const voicePanelRef = ref<{ getVoiceData: () => Record<string, unknown> } | null>(null)
 const isDirty = ref(false)
+const dataLoaded = ref(false)
 const novelImageStyle = computed(() => novelStore.currentNovel?.image_style || 'anime')
 const selectedImageProvider = computed(() => novelStore.currentNovel?.image_model || '')
 
@@ -320,7 +323,11 @@ watch(activeTab, (val) => {
 
 useUnsavedGuard(isDirty, '角色信息有未保存的修改，确认离开？')
 
-watch(character, () => { isDirty.value = true }, { deep: true })
+watch(character, () => {
+  if (!dataLoaded.value) return
+  isDirty.value = true
+  debouncedSave()
+}, { deep: true })
 
 onMounted(async () => {
   if (!characterId) return
@@ -343,24 +350,30 @@ onMounted(async () => {
     }
     await nextTick()
     isDirty.value = false
+    dataLoaded.value = true
   } catch (e: any) {
     toast.error('角色加载失败：' + (e.message || '请检查网络或刷新页面'))
   }
 })
 
 async function handleSave() {
+  if (saving.value) return
   saving.value = true
+  saveStatus.value = 'saving'
   try {
-    const voiceData = voicePanelRef.value?.getVoiceData?.() ?? {}
-    await characterStore.updateCharacter(characterId, { ...character.value, ...voiceData })
+    await characterStore.updateCharacter(characterId, { ...character.value })
     isDirty.value = false
-    toast.success('角色信息已保存')
+    saveStatus.value = 'saved'
+    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
   } catch (e: any) {
-    toast.error('保存失败：' + (e.message || '未知错误'))
+    saveStatus.value = 'error'
+    toast.error('自动保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
   }
 }
+
+const debouncedSave = useDebounceFn(handleSave, 800)
 
 async function handleReanalyze() {
   reanalyzing.value = true
@@ -457,12 +470,26 @@ function getRoleLabel(role: string): string {
           <p class="text-sm text-gray-500 dark:text-gray-400">角色编辑器</p>
         </div>
       </div>
-      <div class="flex items-center space-x-2">
+      <div class="flex items-center gap-3">
+        <!-- 自动保存状态 -->
+        <transition name="fade">
+          <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            保存中…
+          </span>
+          <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            已自动保存
+          </span>
+          <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+        </transition>
         <button class="btn-secondary" :disabled="reanalyzing || saving" @click="handleReanalyze">
           {{ reanalyzing ? '分析中...' : '重新分析' }}
-        </button>
-        <button class="btn-primary" :disabled="saving || reanalyzing" @click="handleSave">
-          {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>
     </div>
@@ -734,3 +761,8 @@ function getRoleLabel(role: string): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
 import type { SceneAnchor, UpdateSceneAnchorPayload, Novel } from '~/types'
 import { useSceneAnchorApi } from '~/composables/useSceneAnchorApi'
 import { useNovelApi } from '~/composables/useNovelApi'
@@ -21,7 +22,9 @@ const chapterNo = parseInt(route.query.chapterNo as string)
 
 const activeTab = ref('basic')
 const saving = ref(false)
+const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const isDirty = ref(false)
+const dataLoaded = ref(false)
 const loading = ref(true)
 
 const anchor = ref<SceneAnchor | null>(null)
@@ -47,7 +50,6 @@ const tabs = [
 ]
 
 useUnsavedGuard(isDirty, '场景有未保存的修改，确认离开？')
-watch(form, () => { isDirty.value = true }, { deep: true })
 
 const typeOptions = [
   { value: 'interior',  label: '室内 (interior)' },
@@ -96,6 +98,7 @@ onMounted(async () => {
     loading.value = false
     await nextTick()
     isDirty.value = false
+    dataLoaded.value = true
   }
 })
 
@@ -106,8 +109,7 @@ async function handleAIUpdate() {
     if (result.type) form.value.type = result.type
     if (result.description) form.value.description = result.description
     if (result.variant !== undefined) form.value.variant = result.variant
-    toast.success('AI已更新字段，请确认后点击保存')
-    // 自动切换到视觉设计 tab 以展示更新的描述
+    toast.success('AI已更新字段')
     activeTab.value = 'visual'
   } catch (e: any) {
     toast.error('AI更新失败：' + (e.message || '未知错误'))
@@ -117,8 +119,10 @@ async function handleAIUpdate() {
 }
 
 async function handleSave() {
-  if (!form.value.name.trim()) { toast.error('名称不能为空'); return }
+  if (!form.value.name.trim()) return
+  if (saving.value) return
   saving.value = true
+  saveStatus.value = 'saving'
   try {
     const payload: UpdateSceneAnchorPayload = {
       name: form.value.name,
@@ -129,13 +133,23 @@ async function handleSave() {
     const updated = await api.updateSceneAnchor(anchorId, payload)
     anchor.value = updated
     isDirty.value = false
-    toast.success('保存成功')
+    saveStatus.value = 'saved'
+    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
   } catch (e: any) {
-    toast.error('保存失败：' + (e.message || '未知错误'))
+    saveStatus.value = 'error'
+    toast.error('自动保存失败：' + (e.message || '未知错误'))
   } finally {
     saving.value = false
   }
 }
+
+const debouncedSave = useDebounceFn(handleSave, 800)
+
+watch(form, () => {
+  if (!dataLoaded.value) return
+  isDirty.value = true
+  debouncedSave()
+}, { deep: true })
 
 async function handleGenerateRefImage() {
   if (!await guardAiProvider('IMAGE')) return
@@ -210,7 +224,24 @@ function goBack() {
           </div>
         </div>
       </div>
-      <div class="flex items-center gap-2 flex-shrink-0">
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <!-- 自动保存状态 -->
+        <transition name="fade">
+          <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            保存中…
+          </span>
+          <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            已自动保存
+          </span>
+          <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+        </transition>
         <button class="btn-secondary flex items-center gap-1.5" :disabled="aiUpdating || saving" @click="handleAIUpdate">
           <svg v-if="aiUpdating" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -220,13 +251,6 @@ function goBack() {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.5 3.5 0 01-4.95 0l-.347-.347z" />
           </svg>
           {{ aiUpdating ? 'AI分析中…' : 'AI更新' }}
-        </button>
-        <button class="btn-primary" :disabled="saving" @click="handleSave">
-          <svg v-if="saving" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          {{ saving ? '保存中…' : '保存' }}
         </button>
       </div>
     </div>
@@ -417,3 +441,8 @@ function goBack() {
     </template>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>

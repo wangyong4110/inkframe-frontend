@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
 import type { Character, AIModel } from '~/types'
 import { useCharacterApi } from '~/composables/useCharacterApi'
 import { useModelApi } from '~/composables/useModelApi'
@@ -195,6 +196,7 @@ const previewText     = ref('')
 const audioUrl        = ref(props.character.voice_sample ?? '')
 const audioEl         = ref<HTMLAudioElement | null>(null)
 const saving          = ref(false)
+const saveStatus      = ref<'' | 'saving' | 'saved' | 'error'>('')
 const previewing      = ref(false)
 const errorMsg        = ref('')
 // 保存进行中时，屏蔽 watch 对本地状态的重置
@@ -271,8 +273,9 @@ function onSelectVoice(id: string) {
 }
 
 async function save() {
+  if (saving.value) return
   saving.value = true
-  errorMsg.value = ''
+  saveStatus.value = 'saving'
   suppressWatch.value = true
   try {
     await updateCharacter(props.character.id, {
@@ -282,16 +285,24 @@ async function save() {
       voice_language: voiceLanguage.value,
     } as any)
     emit('update', { voice_id: voiceId.value, voice_speed: voiceSpeed.value, voice_style: voiceStyle.value, voice_language: voiceLanguage.value })
-    toast.success('配音设置已保存')
+    saveStatus.value = 'saved'
+    setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)
   } catch (e: any) {
-    errorMsg.value = e.message || '保存失败，请稍后重试'
-    toast.error('保存失败：' + (e.message || '未知错误'))
+    saveStatus.value = 'error'
+    errorMsg.value = e.message || '自动保存失败'
   } finally {
     saving.value = false
-    // 延迟恢复，让 patchCurrentCharacter 的 watch 触发先跳过
     setTimeout(() => { suppressWatch.value = false }, 200)
   }
 }
+
+const debouncedSave = useDebounceFn(save, 800)
+
+// 任意配音字段变化时自动保存
+watch([voiceId, voiceSpeed, voiceStyle, voiceLanguage], () => {
+  if (suppressWatch.value) return
+  debouncedSave()
+})
 
 async function preview() {
   previewing.value = true
@@ -575,16 +586,28 @@ defineExpose({
     <p v-if="errorMsg" class="text-xs text-red-500">{{ errorMsg }}</p>
 
     <!-- Actions -->
-    <div class="flex gap-2 pt-1">
+    <div class="space-y-2 pt-1">
+      <!-- 自动保存状态 -->
+      <div class="flex items-center justify-end h-4">
+        <transition name="fade">
+          <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            保存中…
+          </span>
+          <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            已自动保存
+          </span>
+          <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+        </transition>
+      </div>
       <button
-        class="flex-1 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-sm text-gray-700 dark:text-gray-200 transition-colors disabled:opacity-50"
-        :disabled="saving"
-        @click="save"
-      >
-        {{ saving ? '保存中…' : '保存设置' }}
-      </button>
-      <button
-        class="flex-1 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-sm text-white transition-colors disabled:opacity-50"
+        class="w-full py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-sm text-white transition-colors disabled:opacity-50"
         :disabled="previewing || saving"
         @click="preview"
       >
@@ -593,3 +616,8 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>
