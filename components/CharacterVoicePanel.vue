@@ -114,6 +114,37 @@ function charGender(char: typeof props.character): string {
 const filterGender   = ref(charGender(props.character))
 const filterAgeGroup = ref(inferAgeGroup(props.character.age))
 
+// ─── Custom dropdown ──────────────────────────────────────────────────────────
+
+const voiceDropdownOpen  = ref(false)
+const voiceTriggerRef    = ref<HTMLElement | null>(null)
+const voiceDropdownStyle = ref({ top: '0px', left: '0px', width: '0px' })
+
+const voiceLabel = computed(() => {
+  if (!voiceId.value) return '请选择音色…'
+  const found = voiceModels.value.find(m => m.name === voiceId.value)
+  return found ? (found.display_name || found.name) : voiceId.value
+})
+
+function openVoiceDropdown() {
+  const el = voiceTriggerRef.value
+  if (!el) { voiceDropdownOpen.value = !voiceDropdownOpen.value; return }
+  const rect = el.getBoundingClientRect()
+  voiceDropdownStyle.value = {
+    top:   `${rect.bottom + window.scrollY + 4}px`,
+    left:  `${rect.left  + window.scrollX}px`,
+    width: `${rect.width}px`,
+  }
+  voiceDropdownOpen.value = !voiceDropdownOpen.value
+}
+
+function closeVoiceDropdown(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.char-voice-dropdown-wrapper') && !target.closest('.char-voice-dropdown-portal'))
+    voiceDropdownOpen.value = false
+}
+function handleScrollOrResize() { if (voiceDropdownOpen.value) voiceDropdownOpen.value = false }
+
 // Groups: [{ key, label, voices: [{id, label}] }]
 const voiceGroups = computed(() => {
   const map: Record<string, { key: string; label: string; voices: { id: string; label: string }[] }> = {}
@@ -192,7 +223,6 @@ onMounted(async () => {
   try {
     const res = await getAvailableModels('voice_gen')
     voiceModels.value = res.data ?? []
-    // If saved voice_id is not in the fetched list, show custom input
     checkCustom(voiceId.value)
   } catch (e: any) {
     voiceModelsLoadFailed.value = true
@@ -200,6 +230,15 @@ onMounted(async () => {
   } finally {
     voiceModelsLoading.value = false
   }
+  document.addEventListener('click', closeVoiceDropdown)
+  window.addEventListener('scroll', handleScrollOrResize, true)
+  window.addEventListener('resize', handleScrollOrResize)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeVoiceDropdown)
+  window.removeEventListener('scroll', handleScrollOrResize, true)
+  window.removeEventListener('resize', handleScrollOrResize)
 })
 
 watch(() => props.character, (c, prev) => {
@@ -372,29 +411,7 @@ defineExpose({
     <div>
       <label class="block text-xs text-gray-500 mb-1.5">声音音色</label>
 
-      <!-- 筛选行（有音色数据时才显示） -->
-      <div v-if="!noVoiceConfigured && !voiceModelsLoadFailed && voiceModels.length > 0" class="flex flex-wrap gap-x-3 gap-y-1.5 mb-2">
-        <div class="flex gap-1">
-          <button v-for="opt in GENDER_OPTIONS" :key="opt.value"
-            class="px-2 py-0.5 rounded text-xs border transition-colors"
-            :class="filterGender === opt.value
-              ? 'bg-blue-500 border-blue-400 text-white'
-              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
-            @click="filterGender = opt.value"
-          >{{ opt.label }}</button>
-        </div>
-        <div class="flex gap-1">
-          <button v-for="opt in AGE_OPTIONS" :key="opt.value"
-            class="px-2 py-0.5 rounded text-xs border transition-colors"
-            :class="filterAgeGroup === opt.value
-              ? 'bg-blue-500 border-blue-400 text-white'
-              : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
-            @click="filterAgeGroup = opt.value"
-          >{{ opt.label }}</button>
-        </div>
-      </div>
-
-      <!-- 未配置语音合成模型提示（替代下拉框） -->
+      <!-- 未配置语音合成模型提示 -->
       <div v-if="noVoiceConfigured" class="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-3 text-xs text-amber-700 dark:text-amber-300">
         <svg class="mt-0.5 shrink-0 w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
@@ -405,34 +422,85 @@ defineExpose({
         </span>
       </div>
 
-      <!-- 预设模式：下拉选择 -->
+      <!-- 预设模式：自定义下拉 -->
       <template v-else-if="!showCustomInput">
-        <!-- 筛选后无结果提示 -->
-        <p v-if="noFilteredVoices" class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
-          当前筛选条件下无匹配音色，请调整筛选。
-        </p>
-        <div class="relative">
-          <select
-            :value="voiceId"
-            class="w-full appearance-none border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 pr-8 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-400"
-            @change="(e) => onSelectVoice((e.target as HTMLSelectElement).value)"
+        <div class="char-voice-dropdown-wrapper">
+          <button
+            ref="voiceTriggerRef"
+            type="button"
+            class="w-full flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-400 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+            @click="openVoiceDropdown"
           >
-            <option v-if="voiceModelsLoading" disabled value="">加载中…</option>
-            <template v-else>
-              <optgroup v-for="g in voiceGroups" :key="g.key" :label="g.label">
-                <option v-for="v in g.voices" :key="v.id" :value="v.id">
-                  {{ v.label }}
-                </option>
-              </optgroup>
-              <optgroup label="其他">
-                <option value="__custom__">手动输入音色 ID…</option>
-              </optgroup>
-            </template>
-          </select>
-          <svg class="absolute right-2.5 top-3 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-          </svg>
+            <span :class="voiceId ? '' : 'text-gray-400 dark:text-gray-500'">{{ voiceLabel }}</span>
+            <svg class="w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform" :class="voiceDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
         </div>
+
+        <Teleport to="body">
+          <div
+            v-if="voiceDropdownOpen"
+            class="char-voice-dropdown-portal fixed z-[9999] shadow-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl overflow-hidden flex flex-col"
+            :style="voiceDropdownStyle"
+          >
+            <!-- 筛选 chips -->
+            <div v-if="voiceModels.length > 0" class="px-3 pt-2.5 pb-2 border-b border-gray-100 dark:border-gray-700 space-y-1.5">
+              <div class="flex flex-wrap gap-1">
+                <button
+                  v-for="opt in GENDER_OPTIONS" :key="opt.value"
+                  type="button"
+                  class="px-2 py-0.5 rounded text-xs border transition-colors"
+                  :class="filterGender === opt.value
+                    ? 'bg-blue-500 border-blue-400 text-white'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+                  @click.stop="filterGender = opt.value"
+                >{{ opt.label }}</button>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <button
+                  v-for="opt in AGE_OPTIONS" :key="opt.value"
+                  type="button"
+                  class="px-2 py-0.5 rounded text-xs border transition-colors"
+                  :class="filterAgeGroup === opt.value
+                    ? 'bg-blue-500 border-blue-400 text-white'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+                  @click.stop="filterAgeGroup = opt.value"
+                >{{ opt.label }}</button>
+              </div>
+            </div>
+
+            <!-- 音色列表 -->
+            <div class="overflow-y-auto" style="max-height: 260px">
+              <p v-if="voiceModelsLoading" class="px-3 py-3 text-sm text-gray-400">加载中…</p>
+              <p v-else-if="noFilteredVoices" class="px-3 py-3 text-xs text-gray-400">当前筛选条件下无匹配音色，请调整筛选。</p>
+              <template v-else>
+                <div v-for="g in voiceGroups" :key="g.key">
+                  <div class="px-3 py-1 text-xs font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-750 sticky top-0">{{ g.label }}</div>
+                  <button
+                    v-for="v in g.voices" :key="v.id"
+                    type="button"
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between transition-colors"
+                    @click="onSelectVoice(v.id); voiceDropdownOpen = false"
+                  >
+                    <span>{{ v.label }}</span>
+                    <svg v-if="voiceId === v.id" class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="border-t border-gray-100 dark:border-gray-700">
+                  <button
+                    type="button"
+                    class="w-full text-left px-3 py-2 text-sm text-blue-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    @click="onSelectVoice('__custom__'); voiceDropdownOpen = false"
+                  >手动输入音色 ID…</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </Teleport>
+
         <p v-if="voiceId" class="mt-1 text-xs text-gray-400">已选：{{ voiceId }}</p>
       </template>
 

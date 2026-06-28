@@ -151,7 +151,7 @@ async function handleGenerateVoice(shot: StoryboardShot) {
     for (const seg of segs) {
       try {
         generatingSegmentVoice.value[seg.id] = true
-        const segRes = await api.generateSegmentVoice(props.videoId, shot.id, seg.id)
+        const segRes = await api.generateSegmentVoice(props.videoId, shot.id, seg.id, narrationVoice.value || undefined)
         const segTaskId = segRes.data?.task_id
         if (segTaskId) {
           taskStore.trackTask(segTaskId, async (task) => {
@@ -298,7 +298,7 @@ async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSe
   generatingSegmentVoice.value[seg.id] = true
   try {
     const api = useVideoApi()
-    const res = await api.generateSegmentVoice(props.videoId, shot.id, seg.id)
+    const res = await api.generateSegmentVoice(props.videoId, shot.id, seg.id, narrationVoice.value || undefined)
     const taskId = res.data?.task_id
     if (taskId) {
       toast.info(`片段 ${seg.seq_no} 配音生成中…`)

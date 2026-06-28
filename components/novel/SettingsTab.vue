@@ -42,8 +42,40 @@ async function confirmDeleteNovel() {
 
 // ── 旁白音色（异步加载 TTS 模型列表）────────────────────────────────────────
 const ttsModels = ref<AIModel[]>([])
-const voiceGenderFilter = ref('male')
-const voiceAgeFilter = ref('adult')
+const voiceGenderFilter = ref('')
+const voiceAgeFilter = ref('')
+const voiceDropdownOpen = ref(false)
+const voiceTriggerRef = ref<HTMLElement | null>(null)
+const voiceDropdownStyle = ref({ top: '0px', left: '0px', width: '0px' })
+
+function openVoiceDropdown() {
+  const el = voiceTriggerRef.value
+  if (!el) { voiceDropdownOpen.value = !voiceDropdownOpen.value; return }
+  const rect = el.getBoundingClientRect()
+  voiceDropdownStyle.value = {
+    top: `${rect.bottom + window.scrollY + 4}px`,
+    left: `${rect.left + window.scrollX}px`,
+    width: `${rect.width}px`,
+  }
+  voiceDropdownOpen.value = !voiceDropdownOpen.value
+}
+
+function closeVoiceDropdown(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.voice-dropdown-wrapper') && !target.closest('.voice-dropdown-portal'))
+    voiceDropdownOpen.value = false
+}
+function handleScrollOrResize() { if (voiceDropdownOpen.value) voiceDropdownOpen.value = false }
+onMounted(() => {
+  document.addEventListener('click', closeVoiceDropdown)
+  window.addEventListener('scroll', handleScrollOrResize, true)
+  window.addEventListener('resize', handleScrollOrResize)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeVoiceDropdown)
+  window.removeEventListener('scroll', handleScrollOrResize, true)
+  window.removeEventListener('resize', handleScrollOrResize)
+})
 
 const NARRATION_FALLBACK_VOICES = [
   { id: 'nova',    label: 'Nova — 女声·活泼' },
@@ -67,6 +99,17 @@ const AGE_OPTIONS = [
   { value: 'adult', label: '中年' },
   { value: 'elder', label: '长者' },
 ]
+
+const narrationVoiceLabel = computed(() => {
+  const v = novel.value?.narration_voice
+  if (!v) return '自动（alloy）'
+  if (ttsModels.value.length > 0) {
+    const found = ttsModels.value.find(m => m.name === v)
+    if (found) return found.display_name || found.name
+  }
+  const fallback = NARRATION_FALLBACK_VOICES.find(f => f.id === v)
+  return fallback?.label ?? v
+})
 
 const narrationVoiceGroups = computed(() => {
   if (ttsModels.value.length === 0)
@@ -421,36 +464,92 @@ const selectedAspectRatio = computed(() =>
       <!-- 旁白音色 -->
       <div>
         <label class="field-label">旁白音色</label>
-        <!-- 筛选条件（仅有 TTS 数据时显示） -->
-        <div v-if="ttsModels.length > 0" class="flex flex-wrap gap-x-4 gap-y-1.5 mb-2">
-          <div class="flex gap-1">
-            <button v-for="opt in GENDER_OPTIONS" :key="opt.value"
-              class="px-2 py-0.5 rounded text-xs border transition-colors"
-              :class="voiceGenderFilter === opt.value
-                ? 'bg-primary-600 border-primary-500 text-white'
-                : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
-              @click="voiceGenderFilter = opt.value"
-            >{{ opt.label }}</button>
+        <!-- 自定义下拉（筛选条件内嵌于面板） -->
+        <div class="voice-dropdown-wrapper">
+          <!-- 触发按钮 -->
+          <button
+            ref="voiceTriggerRef"
+            type="button"
+            class="input w-full flex items-center justify-between text-left"
+            @click.stop="openVoiceDropdown"
+          >
+            <span>{{ narrationVoiceLabel }}</span>
+            <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform" :class="voiceDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <!-- 下拉面板：Teleport 到 body 避免父容器 overflow 裁剪 -->
+          <Teleport to="body">
+          <div
+            v-if="voiceDropdownOpen"
+            class="voice-dropdown-portal fixed z-[9999] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden"
+            :style="voiceDropdownStyle"
+            @click.stop
+          >
+            <!-- 筛选区（仅有 TTS 数据时显示） -->
+            <div v-if="ttsModels.length > 0" class="px-3 pt-2.5 pb-2 border-b border-gray-100 dark:border-gray-800 space-y-1.5">
+              <div class="flex flex-wrap gap-1">
+                <button v-for="opt in GENDER_OPTIONS" :key="opt.value"
+                  class="px-2 py-0.5 rounded text-xs border transition-colors"
+                  :class="voiceGenderFilter === opt.value
+                    ? 'bg-primary-600 border-primary-500 text-white'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+                  @click="voiceGenderFilter = opt.value"
+                >{{ opt.label }}</button>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <button v-for="opt in AGE_OPTIONS" :key="opt.value"
+                  class="px-2 py-0.5 rounded text-xs border transition-colors"
+                  :class="voiceAgeFilter === opt.value
+                    ? 'bg-primary-600 border-primary-500 text-white'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
+                  @click="voiceAgeFilter = opt.value"
+                >{{ opt.label }}</button>
+              </div>
+            </div>
+            <!-- 音色列表 -->
+            <div class="max-h-56 overflow-y-auto py-1">
+              <!-- 空状态选项（自动） -->
+              <button
+                type="button"
+                class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                :class="!novel?.narration_voice ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-gray-700 dark:text-gray-300'"
+                @click="novelStore.updateNovel(novelId, { narration_voice: '' }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || ''))); voiceDropdownOpen = false"
+              >
+                <span class="flex items-center gap-2">
+                  <svg v-if="!novel?.narration_voice" class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                  <span v-else class="w-3.5 h-3.5 flex-shrink-0"/>
+                  自动（alloy）
+                </span>
+              </button>
+              <!-- 按 provider 分组 -->
+              <template v-for="group in narrationVoiceGroups" :key="group.key">
+                <div v-if="group.voices.length > 0">
+                  <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{{ group.label }}</div>
+                  <button
+                    v-for="v in group.voices"
+                    :key="v.id"
+                    type="button"
+                    class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                    :class="novel?.narration_voice === v.id ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-gray-700 dark:text-gray-300'"
+                    @click="novelStore.updateNovel(novelId, { narration_voice: v.id }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || ''))); voiceDropdownOpen = false"
+                  >
+                    <span class="flex items-center gap-2">
+                      <svg v-if="novel?.narration_voice === v.id" class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                      <span v-else class="w-3.5 h-3.5 flex-shrink-0"/>
+                      {{ v.label }}
+                    </span>
+                  </button>
+                </div>
+              </template>
+              <!-- 筛选无结果 -->
+              <div v-if="narrationVoiceGroups.every(g => g.voices.length === 0)" class="px-3 py-4 text-sm text-center text-gray-400">
+                无匹配音色
+              </div>
+            </div>
           </div>
-          <div class="flex gap-1">
-            <button v-for="opt in AGE_OPTIONS" :key="opt.value"
-              class="px-2 py-0.5 rounded text-xs border transition-colors"
-              :class="voiceAgeFilter === opt.value
-                ? 'bg-primary-600 border-primary-500 text-white'
-                : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400'"
-              @click="voiceAgeFilter = opt.value"
-            >{{ opt.label }}</button>
-          </div>
+          </Teleport>
         </div>
-        <select :value="novel?.narration_voice ?? ''" class="input"
-          @change="(e) => novelStore.updateNovel(novelId, { narration_voice: (e.target as HTMLSelectElement).value }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || '')))">
-          <option value="">自动（alloy）</option>
-          <template v-for="group in narrationVoiceGroups" :key="group.key">
-            <optgroup :label="group.label">
-              <option v-for="v in group.voices" :key="v.id" :value="v.id">{{ v.label }}</option>
-            </optgroup>
-          </template>
-        </select>
         <p class="text-xs text-gray-400 mt-1">无角色专属配音时朗读旁白，与角色配音设置共用同一列表</p>
       </div>
 

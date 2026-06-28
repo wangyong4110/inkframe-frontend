@@ -319,8 +319,11 @@ export const useVideoApi = () => {
   const deleteVoiceSegment = (videoId: number, shotId: number, segId: number) =>
     request<void>(`/videos/${videoId}/shots/${shotId}/segments/${segId}`, { method: 'DELETE' })
 
-  const generateSegmentVoice = (videoId: number, shotId: number, segId: number) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}/voice`, { method: 'POST' })
+  const generateSegmentVoice = (videoId: number, shotId: number, segId: number, narrationVoice?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/videos/${videoId}/shots/${shotId}/segments/${segId}/voice`, {
+      method: 'POST',
+      body: JSON.stringify({ narration_voice: narrationVoice ?? '' }),
+    })
 
   const updateShotImageUrl = (videoId: number, shotId: number, imageUrl: string) =>
     request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/storyboard/${shotId}`, {
