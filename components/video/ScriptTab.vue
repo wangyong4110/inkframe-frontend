@@ -802,35 +802,6 @@ defineExpose({ handleReviewStoryboard })
                 <option value="">不绑定</option>
                 <option v-for="anchor in dropdownAnchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
               </select>
-              <template v-if="shot.scene_anchor_id">
-                <div class="flex-1 flex items-center gap-1.5 min-w-0">
-                  <div class="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                    <div
-                      class="h-full rounded-full transition-all"
-                      :class="{
-                        'bg-green-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
-                        'bg-amber-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
-                        'bg-red-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
-                        'bg-gray-300': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
-                      }"
-                      :style="{ width: `${Math.min(100, ((anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) * 100))}%` }"
-                    />
-                  </div>
-                  <span class="text-xs flex-shrink-0"
-                    :class="{
-                      'text-green-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.85,
-                      'text-amber-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) >= 0.70 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.85,
-                      'text-red-500': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0 && (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) < 0.70,
-                      'text-gray-400': (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) === 0,
-                    }"
-                  >
-                    {{ (anchorById.get(shot.scene_anchor_id!)?.avg_cons_score ?? 0) > 0
-                      ? (anchorById.get(shot.scene_anchor_id!)!.avg_cons_score).toFixed(2)
-                      : '待评分'
-                    }}
-                  </span>
-                </div>
-              </template>
               <!-- Action buttons -->
               <div class="ml-auto flex items-center gap-0.5 flex-shrink-0">
                 <span

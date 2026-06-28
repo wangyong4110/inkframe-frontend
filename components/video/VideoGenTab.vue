@@ -231,6 +231,13 @@ onMounted(async () => {
   videoProviders.value = res?.data ?? []
 })
 
+// Returns true only when this shot has an active in-session task.
+// shot.status === 'generating' alone is unreliable after a page refresh because
+// the backend leaves the status as 'generating' when the browser is closed mid-task.
+function isActuallyGenerating(shot: StoryboardShot): boolean {
+  return shot.status === 'generating' && !!shotTaskIds.value[shot.id]
+}
+
 function shotKlingMode(shot: StoryboardShot): 'pro' | 'std' {
   const emotion = ((shot as any).emotional_tone || '').toLowerCase()
   const camera = (shot.camera_type || '').toLowerCase()
@@ -690,7 +697,7 @@ defineExpose({
                   </svg>
                 </button>
               </template>
-              <div v-else-if="shot.status === 'generating'" class="p-2 flex flex-col items-center justify-center gap-1.5 w-full h-full">
+              <div v-else-if="isActuallyGenerating(shot)" class="p-2 flex flex-col items-center justify-center gap-1.5 w-full h-full">
                 <div class="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
                 <button
                   class="text-[10px] px-2 py-0.5 rounded border border-red-400 text-red-400 hover:bg-red-500/10 transition-colors leading-none"
@@ -744,7 +751,7 @@ defineExpose({
                     </button>
                     <!-- 生成视频图标按钮（无视频时显示） -->
                     <button
-                      v-if="shot.status !== 'generating' && !shot.video_url"
+                      v-if="!shot.video_url && !isActuallyGenerating(shot)"
                       class="p-1.5 rounded-lg transition-colors"
                       :class="shotTaskIds[shot.id]
                         ? 'text-primary-400 bg-primary-50 dark:bg-primary-900/30'
@@ -763,7 +770,7 @@ defineExpose({
                   </div>
                   <!-- 重新生成按钮（有视频时显示） -->
                   <button
-                    v-if="shot.video_url && shot.status !== 'generating'"
+                    v-if="shot.video_url && !isActuallyGenerating(shot)"
                     class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors"
                     :class="shotTaskIds[shot.id]
                       ? 'text-primary-500 bg-primary-50 dark:bg-primary-900/30 cursor-not-allowed'
