@@ -271,7 +271,8 @@ async function doGenerateShot(shot: StoryboardShot) {
 async function handleGenerateShot(shot: StoryboardShot) {
   if (!await guardAiProvider('VIDEO')) return
   if (confirmMissingThreeView(() => doGenerateShot(shot), [shot.id])) return
-  if (confirmVideoReadiness(() => doGenerateShot(shot), [shot])) return
+  // Skip asset readiness check when re-generating an already-generated shot
+  if (!shot.video_url && confirmVideoReadiness(() => doGenerateShot(shot), [shot])) return
   await doGenerateShot(shot)
 }
 
