@@ -58,7 +58,7 @@ const editingLook = ref<CharacterLook | null>(null)
 const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
-const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string }>({
+const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string; portrait?: string }>({
   label: '',
   chapter_from: 1,
   chapter_to: 0,
@@ -67,7 +67,11 @@ const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_v
   description: '',
   visual_prompt: '',
   three_view_sheet: '',
+  portrait: '',
 })
+
+const showCropModal = ref(false)
+const cropSourceUrl = computed(() => lookForm.value.three_view_sheet || '')
 
 async function fetchLooks() {
   if (!characterId) return
@@ -94,6 +98,7 @@ function openLookForm(look?: CharacterLook) {
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
       three_view_sheet: look.three_view_sheet ?? '',
+      portrait: look.portrait ?? '',
     }
   } else {
     editingLook.value = null
@@ -148,6 +153,7 @@ async function handleSaveLook() {
         description: lookForm.value.description,
         visual_prompt: lookForm.value.visual_prompt,
         three_view_sheet: lookForm.value.three_view_sheet,
+        portrait: lookForm.value.portrait,
       }
       await characterApi.updateLook(characterId, editingLook.value.id, updateData)
       toast.success('形象已更新')
@@ -668,6 +674,28 @@ function getRoleLabel(role: string): string {
             />
           </div>
 
+          <!-- 面部参考图（Portrait） -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
+                <p class="text-xs text-gray-400 mt-0.5">分镜图生成时的面部一致性锚点，建议从三视图裁剪</p>
+              </div>
+              <button
+                v-if="lookForm.three_view_sheet"
+                class="text-xs text-violet-600 dark:text-violet-400 hover:underline"
+                @click="showCropModal = true"
+              >✂ 从三视图裁剪</button>
+            </div>
+            <ImageUploadBox
+              v-model="lookForm.portrait"
+              aspect-ratio="3/4"
+              placeholder="面部参考图（正面半身像）"
+              :on-save="(url: string) => { lookForm.portrait = url }"
+              @error="toast.error"
+            />
+          </div>
+
           </div><!-- end 滚动内容区 -->
 
           <!-- 操作按钮（固定底部） -->
@@ -686,6 +714,14 @@ function getRoleLabel(role: string): string {
           </div>
         </div>
       </div>
+
+      <!-- 面部裁剪弹窗 -->
+      <ImageCropModal
+        v-if="showCropModal && cropSourceUrl"
+        :image-url="cropSourceUrl"
+        @done="(url) => { lookForm.portrait = url; showCropModal = false }"
+        @cancel="showCropModal = false"
+      />
 
       <!-- 隐藏文件输入（形象图片上传） -->
       <input

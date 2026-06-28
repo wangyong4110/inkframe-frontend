@@ -40,6 +40,7 @@ export const useModelApi = () => {
     concurrency?: number
     rate_limit?: number
     is_default?: boolean
+    api_version?: string
   }) =>
     request<ApiResponse<AIModel>>('/models', {
       method: 'POST',
@@ -57,6 +58,7 @@ export const useModelApi = () => {
     rate_limit: number
     cost_per_1k: number
     is_active: boolean
+    api_version: string
   }>) =>
     request<ApiResponse<AIModel>>(`/models/${id}`, {
       method: 'PUT',
@@ -136,6 +138,20 @@ export const useModelApi = () => {
       body: JSON.stringify(data),
     })
 
+  const listTaskConfigs = () =>
+    request<ApiResponse<any[]>>('/task-configs')
+
+  const updateTaskConfig = (taskType: string, data: {
+    primary_model_id?: number
+    primary_provider_id?: number
+    max_tokens?: number
+    temperature?: number
+  }) =>
+    request<ApiResponse<any>>(`/task-configs/${taskType}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+
   return {
     getProviders,
     getCapableProviders,
@@ -157,5 +173,7 @@ export const useModelApi = () => {
     testModelPrompt,
     getTaskMappings,
     updateTaskMapping,
+    listTaskConfigs,
+    updateTaskConfig,
   }
 }

@@ -89,10 +89,10 @@ export const useTaskStore = defineStore('task', {
       if (idx >= 0) this.tasks.splice(idx, 1)
     },
 
-    // Remove all completed/failed/cancelled tasks from the panel.
+    // Remove all completed/failed/cancelled/dead tasks from the panel.
     dismissAll() {
       const doneIds = this.tasks
-        .filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
+        .filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled' || t.status === 'dead')
         .map(t => t.task_id)
       for (const id of doneIds) {
         this._dismissed[id] = true
@@ -148,7 +148,7 @@ export const useTaskStore = defineStore('task', {
           return
         }
 
-        if (task.status === 'completed' || task.status === 'failed') {
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'dead') {
           clearTimeout(this._timers[taskId])
           delete this._timers[taskId]
           // Stop data-refresh interval before calling onDone (onDone will do its own final fetch)
@@ -157,11 +157,13 @@ export const useTaskStore = defineStore('task', {
             delete this._refreshIntervals[taskId]
           }
           onDone?.(task)
-          // Schedule auto-dismiss (only if not already dismissed)
-          if (!this._dismissed[taskId]) {
-            this._dismissTimers[taskId] = setTimeout(() => {
-              this.dismiss(taskId)
-            }, AUTO_DISMISS_MS)
+          // failed/dead tasks stay visible (no auto-dismiss) so user can read the error
+          if (task.status === 'completed') {
+            if (!this._dismissed[taskId]) {
+              this._dismissTimers[taskId] = setTimeout(() => {
+                this.dismiss(taskId)
+              }, AUTO_DISMISS_MS)
+            }
           }
           return
         }

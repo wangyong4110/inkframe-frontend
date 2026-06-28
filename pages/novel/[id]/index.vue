@@ -75,7 +75,7 @@ const tabs = [
   { key: 'knowledge', label: '知识库', icon: 'database' },
   { key: 'foreshadow', label: '伏笔', icon: 'bookmark' },
   { key: 'team', label: '团队', icon: 'users' },
-  { key: 'audit', label: '操作日志', icon: 'clipboard' },
+  { key: 'audit', label: '日志', icon: 'clipboard' },
   { key: 'settings', label: '设置', icon: 'settings' },
 ]
 
@@ -694,7 +694,7 @@ onMounted(async () => {
     <NovelForeshadowTab v-else-if="activeTab === 'foreshadow'" :novel-id="novelId" :total-chapters="novel?.chapter_count ?? 0" />
     <NovelTeamTab v-else-if="activeTab === 'team'" :novel-id="novelId" />
     <div v-else-if="activeTab === 'audit'" class="card p-6">
-      <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">操作日志</h3>
+      <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4">日志</h3>
       <AuditLogPanel mode="novel" :novel-id="novelId" />
     </div>
     <NovelSettingsTab v-else-if="activeTab === 'settings'" :novel-id="novelId" />

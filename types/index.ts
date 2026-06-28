@@ -453,7 +453,7 @@ export interface ShotSceneConfig {
 }
 
 // Async Task types
-export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'dead'
 export type AsyncTaskType =
   | 'storyboard_gen'
   | 'chapter_gen'

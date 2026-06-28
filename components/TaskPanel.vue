@@ -44,7 +44,7 @@
           <!-- Status icon -->
           <div class="mt-0.5 flex-shrink-0">
             <span v-if="task.status === 'completed'" class="text-success-500 text-base">✓</span>
-            <span v-else-if="task.status === 'failed'" class="text-error-500 text-base">✕</span>
+            <span v-else-if="task.status === 'failed' || task.status === 'dead'" class="text-error-500 text-base">✕</span>
             <span v-else-if="task.status === 'cancelled'" class="text-gray-400 text-base">⊘</span>
             <span v-else class="inline-block w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
           </div>
@@ -63,8 +63,18 @@
                 <span class="text-gray-400 dark:text-gray-500">· {{ formatElapsed(task.created_at, task.updated_at) }}</span>
               </template>
               <span v-else-if="task.status === 'cancelled'" class="text-gray-400">已取消</span>
-              <span v-else class="text-error-600 dark:text-error-400 truncate">{{ task.error || '失败' }}</span>
+              <span v-else-if="task.status === 'dead'" class="text-error-600 dark:text-error-400">
+                重试耗尽 · <button class="underline hover:no-underline" @click.stop="toggleError(task.task_id)">{{ expandedErrors.has(task.task_id) ? '收起' : '查看原因' }}</button>
+              </span>
+              <span v-else class="text-error-600 dark:text-error-400">
+                失败 · <button class="underline hover:no-underline" @click.stop="toggleError(task.task_id)">{{ expandedErrors.has(task.task_id) ? '收起' : '查看原因' }}</button>
+              </span>
             </p>
+            <!-- Expanded error detail -->
+            <div
+              v-if="(task.status === 'failed' || task.status === 'dead') && expandedErrors.has(task.task_id) && task.error"
+              class="mt-1.5 text-xs text-error-600 dark:text-error-400 bg-red-50 dark:bg-red-950/30 rounded p-2 break-all whitespace-pre-wrap select-text"
+            >{{ task.error }}</div>
             <!-- Progress bar for running tasks -->
             <div v-if="task.status === 'running'" class="mt-1.5 h-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <div
@@ -94,7 +104,7 @@
             </button>
             <!-- Dismiss button — for finished tasks -->
             <button
-              v-else-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
+              v-else-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled' || task.status === 'dead'"
               class="text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 text-sm leading-none p-0.5"
               title="关闭"
               @click="taskStore.dismiss(task.task_id)"
@@ -118,10 +128,19 @@ import type { AsyncTaskType } from '~/types'
 const taskStore = useTaskStore()
 
 const collapsed = ref(false)
+const expandedErrors = reactive(new Set<string>())
+
+function toggleError(taskId: string) {
+  if (expandedErrors.has(taskId)) {
+    expandedErrors.delete(taskId)
+  } else {
+    expandedErrors.add(taskId)
+  }
+}
 
 const activeCount = computed(() => taskStore.activeTasks.length)
 const doneCount = computed(() =>
-  taskStore.tasks.filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled').length
+  taskStore.tasks.filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled' || t.status === 'dead').length
 )
 const visible = computed(() => taskStore.tasks.length > 0)
 
