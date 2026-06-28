@@ -443,7 +443,7 @@ const selectedAspectRatio = computed(() =>
           </div>
         </div>
         <select :value="novel?.narration_voice ?? ''" class="input"
-          @change="(e) => novelStore.updateNovel(novelId, { narration_voice: (e.target as HTMLSelectElement).value })">
+          @change="(e) => novelStore.updateNovel(novelId, { narration_voice: (e.target as HTMLSelectElement).value }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || '')))">
           <option value="">自动（alloy）</option>
           <template v-for="group in narrationVoiceGroups" :key="group.key">
             <optgroup :label="group.label">
