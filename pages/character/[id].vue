@@ -361,7 +361,9 @@ async function handleSave() {
   saving.value = true
   saveStatus.value = 'saving'
   try {
-    await characterStore.updateCharacter(characterId, { ...character.value })
+    // 直接调用 API，再 patch 本地 store，避免服务端响应整体覆盖 voice_style 等其他字段
+    await characterApi.updateCharacter(characterId, { ...character.value })
+    characterStore.patchCurrentCharacter({ ...character.value })
     isDirty.value = false
     saveStatus.value = 'saved'
     setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = '' }, 2000)

@@ -110,7 +110,7 @@ export const useCharacterStore = defineStore('character', {
         }
 
         if (this.currentCharacter?.id === id) {
-          this.currentCharacter = response.data
+          Object.assign(this.currentCharacter, response.data)
         }
 
         return response.data
