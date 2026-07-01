@@ -344,6 +344,7 @@ defineExpose({ activeTab, generateStoryboard, reviewStoryboard })
         <div v-if="activeTab === 'sfx'" id="sfx-ai-slot" />
         <div v-else-if="activeTab === 'bgm'" id="bgm-ai-slot" />
         <div v-else-if="activeTab === 'voice'" id="voice-ai-slot" />
+        <div v-else-if="activeTab === 'video_gen'" id="video-gen-ai-slot" />
       </aside>
 
       <!-- Main content (order-1 keeps it visually on the left in standalone flex layout) -->

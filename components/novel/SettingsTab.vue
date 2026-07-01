@@ -48,6 +48,55 @@ const voiceDropdownOpen = ref(false)
 const voiceTriggerRef = ref<HTMLElement | null>(null)
 const voiceDropdownStyle = ref({ top: '0px', left: '0px', width: '0px' })
 
+// 试听状态
+const previewingVoiceId = ref('')
+const previewAudio = ref<HTMLAudioElement | null>(null)
+
+async function previewVoice(voiceId: string, e: MouseEvent) {
+  e.stopPropagation()
+  if (previewingVoiceId.value === voiceId) {
+    previewAudio.value?.pause()
+    previewingVoiceId.value = ''
+    return
+  }
+  if (previewAudio.value) { previewAudio.value.pause(); previewAudio.value = null }
+  previewingVoiceId.value = voiceId
+  try {
+    const modelApi = useModelApi()
+    const taskApi = useTaskApi()
+    const res: any = await modelApi.voicePreview(voiceId)
+    const taskId: string = res?.data?.task_id ?? ''
+    if (!taskId) throw new Error('未获取到任务ID')
+    await new Promise<void>((resolve, reject) => {
+      let attempts = 0
+      function poll() {
+        if (previewingVoiceId.value !== voiceId) { resolve(); return }
+        if (++attempts > 30) { reject(new Error('超时')); return }
+        taskApi.getTask(taskId).then(r => {
+          const status = r.data?.status
+          if (status === 'completed') {
+            const url = (r.data?.data as any)?.audio_url as string
+            if (url) {
+              const audio = new Audio(url)
+              previewAudio.value = audio
+              audio.onended = () => { previewingVoiceId.value = '' }
+              audio.play()
+            }
+            resolve()
+          } else if (status === 'failed') {
+            reject(new Error(r.data?.error || '生成失败'))
+          } else {
+            setTimeout(poll, 2000)
+          }
+        }).catch(() => setTimeout(poll, 2000))
+      }
+      setTimeout(poll, 1500)
+    })
+  } catch {
+    if (previewingVoiceId.value === voiceId) previewingVoiceId.value = ''
+  }
+}
+
 function openVoiceDropdown() {
   const el = voiceTriggerRef.value
   if (!el) { voiceDropdownOpen.value = !voiceDropdownOpen.value; return }
@@ -499,17 +548,42 @@ const selectedAspectRatio = computed(() =>
       <div>
         <label class="field-label">旁白音色</label>
         <!-- 自定义下拉（筛选条件内嵌于面板） -->
-        <div class="voice-dropdown-wrapper">
+        <div class="voice-dropdown-wrapper flex items-center gap-2">
           <!-- 触发按钮 -->
           <button
             ref="voiceTriggerRef"
             type="button"
-            class="input w-full flex items-center justify-between text-left"
+            class="input flex-1 flex items-center justify-between text-left"
             @click.stop="openVoiceDropdown"
           >
             <span>{{ narrationVoiceLabel }}</span>
             <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform" :class="voiceDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <!-- 当前音色试听按钮 -->
+          <button
+            type="button"
+            class="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg border transition-colors"
+            :class="previewingVoiceId && previewingVoiceId === (novel?.narration_voice || 'alloy')
+              ? 'border-primary-400 bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400'
+              : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:text-gray-300'"
+            :title="previewingVoiceId === (novel?.narration_voice || 'alloy') ? '停止试听' : '试听当前音色'"
+            @click.stop="previewVoice(novel?.narration_voice || 'alloy', $event)"
+          >
+            <!-- 加载中 -->
+            <svg v-if="previewingVoiceId === (novel?.narration_voice || 'alloy') && !previewAudio" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <!-- 停止（播放中） -->
+            <svg v-else-if="previewingVoiceId === (novel?.narration_voice || 'alloy')" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <rect x="4" y="4" width="5" height="12" rx="1"/>
+              <rect x="11" y="4" width="5" height="12" rx="1"/>
+            </svg>
+            <!-- 播放 -->
+            <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
             </svg>
           </button>
           <!-- 下拉面板：Teleport 到 body 避免父容器 overflow 裁剪 -->
@@ -560,20 +634,47 @@ const selectedAspectRatio = computed(() =>
               <template v-for="group in narrationVoiceGroups" :key="group.key">
                 <div v-if="group.voices.length > 0">
                   <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{{ group.label }}</div>
-                  <button
+                  <div
                     v-for="v in group.voices"
                     :key="v.id"
-                    type="button"
-                    class="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-                    :class="novel?.narration_voice === v.id ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-gray-700 dark:text-gray-300'"
-                    @click="novelStore.updateNovel(novelId, { narration_voice: v.id }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || ''))); voiceDropdownOpen = false"
+                    class="flex items-center group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   >
-                    <span class="flex items-center gap-2">
-                      <svg v-if="novel?.narration_voice === v.id" class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                      <span v-else class="w-3.5 h-3.5 flex-shrink-0"/>
-                      {{ v.label }}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      class="flex-1 text-left px-3 py-2 text-sm"
+                      :class="novel?.narration_voice === v.id ? 'text-primary-600 dark:text-primary-400 font-medium' : 'text-gray-700 dark:text-gray-300'"
+                      @click="novelStore.updateNovel(novelId, { narration_voice: v.id }).catch((err: any) => toast.error('旁白音色保存失败：' + (err.message || ''))); voiceDropdownOpen = false"
+                    >
+                      <span class="flex items-center gap-2">
+                        <svg v-if="novel?.narration_voice === v.id" class="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                        <span v-else class="w-3.5 h-3.5 flex-shrink-0"/>
+                        {{ v.label }}
+                      </span>
+                    </button>
+                    <!-- 试听按钮 -->
+                    <button
+                      type="button"
+                      class="px-2 py-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                      :class="previewingVoiceId === v.id ? 'text-primary-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'"
+                      :title="previewingVoiceId === v.id ? '停止试听' : '试听'"
+                      @click="previewVoice(v.id, $event)"
+                    >
+                      <!-- 加载中 spinner -->
+                      <svg v-if="previewingVoiceId === v.id && !previewAudio" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                      </svg>
+                      <!-- 停止图标（播放中） -->
+                      <svg v-else-if="previewingVoiceId === v.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <rect x="4" y="4" width="5" height="12" rx="1"/>
+                        <rect x="11" y="4" width="5" height="12" rx="1"/>
+                      </svg>
+                      <!-- 播放图标 -->
+                      <svg v-else class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </template>
               <!-- 筛选无结果 -->

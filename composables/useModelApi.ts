@@ -175,5 +175,10 @@ export const useModelApi = () => {
     updateTaskMapping,
     listTaskConfigs,
     updateTaskConfig,
+    voicePreview: (voiceId: string, text?: string) =>
+      request<ApiResponse<{ task_id: string }>>('/models/voice-preview', {
+        method: 'POST',
+        body: JSON.stringify({ voice_id: voiceId, text: text ?? '' }),
+      }),
   }
 }
