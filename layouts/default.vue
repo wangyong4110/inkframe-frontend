@@ -5,6 +5,8 @@ const authStore = useAuthStore()
 const showUserMenu = ref(false)
 const mobileMenuOpen = ref(false)
 const showNotifPanel = ref(false)
+const showNotifDetail = ref(false)
+const selectedNotif = ref<import('~/composables/useNotificationApi').Notification | null>(null)
 
 // 通知
 const notifApi = useNotificationApi()
@@ -45,9 +47,15 @@ async function handleMarkRead(n: import('~/composables/useNotificationApi').Noti
     n.is_read = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
-  if (n.link_path) {
+  selectedNotif.value = n
+  showNotifDetail.value = true
+}
+
+function handleNotifDetailNavigate() {
+  if (selectedNotif.value?.link_path) {
+    showNotifDetail.value = false
     showNotifPanel.value = false
-    router.push(n.link_path)
+    router.push(selectedNotif.value.link_path)
   }
 }
 
@@ -382,4 +390,62 @@ const breadcrumbs = computed(() => {
 
   <!-- Feedback Widget -->
   <FeedbackWidget />
+
+  <!-- 站内信详情弹窗 -->
+  <Teleport to="body">
+    <div
+      v-if="showNotifDetail && selectedNotif"
+      class="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      @click.self="showNotifDetail = false"
+    >
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showNotifDetail = false"/>
+      <div class="relative w-full max-w-md bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+        <!-- Header -->
+        <div class="flex items-start justify-between px-5 py-4 border-b border-gray-800">
+          <div class="flex items-center gap-2.5 flex-1 min-w-0 pr-4">
+            <span
+              class="flex-shrink-0 w-2 h-2 rounded-full mt-1"
+              :class="selectedNotif.is_read ? 'bg-gray-600' : 'bg-violet-500'"
+            />
+            <h3 class="text-base font-semibold text-white leading-snug">{{ selectedNotif.title }}</h3>
+          </div>
+          <button
+            class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+            @click="showNotifDetail = false"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Body -->
+        <div class="px-5 py-4 max-h-72 overflow-y-auto">
+          <p class="text-sm text-gray-300 whitespace-pre-wrap break-words leading-relaxed">{{ selectedNotif.body }}</p>
+        </div>
+        <!-- Footer -->
+        <div class="px-5 py-3 border-t border-gray-800 flex items-center justify-between">
+          <span class="text-xs text-gray-500">
+            {{ new Date(selectedNotif.created_at).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+          </span>
+          <button
+            v-if="selectedNotif.link_path"
+            class="text-sm text-violet-400 hover:text-violet-300 font-medium transition-colors flex items-center gap-1"
+            @click="handleNotifDetailNavigate"
+          >
+            前往查看
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+          </button>
+          <button
+            v-else
+            class="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            @click="showNotifDetail = false"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

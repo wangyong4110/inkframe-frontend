@@ -631,6 +631,7 @@ async function saveShotMeta(shot: StoryboardShot, field: keyof StoryboardShot, v
 
 // Expose for parent (e.g. reload providers from outside)
 defineExpose({
+  handleGenerateImages,
   loadVideoProviders: async () => {
     const res = await videoApi.getVideoProviders()
     videoProviders.value = res?.data ?? []
@@ -1049,37 +1050,6 @@ defineExpose({
     <!-- ── 视频生成 AI 助手面板（Teleport 到右侧 slot）── -->
     <Teleport to="#video-gen-ai-slot">
       <div class="p-4 space-y-4">
-        <!-- 进度统计 -->
-        <div v-if="totalShots > 0" class="space-y-2">
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">生成进度</p>
-          <div class="space-y-1.5">
-            <div>
-              <div class="flex justify-between text-xs mb-0.5">
-                <span class="text-gray-500 dark:text-gray-400">图片</span>
-                <span class="text-gray-700 dark:text-gray-300 font-medium">{{ imagesGenerated }} / {{ totalShots }}</span>
-              </div>
-              <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-blue-400 rounded-full transition-all duration-500"
-                  :style="{ width: totalShots > 0 ? `${(imagesGenerated / totalShots) * 100}%` : '0%' }"
-                />
-              </div>
-            </div>
-            <div>
-              <div class="flex justify-between text-xs mb-0.5">
-                <span class="text-gray-500 dark:text-gray-400">视频</span>
-                <span class="text-gray-700 dark:text-gray-300 font-medium">{{ videosGenerated }} / {{ totalShots }}</span>
-              </div>
-              <div class="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-primary-500 rounded-full transition-all duration-500"
-                  :style="{ width: totalShots > 0 ? `${(videosGenerated / totalShots) * 100}%` : '0%' }"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- 视频供应商 -->
         <div v-if="video?.mode !== 'slideshow' && videoProviders.length > 0">
           <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">视频供应商</label>
@@ -1149,19 +1119,6 @@ defineExpose({
 
         <!-- 操作按钮 -->
         <div class="space-y-2">
-          <button
-            class="w-full px-4 py-2.5 text-sm font-medium btn-secondary rounded-lg transition-colors flex items-center justify-center gap-2"
-            :disabled="batchGeneratingImages || batchGeneratingClips || generatingStoryboard"
-            @click="handleGenerateImages"
-          >
-            <svg v-if="batchGeneratingImages" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            {{ batchGeneratingImages ? '图片生成中…' : '生成全部图片' }}
-          </button>
           <button
             class="w-full px-4 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
             :disabled="batchGeneratingImages || batchGeneratingClips || generatingStoryboard"

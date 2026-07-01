@@ -504,49 +504,6 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
     <!-- AI assistant sidebar teleport slot -->
     <Teleport to="#voice-ai-slot">
       <div class="p-4 space-y-4">
-        <!-- 配音模式 -->
-        <div>
-          <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">配音模式</p>
-          <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            <!-- TODO: 对白+旁白 mode not yet implemented; button disabled until feature is ready -->
-            <button class="flex-1 px-2.5 py-1.5 text-xs transition-colors bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 opacity-50 cursor-not-allowed" disabled title="功能开发中，敬请期待">对白+旁白（开发中）</button>
-          </div>
-          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">影响重新生成脚本时的旁白/台词分配</p>
-        </div>
-        <!-- 字幕设置 -->
-        <div>
-          <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">字幕</p>
-          <label class="flex items-center gap-2 cursor-pointer mb-1.5">
-            <input v-model="subtitleEnabled" type="checkbox" class="rounded accent-green-500" />
-            <span class="text-xs text-gray-600 dark:text-gray-400">同步生成字幕</span>
-          </label>
-          <div v-if="subtitleEnabled" class="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 pl-5">
-            <span class="inline-block w-3 h-3 rounded-full border border-gray-300 flex-shrink-0" :style="{ background: subtitleConfig.color }" />
-            {{ { bottom: '底部', center: '居中', top: '顶部' }[subtitleConfig.position] }}
-            · {{ subtitleConfig.font_size }}px
-            · {{ { none: '无背景', shadow: '阴影', box: '底框' }[subtitleConfig.bg_style] }}
-            <NuxtLink :to="`/novel/${videoStore.currentVideo?.novel_id}?tab=settings`" class="text-green-500 hover:underline ml-1" title="在项目配置中修改字幕样式">编辑样式</NuxtLink>
-          </div>
-        </div>
-        <!-- 字幕快速操作 -->
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <p class="text-xs font-medium text-gray-700 dark:text-gray-300">字幕操作</p>
-            <span class="text-xs text-gray-400 dark:text-gray-500">{{ shots.filter(s => !s.subtitle && (s.narration || s.dialogue)).length }} 个待填充</span>
-          </div>
-          <button
-            class="w-full btn-secondary text-xs py-1.5"
-            :disabled="batchFillingSubtitles"
-            @click="batchFillSubtitles"
-            title="将未自定义字幕的镜头的字幕字段批量填入旁白/台词内容"
-          >
-            <svg v-if="batchFillingSubtitles" class="w-3.5 h-3.5 mr-1 animate-spin inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {{ batchFillingSubtitles ? '填充中…' : '一键填充字幕' }}
-          </button>
-          <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">将旁白/台词批量填入未自定义字幕的镜头</p>
-        </div>
         <!-- 进度统计 -->
         <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
           <span class="text-gray-500 dark:text-gray-400">共 {{ shots.length }} 个镜头</span>
@@ -668,10 +625,6 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
         </div>
       </template>
     </Teleport>
-    <!-- 生成进度 -->
-    <div v-if="shots.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
-      生成进度 {{ Object.keys(shotAudioUrls).length }} / {{ shots.length }}
-    </div>
 
     <div class="space-y-2">
       <div v-for="(shot, shotIdx) in pagedShots" :key="shot.id" class="card p-4" :class="shotIdx % 2 === 1 ? 'shot-card-alt' : ''">

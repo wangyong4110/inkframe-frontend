@@ -238,8 +238,12 @@ function reviewStoryboard() {
   scriptTabRef.value?.handleReviewStoryboard()
 }
 
+function generateAllImages() {
+  videoGenTabRef.value?.handleGenerateImages()
+}
+
 // Expose for parent pages (e.g. chapter page's AI panel)
-defineExpose({ activeTab, generateStoryboard, reviewStoryboard })
+defineExpose({ activeTab, generateStoryboard, reviewStoryboard, generateAllImages })
 </script>
 
 <template>

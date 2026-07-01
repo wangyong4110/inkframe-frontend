@@ -1991,36 +1991,11 @@ onUnmounted(() => {
       <!-- Mode toggle (centered) -->
       <div class="flex-1 flex justify-center">
         <div class="flex items-center bg-gray-100 dark:bg-gray-700/60 rounded-lg p-1 gap-1">
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">
-            大纲
-            <span v-if="modeComplete.outline && pageMode !== 'outline'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
-              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
-            </span>
-          </button>
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">
-            写作
-            <span v-if="modeComplete.write && pageMode !== 'write'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
-              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
-            </span>
-          </button>
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">
-            角色
-            <span v-if="modeComplete.character && pageMode !== 'character'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
-              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
-            </span>
-          </button>
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">
-            场景
-            <span v-if="modeComplete.scenes && pageMode !== 'scenes'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
-              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
-            </span>
-          </button>
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">
-            视频
-            <span v-if="modeComplete.script && pageMode !== 'script'" class="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-green-400">
-              <svg class="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M5 13l4 4L19 7"/></svg>
-            </span>
-          </button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">视频</button>
         </div>
       </div>
 
@@ -2825,7 +2800,7 @@ onUnmounted(() => {
                 videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
                 videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
-                videoEditorRef?.activeTab === 'voice' ? '配音模式 & 字幕' :
+                videoEditorRef?.activeTab === 'voice' ? '配音统计 & 操作' :
                 videoEditorRef?.activeTab === 'video_gen' ? '生成进度 & 操作' :
                 '脚本'
               }}
@@ -3667,6 +3642,16 @@ onUnmounted(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 AI 审查
+              </button>
+              <button
+                v-if="videoStore.storyboard.length > 0"
+                class="w-full px-4 py-2.5 text-sm font-medium btn-secondary rounded-lg transition-colors flex items-center justify-center gap-2"
+                @click="videoEditorRef?.generateAllImages()"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                生成全部图片
               </button>
             </div>
           </template>
