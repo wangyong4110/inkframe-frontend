@@ -494,13 +494,19 @@ async function handleInsertShot(afterShotNo: number) {
 
 async function handleGenerateShotImage(shot: StoryboardShot) {
   if (generatingImageShotIds.value.has(shot.id)) return
+  if (!await guardAiProvider('IMAGE')) return
   generatingImageShotIds.value = new Set([...generatingImageShotIds.value, shot.id])
   try {
     const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
     if (taskId) {
-      useTaskStore().trackTask(taskId, () => {
+      useTaskStore().trackTask(taskId, async (task) => {
         generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
-        videoStore.fetchStoryboard(props.videoId)
+        if (task.status === 'completed') {
+          await videoStore.fetchStoryboard(props.videoId)
+          toast.success(`镜头 #${shot.shot_no} 图片已${shot.image_url ? '重新' : ''}生成`)
+        } else if (task.status !== 'cancelled') {
+          toast.error(`镜头 #${shot.shot_no} 图片生成失败`)
+        }
       })
     } else {
       generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))
