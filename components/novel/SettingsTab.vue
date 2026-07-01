@@ -53,8 +53,8 @@ function openVoiceDropdown() {
   if (!el) { voiceDropdownOpen.value = !voiceDropdownOpen.value; return }
   const rect = el.getBoundingClientRect()
   voiceDropdownStyle.value = {
-    top: `${rect.bottom + window.scrollY + 4}px`,
-    left: `${rect.left + window.scrollX}px`,
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
     width: `${rect.width}px`,
   }
   voiceDropdownOpen.value = !voiceDropdownOpen.value
@@ -65,7 +65,11 @@ function closeVoiceDropdown(e: MouseEvent) {
   if (!target.closest('.voice-dropdown-wrapper') && !target.closest('.voice-dropdown-portal'))
     voiceDropdownOpen.value = false
 }
-function handleScrollOrResize() { if (voiceDropdownOpen.value) voiceDropdownOpen.value = false }
+function handleScrollOrResize(e?: Event) {
+  if (!voiceDropdownOpen.value) return
+  if (e?.target instanceof HTMLElement && e.target.closest('.voice-dropdown-portal')) return
+  voiceDropdownOpen.value = false
+}
 onMounted(() => {
   document.addEventListener('click', closeVoiceDropdown)
   window.addEventListener('scroll', handleScrollOrResize, true)
@@ -154,6 +158,17 @@ const iconOptions = [
 function iconGradient(value: string | undefined) {
   return iconOptions.find(o => o.value === value)?.gradient ?? 'linear-gradient(135deg,#8B5CF6,#3B82F6)'
 }
+
+// ── 色彩调色预设 ──────────────────────────────────────────────────────────────
+const COLOR_GRADES = [
+  { value: '',           label: '默认',    icon: '⬜' },
+  { value: 'cinematic',  label: '电影感',  icon: '🎬' },
+  { value: 'warm',       label: '暖色',    icon: '🌅' },
+  { value: 'cool',       label: '冷色',    icon: '❄️' },
+  { value: 'teal_orange',label: '青橙',    icon: '🎭' },
+  { value: 'vintage',    label: '复古',    icon: '📽️' },
+  { value: 'noir',       label: '黑色',    icon: '🎩' },
+]
 
 // ── 小说类型 ─────────────────────────────────────────────────────────────────
 const genreOptions = [
@@ -458,6 +473,25 @@ const selectedAspectRatio = computed(() =>
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- 色彩调色 -->
+      <div>
+        <label class="field-label">色彩调色 <span class="text-gray-400 font-normal text-xs">（视频/图片生成风格）</span></label>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button
+            v-for="g in COLOR_GRADES"
+            :key="g.value"
+            class="py-1.5 px-1 text-xs rounded-lg border transition-colors text-center"
+            :class="(novel?.color_grade ?? '') === g.value
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 font-medium'
+              : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:border-gray-300'"
+            @click="novelStore.updateNovel(novelId, { color_grade: g.value })"
+          >
+            <span class="block text-base leading-none mb-0.5">{{ g.icon }}</span>
+            {{ g.label }}
+          </button>
         </div>
       </div>
 

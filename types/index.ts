@@ -261,6 +261,8 @@ export interface VideoRenderConfig {
   visual_mode?: string
   three_d_style?: string
   generate_audio?: boolean | null  // Seedance 2.0/1.5：true=有声，false=静音，null/undefined=API默认(有声)
+  priority?: number                // Seedance 2.0 请求优先级 0-9（0=默认FIFO）
+  web_search_enabled?: boolean     // Seedance 2.0：允许模型联网搜索
 }
 
 export interface Video {

@@ -61,12 +61,34 @@ const videoProviders = ref<{ name: string; display_name: string }[]>([])
 const selectedVideoProvider = ref('')
 
 const generateAudio = computed(() => video.value?.render_config?.generate_audio ?? true)
+const renderPriority = computed(() => video.value?.render_config?.priority ?? 0)
+const webSearchEnabled = computed(() => video.value?.render_config?.web_search_enabled ?? false)
 
 async function setGenerateAudio(val: boolean) {
   try {
     await videoStore.updateVideo(props.videoId, { generate_audio: val } as any)
     await videoStore.fetchVideo(props.videoId)
     toast.success(val ? '已开启环境音' : '已关闭环境音（静音模式）')
+  } catch (e: any) {
+    toast.error('设置失败：' + (e.message || ''))
+  }
+}
+
+async function setRenderPriority(val: number) {
+  try {
+    await videoStore.updateVideo(props.videoId, { priority: val } as any)
+    await videoStore.fetchVideo(props.videoId)
+    toast.success(`渲染优先级已设为 ${val}`)
+  } catch (e: any) {
+    toast.error('设置失败：' + (e.message || ''))
+  }
+}
+
+async function setWebSearch(val: boolean) {
+  try {
+    await videoStore.updateVideo(props.videoId, { web_search_enabled: val } as any)
+    await videoStore.fetchVideo(props.videoId)
+    toast.success(val ? '已开启联网搜索' : '已关闭联网搜索')
   } catch (e: any) {
     toast.error('设置失败：' + (e.message || ''))
   }
@@ -1085,6 +1107,44 @@ defineExpose({
             </svg>
             {{ generateAudio ? '有声（环境音同步）' : '静音（手动配音）' }}
           </button>
+        </div>
+
+        <!-- Seedance 2.0 联网搜索 -->
+        <div v-if="video?.mode !== 'slideshow'">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            联网搜索 <span class="text-gray-400 font-normal">（Seedance 2.0）</span>
+          </label>
+          <button
+            class="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg border transition-colors"
+            :class="webSearchEnabled
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+              : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800'"
+            @click="setWebSearch(!webSearchEnabled)"
+          >
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+            </svg>
+            {{ webSearchEnabled ? '联网搜索已开启' : '不联网（离线生成）' }}
+          </button>
+        </div>
+
+        <!-- Seedance 2.0 渲染优先级 -->
+        <div v-if="video?.mode !== 'slideshow'">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            渲染优先级 <span class="text-gray-400 font-normal">（Seedance 2.0，当前：{{ renderPriority }}）</span>
+          </label>
+          <div class="flex gap-1">
+            <button
+              v-for="p in [0, 1, 2, 3, 5, 7, 9]"
+              :key="p"
+              class="flex-1 py-1 text-xs rounded border transition-colors"
+              :class="renderPriority === p
+                ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 font-semibold'
+                : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800 hover:border-gray-300'"
+              @click="setRenderPriority(p)"
+            >{{ p }}</button>
+          </div>
         </div>
 
         <!-- 操作按钮 -->
