@@ -306,6 +306,12 @@ export const useVideoApi = () => {
       body: JSON.stringify({ character_ids: characterIds }),
     })
 
+  const setShotItems = (videoId: number, shotId: number, itemIds: number[]) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/items`, {
+      method: 'PUT',
+      body: JSON.stringify({ item_ids: itemIds }),
+    })
+
   const listVoiceSegments = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
 
@@ -448,6 +454,7 @@ export const useVideoApi = () => {
     deleteShot,
     reorderShot,
     setShotCharacters,
+    setShotItems,
     listVoiceSegments,
     appendVoiceSegment,
     insertVoiceSegment,

@@ -366,6 +366,7 @@ export interface StoryboardShot {
   error_message?: string  // 生成失败原因
   scene_anchor_id?: number
   character_ids?: number[]
+  item_ids?: number[]
   sfx_url?: string      // 音效文件URL
   sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe

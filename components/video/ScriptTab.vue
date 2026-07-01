@@ -473,6 +473,54 @@ function removeCharFromShot(shot: StoryboardShot, charId: number) {
   handleSetShotCharacters(shot, (shot.character_ids || []).filter(id => id !== charId))
 }
 
+// ── 物品绑定 ──
+const itemApi = useItemApi()
+const novelItems = ref<any[]>([])
+
+watch(video, async (v) => {
+  if (v?.novel_id && novelItems.value.length === 0) {
+    try {
+      const data: any = await itemApi.listItems(v.novel_id)
+      novelItems.value = data?.data?.items ?? data?.items ?? []
+    } catch {}
+  }
+}, { immediate: true })
+
+const itemById = computed(() => {
+  const m = new Map<number, any>()
+  for (const item of novelItems.value) m.set(item.id, item)
+  return m
+})
+
+const unassignedItemsMap = computed(() => {
+  const result = new Map<number, any[]>()
+  for (const shot of shots.value) {
+    const assigned = new Set(shot.item_ids ?? [])
+    result.set(shot.id, novelItems.value.filter(i => !assigned.has(i.id)))
+  }
+  return result
+})
+
+async function handleSetShotItems(shot: StoryboardShot, itemIds: number[]) {
+  try {
+    await videoApi.setShotItems(props.videoId, shot.id, itemIds)
+    scheduleRefresh()
+  } catch (e: any) {
+    toast.error('物品绑定失败：' + (e.message || ''))
+  }
+}
+
+function addItemToShot(shot: StoryboardShot, event: Event) {
+  const id = Number((event.target as HTMLSelectElement).value)
+  if (!id) return
+  ;(event.target as HTMLSelectElement).value = ''
+  handleSetShotItems(shot, [...(shot.item_ids || []), id])
+}
+
+function removeItemFromShot(shot: StoryboardShot, itemId: number) {
+  handleSetShotItems(shot, (shot.item_ids || []).filter(id => id !== itemId))
+}
+
 async function handleInsertShot(afterShotNo: number) {
   insertingShotLoading.value = true
   try {
@@ -866,6 +914,27 @@ defineExpose({ handleReviewStoryboard })
                   :key="c.id"
                   :value="c.id"
                 >{{ c.name }}</option>
+              </select>
+            </div>
+            <!-- Item binding row -->
+            <div v-if="novelItems.length > 0 || (shot.item_ids?.length ?? 0) > 0" class="mt-1 flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-400 flex-shrink-0">📦 物品</span>
+              <template v-for="itemId in (shot.item_ids || [])" :key="itemId">
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                  <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                  </svg>
+                  {{ itemById.get(itemId)?.name || itemId }}
+                  <button class="hover:text-red-400 ml-0.5 leading-none text-amber-400" @click="removeItemFromShot(shot, itemId)">×</button>
+                </span>
+              </template>
+              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addItemToShot(shot, $event)">
+                <option value="">+ 绑定物品</option>
+                <option
+                  v-for="item in (unassignedItemsMap.get(shot.id) ?? [])"
+                  :key="item.id"
+                  :value="item.id"
+                >{{ item.name }}</option>
               </select>
             </div>
               </div>
