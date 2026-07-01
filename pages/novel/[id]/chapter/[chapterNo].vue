@@ -1619,7 +1619,7 @@ async function handleExtractMinorChars() {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, {
       method: 'POST',
-      body: characterUserPrompt.value ? { user_prompt: characterUserPrompt.value } : undefined,
+      body: characterUserPrompt.value ? JSON.stringify({ user_prompt: characterUserPrompt.value }) : undefined,
     })
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) {
@@ -1651,7 +1651,7 @@ async function handleExtractChapterItems() {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, {
       method: 'POST',
-      body: itemUserPrompt.value ? { user_prompt: itemUserPrompt.value } : undefined,
+      body: itemUserPrompt.value ? JSON.stringify({ user_prompt: itemUserPrompt.value }) : undefined,
     })
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (taskId) {
@@ -1705,7 +1705,7 @@ async function handleExtractChapterAnchors() {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, {
       method: 'POST',
-      body: sceneAnchorUserPrompt.value ? { user_prompt: sceneAnchorUserPrompt.value } : undefined,
+      body: sceneAnchorUserPrompt.value ? JSON.stringify({ user_prompt: sceneAnchorUserPrompt.value }) : undefined,
     })
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) {
