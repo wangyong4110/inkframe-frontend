@@ -27,6 +27,7 @@ const taskStore = useTaskStore()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const characterApi = useCharacterApi()
+const itemApi = useItemApi()
 
 const saving = ref(false)
 const isSaving = ref(false)
@@ -38,7 +39,7 @@ const regenPrompt = ref('')
 const regenerating = ref(false)
 
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
-type PageMode = 'outline' | 'write' | 'character' | 'scenes' | 'script'
+type PageMode = 'outline' | 'write' | 'character' | 'items' | 'scenes' | 'script'
 const pageMode = ref<PageMode>('outline')
 
 function pageModeClass(mode: PageMode) {
@@ -254,7 +255,9 @@ onMounted(async () => {
   initAiParamsFromNovel(novel.value)
   // Restore tab from URL query
   const tabParam = route.query.tab as string | undefined
-  if (tabParam === 'script') {
+  if (tabParam === 'items') {
+    switchToItems()
+  } else if (tabParam === 'script') {
     await switchToScript()
   } else if (tabParam === 'character') {
     switchToCharacter()
@@ -1197,6 +1200,10 @@ const parsedReaderExpectations = computed<string[]>(() => {
 
 function switchToCharacter() {
   pageMode.value = 'character'
+}
+
+function switchToItems() {
+  pageMode.value = 'items'
   if (chapterItems.value.length === 0) fetchChapterItems()
 }
 
@@ -1428,13 +1435,62 @@ const loadingItems = ref(false)
 async function fetchChapterItems() {
   loadingItems.value = true
   try {
-    const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/items?chapter_no=${chapterNo}`)
-    chapterItems.value = Array.isArray(data) ? data : (data?.items ?? [])
+    const data: any = await itemApi.listEffectiveItems(novelId, chapterNo)
+    chapterItems.value = Array.isArray(data?.data) ? data.data : (data?.items ?? [])
   } catch {
     chapterItems.value = []
   } finally {
     loadingItems.value = false
+  }
+}
+
+// ── 物品手动绑定 ──────────────────────────────────────────────────────────────
+const showBindItemModal = ref(false)
+const bindingItemId = ref<number | null>(null)
+const unbindingItemId = ref<number | null>(null)
+const novelItems = ref<any[]>([])
+const loadingNovelItems = ref(false)
+
+const unboundItems = computed(() => {
+  const boundIds = new Set(chapterItems.value.map((i: any) => i.id))
+  return novelItems.value.filter((i: any) => !boundIds.has(i.id))
+})
+
+async function fetchNovelItems() {
+  if (novelItems.value.length > 0) return
+  loadingNovelItems.value = true
+  try {
+    const data: any = await itemApi.listItems(novelId)
+    novelItems.value = data?.data?.items ?? data?.items ?? []
+  } catch {
+    novelItems.value = []
+  } finally {
+    loadingNovelItems.value = false
+  }
+}
+
+async function handleBindItem(itemId: number) {
+  bindingItemId.value = itemId
+  try {
+    await itemApi.upsertChapterItem(novelId, chapterNo, itemId, {})
+    await fetchChapterItems()
+    showBindItemModal.value = false
+  } catch (e: any) {
+    toast.error('绑定失败：' + (e.message || ''))
+  } finally {
+    bindingItemId.value = null
+  }
+}
+
+async function handleUnbindItem(itemId: number) {
+  unbindingItemId.value = itemId
+  try {
+    await itemApi.deleteChapterItem(novelId, chapterNo, itemId)
+    await fetchChapterItems()
+  } catch (e: any) {
+    toast.error('解绑失败：' + (e.message || ''))
+  } finally {
+    unbindingItemId.value = null
   }
 }
 
@@ -1554,6 +1610,7 @@ const extractingChapterSkills = ref(false)
 const extractingChapterAnchors = ref(false)
 const sceneAnchorUserPrompt = ref('')
 const characterUserPrompt = ref('')
+const itemUserPrompt = ref('')
 
 async function handleExtractMinorChars() {
   if (!chapter.value || extractingMinorChars.value) return
@@ -1594,7 +1651,7 @@ async function handleExtractChapterItems() {
     const { request } = useApi()
     const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, {
       method: 'POST',
-      body: characterUserPrompt.value ? { user_prompt: characterUserPrompt.value } : undefined,
+      body: itemUserPrompt.value ? { user_prompt: itemUserPrompt.value } : undefined,
     })
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (taskId) {
@@ -1610,7 +1667,12 @@ async function handleExtractChapterItems() {
         }
       })
     } else {
-      toast.success('物品提取完成')
+      const count: number = data?.data?.count ?? data?.count ?? 0
+      if (count > 0) {
+        toast.success(`物品提取完成，新增 ${count} 个`)
+      } else {
+        toast.info('物品提取完成，本章未发现新物品')
+      }
       fetchChapterItems()
       extractingChapterItems.value = false
     }
@@ -1994,6 +2056,7 @@ onUnmounted(() => {
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('items')" @click="switchToItems">物品</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">视频</button>
         </div>
@@ -2612,14 +2675,23 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Items -->
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-8">
+          </div>
+        </div>
+
+        <!-- ─ 物品模式 ─ -->
+        <div v-else-if="pageMode === 'items'" class="h-full overflow-auto">
+          <div class="max-w-2xl mx-auto px-8 py-10 space-y-8">
+            <div>
               <div class="flex items-center justify-between mb-4">
                 <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章物品</h4>
-                <button class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" @click="fetchChapterItems">
+                <button
+                  class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+                  @click="fetchNovelItems(); showBindItemModal = true"
+                >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                   </svg>
+                  手动绑定
                 </button>
               </div>
               <div v-if="loadingItems" class="flex justify-center py-8 text-gray-400">
@@ -2627,25 +2699,46 @@ onUnmounted(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
               </div>
-              <div v-else-if="chapterItems.length === 0" class="text-center py-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+              <div v-else-if="chapterItems.length === 0" class="text-center py-12 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                <svg class="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                </svg>
                 <p class="text-xs text-gray-400 dark:text-gray-500">暂无物品记录</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">点击右侧「提取物品」自动识别，或「手动绑定」从物品库添加</p>
               </div>
-              <div v-else class="grid gap-2">
+              <!-- 网格卡片 -->
+              <div v-else class="grid grid-cols-3 gap-2">
                 <div
                   v-for="item in chapterItems"
                   :key="item.id"
-                  class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-amber-400 dark:hover:border-amber-500 transition-colors cursor-pointer overflow-hidden"
                   @click="router.push(`/item/${item.id}?novelId=${novelId}`)"
                 >
-                  <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <!-- 图片区 -->
+                  <div class="relative w-full aspect-[2/1] bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden">
                     <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
-                    <svg v-else class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                    </svg>
+                    <span v-else class="text-2xl font-bold text-amber-200 dark:text-amber-700 select-none">{{ item.name.charAt(0) }}</span>
+                    <!-- 解绑按钮 -->
+                    <button
+                      class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-red-500/80 transition-colors opacity-0 group-hover:opacity-100"
+                      title="解除绑定"
+                      :disabled="unbindingItemId === item.id"
+                      @click.stop="handleUnbindItem(item.id)"
+                    >
+                      <svg v-if="unbindingItemId === item.id" class="w-2.5 h-2.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                      <svg v-else class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.name }}</p>
-                    <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ item.description }}</p>
+                  <!-- 名称 + 状态 -->
+                  <div class="px-2 py-1.5">
+                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ item.name }}</p>
+                    <p class="text-[10px] text-amber-500 dark:text-amber-400 truncate text-center leading-tight">
+                      {{ item.effective_location || item.description || '本章物品' }}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2796,6 +2889,7 @@ onUnmounted(() => {
                 pageMode === 'outline' ? '大纲' :
                 pageMode === 'write' ? '写作' :
                 pageMode === 'character' ? '角色' :
+                pageMode === 'items' ? '物品' :
                 pageMode === 'scenes' ? '场景' :
                 videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
@@ -3495,6 +3589,23 @@ onUnmounted(() => {
                   <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                   {{ extractingMinorChars ? '分析中...' : '角色分析' }}
                 </button>
+              </div>
+
+            </div>
+          </template>
+
+          <!-- ── 物品 AI ── -->
+          <template v-else-if="pageMode === 'items'">
+            <div class="p-4 space-y-4">
+              <!-- AI 本章提取 -->
+              <div class="space-y-2">
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
+                <textarea
+                  v-model="itemUserPrompt"
+                  placeholder="补充提示（可选）：如「重点关注武器装备」、「忽略普通道具」…"
+                  rows="2"
+                  class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500 dark:focus:ring-amber-400"
+                />
                 <button
                   :disabled="extractingChapterItems || !chapter?.content"
                   class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors disabled:opacity-50"
@@ -3502,10 +3613,9 @@ onUnmounted(() => {
                 >
                   <svg v-if="extractingChapterItems" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  {{ extractingChapterItems ? '提取中...' : '提取物品' }}
+                  {{ extractingChapterItems ? '提取中...' : '物品提取' }}
                 </button>
               </div>
-
             </div>
           </template>
 
@@ -4129,6 +4239,57 @@ onUnmounted(() => {
               <p class="text-xs text-gray-400 dark:text-gray-500">{{ { protagonist: '主角', antagonist: '反派', supporting: '配角', minor: '次要角色' }[char.role] || char.role }}</p>
             </div>
             <svg v-if="bindingCharId === char.id" class="w-4 h-4 animate-spin text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <svg v-else class="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手动绑定物品弹窗 -->
+  <div v-if="showBindItemModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showBindItemModal = false" />
+    <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">绑定物品到本章</h3>
+        <button class="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" @click="showBindItemModal = false">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1 p-4">
+        <div v-if="loadingNovelItems" class="flex items-center justify-center py-8">
+          <svg class="w-5 h-5 animate-spin text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </div>
+        <p v-else-if="unboundItems.length === 0" class="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
+          所有物品已绑定到本章
+        </p>
+        <div v-else class="space-y-2">
+          <button
+            v-for="item in unboundItems"
+            :key="item.id"
+            class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 dark:hover:border-amber-600 transition-colors text-left disabled:opacity-50"
+            :disabled="bindingItemId === item.id"
+            @click="handleBindItem(item.id)"
+          >
+            <div class="w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
+              <svg v-else class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.name }}</p>
+              <p v-if="item.description" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ item.description }}</p>
+            </div>
+            <svg v-if="bindingItemId === item.id" class="w-4 h-4 animate-spin text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
             </svg>
             <svg v-else class="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
