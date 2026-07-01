@@ -1,10 +1,55 @@
 <script setup lang="ts">
+import { useDraggable } from '@vueuse/core'
 import type { UserFeedback } from '~/composables/useFeedbackApi'
 
 const authStore = useAuthStore()
 const toast = useToast()
 const feedbackApi = useFeedbackApi()
 const { uploadImage } = useImageUpload()
+
+// ── Draggable button ──
+const btnRef = ref<HTMLElement | null>(null)
+const hasMoved = ref(false)
+
+// Start at bottom-right; will be updated in onMounted from localStorage
+const { x: btnX, y: btnY, isDragging } = useDraggable(btnRef, {
+  initialValue: { x: 0, y: 0 },
+  onMove() { hasMoved.value = true },
+  onEnd() {
+    if (typeof window !== 'undefined') {
+      btnX.value = Math.max(4, Math.min(btnX.value, window.innerWidth - 52))
+      btnY.value = Math.max(4, Math.min(btnY.value, window.innerHeight - 52))
+    }
+    localStorage.setItem('feedback-btn-pos', JSON.stringify({ x: btnX.value, y: btnY.value }))
+  },
+})
+
+// Apply saved or default (bottom-right) position after mount
+onMounted(() => {
+  try {
+    const raw = localStorage.getItem('feedback-btn-pos')
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (typeof p.x === 'number' && typeof p.y === 'number') {
+        btnX.value = p.x
+        btnY.value = p.y
+        return
+      }
+    }
+  } catch {}
+  btnX.value = window.innerWidth - 72
+  btnY.value = window.innerHeight - 72
+})
+
+const btnStyle = computed(() => ({
+  position: 'fixed' as const,
+  left: `${btnX.value}px`,
+  top: `${btnY.value}px`,
+  cursor: isDragging.value ? 'grabbing' : 'grab',
+}))
+
+function onBtnPointerDown() { hasMoved.value = false }
+function onBtnClick() { if (!hasMoved.value) openPanel() }
 
 const showPanel = ref(false)
 const activeTab = ref<'submit' | 'history'>('submit')
@@ -165,18 +210,24 @@ function switchTab(tab: 'submit' | 'history') {
       </div>
     </Transition>
 
-    <!-- Floating button -->
+    <!-- Floating button (draggable) -->
     <button
       v-if="authStore.isLoggedIn"
-      class="fixed bottom-6 right-6 z-50 w-12 h-12 bg-violet-600 hover:bg-violet-500 text-white rounded-full shadow-lg flex items-center justify-center transition-colors group"
+      ref="btnRef"
+      class="z-50 w-12 h-12 bg-violet-600 hover:bg-violet-500 text-white rounded-full shadow-lg flex items-center justify-center transition-colors group select-none"
+      :style="btnStyle"
       title="意见反馈"
-      @click="openPanel"
+      @pointerdown="onBtnPointerDown"
+      @click="onBtnClick"
     >
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
       </svg>
-      <span class="absolute right-14 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-gray-700">
+      <span
+        v-if="!isDragging"
+        class="absolute right-14 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-gray-700"
+      >
         意见反馈
       </span>
     </button>

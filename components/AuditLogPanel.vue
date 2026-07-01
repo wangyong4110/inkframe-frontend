@@ -172,10 +172,11 @@ watch(() => props.novelId, () => {
               {{ formatDate(log.created_at) }}
             </td>
             <td class="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-              <span class="inline-flex items-center gap-1">
-                <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs font-bold">
-                  {{ log.user_id }}
+              <span class="inline-flex items-center gap-1.5">
+                <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xs font-bold shrink-0">
+                  {{ (log.username || String(log.user_id)).charAt(0).toUpperCase() }}
                 </span>
+                <span class="text-sm">{{ log.nickname || log.username || String(log.user_id) }}</span>
               </span>
             </td>
             <td class="px-4 py-3 whitespace-nowrap">

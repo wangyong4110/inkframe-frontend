@@ -3,6 +3,8 @@ export interface AuditLog {
   created_at: string
   tenant_id: number
   user_id: number
+  username: string
+  nickname: string
   novel_id: number
   action: string
   resource_type: string
