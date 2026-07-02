@@ -781,8 +781,9 @@ defineExpose({ handleReviewStoryboard })
 
               <!-- Content -->
               <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-2 mb-1">
-                  <!-- Description inline edit (primary display) -->
+
+                <!-- Row 1: description + action buttons -->
+                <div class="flex items-start gap-2">
                   <div class="min-w-0 flex-1">
                     <div v-if="editingDescriptionId === shot.id">
                       <textarea
@@ -802,141 +803,127 @@ defineExpose({ handleReviewStoryboard })
                         <span class="text-xs text-gray-400 ml-auto">Ctrl+Enter 保存</span>
                       </div>
                     </div>
-                    <div v-else class="flex items-start gap-1.5 group cursor-pointer" @click="startEditDescription(shot)">
-                      <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5">#{{ shot.shot_no }}</span>
+                    <div v-else class="flex items-start gap-1.5 group/desc cursor-pointer" @click="startEditDescription(shot)">
+                      <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5 font-mono">#{{ shot.shot_no }}</span>
                       <p class="text-sm text-gray-900 dark:text-white leading-snug line-clamp-3 flex-1 font-mono">
                         {{ shot.description || '（无画面描述）' }}
                       </p>
-                      <button class="flex-shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-300 transition-all" title="编辑画面描述" @click.stop="startEditDescription(shot)">
+                      <button class="flex-shrink-0 p-0.5 rounded text-gray-300 dark:text-gray-600 opacity-0 group-hover/desc:opacity-100 hover:text-gray-600 dark:hover:text-gray-300 transition-all" title="编辑画面描述" @click.stop="startEditDescription(shot)">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                       </button>
                     </div>
                   </div>
+                  <!-- Action buttons (top-right, always visible) -->
+                  <div class="flex items-center gap-0.5 flex-shrink-0 -mt-0.5">
+                    <span
+                      v-if="shotKlingMode(shot) === 'pro'"
+                      class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 mr-0.5"
+                      title="此镜头将使用 Kling Pro 模式"
+                    >PRO</span>
+                    <button
+                      class="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      :title="shot.image_url ? '重新生成图片' : '生成图片'"
+                      :disabled="generatingImageShotIds.has(shot.id) || uploadingShotId === shot.id"
+                      @click="handleGenerateShotImage(shot)"
+                    >
+                      <svg v-if="generatingImageShotIds.has(shot.id)" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </button>
+                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="编辑" @click="startEdit(shot)">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </button>
+                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="复制此镜头" @click="handleCopyShot(shot)">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    </button>
+                    <button class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="删除此镜头" @click="handleDeleteShot(shot)">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
                 </div>
 
-                <!-- Metadata tags -->
-                <div class="flex flex-wrap gap-1.5 mt-1">
+                <!-- Row 2: metadata tags -->
+                <div class="flex flex-wrap gap-1 mt-1.5">
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ SHOT_SIZE_LABEL[shot.shot_size] || shot.shot_size }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ CAMERA_ANGLE_LABEL[shot.camera_angle] || shot.camera_angle }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ CAMERA_TYPE_LABEL[shot.camera_type] || shot.camera_type }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ shot.duration }}s</span>
-                  <span v-if="(shot as any).emotional_tone" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                    {{ (shot as any).emotional_tone }}
-              </span>
-              <span v-if="shot.transition && shot.transition !== 'cut'" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                → {{ TRANSITION_LABEL[shot.transition] || shot.transition }}
-              </span>
-              <span
-                v-for="tag in parseSfxTags(shot.sfx_tags)"
-                :key="tag"
-                class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
-                title="音效标签"
-              >
-                <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M6.343 17.657a8 8 0 010-11.314" />
-                </svg>
-                {{ tag }}
-              </span>
-            </div>
-            <!-- Failed status: error detail + retry button -->
-            <div v-if="shot.status === 'failed' && shot.error_message" class="mt-2">
-              <p class="text-xs text-red-500 mt-1 line-clamp-2" :title="shot.error_message">
-                {{ shot.error_message }}
-              </p>
-            </div>
+                  <span v-if="(shot as any).emotional_tone" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">{{ (shot as any).emotional_tone }}</span>
+                  <span v-if="shot.transition && shot.transition !== 'cut'" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">→ {{ TRANSITION_LABEL[shot.transition] || shot.transition }}</span>
+                  <span
+                    v-for="tag in parseSfxTags(shot.sfx_tags)"
+                    :key="tag"
+                    class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"
+                    title="音效标签"
+                  >
+                    <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M6.343 17.657a8 8 0 010-11.314" /></svg>
+                    {{ tag }}
+                  </span>
+                </div>
 
-            <!-- Scene anchor row -->
-            <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 flex-wrap">
-              <span class="text-xs text-gray-400 flex-shrink-0">📍 场景</span>
-              <select
-                :value="shot.scene_anchor_id || ''"
-                class="input text-xs py-0.5 h-6 flex-1 min-w-0 max-w-[180px]"
-                @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
-              >
-                <option value="">不绑定</option>
-                <option v-for="anchor in dropdownAnchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
-              </select>
-              <!-- Action buttons -->
-              <div class="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                <span
-                  v-if="shotKlingMode(shot) === 'pro'"
-                  class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 mr-1"
-                  title="此镜头将使用 Kling Pro 模式"
-                >PRO</span>
-                <button
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  :title="shot.image_url ? '重新生成图片' : '生成图片'"
-                  :disabled="generatingImageShotIds.has(shot.id) || uploadingShotId === shot.id"
-                  @click="handleGenerateShotImage(shot)"
-                >
-                  <svg v-if="generatingImageShotIds.has(shot.id)" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                </button>
-                <button class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="编辑" @click="startEdit(shot)">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                </button>
-                <button class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="复制此镜头" @click="handleCopyShot(shot)">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                </button>
-                <button class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="删除此镜头" @click="handleDeleteShot(shot)">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
-            </div>
-            <!-- Character binding row -->
-            <div class="mt-1 flex items-center gap-2 flex-wrap">
-              <span class="text-xs text-gray-400 flex-shrink-0">👤 角色</span>
-              <template v-for="charId in (shot.character_ids || [])" :key="charId">
-                <span
-                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
-                  :class="characterById.get(charId)?.default_look?.three_view_sheet
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                    : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'"
-                  :title="characterById.get(charId)?.default_look?.three_view_sheet ? '' : '该角色缺少三视图，生成图片时将不包含角色形象'"
-                >
-                  <img
-                    v-if="characterById.get(charId)?.default_look?.portrait"
-                    :src="characterById.get(charId)!.default_look!.portrait"
-                    loading="lazy"
-                    class="w-3 h-3 rounded-full object-cover"
-                  />
-                  <svg v-else-if="!characterById.get(charId)?.default_look?.three_view_sheet" class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                  </svg>
-                  {{ characterById.get(charId)?.name || charId }}
-                  <button class="hover:text-red-400 ml-0.5 leading-none" :class="characterById.get(charId)?.default_look?.three_view_sheet ? 'text-blue-400' : 'text-orange-400'" @click="removeCharFromShot(shot, charId)">×</button>
-                </span>
-              </template>
-              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addCharToShot(shot, $event)">
-                <option value="">+ 绑定角色</option>
-                <option
-                  v-for="c in (unassignedCharsMap.get(shot.id) ?? [])"
-                  :key="c.id"
-                  :value="c.id"
-                >{{ c.name }}</option>
-              </select>
-            </div>
-            <!-- Item binding row -->
-            <div v-if="novelItems.length > 0 || (shot.item_ids?.length ?? 0) > 0" class="mt-1 flex items-center gap-2 flex-wrap">
-              <span class="text-xs text-gray-400 flex-shrink-0">📦 物品</span>
-              <template v-for="itemId in (shot.item_ids || [])" :key="itemId">
-                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
-                  <svg class="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                  </svg>
-                  {{ itemById.get(itemId)?.name || itemId }}
-                  <button class="hover:text-red-400 ml-0.5 leading-none text-amber-400" @click="removeItemFromShot(shot, itemId)">×</button>
-                </span>
-              </template>
-              <select class="input text-xs py-0.5 h-6 max-w-[140px]" @change="addItemToShot(shot, $event)">
-                <option value="">+ 绑定物品</option>
-                <option
-                  v-for="item in (unassignedItemsMap.get(shot.id) ?? [])"
-                  :key="item.id"
-                  :value="item.id"
-                >{{ item.name }}</option>
-              </select>
-            </div>
+                <!-- Error message -->
+                <p v-if="shot.status === 'failed' && shot.error_message" class="text-xs text-red-500 mt-1.5 line-clamp-2" :title="shot.error_message">{{ shot.error_message }}</p>
+
+                <!-- Row 3: 场景 / 角色 / 物品 — unified binding strip -->
+                <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-x-2 gap-y-1 flex-wrap">
+
+                  <!-- 📍 场景 -->
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <span class="text-[10px] text-gray-400">📍</span>
+                    <select
+                      :value="shot.scene_anchor_id || ''"
+                      class="input text-xs py-0.5 h-6 max-w-[120px]"
+                      @change="handleSetShotAnchor(shot, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+                    >
+                      <option value="">不绑定场景</option>
+                      <option v-for="anchor in dropdownAnchors" :key="anchor.id" :value="anchor.id">{{ anchor.name }}</option>
+                    </select>
+                  </div>
+
+                  <!-- divider -->
+                  <div class="w-px h-3.5 bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
+
+                  <!-- 👤 角色 -->
+                  <div class="flex items-center gap-1 flex-wrap flex-shrink-0">
+                    <span class="text-[10px] text-gray-400">👤</span>
+                    <template v-for="charId in (shot.character_ids || [])" :key="charId">
+                      <span
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                        :class="characterById.get(charId)?.default_look?.three_view_sheet
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                          : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'"
+                        :title="characterById.get(charId)?.default_look?.three_view_sheet ? '' : '该角色缺少三视图，生成图片时将不包含角色形象'"
+                      >
+                        <img v-if="characterById.get(charId)?.default_look?.portrait" :src="characterById.get(charId)!.default_look!.portrait" loading="lazy" class="w-3 h-3 rounded-full object-cover" />
+                        <svg v-else-if="!characterById.get(charId)?.default_look?.three_view_sheet" class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                        {{ characterById.get(charId)?.name || charId }}
+                        <button class="hover:text-red-400 ml-0.5 leading-none" :class="characterById.get(charId)?.default_look?.three_view_sheet ? 'text-blue-400' : 'text-orange-400'" @click="removeCharFromShot(shot, charId)">×</button>
+                      </span>
+                    </template>
+                    <select class="input text-xs py-0.5 h-6 max-w-[90px]" @change="addCharToShot(shot, $event)">
+                      <option value="">+ 绑定角色</option>
+                      <option v-for="c in (unassignedCharsMap.get(shot.id) ?? [])" :key="c.id" :value="c.id">{{ c.name }}</option>
+                    </select>
+                  </div>
+
+                  <!-- 📦 物品（仅在小说有物品时显示） -->
+                  <template v-if="novelItems.length > 0 || (shot.item_ids?.length ?? 0) > 0">
+                    <div class="w-px h-3.5 bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
+                    <div class="flex items-center gap-1 flex-wrap flex-shrink-0">
+                      <span class="text-[10px] text-gray-400">📦</span>
+                      <template v-for="itemId in (shot.item_ids || [])" :key="itemId">
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                          {{ itemById.get(itemId)?.name || itemId }}
+                          <button class="hover:text-red-400 ml-0.5 leading-none text-amber-400" @click="removeItemFromShot(shot, itemId)">×</button>
+                        </span>
+                      </template>
+                      <select class="input text-xs py-0.5 h-6 max-w-[90px]" @change="addItemToShot(shot, $event)">
+                        <option value="">+ 绑定物品</option>
+                        <option v-for="item in (unassignedItemsMap.get(shot.id) ?? [])" :key="item.id" :value="item.id">{{ item.name }}</option>
+                      </select>
+                    </div>
+                  </template>
+
+                </div>
               </div>
             </div>
           </div>
