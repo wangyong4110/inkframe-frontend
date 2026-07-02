@@ -507,8 +507,38 @@ async function handleTestProvider(id: number) {
     const res = await apiTestProvider(id)
     const d = (res as any).data
     d?.status === 'ok' ? toast.success('连接测试成功 ✓') : toast.error('连接失败：' + (d?.error || ''))
+    // 测试完成后刷新 provider 列表以更新健康状态
+    await loadProviders()
   } catch (e: any) { toast.error(e.message || '测试失败') }
   finally { testingId.value = null }
+}
+
+// ── 健康状态辅助函数 ────────────────────────────────────────────────────────
+function healthDotClass(status?: string): string {
+  switch (status) {
+    case 'ok':       return 'bg-green-400'
+    case 'degraded': return 'bg-yellow-400'
+    case 'down':     return 'bg-red-500'
+    default:         return 'bg-gray-300 dark:bg-gray-600'
+  }
+}
+function healthLabel(status?: string): string {
+  switch (status) {
+    case 'ok':       return '正常'
+    case 'degraded': return '降级'
+    case 'down':     return '故障'
+    default:         return '未检测'
+  }
+}
+function relativeTime(ts?: string): string {
+  if (!ts) return '—'
+  const diff = Date.now() - new Date(ts).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return '刚刚'
+  if (mins < 60) return `${mins} 分钟前`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.floor(hours / 24)} 天前`
 }
 function toggleReveal(id: number) {
   const s = new Set(hiddenKeys.value); s.has(id) ? s.delete(id) : s.add(id); hiddenKeys.value = s
@@ -1168,10 +1198,18 @@ function selectTaskModel(m: AIModel) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ── lifecycle ────────────────────────────────────────────────────────────────
+let healthRefreshTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   loadProviderTemplates()
   loadProviders()
   if (activeTab.value === 'mcp') loadMcpTools()
+  // 每 10 分钟自动刷新 provider 列表，同步后端健康检查结果
+  healthRefreshTimer = setInterval(loadProviders, 10 * 60 * 1000)
+})
+
+onUnmounted(() => {
+  if (healthRefreshTimer) clearInterval(healthRefreshTimer)
 })
 
 watch(activeTab, (tab) => {
@@ -1307,6 +1345,9 @@ watch(activeTab, (tab) => {
                   <span class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                     {{ providerTemplateName(group.canonical.name) }}
                   </span>
+                  <!-- 健康状态指示点 -->
+                  <span :class="['w-1.5 h-1.5 rounded-full shrink-0', healthDotClass(group.canonical.health_check)]"
+                        :title="`健康状态：${healthLabel(group.canonical.health_check)}`"></span>
                 </div>
                 <!-- Type summary badges -->
                 <div class="mt-0.5 flex flex-wrap gap-1">
@@ -1355,12 +1396,31 @@ watch(activeTab, (tab) => {
                   </h2>
                   <span v-if="selectedGroup.canonical.tenant_id === 0"
                         class="px-1.5 py-0.5 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700">系统</span>
+                  <!-- 健康状态徽章 -->
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
+                        :class="{
+                          'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400': selectedGroup.canonical.health_check === 'ok',
+                          'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400': selectedGroup.canonical.health_check === 'degraded',
+                          'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400': selectedGroup.canonical.health_check === 'down',
+                          'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400': !selectedGroup.canonical.health_check || selectedGroup.canonical.health_check === 'unconfigured',
+                        }">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="healthDotClass(selectedGroup.canonical.health_check)"></span>
+                    {{ healthLabel(selectedGroup.canonical.health_check) }}
+                  </span>
                 </div>
-                <div class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
-                  </svg>
-                  <code class="truncate">{{ selectedGroup.canonical.api_endpoint || '—' }}</code>
+                <div class="mt-0.5 flex items-center gap-3 text-xs text-gray-400">
+                  <div class="flex items-center gap-1.5">
+                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
+                    </svg>
+                    <code class="truncate">{{ selectedGroup.canonical.api_endpoint || '—' }}</code>
+                  </div>
+                  <div v-if="selectedGroup.canonical.last_checked" class="flex items-center gap-1 shrink-0">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span>{{ relativeTime(selectedGroup.canonical.last_checked) }}</span>
+                  </div>
                 </div>
               </div>
               <!-- Actions -->

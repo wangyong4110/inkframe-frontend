@@ -525,7 +525,8 @@ export interface ModelProvider {
   concurrency?: number          // 最大并发调用数，0 或未设置表示不限制
   rate_limit?: number           // 请求/分钟限速，0 或未设置表示不限制
   has_key?: boolean
-  health_status?: 'healthy' | 'degraded' | 'down'
+  health_check?: 'ok' | 'degraded' | 'down'   // 健康状态：ok=正常, degraded=降级, down=故障
+  last_checked?: string                         // 最后检查时间（ISO 8601）
   group_name?: string           // 同源分组标识（如 "kling"）
   is_group_canonical?: boolean  // 是否为该组的 UI 代表
   created_at?: string
