@@ -105,32 +105,36 @@ export type NovelStatus = 'planning' | 'writing' | 'paused' | 'completed' | 'arc
 export interface Chapter {
   id: number
   novel_id: number
-  uuid: string
   chapter_no: number
   title: string
   content?: string
   summary?: string
-  chapter_hook?: string   // 章末钩子正文（供下一章生成使用）
-  hook_type?: string      // 章末钩子类型（cliffhanger 等）
   word_count: number
-  outline?: string
-  scene_outline?: string   // JSON: [{scene_no, pov, goals, beats, tension}]
-  plot_points?: PlotPoint[]
+  content_version?: number
+
   /** 内容状态：draft=草稿 | generating=生成中 | completed=已完成 */
   status: ChapterStatus
+  /** 质量评级：ok=正常，low=需改善 */
+  quality_status?: 'ok' | 'low'
   /** 是否已发布到作品集（与内容状态独立） */
   is_published?: boolean
   published_at?: string
-  quality_score?: number
-  quality_status?: 'ok' | 'low'  // 质量评级：ok=正常，low=需改善
-  quality_issues?: string          // 质量问题 JSON 摘要
-  /** 连贯性检查发现 high/critical 问题时为 true，提示用户审查 */
+  /** 连贯性检查发现 high/critical 问题时为 true */
   continuity_blocked?: boolean
+
+  // 叙事元数据
+  outline?: string
+  tension_level?: number
+  emotional_tone?: string
+  chapter_hook?: string
   /** 章末读者悬念（JSON 字符串数组），供下章生成时作为首要约束 */
   reader_expectations?: string
   /** 章末精确状态快照（结构化 JSON），供下章生成时作为连续性锚点 */
   chapter_end_state?: string
-  like_count?: number
+
+  /** 场景分镜大纲 JSON: [{scene_no, pov, goals, beats, tension}] */
+  scene_outline?: string
+
   created_at: string
   updated_at: string
 }
