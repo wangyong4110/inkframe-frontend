@@ -549,7 +549,6 @@ const filteredGroupModels = computed(() => {
       if (modelFilter.value.status === 'disabled' && m.is_active) return false
       return true
     })
-    .sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0))
 })
 
 function selectGroup(key: number) {
@@ -557,7 +556,7 @@ function selectGroup(key: number) {
   modelFilter.value = { type: '', status: 'all' }
 }
 function modelTypeSummary(groupKey: number): Record<string, number> {
-  const models = (providerModels.value[groupKey] ?? []).filter(m => m.is_active)
+  const models = providerModels.value[groupKey] ?? []
   const order = ['llm', 'embedding', 'image', 'img2img', 'video', 'voice', 'sfx', 'music']
   const raw: Record<string, number> = {}
   for (const m of models) { const t = m.type || 'llm'; raw[t] = (raw[t] || 0) + 1 }
