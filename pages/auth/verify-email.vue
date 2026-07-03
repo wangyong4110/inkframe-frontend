@@ -29,20 +29,7 @@ onMounted(async () => {
   <div class="min-h-screen bg-gray-950 text-white flex items-center justify-center py-12 px-4">
     <div class="max-w-md w-full text-center space-y-6">
       <NuxtLink to="/" class="inline-flex items-center gap-3 justify-center">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="36" height="36" rx="8" fill="url(#vLogoGrad)"/>
-          <rect x="7" y="10" width="14" height="2" rx="1" fill="white" opacity="0.9"/>
-          <rect x="7" y="14" width="11" height="2" rx="1" fill="white" opacity="0.7"/>
-          <rect x="7" y="18" width="13" height="2" rx="1" fill="white" opacity="0.7"/>
-          <rect x="7" y="22" width="9"  height="2" rx="1" fill="white" opacity="0.5"/>
-          <path d="M23 18L29 22V14L23 18Z" fill="white"/>
-          <defs>
-            <linearGradient id="vLogoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#6366f1"/>
-              <stop offset="100%" stop-color="#8b5cf6"/>
-            </linearGradient>
-          </defs>
-        </svg>
+        <AppLogo :size="36" />
         <span class="text-2xl font-bold text-white tracking-tight">简影</span>
       </NuxtLink>
 
