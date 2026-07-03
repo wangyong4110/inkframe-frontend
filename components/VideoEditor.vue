@@ -238,7 +238,11 @@ function reviewStoryboard() {
   scriptTabRef.value?.handleReviewStoryboard()
 }
 
-function generateAllImages() {
+async function generateAllImages() {
+  // VideoGenTab 使用 v-if，未切到该 tab 时组件未挂载，ref 为 null。
+  // 先切换 tab，等组件挂载后再调用。
+  activeTab.value = 'video_gen'
+  await nextTick()
   videoGenTabRef.value?.handleGenerateImages()
 }
 
