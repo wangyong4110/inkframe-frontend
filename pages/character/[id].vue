@@ -185,6 +185,8 @@ async function handleCopyLook(look: CharacterLook) {
       sort_order: look.sort_order,
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
+      three_view_sheet: look.three_view_sheet ?? '',
+      portrait: look.portrait ?? '',
     })
     toast.success('形象已复制')
     await fetchLooks()

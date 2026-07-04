@@ -217,6 +217,8 @@ export interface CreateCharacterLookForm {
   sort_order?: number
   description?: string
   visual_prompt?: string
+  three_view_sheet?: string
+  portrait?: string
 }
 
 // Worldview types
