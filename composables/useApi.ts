@@ -1,5 +1,17 @@
 import { getAuthToken } from '~/utils/auth'
 
+/** 生成 RFC-4122 v4 UUID，作为每个 HTTP 请求的唯一追踪 ID。 */
+function generateRequestID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // 兼容不支持 crypto.randomUUID 的环境
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
+}
+
 // Prevents multiple concurrent redirects to the login page
 let redirectingToLogin = false
 
@@ -98,9 +110,11 @@ export const useApi = () => {
     options: RequestInit = {}
   ): Promise<T> => {
     const url = `${apiBase}${endpoint}`
+    const reqID = generateRequestID()
 
     const buildHeaders = (token?: string | null): Record<string, string> => ({
       'Content-Type': 'application/json',
+      'X-Request-ID': reqID,
       ...(token ? { Authorization: `Bearer ${token}` } : getAuthHeader()),
       ...((options.headers as Record<string, string>) || {}),
     })
@@ -162,9 +176,11 @@ export const useApi = () => {
 
   const requestBlob = async (endpoint: string, options: RequestInit = {}): Promise<Blob> => {
     const url = `${apiBase}${endpoint}`
+    const reqID = generateRequestID()
     const buildBlobOpts = (token?: string | null): RequestInit => ({
       ...options,
       headers: {
+        'X-Request-ID': reqID,
         ...(token ? { Authorization: `Bearer ${token}` } : getAuthHeader()),
         ...((options.headers as Record<string, string>) || {}),
       },
@@ -204,9 +220,10 @@ export const useApi = () => {
     const form = new FormData()
     form.append('file', file)
     const url = `${apiBase}${endpoint}`
+    const reqID = generateRequestID()
     const buildMultipartOpts = (token?: string | null): RequestInit => ({
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : getAuthHeader(),
+      headers: { 'X-Request-ID': reqID, ...(token ? { Authorization: `Bearer ${token}` } : getAuthHeader()) },
       body: form,
     })
 
@@ -238,9 +255,10 @@ export const useApi = () => {
   // Send a pre-built FormData (supports extra fields alongside the file).
   const requestForm = async <T>(endpoint: string, form: FormData): Promise<T> => {
     const url = `${apiBase}${endpoint}`
+    const reqID = generateRequestID()
     const buildFormOpts = (token?: string | null): RequestInit => ({
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : getAuthHeader(),
+      headers: { 'X-Request-ID': reqID, ...(token ? { Authorization: `Bearer ${token}` } : getAuthHeader()) },
       body: form,
     })
 
