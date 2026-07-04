@@ -440,7 +440,11 @@ function saveShotImage(shot: StoryboardShot, newUrl: string) {
 
 function openShotLightbox(shot: StoryboardShot) {
   if (!shot.image_url) return
-  openLightbox(shot.image_url)
+  openLightbox(
+    shot.image_url,
+    (currentUrl, instruction) => editImage(currentUrl, instruction, video.value?.novel_id),
+    (newUrl) => saveShotImage(shot, newUrl),
+  )
 }
 
 async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null) {
