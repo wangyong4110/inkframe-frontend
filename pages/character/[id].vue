@@ -667,7 +667,7 @@ function getRoleLabel(role: string): string {
                 :disabled="generatingLookPrompt"
                 @click="handleGenerateLookPrompt"
               >
-                {{ generatingLookPrompt ? '生成中…' : '✨ AI 生成' }}
+                {{ generatingLookPrompt ? '生成中…' : '✨ AI 更新' }}
               </button>
             </div>
             <textarea
