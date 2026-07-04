@@ -184,6 +184,8 @@ async function handleUploadRefImage(e: Event) {
 
 
 function goBack() {
+  const from = route.query.from as string | undefined
+  if (from) { router.push(decodeURIComponent(from)); return }
   if (novelId && !isNaN(chapterNo)) {
     router.push(`/novel/${novelId}/chapter/${chapterNo}?tab=scenes`)
   } else if (novelId) {

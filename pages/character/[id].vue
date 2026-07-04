@@ -122,7 +122,9 @@ async function handleGenerateLookPrompt() {
   if (!await guardAiProvider('LLM')) return
   generatingLookPrompt.value = true
   try {
-    const res = await characterApi.generateLookPrompt(characterId, lookForm.value.description)
+    // look.description 通常为空；fallback 到角色基础描述，确保 AI 有足够输入
+    const descriptionInput = lookForm.value.description || character.value?.description || ''
+    const res = await characterApi.generateLookPrompt(characterId, descriptionInput)
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingLookPrompt.value = false; return }
     taskStore.trackTask(taskId, (task) => {

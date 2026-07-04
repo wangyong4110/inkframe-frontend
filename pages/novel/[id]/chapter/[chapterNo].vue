@@ -948,6 +948,7 @@ function getActiveCharacters(): any[] {
 const showBindCharModal = ref(false)
 const bindingCharId = ref<number | null>(null)
 const unbindingCharId = ref<number | null>(null)
+const threeViewModal = ref<{ show: boolean; url: string; charName: string }>({ show: false, url: '', charName: '' })
 
 const unboundCharacters = computed(() => {
   const boundIds = new Set(effectiveCharacters.value.map((c: any) => c.id))
@@ -2548,23 +2549,33 @@ onUnmounted(() => {
                 <div
                   v-for="char in getActiveCharacters()"
                   :key="char.id"
-                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors overflow-hidden"
                 >
-                  <!-- three-view image area -->
-                  <div class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden">
+                  <!-- image area: click to zoom three_view if available -->
+                  <div
+                    class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden"
+                    :class="getCharDisplayLook(char.id)?.three_view_sheet ? 'cursor-zoom-in' : 'cursor-default'"
+                    @click="getCharDisplayLook(char.id)?.three_view_sheet && (threeViewModal = { show: true, url: getCharDisplayLook(char.id)!.three_view_sheet!, charName: char.name })"
+                  >
                     <template v-if="getCharDisplayLook(char.id)?.three_view_sheet">
                       <img :src="getCharDisplayLook(char.id)!.three_view_sheet" class="w-full h-full object-cover" :alt="char.name" />
+                      <!-- zoom hint on hover -->
+                      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white opacity-0 group-hover:opacity-80 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                      </div>
                     </template>
                     <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
                       <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
                     </template>
-                    <span v-else class="text-2xl font-bold text-gray-300 dark:text-gray-600 select-none">{{ char.name.charAt(0) }}</span>
+                    <!-- no image: show full name -->
+                    <span v-else class="text-xs font-semibold text-gray-400 dark:text-gray-500 select-none px-2 text-center leading-snug">{{ char.name }}</span>
                     <!-- look switch arrows -->
                     <template v-if="charLooksMap[char.id]?.length > 1">
                       <button
                         class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
-                        @click="cycleCharLook(char.id, -1, $event)"
+                        @click.stop="cycleCharLook(char.id, -1, $event)"
                       >
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
@@ -2572,7 +2583,7 @@ onUnmounted(() => {
                       </button>
                       <button
                         class="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
-                        @click="cycleCharLook(char.id, 1, $event)"
+                        @click.stop="cycleCharLook(char.id, 1, $event)"
                       >
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
@@ -2600,16 +2611,50 @@ onUnmounted(() => {
                       </svg>
                     </button>
                   </div>
-                  <!-- name + look label -->
-                  <div class="px-2 py-1.5">
-                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
-                    <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
-                      {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
-                    </p>
+                  <!-- name + look label + edit button -->
+                  <div class="px-2 py-1.5 flex items-center gap-1">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
+                      <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
+                        {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
+                      </p>
+                    </div>
+                    <!-- edit button -->
+                    <button
+                      class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
+                      title="编辑角色"
+                      @click.stop="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
+            <!-- Three-view zoom modal -->
+            <Teleport to="body">
+              <div
+                v-if="threeViewModal.show"
+                class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+                @click.self="threeViewModal.show = false"
+              >
+                <div class="relative max-w-5xl w-full mx-4">
+                  <p class="text-white/90 text-sm font-semibold mb-2 text-center">{{ threeViewModal.charName }} &mdash; 三视图</p>
+                  <img :src="threeViewModal.url" class="w-full h-auto max-h-[85vh] object-contain rounded-xl shadow-2xl" :alt="threeViewModal.charName" />
+                  <button
+                    class="absolute -top-8 right-0 text-white/70 hover:text-white transition-colors"
+                    @click="threeViewModal.show = false"
+                  >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </Teleport>
+
             <!-- Minor Characters -->
             <div v-if="minorCharacters.length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-8">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">次要角色</h4>
@@ -2617,21 +2662,30 @@ onUnmounted(() => {
                 <div
                   v-for="char in minorCharacters"
                   :key="char.id"
-                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors overflow-hidden"
                 >
-                  <div class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden">
+                  <div
+                    class="relative w-full aspect-[2/1] bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center overflow-hidden"
+                    :class="getCharDisplayLook(char.id)?.three_view_sheet ? 'cursor-zoom-in' : 'cursor-default'"
+                    @click="getCharDisplayLook(char.id)?.three_view_sheet && (threeViewModal = { show: true, url: getCharDisplayLook(char.id)!.three_view_sheet!, charName: char.name })"
+                  >
                     <template v-if="getCharDisplayLook(char.id)?.three_view_sheet">
                       <img :src="getCharDisplayLook(char.id)!.three_view_sheet" class="w-full h-full object-cover" :alt="char.name" />
+                      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white opacity-0 group-hover:opacity-80 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                      </div>
                     </template>
                     <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
                       <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
                     </template>
-                    <span v-else class="text-2xl font-bold text-gray-300 dark:text-gray-600 select-none">{{ char.name.charAt(0) }}</span>
+                    <!-- no image: show full name -->
+                    <span v-else class="text-xs font-semibold text-gray-400 dark:text-gray-500 select-none px-2 text-center leading-snug">{{ char.name }}</span>
                     <template v-if="charLooksMap[char.id]?.length > 1">
                       <button
                         class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
-                        @click="cycleCharLook(char.id, -1, $event)"
+                        @click.stop="cycleCharLook(char.id, -1, $event)"
                       >
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
@@ -2639,7 +2693,7 @@ onUnmounted(() => {
                       </button>
                       <button
                         class="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
-                        @click="cycleCharLook(char.id, 1, $event)"
+                        @click.stop="cycleCharLook(char.id, 1, $event)"
                       >
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
@@ -2665,11 +2719,22 @@ onUnmounted(() => {
                       </svg>
                     </button>
                   </div>
-                  <div class="px-2 py-1.5">
-                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
-                    <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
-                      {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
-                    </p>
+                  <div class="px-2 py-1.5 flex items-center gap-1">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ char.name }}</p>
+                      <p v-if="charLooksMap[char.id]?.length > 0" class="text-[10px] text-violet-500 dark:text-violet-400 truncate text-center leading-tight">
+                        {{ getCharDisplayLook(char.id)?.label || '默认形象' }}
+                      </p>
+                    </div>
+                    <button
+                      class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
+                      title="编辑角色"
+                      @click.stop="router.push(`/character/${char.id}?from=${encodeURIComponent(route.fullPath)}`)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2711,13 +2776,24 @@ onUnmounted(() => {
                 <div
                   v-for="item in chapterItems"
                   :key="item.id"
-                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-amber-400 dark:hover:border-amber-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="router.push(`/item/${item.id}?novelId=${novelId}`)"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-amber-400 dark:hover:border-amber-500 transition-colors overflow-hidden"
                 >
                   <!-- 图片区 -->
-                  <div class="relative w-full aspect-[2/1] bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden">
-                    <img v-if="item.image_url" :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
-                    <span v-else class="text-2xl font-bold text-amber-200 dark:text-amber-700 select-none">{{ item.name.charAt(0) }}</span>
+                  <div
+                    class="relative w-full aspect-[2/1] bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden"
+                    :class="item.image_url ? 'cursor-zoom-in' : 'cursor-default'"
+                    @click="item.image_url && (threeViewModal = { show: true, url: item.image_url, charName: item.name })"
+                  >
+                    <template v-if="item.image_url">
+                      <img :src="item.image_url" class="w-full h-full object-cover" :alt="item.name" />
+                      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white opacity-0 group-hover:opacity-80 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                      </div>
+                    </template>
+                    <!-- 无图片：显示完整名称 -->
+                    <span v-else class="text-xs font-semibold text-amber-300 dark:text-amber-700 select-none px-2 text-center leading-snug">{{ item.name }}</span>
                     <!-- 解绑按钮 -->
                     <button
                       class="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-red-500/80 transition-colors opacity-0 group-hover:opacity-100"
@@ -2733,12 +2809,23 @@ onUnmounted(() => {
                       </svg>
                     </button>
                   </div>
-                  <!-- 名称 + 状态 -->
-                  <div class="px-2 py-1.5">
-                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ item.name }}</p>
-                    <p class="text-[10px] text-amber-500 dark:text-amber-400 truncate text-center leading-tight">
-                      {{ item.effective_location || item.description || '本章物品' }}
-                    </p>
+                  <!-- 名称 + 状态 + 编辑按钮 -->
+                  <div class="px-2 py-1.5 flex items-center gap-1">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ item.name }}</p>
+                      <p class="text-[10px] text-amber-500 dark:text-amber-400 truncate text-center leading-tight">
+                        {{ item.effective_location || item.description || '本章物品' }}
+                      </p>
+                    </div>
+                    <button
+                      class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                      title="编辑物品"
+                      @click.stop="router.push(`/item/${item.id}?novelId=${novelId}&from=${encodeURIComponent(route.fullPath)}`)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2771,36 +2858,54 @@ onUnmounted(() => {
                 <div
                   v-for="anchor in chapterAnchors"
                   :key="anchor.id"
-                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors cursor-pointer overflow-hidden"
-                  @click="router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}&chapterNo=${chapterNo}`)"
+                  class="group relative flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-violet-400 dark:hover:border-violet-500 transition-colors overflow-hidden"
                 >
                   <!-- 参考图 -->
-                  <div class="aspect-video bg-gray-100 dark:bg-gray-700 flex-shrink-0">
-                    <img v-if="anchor.ref_image_url" :src="anchor.ref_image_url" class="w-full h-full object-cover" alt="" />
-                    <div v-else class="w-full h-full flex items-center justify-center">
-                      <svg class="w-6 h-6 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                      </svg>
-                    </div>
-                  </div>
-                  <!-- 名称 -->
-                  <div class="px-2 py-1.5">
-                    <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{{ anchor.name }}</p>
-                    <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
-                  </div>
-                  <!-- 锁定标记 -->
-                  <span v-if="anchor.ref_image_url" class="absolute top-1 left-1 text-[10px] bg-amber-500/90 text-white rounded px-1">已锁定</span>
-                  <!-- 解绑按钮 -->
-                  <button
-                    class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500/90 transition-colors opacity-0 group-hover:opacity-100"
-                    title="解除绑定"
-                    :disabled="unbindingAnchorId === anchor.id"
-                    @click.stop="handleUnbindAnchor(anchor.id)"
+                  <div
+                    class="relative aspect-video bg-gray-100 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center overflow-hidden"
+                    :class="anchor.ref_image_url ? 'cursor-zoom-in' : 'cursor-default'"
+                    @click="anchor.ref_image_url && (threeViewModal = { show: true, url: anchor.ref_image_url, charName: anchor.name })"
                   >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                  </button>
+                    <template v-if="anchor.ref_image_url">
+                      <img :src="anchor.ref_image_url" class="w-full h-full object-cover" :alt="anchor.name" />
+                      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white opacity-0 group-hover:opacity-80 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                      </div>
+                    </template>
+                    <!-- 无图片：显示完整名称 -->
+                    <span v-else class="text-xs font-semibold text-gray-400 dark:text-gray-500 select-none px-2 text-center leading-snug">{{ anchor.name }}</span>
+                    <!-- 锁定标记 -->
+                    <span v-if="anchor.ref_image_url" class="absolute top-1 left-1 text-[10px] bg-amber-500/90 text-white rounded px-1">已锁定</span>
+                    <!-- 解绑按钮 -->
+                    <button
+                      class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-gray-900/60 text-white hover:bg-red-500/90 transition-colors opacity-0 group-hover:opacity-100"
+                      title="解除绑定"
+                      :disabled="unbindingAnchorId === anchor.id"
+                      @click.stop="handleUnbindAnchor(anchor.id)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <!-- 名称 + 类型 + 编辑按钮 -->
+                  <div class="px-2 py-1.5 flex items-center gap-1">
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{{ anchor.name }}</p>
+                      <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
+                    </div>
+                    <button
+                      class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
+                      title="编辑场景"
+                      @click.stop="router.push(`/scene-anchor/${anchor.id}?novelId=${novelId}&chapterNo=${chapterNo}&from=${encodeURIComponent(route.fullPath)}`)"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

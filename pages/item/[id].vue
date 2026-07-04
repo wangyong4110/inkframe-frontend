@@ -241,6 +241,8 @@ async function generateImage() {
 }
 
 function goBack() {
+  const from = route.query.from as string | undefined
+  if (from) { router.push(decodeURIComponent(from)); return }
   novelId ? router.push(`/novel/${novelId}?tab=items`) : router.back()
 }
 </script>

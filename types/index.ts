@@ -1188,6 +1188,14 @@ export interface ShotDeleteSuggestion {
   reason: string
 }
 
+export interface SensitiveIssue {
+  shot_no: number
+  field: 'description' | 'narration' | 'dialogue'
+  words: string[]
+  category: 'gore' | 'violence' | 'sexual' | 'political' | 'other'
+  quote: string
+}
+
 export interface StoryboardReview {
   overall_score: number
   narrative_score: number
@@ -1201,6 +1209,8 @@ export interface StoryboardReview {
   shot_feedback: ShotReviewFeedback[]
   suggested_inserts?: ShotInsertSuggestion[]
   suggested_deletes?: ShotDeleteSuggestion[]
+  has_sensitive?: boolean
+  sensitive_issues?: SensitiveIssue[]
   record_id?: number
 }
 

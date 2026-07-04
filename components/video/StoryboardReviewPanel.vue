@@ -529,6 +529,10 @@ defineExpose({ startReview, reviewing })
                 <div class="flex items-center gap-2 mb-2">
                   <span class="text-2xl font-bold" :class="scoreColor(rec.overall_score)">{{ normalizeScore(rec.overall_score).toFixed(0) }}</span>
                   <span class="text-xs text-gray-400">/ 100</span>
+                  <span v-if="rec.review?.has_sensitive" class="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                    含敏感词
+                  </span>
                   <span
                     class="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
                     :class="{
@@ -609,6 +613,43 @@ defineExpose({ startReview, reviewing })
               {{ reviewError }}
             </div>
             <template v-else-if="reviewResult">
+              <!-- 敏感内容告警块 -->
+              <div v-if="reviewResult.has_sensitive && reviewResult.sensitive_issues?.length" class="rounded-xl border border-red-400 bg-red-50 dark:bg-red-900/20 overflow-hidden">
+                <div class="px-4 py-3 bg-red-100 dark:bg-red-900/40 border-b border-red-300 dark:border-red-700 flex items-center gap-2">
+                  <svg class="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                  </svg>
+                  <span class="text-sm font-semibold text-red-700 dark:text-red-300">敏感内容告警（共 {{ reviewResult.sensitive_issues.length }} 处）</span>
+                  <span class="ml-auto text-xs text-red-500 dark:text-red-400">不计入评分·需人工审核</span>
+                </div>
+                <div class="divide-y divide-red-200 dark:divide-red-800">
+                  <div v-for="(issue, idx) in reviewResult.sensitive_issues" :key="idx" class="px-4 py-3 space-y-1.5">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span v-if="issue.shot_no > 0" class="text-xs font-medium px-2 py-0.5 rounded bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200">
+                        镜 #{{ issue.shot_no }}
+                      </span>
+                      <span class="text-xs px-2 py-0.5 rounded border font-medium"
+                        :class="{
+                          'border-red-500 text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30': issue.category === 'gore' || issue.category === 'violence',
+                          'border-pink-500 text-pink-700 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/30': issue.category === 'sexual',
+                          'border-orange-500 text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/30': issue.category === 'political',
+                          'border-gray-400 text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800': issue.category === 'other',
+                        }">
+                        {{ { gore: '血腥', violence: '暴力', sexual: '色情/性暗示', political: '政治敏感', other: '其他违规' }[issue.category] ?? issue.category }}
+                      </span>
+                      <span class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ { description: '画面描述', narration: '旁白', dialogue: '台词' }[issue.field] ?? issue.field }}
+                      </span>
+                      <span v-for="w in issue.words" :key="w" class="text-xs font-mono px-1.5 py-0.5 rounded bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200">{{ w }}</span>
+                    </div>
+                    <p v-if="issue.quote" class="text-xs text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 rounded px-2.5 py-1.5 border border-red-200 dark:border-red-700 font-mono leading-relaxed">
+                      "{{ issue.quote }}"
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 综合评分 -->
               <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                   <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">综合评分</span>
