@@ -239,11 +239,31 @@ function reviewStoryboard() {
 }
 
 async function generateAllImages() {
-  // VideoGenTab 使用 v-if，未切到该 tab 时组件未挂载，ref 为 null。
-  // 先切换 tab，等组件挂载后再调用。
-  activeTab.value = 'video_gen'
-  await nextTick()
-  videoGenTabRef.value?.handleGenerateImages()
+  const pendingShots = shots.value.filter(s =>
+    !s.image_url && s.status !== 'generating' &&
+    (s.status === 'pending' || s.status === 'failed' || s.status === 'completed')
+  )
+  if (pendingShots.length === 0) {
+    toast.error('没有需要生成图片的镜头')
+    return
+  }
+  try {
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, pendingShots.map(s => s.id))
+    if (!taskId) { toast.error('图片生成失败：未获取到任务ID'); return }
+    toast.info(`${pendingShots.length} 个镜头图片生成中…`)
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      if (task.status === 'completed') {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.success('全部镜头图片生成完成')
+      } else {
+        await videoStore.fetchStoryboard(props.videoId)
+        toast.error('部分镜头图片生成失败，请重试')
+      }
+    }, () => videoStore.fetchStoryboard(props.videoId))
+  } catch (e: any) {
+    toast.error('图片生成失败：' + (e.message || ''))
+  }
 }
 
 // Expose for parent pages (e.g. chapter page's AI panel)
