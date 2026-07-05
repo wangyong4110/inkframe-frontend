@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { StoryboardShot, Character, SceneAnchor } from '~/types'
 import { TRANSITION_OPTIONS } from '~/constants/status'
+import { ossThumb } from '~/composables/useImageCache'
 
 const SHOT_SIZE_OPTIONS = [
   { value: 'extreme_wide', label: '极远景' },
@@ -716,7 +717,7 @@ defineExpose({
                 </div>
               </template>
               <template v-else-if="shot.image_url">
-                <img :src="shot.image_url" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
+                <img :src="ossThumb(shot.image_url, 400)" loading="lazy" class="w-full h-full object-cover cursor-zoom-in" @click.stop="openLightbox(shot.image_url, (currentUrl, s) => editImage(currentUrl, s, video?.novel_id), (u) => saveShotImage(shot, u))" />
                 <button
                   v-if="uploadingShotId !== shot.id"
                   class="absolute bottom-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/thumb:opacity-100 hover:bg-black/70 transition-all z-10"

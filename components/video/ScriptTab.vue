@@ -2,6 +2,7 @@
 import type { StoryboardShot, VideoQualityTier, Character, SceneAnchor } from '~/types'
 import { QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
+import { ossThumb } from '~/composables/useImageCache'
 import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
@@ -754,7 +755,7 @@ defineExpose({ handleReviewStoryboard })
                 </div>
                 <template v-if="shot.image_url && uploadingShotId !== shot.id">
                   <img
-                    :src="shot.image_url"
+                    :src="ossThumb(shot.image_url, 400)"
                     loading="lazy"
                     class="w-full h-full object-cover cursor-zoom-in"
                     title="点击查看大图"

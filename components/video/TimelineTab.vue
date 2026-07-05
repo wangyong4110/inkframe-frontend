@@ -2,6 +2,7 @@
 import type { StoryboardShot, ShotVoiceSegment, VideoBGMSegment, ShotSFXItem } from '~/types'
 import { getAuthToken } from '~/utils/auth'
 import { TRANSITION_OPTIONS } from '~/constants/status'
+import { ossThumb } from '~/composables/useImageCache'
 
 const props = defineProps<{
   videoId: number
@@ -571,7 +572,7 @@ async function timelineToggleRecording() {
       if (shot.image_url && !_recImgCache.has(shot.id)) {
         const img = new Image()
         img.crossOrigin = 'anonymous'
-        img.src = shot.image_url
+        img.src = ossThumb(shot.image_url, 800)
         _recImgCache.set(shot.id, img)
       }
     }
@@ -756,7 +757,7 @@ watch(() => shots.value, (newShots) => {
     if (shot.image_url && !_recImgCache.has(shot.id)) {
       const img = new Image()
       img.crossOrigin = 'anonymous'
-      img.src = shot.image_url
+      img.src = ossThumb(shot.image_url, 800)
       _recImgCache.set(shot.id, img)
     }
   }
@@ -1008,7 +1009,7 @@ const publishDrawerOpen = ref(false)
               <path d="M9 5a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 17a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2z" />
             </svg>
             <div class="w-16 flex-shrink-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700" style="aspect-ratio:16/9">
-              <img v-if="shot.image_url" :src="shot.image_url" class="w-full h-full object-cover" />
+              <img v-if="shot.image_url" :src="ossThumb(shot.image_url, 400)" loading="lazy" class="w-full h-full object-cover" />
               <div v-else class="w-full h-full flex items-center justify-center">
                 <span class="text-xs text-gray-400">无图</span>
               </div>
@@ -1025,7 +1026,7 @@ const publishDrawerOpen = ref(false)
             :class="timelineSelectedShotId === shot.id ? 'ring-2 ring-inset ring-primary-500' : ''"
             @click="timelineSelectedShotId = timelineSelectedShotId === shot.id ? null : shot.id"
           >
-            <img v-if="shot.image_url" :src="shot.image_url" class="absolute inset-0 w-full h-full object-cover opacity-10 pointer-events-none" />
+            <img v-if="shot.image_url" :src="ossThumb(shot.image_url, 400)" loading="lazy" class="absolute inset-0 w-full h-full object-cover opacity-10 pointer-events-none" />
             <span class="relative text-xs text-gray-600 dark:text-gray-300 line-clamp-2 leading-snug">
               {{ shot.description || shot.narration || '—' }}
             </span>
@@ -1204,7 +1205,7 @@ const publishDrawerOpen = ref(false)
           <img
             v-if="!timelineCurrentShot?.video_url && timelineCurrentShot?.image_url"
             :key="timelineCurrentShotIndex"
-            :src="timelineCurrentShot.image_url"
+            :src="ossThumb(timelineCurrentShot.image_url, 800)"
             :style="kenBurnsStyle(timelineCurrentShot)"
             class="absolute inset-0 w-full h-full object-cover"
           />
