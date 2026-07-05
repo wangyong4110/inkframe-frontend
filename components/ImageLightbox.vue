@@ -11,12 +11,18 @@ const upscaleMethod = ref<'bicubic' | 'ai'>('bicubic')
 const showUpscaleMenu = ref(false)
 const { upscaleImage } = useImageUpscaleApi()
 
-watch(visible, (v) => {
+const textareaEl = ref<HTMLTextAreaElement | null>(null)
+
+watch(visible, async (v) => {
   if (v) {
     suggestion.value = ''
     refineError.value = ''
     upscaleError.value = ''
     showUpscaleMenu.value = false
+    if (refineCallback.value) {
+      await nextTick()
+      textareaEl.value?.focus()
+    }
   }
 })
 
@@ -115,6 +121,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             <!-- Textarea — only when refine is supported -->
             <textarea
               v-if="refineCallback"
+              ref="textareaEl"
               v-model="suggestion"
               rows="2"
               placeholder="描述修改建议，例如：将背景改为夜晚雨天，人物表情更严肃"

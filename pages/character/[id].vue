@@ -10,6 +10,7 @@ const router = useRouter()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const characterApi = useCharacterApi()
+const { editImage } = useImageEditApi()
 
 const novelId = parseInt(route.params.novelId as string)
 const characterId = parseInt(route.params.id as string)
@@ -702,6 +703,7 @@ function getRoleLabel(role: string): string {
               v-model="lookForm.three_view_sheet"
               aspect-ratio="16/9"
               placeholder="三视图参考图（正面+侧面+背面合图）"
+              :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
               :on-save="(url: string) => { lookForm.three_view_sheet = url }"
               @error="toast.error"
             />
@@ -724,6 +726,7 @@ function getRoleLabel(role: string): string {
               v-model="lookForm.portrait"
               aspect-ratio="3/4"
               placeholder="面部参考图（正面半身像）"
+              :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
               :on-save="(url: string) => { lookForm.portrait = url }"
               @error="toast.error"
             />
