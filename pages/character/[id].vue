@@ -62,6 +62,7 @@ const editingLook = ref<CharacterLook | null>(null)
 const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
+const generatingFormPortrait = ref(false)
 const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string; portrait?: string }>({
   label: '',
   chapter_from: 1,
@@ -247,6 +248,31 @@ async function handleDeleteLookFromForm() {
   }
 }
 
+async function handleFormGeneratePortrait() {
+  if (!editingLook.value) return
+  if (!await guardAiProvider('IMAGE')) return
+  generatingFormPortrait.value = true
+  try {
+    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'portrait', selectedImageProvider.value || undefined)
+    const taskId = (res as any)?.data?.task_id ?? ''
+    if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormPortrait.value = false; return }
+    taskStore.trackTask(taskId, async (task) => {
+      generatingFormPortrait.value = false
+      if (task.status === 'completed') {
+        await fetchLooks()
+        const updated = looks.value.find(l => l.id === editingLook.value!.id)
+        if (updated?.portrait) lookForm.value.portrait = updated.portrait
+        toast.success('面部参考图已生成，可继续生成三视图')
+      } else if (task.status === 'failed') {
+        toast.error('生成失败：' + (task.error || '未知错误'))
+      }
+    })
+  } catch (e: any) {
+    toast.error('生成失败：' + (e.message || ''))
+    generatingFormPortrait.value = false
+  }
+}
+
 async function handleFormGenerateThreeView() {
   if (!editingLook.value) return
   if (!await guardAiProvider('IMAGE')) return
@@ -356,6 +382,7 @@ onMounted(async () => {
     await nextTick()
     isDirty.value = false
     dataLoaded.value = true
+    if (activeTab.value === 'looks') fetchLooks()
   } catch (e: any) {
     toast.error('角色加载失败：' + (e.message || '请检查网络或刷新页面'))
   }
@@ -641,16 +668,14 @@ function getRoleLabel(role: string): string {
             </h3>
           </div>
           <!-- 滚动内容区 -->
-          <div class="px-6 pb-2 overflow-y-auto flex-1 space-y-4">
+          <div class="px-6 pb-2 overflow-y-auto flex-1 space-y-3">
 
-          <!-- 形象名称 -->
-          <div>
-            <label class="label">形象名称 <span class="text-red-500">*</span></label>
-            <input v-model="lookForm.label" class="input" placeholder="如：少年时期、伪装成书生、觉醒后" />
-          </div>
-
-          <!-- 章节范围 -->
-          <div class="grid grid-cols-2 gap-3">
+          <!-- 形象名称 + 章节范围（同行） -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-1">
+              <label class="label">形象名称 <span class="text-red-500">*</span></label>
+              <input v-model="lookForm.label" class="input" placeholder="如：少年时期、觉醒后" />
+            </div>
             <div>
               <label class="label">起始章节</label>
               <input v-model.number="lookForm.chapter_from" type="number" min="1" class="input" placeholder="1" />
@@ -675,61 +700,86 @@ function getRoleLabel(role: string): string {
             </div>
             <textarea
               v-model="lookForm.visual_prompt"
-              class="input h-40 resize-none font-mono text-xs"
+              class="input h-28 resize-none font-mono text-xs"
               placeholder="English visual prompt for AI image generation…"
             />
           </div>
 
-          <!-- 三视图参考图 -->
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <div>
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">三视图参考图</p>
-                <p class="text-xs text-gray-400 mt-0.5">正视 / 侧视 / 背视合为一张图</p>
+          <!-- 图片区：左侧面部参考图（第一步）+ 右侧三视图（第二步） -->
+          <div class="grid grid-cols-3 gap-3 items-start">
+            <!-- 面部参考图（1 col）— 第一步 -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-violet-500 text-white text-[10px] font-bold flex-shrink-0">1</span>
+                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    v-if="editingLook"
+                    class="text-xs text-violet-600 hover:text-violet-700 dark:text-violet-400 disabled:opacity-40"
+                    :disabled="generatingFormPortrait"
+                    @click="handleFormGeneratePortrait"
+                  >
+                    <span v-if="generatingFormPortrait" class="flex items-center gap-1">
+                      <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      生成中…
+                    </span>
+                    <span v-else>✨ AI 生成</span>
+                  </button>
+                  <button
+                    v-if="lookForm.three_view_sheet"
+                    class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    @click="showCropModal = true"
+                  >✂ 裁剪</button>
+                </div>
               </div>
-              <button
-                class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
-                :disabled="generatingFormThreeView || !editingLook"
-                :title="editingLook ? '' : '保存形象后再生成'"
-                @click="handleFormGenerateThreeView"
-              >
-                <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {{ generatingFormThreeView ? '生成中...' : 'AI 生成' }}
-              </button>
+              <p class="text-xs text-gray-400 mb-1">正面半身像，用作三视图的面部锚点</p>
+              <ImageUploadBox
+                v-model="lookForm.portrait"
+                aspect-ratio="3/4"
+                placeholder="面部参考图（正面半身像）"
+                :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
+                :on-save="(url: string) => { lookForm.portrait = url }"
+                @error="toast.error"
+              />
             </div>
-            <ImageUploadBox
-              v-model="lookForm.three_view_sheet"
-              aspect-ratio="16/9"
-              placeholder="三视图参考图（正面+侧面+背面合图）"
-              :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
-              :on-save="(url: string) => { lookForm.three_view_sheet = url }"
-              @error="toast.error"
-            />
-          </div>
 
-          <!-- 面部参考图（Portrait） -->
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <div>
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
-                <p class="text-xs text-gray-400 mt-0.5">分镜图生成时的面部一致性锚点，建议从三视图裁剪</p>
+            <!-- 三视图参考图（2 col）— 第二步 -->
+            <div class="col-span-2">
+              <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-violet-500 text-white text-[10px] font-bold flex-shrink-0">2</span>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">三视图参考图</p>
+                    <p class="text-xs text-gray-400">正视 / 侧视 / 背视合为一张图{{ lookForm.portrait ? '，将以面部图为参考' : '' }}</p>
+                  </div>
+                </div>
+                <button
+                  class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+                  :disabled="generatingFormThreeView || !editingLook"
+                  :title="!editingLook ? '保存形象后再生成' : !lookForm.portrait ? '建议先生成面部参考图（步骤 1），可提升一致性' : ''"
+                  @click="handleFormGenerateThreeView"
+                >
+                  <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {{ generatingFormThreeView ? '生成中...' : 'AI 生成' }}
+                </button>
               </div>
-              <button
-                v-if="lookForm.three_view_sheet"
-                class="text-xs text-violet-600 dark:text-violet-400 hover:underline"
-                @click="showCropModal = true"
-              >✂ 从三视图裁剪</button>
+              <!-- 未生成面部图时的提示条 -->
+              <div v-if="!lookForm.portrait && editingLook" class="mb-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-xs text-amber-700 dark:text-amber-400">
+                建议先完成步骤 1（生成面部参考图），以提高三视图的面部一致性
+              </div>
+              <ImageUploadBox
+                v-model="lookForm.three_view_sheet"
+                aspect-ratio="16/9"
+                placeholder="三视图参考图（正面+侧面+背面合图）"
+                :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
+                :on-save="(url: string) => { lookForm.three_view_sheet = url }"
+                @error="toast.error"
+              />
             </div>
-            <ImageUploadBox
-              v-model="lookForm.portrait"
-              aspect-ratio="3/4"
-              placeholder="面部参考图（正面半身像）"
-              :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
-              :on-save="(url: string) => { lookForm.portrait = url }"
-              @error="toast.error"
-            />
           </div>
 
           </div><!-- end 滚动内容区 -->
