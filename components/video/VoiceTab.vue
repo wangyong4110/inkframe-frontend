@@ -39,6 +39,10 @@ const insertAfterSeqNo = ref<Record<number, number | null>>({})
 const editingSegId = ref<number | null>(null)
 const editingSegText = ref('')
 
+// Track in-flight save promises to avoid race conditions between text edits and voice generation
+let shotSaveInFlight: Promise<unknown> | null = null
+let segmentSaveInFlight: Promise<unknown> | null = null
+
 async function handleSegmentEmotionChange(shot: StoryboardShot, seg: ShotVoiceSegment, emotion: string) {
   const prev = seg.emotion || segmentEmotions.value[seg.id] || ''
   segmentEmotions.value[seg.id] = emotion
@@ -77,15 +81,21 @@ async function saveSegmentText(shot: StoryboardShot, seg: ShotVoiceSegment) {
   const updated = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, text } : s)
   shotSegments.value[shot.id] = updated
   segmentCache.set(shot.id, updated)
-  try {
-    await videoApi.updateVoiceSegment(props.videoId, shot.id, seg.id, { text, speaker: seg.speaker, emotion: seg.emotion || segmentEmotions[seg.id], language: seg.language })
-  } catch (e: any) {
-    toast.error('保存失败：' + (e.message || ''))
-    // 回滚本地
-    const reverted = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, text: seg.text } : s)
-    shotSegments.value[shot.id] = reverted
-    segmentCache.set(shot.id, reverted)
-  }
+  const p = (async () => {
+    try {
+      await videoApi.updateVoiceSegment(props.videoId, shot.id, seg.id, { text, speaker: seg.speaker, emotion: seg.emotion || segmentEmotions[seg.id], language: seg.language })
+    } catch (e: any) {
+      toast.error('保存失败：' + (e.message || ''))
+      // 回滚本地
+      const reverted = (shotSegments.value[shot.id] || []).map(s => s.id === seg.id ? { ...s, text: seg.text } : s)
+      shotSegments.value[shot.id] = reverted
+      segmentCache.set(shot.id, reverted)
+    } finally {
+      segmentSaveInFlight = null
+    }
+  })()
+  segmentSaveInFlight = p
+  await p
 }
 
 const EMOTION_OPTIONS = ['', '平静', '温馨', '激动', '悲伤', '开心', '愤怒', '神秘']
@@ -111,6 +121,8 @@ watch(shots, (list) => {
 async function handleGenerateVoice(shot: StoryboardShot) {
   if (!await guardAiProvider('TTS')) return
   if (generatingVoice.value[shot.id]) return
+  // 等待正在进行的文本保存完成，避免配音生成读到旧文本（blur save 与 click generate 竞态）
+  if (shotSaveInFlight) await shotSaveInFlight
   generatingVoice.value[shot.id] = true
   const api = useVideoApi()
   const taskStore = useTaskStore()
@@ -295,6 +307,8 @@ async function handleDeleteSegment(shot: StoryboardShot, seg: ShotVoiceSegment) 
 
 async function handleGenerateSegmentVoice(shot: StoryboardShot, seg: ShotVoiceSegment) {
   if (!await guardAiProvider('TTS')) return
+  // 等待正在进行的片段文本保存完成，避免竞态
+  if (segmentSaveInFlight) await segmentSaveInFlight
   generatingSegmentVoice.value[seg.id] = true
   try {
     const api = useVideoApi()
@@ -454,19 +468,26 @@ function startEditDialogueText(shot: StoryboardShot) {
 async function saveEdit(shot: StoryboardShot) {
   if (editingShotId.value !== shot.id) return
   const text = editingText.value.trim()
-  try {
-    if (editingField.value === 'narration') {
-      await videoStore.updateShot(props.videoId, shot.id, { narration: text })
-    } else if (editingField.value === 'dialogue') {
-      const { speaker } = parseDialogue(shot.dialogue || '')
-      const newDialogue = speaker ? `${speaker}：${text}` : text
-      await videoStore.updateShot(props.videoId, shot.id, { dialogue: newDialogue })
+  const field = editingField.value
+  cancelEdit()
+  if (!field) return
+  const p = (async () => {
+    try {
+      if (field === 'narration') {
+        await videoStore.updateShot(props.videoId, shot.id, { narration: text })
+      } else if (field === 'dialogue') {
+        const { speaker } = parseDialogue(shot.dialogue || '')
+        const newDialogue = speaker ? `${speaker}：${text}` : text
+        await videoStore.updateShot(props.videoId, shot.id, { dialogue: newDialogue })
+      }
+    } catch (e: any) {
+      toast.error('保存失败：' + (e.message || ''))
+    } finally {
+      shotSaveInFlight = null
     }
-  } catch (e: any) {
-    toast.error('保存失败：' + (e.message || ''))
-  } finally {
-    cancelEdit()
-  }
+  })()
+  shotSaveInFlight = p
+  await p
 }
 
 function cancelEdit() {
