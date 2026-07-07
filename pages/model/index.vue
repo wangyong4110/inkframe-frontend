@@ -1740,8 +1740,13 @@ watch(activeTab, (tab) => {
               <button class="btn-outline text-xs px-3 py-1.5" @click="openBindModal(tool)">
                 绑定模型
               </button>
-              <button class="btn-ghost text-xs px-3 py-1.5" :disabled="tool.is_system" @click="openEditMcp(tool)">编辑</button>
-              <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" :disabled="tool.is_system" @click="handleDeleteMcp(tool.id)">删除</button>
+              <template v-if="tool.is_system">
+                <button class="btn-ghost text-xs px-3 py-1.5 text-gray-400" @click="openEditMcp(tool)">详情</button>
+              </template>
+              <template v-else>
+                <button class="btn-ghost text-xs px-3 py-1.5" @click="openEditMcp(tool)">编辑</button>
+                <button class="btn-ghost text-xs px-3 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50" @click="handleDeleteMcp(tool.id)">删除</button>
+              </template>
             </div>
           </div>
 
@@ -1949,8 +1954,15 @@ watch(activeTab, (tab) => {
           <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <div class="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
               <div>
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ editingTool ? '编辑 MCP 工具' : '添加 MCP 工具' }}</h3>
-                <p class="text-sm text-gray-500 mt-0.5">配置 MCP 服务端点，绑定后模型可调用该工具</p>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                  {{ editingTool?.is_system ? '工具详情' : editingTool ? '编辑 MCP 工具' : '添加 MCP 工具' }}
+                </h3>
+                <p class="text-sm text-gray-500 mt-0.5">
+                  <template v-if="editingTool?.is_system">
+                    系统内置工具，配置只读，不可修改
+                  </template>
+                  <template v-else>配置 MCP 服务端点，绑定后模型可调用该工具</template>
+                </p>
               </div>
               <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="关闭" @click="showMcpModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1969,14 +1981,14 @@ watch(activeTab, (tab) => {
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
-                  <input v-model="mcpForm.display_name" type="text" class="input" placeholder="网络搜索" />
+                  <input v-model="mcpForm.display_name" type="text" class="input" placeholder="网络搜索" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
                 </div>
               </div>
 
               <!-- Description -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">功能描述</label>
-                <input v-model="mcpForm.description" type="text" class="input" placeholder="允许模型搜索互联网获取最新信息" />
+                <input v-model="mcpForm.description" type="text" class="input" placeholder="允许模型搜索互联网获取最新信息" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
               </div>
 
               <!-- Transport type + Endpoint -->
@@ -1991,7 +2003,8 @@ watch(activeTab, (tab) => {
                     :class="mcpForm.transport_type === t
                       ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                       : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'"
-                    @click="mcpForm.transport_type = t as any"
+                    :disabled="editingTool?.is_system"
+                    @click="!editingTool?.is_system && (mcpForm.transport_type = t as any)"
                   >
                     {{ t.toUpperCase() }}
                   </button>
@@ -2012,6 +2025,8 @@ watch(activeTab, (tab) => {
                   type="text"
                   class="input font-mono text-sm"
                   :placeholder="mcpForm.transport_type === 'stdio' ? '/usr/local/bin/mcp-server' : 'https://mcp.example.com/tools'"
+                  :readonly="editingTool?.is_system"
+                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
                 />
                 <p class="mt-1 text-xs text-gray-400">
                   {{ mcpForm.transport_type === 'stdio' ? '可执行文件路径' : 'MCP 服务的完整 URL' }}
@@ -2023,7 +2038,7 @@ watch(activeTab, (tab) => {
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   超时时间（毫秒）
                 </label>
-                <input v-model.number="mcpForm.timeout" type="number" min="1000" step="1000" class="input" />
+                <input v-model.number="mcpForm.timeout" type="number" min="1000" step="1000" class="input" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
               </div>
 
               <!-- Headers -->
@@ -2036,6 +2051,8 @@ watch(activeTab, (tab) => {
                   rows="3"
                   class="input font-mono text-xs"
                   placeholder='{"Authorization": "Bearer token", "X-API-Key": "key"}'
+                  :readonly="editingTool?.is_system"
+                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
                 ></textarea>
               </div>
 
@@ -2049,6 +2066,8 @@ watch(activeTab, (tab) => {
                   rows="3"
                   class="input font-mono text-xs"
                   placeholder='{"API_KEY": "xxx", "DEBUG": "false"}'
+                  :readonly="editingTool?.is_system"
+                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
                 ></textarea>
               </div>
 
@@ -2056,8 +2075,9 @@ watch(activeTab, (tab) => {
               <div class="flex items-center gap-3 py-1">
                 <button type="button" role="switch" :aria-checked="mcpForm.is_active"
                   class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-                  :class="mcpForm.is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'"
-                  @click="mcpForm.is_active = !mcpForm.is_active">
+                  :class="[mcpForm.is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600', editingTool?.is_system ? 'opacity-60 cursor-not-allowed' : '']"
+                  :disabled="editingTool?.is_system"
+                  @click="!editingTool?.is_system && (mcpForm.is_active = !mcpForm.is_active)">
                   <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="mcpForm.is_active ? 'translate-x-6' : 'translate-x-1'" />
                 </button>
                 <span class="text-sm text-gray-700 dark:text-gray-300">启用该工具</span>
@@ -2065,14 +2085,19 @@ watch(activeTab, (tab) => {
             </div>
 
             <div class="px-6 pb-6 pt-2 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
-              <button class="btn-outline" @click="showMcpModal = false">取消</button>
-              <button class="btn-primary min-w-[80px]" :disabled="mcpSaving" @click="submitMcpForm">
-                <span v-if="mcpSaving" class="flex items-center gap-1.5">
-                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  保存中...
-                </span>
-                <span v-else>{{ editingTool ? '保存更改' : '添加工具' }}</span>
-              </button>
+              <template v-if="editingTool?.is_system">
+                <button class="btn-primary" @click="showMcpModal = false">关闭</button>
+              </template>
+              <template v-else>
+                <button class="btn-outline" @click="showMcpModal = false">取消</button>
+                <button class="btn-primary min-w-[80px]" :disabled="mcpSaving" @click="submitMcpForm">
+                  <span v-if="mcpSaving" class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                    保存中...
+                  </span>
+                  <span v-else>{{ editingTool ? '保存更改' : '添加工具' }}</span>
+                </button>
+              </template>
             </div>
           </div>
         </div>
