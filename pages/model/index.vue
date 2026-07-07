@@ -5,7 +5,7 @@ import type { ModelProvider, AIModel, McpTool } from '~/types'
 const toast = useToast()
 
 // ── tabs ────────────────────────────────────────────────────────────────────
-const activeTab = ref<'providers' | 'mcp' | 'task-configs'>('providers')
+const activeTab = ref<'providers' | 'mcp'>('providers')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TAB 1 — 模型提供商 (unchanged logic)
@@ -1071,132 +1071,6 @@ async function toggleModelBinding(modelId: number) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TAB 3 — 任务配置
-// ═══════════════════════════════════════════════════════════════════════════
-const { listTaskConfigs, updateTaskConfig, getAvailableModels } = useModelApi()
-
-// 任务类型中文名映射
-const TASK_TYPE_LABELS: Record<string, string> = {
-  chapter:                   '章节生成',
-  chapter_outline:           '章节大纲',
-  scene_outline:             '场景大纲',
-  chapter_summary:           '章节摘要',
-  chapter_title:             '章节标题',
-  character_voice:           '角色语音',
-  refinement_pass:           '精炼润色',
-  storyboard:                '分镜生成',
-  storyboard_review:         '分镜审查',
-  chapter_review:            '章节审查',
-  character:                 '角色生成',
-  worldview:                 '世界观生成',
-  character_state:           '角色状态',
-  scene_anchor_extract:      '场景锚点提取',
-  sfx_analyze:               '音效分析',
-  outline:                   '大纲生成',
-  extract_characters:        '提取角色',
-  extract_character_names:   '提取角色名',
-  consolidate_character_names: '归并角色名',
-  generate_character_profile:'生成角色档案',
-  extract_minor_characters:  '提取次要角色',
-  extract_chapter_items:     '提取章节物品',
-  extract_worldview:         '提取世界观',
-  extract_foreshadows:       '提取伏笔',
-  extract_items:             '提取物品',
-  arc_summary:               '弧线总结',
-}
-
-interface TaskConfig {
-  id: number
-  task_type: string
-  primary_model_id: number
-  primary_provider_id: number
-  max_tokens: number
-  temperature: number
-  primary_model?: { id: number; name: string; display_name: string; provider?: { name: string; display_name: string } }
-  primary_provider?: { id: number; name: string; display_name: string }
-}
-
-const taskConfigs = ref<TaskConfig[]>([])
-const taskConfigLoading = ref(false)
-const editingTaskConfig = ref<TaskConfig | null>(null)
-const showTaskConfigModal = ref(false)
-const taskConfigSaving = ref(false)
-const availableModelsForTask = ref<AIModel[]>([])
-const taskConfigForm = ref({
-  primary_model_id: 0,
-  primary_provider_id: 0,
-  max_tokens: 0,
-  temperature: 0,
-})
-const taskModelSearch = ref('')
-
-const filteredTaskModels = computed(() =>
-  availableModelsForTask.value.filter(m => {
-    const q = taskModelSearch.value.toLowerCase()
-    if (!q) return true
-    return m.name.toLowerCase().includes(q) ||
-      (m.display_name ?? '').toLowerCase().includes(q) ||
-      (m.provider as any)?.name?.toLowerCase().includes(q)
-  })
-)
-
-async function loadTaskConfigs() {
-  taskConfigLoading.value = true
-  try {
-    const res = await listTaskConfigs()
-    taskConfigs.value = ((res as any).data ?? []) as TaskConfig[]
-  } catch (e: any) {
-    toast.error('加载任务配置失败：' + (e?.message || ''))
-  } finally {
-    taskConfigLoading.value = false
-  }
-}
-
-async function openTaskConfigModal(cfg: TaskConfig) {
-  editingTaskConfig.value = cfg
-  taskConfigForm.value = {
-    primary_model_id: cfg.primary_model_id ?? 0,
-    primary_provider_id: cfg.primary_provider_id ?? 0,
-    max_tokens: cfg.max_tokens ?? 0,
-    temperature: cfg.temperature ?? 0.7,
-  }
-  taskModelSearch.value = ''
-  showTaskConfigModal.value = true
-  // Load available models for this task type
-  try {
-    const res = await getAvailableModels(cfg.task_type)
-    availableModelsForTask.value = ((res as any).data ?? []) as AIModel[]
-  } catch {
-    availableModelsForTask.value = []
-  }
-}
-
-async function saveTaskConfig() {
-  if (!editingTaskConfig.value) return
-  taskConfigSaving.value = true
-  try {
-    await updateTaskConfig(editingTaskConfig.value.task_type, {
-      primary_model_id: taskConfigForm.value.primary_model_id || undefined,
-      primary_provider_id: taskConfigForm.value.primary_provider_id || undefined,
-      max_tokens: taskConfigForm.value.max_tokens || undefined,
-      temperature: taskConfigForm.value.temperature || undefined,
-    })
-    toast.success('任务配置已更新')
-    showTaskConfigModal.value = false
-    await loadTaskConfigs()
-  } catch (e: any) {
-    toast.error('保存失败：' + (e?.message || ''))
-  } finally {
-    taskConfigSaving.value = false
-  }
-}
-
-function selectTaskModel(m: AIModel) {
-  taskConfigForm.value.primary_model_id = m.id
-  taskConfigForm.value.primary_provider_id = (m as any).provider_id ?? 0
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // ── lifecycle ────────────────────────────────────────────────────────────────
 let healthRefreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -1214,7 +1088,6 @@ onUnmounted(() => {
 
 watch(activeTab, (tab) => {
   if (tab === 'mcp' && mcpTools.value.length === 0 && !mcpLoading.value) loadMcpTools()
-  if (tab === 'task-configs' && taskConfigs.value.length === 0 && !taskConfigLoading.value) loadTaskConfigs()
 })
 </script>
 
@@ -1264,15 +1137,6 @@ watch(activeTab, (tab) => {
           <span v-if="mcpTools.length > 0" class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">
             {{ mcpTools.length }}
           </span>
-        </button>
-        <button
-          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
-          :class="activeTab === 'task-configs'
-            ? 'border-primary-500 text-primary-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-          @click="activeTab = 'task-configs'"
-        >
-          任务配置
         </button>
       </nav>
     </div>
@@ -1896,164 +1760,6 @@ watch(activeTab, (tab) => {
         </div>
       </div>
     </template>
-
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- TAB 3: 任务配置                                                      -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <template v-else-if="activeTab === 'task-configs'">
-      <!-- Loading -->
-      <div v-if="taskConfigLoading" class="space-y-2">
-        <div v-for="i in 6" :key="i" class="card p-4 animate-pulse flex items-center gap-4">
-          <div class="w-40 h-4 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          <div class="flex-1 h-4 bg-gray-100 dark:bg-gray-800 rounded"></div>
-        </div>
-      </div>
-
-      <!-- Empty -->
-      <div v-else-if="taskConfigs.length === 0" class="card p-12 text-center">
-        <p class="text-gray-500">暂无任务配置，请确认后端已完成初始化</p>
-        <button class="btn-outline mt-4" @click="loadTaskConfigs">重新加载</button>
-      </div>
-
-      <!-- Config table -->
-      <div v-else class="card overflow-hidden">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
-            <tr>
-              <th class="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-48">任务类型</th>
-              <th class="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">当前模型</th>
-              <th class="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-32">Max Tokens</th>
-              <th class="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-24">Temperature</th>
-              <th class="px-4 py-3 w-20"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-            <tr v-for="cfg in taskConfigs" :key="cfg.task_type" class="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-              <td class="px-4 py-3">
-                <div class="font-medium text-gray-900 dark:text-white">
-                  {{ TASK_TYPE_LABELS[cfg.task_type] ?? cfg.task_type }}
-                </div>
-                <div class="text-xs font-mono text-gray-400">{{ cfg.task_type }}</div>
-              </td>
-              <td class="px-4 py-3">
-                <template v-if="cfg.primary_model">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ cfg.primary_model.display_name || cfg.primary_model.name }}</span>
-                    <span v-if="cfg.primary_model.provider" class="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                      {{ cfg.primary_model.provider.display_name || cfg.primary_model.provider.name }}
-                    </span>
-                  </div>
-                  <div class="text-xs font-mono text-gray-400">{{ cfg.primary_model.name }}</div>
-                </template>
-                <span v-else class="text-gray-400 italic text-xs">未配置 — 将使用默认策略</span>
-              </td>
-              <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-                {{ cfg.max_tokens > 0 ? cfg.max_tokens.toLocaleString() : '—' }}
-              </td>
-              <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-                {{ cfg.temperature > 0 ? cfg.temperature : '—' }}
-              </td>
-              <td class="px-4 py-3 text-right">
-                <button
-                  class="btn-outline text-xs px-3 py-1.5"
-                  @click="openTaskConfigModal(cfg)"
-                >
-                  配置
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </template>
-
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- MODAL: 任务配置                                                      -->
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showTaskConfigModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.esc="showTaskConfigModal = false">
-          <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" @click="showTaskConfigModal = false"/>
-          <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-            <div class="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between shrink-0">
-              <div>
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-                  配置任务模型
-                </h3>
-                <p class="text-sm text-gray-500 mt-0.5">
-                  {{ TASK_TYPE_LABELS[editingTaskConfig?.task_type ?? ''] ?? editingTaskConfig?.task_type }}
-                  <span class="font-mono text-xs ml-1 text-gray-400">{{ editingTaskConfig?.task_type }}</span>
-                </p>
-              </div>
-              <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" @click="showTaskConfigModal = false">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-
-            <div class="px-6 py-5 space-y-5 overflow-y-auto flex-1">
-              <!-- Model picker -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">指定模型</label>
-                <input
-                  v-model="taskModelSearch"
-                  type="text"
-                  class="input mb-2"
-                  placeholder="搜索模型名称或提供商..."
-                />
-                <div class="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 divide-y divide-gray-100 dark:divide-gray-700">
-                  <div
-                    v-for="m in filteredTaskModels"
-                    :key="m.id"
-                    class="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                    :class="taskConfigForm.primary_model_id === m.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''"
-                    @click="selectTaskModel(m)"
-                  >
-                    <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-                      :class="taskConfigForm.primary_model_id === m.id ? 'border-primary-500 bg-primary-500' : 'border-gray-300'">
-                      <div v-if="taskConfigForm.primary_model_id === m.id" class="w-1.5 h-1.5 rounded-full bg-white"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="font-medium text-sm text-gray-900 dark:text-white truncate">{{ m.display_name || m.name }}</div>
-                      <div class="text-xs text-gray-400 font-mono truncate">{{ m.name }}</div>
-                    </div>
-                    <span v-if="(m as any).provider" class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 shrink-0">
-                      {{ (m as any).provider?.display_name || (m as any).provider?.name }}
-                    </span>
-                  </div>
-                  <div v-if="filteredTaskModels.length === 0" class="px-3 py-4 text-center text-sm text-gray-400">
-                    {{ availableModelsForTask.length === 0 ? '暂无可用模型，请先在「模型提供商」中添加模型' : '无匹配模型' }}
-                  </div>
-                </div>
-                <p class="mt-1 text-xs text-gray-400">选择模型后该任务类型将优先使用指定模型</p>
-              </div>
-
-              <!-- Max tokens / temperature -->
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Max Tokens</label>
-                  <input v-model.number="taskConfigForm.max_tokens" type="number" min="0" step="256" class="input" placeholder="0 = 不限制" />
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Temperature</label>
-                  <input v-model.number="taskConfigForm.temperature" type="number" min="0" max="2" step="0.1" class="input" placeholder="0.7" />
-                </div>
-              </div>
-            </div>
-
-            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 shrink-0">
-              <button class="btn-outline" @click="showTaskConfigModal = false">取消</button>
-              <button class="btn-primary min-w-[80px]" :disabled="taskConfigSaving" @click="saveTaskConfig">
-                <span v-if="taskConfigSaving" class="flex items-center gap-1.5">
-                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  保存中...
-                </span>
-                <span v-else>保存</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <!-- MODAL: Add / Edit Provider                                          -->

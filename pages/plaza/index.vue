@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Novel, Video } from '~/types'
 
-definePageMeta({ auth: false })
+definePageMeta({ layout: 'plaza', auth: false })
 
 useHead({
   title: '作品广场 - 简影',

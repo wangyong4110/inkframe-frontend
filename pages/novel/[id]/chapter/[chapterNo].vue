@@ -26,8 +26,20 @@ const sceneAnchorStore = useSceneAnchorStore()
 const taskStore = useTaskStore()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
+const { getLLMCapableProviders } = useModelApi()
 const characterApi = useCharacterApi()
 const itemApi = useItemApi()
+
+// 内联模型选择
+const llmProviders = ref<{ name: string; display_name: string }[]>([])
+const chapterModelOverride = ref('')
+const scriptProviderOverride = ref('')
+async function loadLLMProviders() {
+  try {
+    const res = await getLLMCapableProviders()
+    llmProviders.value = (res as any).data ?? []
+  } catch { /* 静默失败，用户仍可生成 */ }
+}
 
 const saving = ref(false)
 const isSaving = ref(false)
@@ -325,6 +337,7 @@ onMounted(async () => {
   }
   // 从项目配置读取 AI 高级参数默认值（cookie 中已有值时跳过，保留用户手动设置）
   initAiParamsFromNovel(novel.value)
+  loadLLMProviders()
   // Restore tab from URL query
   const tabParam = route.query.tab as string | undefined
   if (tabParam === 'items') {
@@ -559,7 +572,8 @@ async function handleGenerate() {
     const wordCount = wordCountOverride.value > 0 ? wordCountOverride.value : undefined
     const temperature = advTemperature.value > 0 ? advTemperature.value : undefined
     const timeoutSeconds = advTimeoutSeconds.value > 0 ? advTimeoutSeconds.value : undefined
-    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, novel.value?.ai_model || undefined, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined, isLastChapter.value || undefined)
+    const chapterModel = chapterModelOverride.value || novel.value?.ai_model || undefined
+    const { task_id } = await chapterStore.generateChapter(novelId, currentChapterNo, prompt.value, maxTokens, chapterModel, temperature, timeoutSeconds, wordCount, webSearchEnabled.value || undefined, wikiSearchEnabled.value || undefined, storyPatternEnabled.value || undefined, isLastChapter.value || undefined)
     currentTaskId.value = task_id
     toast.info('AI 正在生成，请稍候...')
     const result = await chapterStore.pollChapterGenTask(novelId, task_id)
@@ -602,7 +616,8 @@ async function handleRegenerate() {
     if (regenPrompt.value.trim()) opts.prompt = regenPrompt.value.trim()
     if (wordCountOverride.value > 0) opts.word_count = wordCountOverride.value
     if (advMaxTokens.value > 0) opts.max_tokens = advMaxTokens.value
-    if (novel.value?.ai_model) opts.model = novel.value.ai_model
+    const regenModel = chapterModelOverride.value || novel.value?.ai_model
+    if (regenModel) opts.model = regenModel
     if (advTemperature.value > 0) opts.temperature = advTemperature.value
     if (webSearchEnabled.value) opts.web_search = true
     if (wikiSearchEnabled.value) opts.wiki_search = true
@@ -1476,6 +1491,7 @@ async function handleGenerateScript() {
   const temperature = scriptTemperature.value || undefined
   const timeout = scriptTimeoutSeconds.value || undefined
   const voiceMode = (scriptVoiceMode.value && scriptVoiceMode.value !== 'auto' && scriptVoiceMode.value !== 'both') ? scriptVoiceMode.value : undefined
+  const scriptProvider = scriptProviderOverride.value || undefined
   if (!currentVideoId.value) {
     // Auto-create project with defaults, then generate
     generatingScript.value = true
@@ -1485,14 +1501,14 @@ async function handleGenerateScript() {
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
-      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode)
+      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode, scriptProvider)
     } catch (e: any) {
       toast.error('创建失败：' + (e.message || '未知错误'))
     } finally {
       generatingScript.value = false
     }
   } else {
-    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode)
+    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode, scriptProvider)
   }
 }
 
@@ -3463,6 +3479,17 @@ onUnmounted(() => {
                   </template>
                   <template v-else>
                     <div class="flex-1 flex flex-col gap-1">
+                      <!-- 内联模型选择 -->
+                      <div v-if="llmProviders.length > 0" class="flex items-center gap-1.5">
+                        <span class="text-xs text-gray-400 flex-shrink-0">模型</span>
+                        <select
+                          v-model="chapterModelOverride"
+                          class="flex-1 px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                        >
+                          <option value="">自动</option>
+                          <option v-for="p in llmProviders" :key="p.name" :value="p.name">{{ p.display_name || p.name }}</option>
+                        </select>
+                      </div>
                       <span v-if="isLastChapter" class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zm7-10a1 1 0 01.707.293l4 4a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l8-8A1 1 0 0112 2z" clip-rule="evenodd"/></svg>
                         最终章模式 — 将自动收束全部故事线
@@ -3933,6 +3960,17 @@ onUnmounted(() => {
                   placeholder="例如：镜头以第一视角为主，多用近景特写，风格写实…"
                   class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
+              </div>
+              <!-- 内联模型选择 -->
+              <div v-if="llmProviders.length > 0" class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 flex-shrink-0">模型</span>
+                <select
+                  v-model="scriptProviderOverride"
+                  class="flex-1 px-2 py-1 text-xs rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">自动</option>
+                  <option v-for="p in llmProviders" :key="p.name" :value="p.name">{{ p.display_name || p.name }}</option>
+                </select>
               </div>
               <button
                 class="w-full px-4 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"

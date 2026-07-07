@@ -75,7 +75,6 @@ onMounted(() => {
   document.documentElement.classList.add('dark')
   document.addEventListener('click', handleDocClick)
   fetchUnreadCount()
-  // 每 60 秒轮询一次未读数
   const timer = setInterval(fetchUnreadCount, 60_000)
   onUnmounted(() => clearInterval(timer))
 })
@@ -87,22 +86,20 @@ onUnmounted(() => {
 watch(() => route.path, () => { mobileMenuOpen.value = false })
 
 const navItems = [
-  { label: '项目', to: '/novel' },
-  { label: '素材', to: '/assets' },
-  { label: '模型', to: '/model' },
+  { label: '小说', to: '/plaza' },
+  { label: '视频', to: '/platform' },
+  { label: '排行榜', to: '/plaza/ranking' },
 ]
 
-const breadcrumbs = computed(() => {
-  const items = []
-  const paths = route.path.split('/').filter(Boolean)
-  let currentPath = ''
-  for (const path of paths) {
-    currentPath += `/${path}`
-    const item = navItems.find(i => i.to === currentPath)
-    if (item) items.push({ label: item.label, to: item.to })
+function isActive(item: { to: string }) {
+  if (item.to === '/plaza') {
+    return route.path === '/plaza' || route.path.startsWith('/plaza/novel')
   }
-  return items
-})
+  if (item.to === '/platform') {
+    return route.path === '/platform' || route.path.startsWith('/platform/video')
+  }
+  return route.path === item.to || route.path.startsWith(item.to + '/')
+}
 </script>
 
 <template>
@@ -111,56 +108,48 @@ const breadcrumbs = computed(() => {
     <!-- Header -->
     <header class="sticky top-0 z-50 border-b border-gray-800/50 bg-gray-950/80 backdrop-blur-xl">
       <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <!-- Logo -->
-        <NuxtLink to="/novel" class="flex items-center gap-2.5">
-          <AppLogo :size="36" />
+
+        <!-- Logo + 广场 badge -->
+        <NuxtLink to="/plaza" class="flex items-center gap-2.5">
+          <AppLogo :size="32" />
           <div class="flex items-baseline gap-1.5">
-            <span class="font-bold text-white text-lg tracking-tight">简影</span>
-            <span class="text-xs font-medium text-violet-400 bg-violet-500/15 border border-violet-500/30 px-1.5 py-0.5 rounded-full leading-none">创作台</span>
+            <span class="font-bold text-white text-base tracking-tight">简影</span>
+            <span class="text-xs font-medium text-indigo-400 bg-indigo-500/15 border border-indigo-500/30 px-1.5 py-0.5 rounded-full leading-none">广场</span>
           </div>
         </NuxtLink>
 
         <!-- Navigation (desktop) -->
-        <nav class="hidden md:flex items-center gap-6">
+        <nav class="hidden md:flex items-center gap-1">
           <NuxtLink
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
-            class="text-sm transition-colors"
-            :class="route.path === item.to || route.path.startsWith(item.to + '/')
-              ? 'text-white font-medium'
-              : 'text-gray-400 hover:text-white'"
+            class="px-3 py-1.5 rounded-lg text-sm transition-colors"
+            :class="isActive(item)
+              ? 'text-white font-medium bg-gray-800'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800/60'"
           >
             {{ item.label }}
           </NuxtLink>
         </nav>
 
         <!-- Right Side -->
-        <div class="flex items-center gap-3">
-          <!-- 广场入口 -->
-          <NuxtLink
-            to="/plaza"
-            class="hidden md:flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors mr-1"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-            </svg>
-            广场
-          </NuxtLink>
-          <!-- Mobile hamburger button -->
+        <div class="flex items-center gap-2">
+          <!-- Mobile hamburger -->
           <button
-            class="md:hidden p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500"
+            class="md:hidden p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
             aria-label="切换菜单"
             :aria-expanded="mobileMenuOpen"
             @click="mobileMenuOpen = !mobileMenuOpen"
           >
-            <svg v-if="!mobileMenuOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg v-if="!mobileMenuOpen" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
-            <svg v-else class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg v-else class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+
           <!-- 通知铃铛 -->
           <div v-if="authStore.isLoggedIn" class="relative notif-wrapper">
             <button
@@ -183,41 +172,26 @@ const breadcrumbs = computed(() => {
               class="absolute right-0 mt-1 w-80 bg-gray-900 rounded-xl shadow-2xl border border-gray-700 z-50 overflow-hidden"
               @click.stop
             >
-              <!-- Header -->
               <div class="flex items-center justify-between px-4 pt-3 pb-0 border-b border-gray-700">
                 <div class="flex gap-0">
                   <button
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
-                    :class="notifTab === 'unread'
-                      ? 'border-violet-500 text-white'
-                      : 'border-transparent text-gray-400 hover:text-gray-200'"
+                    :class="notifTab === 'unread' ? 'border-indigo-500 text-white' : 'border-transparent text-gray-400 hover:text-gray-200'"
                     @click="notifTab = 'unread'"
                   >
                     未读
-                    <span
-                      v-if="unreadNotifs.length > 0"
-                      class="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-violet-600 text-white text-[10px] font-bold"
-                    >{{ unreadNotifs.length }}</span>
+                    <span v-if="unreadNotifs.length > 0" class="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold">{{ unreadNotifs.length }}</span>
                   </button>
                   <button
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors"
-                    :class="notifTab === 'read'
-                      ? 'border-violet-500 text-white'
-                      : 'border-transparent text-gray-400 hover:text-gray-200'"
+                    :class="notifTab === 'read' ? 'border-indigo-500 text-white' : 'border-transparent text-gray-400 hover:text-gray-200'"
                     @click="notifTab = 'read'"
-                  >
-                    已读
-                  </button>
+                  >已读</button>
                 </div>
-                <button
-                  v-if="notifTab === 'unread' && unreadNotifs.length > 0"
-                  class="text-xs text-violet-400 hover:text-violet-300 transition-colors pb-2"
-                  @click="handleMarkAllRead"
-                >全部已读</button>
+                <button v-if="notifTab === 'unread' && unreadNotifs.length > 0" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors pb-2" @click="handleMarkAllRead">全部已读</button>
               </div>
-              <!-- Body -->
               <div v-if="notifLoading" class="flex justify-center py-8">
-                <div class="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"/>
+                <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"/>
               </div>
               <ul v-else-if="currentTabNotifs.length > 0" class="max-h-96 overflow-y-auto divide-y divide-gray-800">
                 <li
@@ -228,10 +202,7 @@ const breadcrumbs = computed(() => {
                   @click="handleMarkRead(n)"
                 >
                   <div class="flex items-start gap-2">
-                    <span
-                      v-if="!n.is_read"
-                      class="mt-1.5 w-2 h-2 rounded-full bg-violet-500 flex-shrink-0"
-                    />
+                    <span v-if="!n.is_read" class="mt-1.5 w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"/>
                     <span v-else class="mt-1.5 w-2 h-2 flex-shrink-0"/>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-white font-medium leading-snug truncate">{{ n.title }}</p>
@@ -247,123 +218,102 @@ const breadcrumbs = computed(() => {
             </div>
           </div>
 
+          <!-- 用户菜单 -->
           <div v-if="authStore.isLoggedIn" class="relative user-menu-wrapper">
             <button
-              @click="showUserMenu = !showUserMenu"
-              aria-label="用户菜单"
               class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+              aria-label="用户菜单"
+              @click="showUserMenu = !showUserMenu"
             >
-              <div class="w-8 h-8 bg-violet-600 rounded-full flex items-center justify-center overflow-hidden">
+              <div class="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center overflow-hidden">
                 <img v-if="authStore.user?.avatar" :src="authStore.user.avatar" class="w-full h-full object-cover" alt="avatar" />
-                <span v-else class="text-white text-sm font-medium">
+                <span v-else class="text-white text-xs font-medium">
                   {{ (authStore.user?.nickname || authStore.user?.username || 'U')[0].toUpperCase() }}
                 </span>
               </div>
-              <span class="hidden sm:block text-sm text-gray-300">
+              <span class="hidden sm:block text-sm text-gray-300 max-w-[80px] truncate">
                 {{ authStore.user?.nickname || authStore.user?.username || '用户' }}
               </span>
             </button>
-            <!-- Dropdown -->
-            <div
-              v-if="showUserMenu"
-              class="absolute right-0 mt-1 w-40 bg-gray-900 rounded-xl shadow-xl border border-gray-700 py-1 z-50"
-            >
-              <NuxtLink
-                to="/profile"
-                class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
-                @click="showUserMenu = false"
-              >
+            <div v-if="showUserMenu" class="absolute right-0 mt-1 w-44 bg-gray-900 rounded-xl shadow-xl border border-gray-700 py-1 z-50">
+              <NuxtLink to="/profile" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors" @click="showUserMenu = false">
                 个人资料
               </NuxtLink>
-              <button
-                class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-800 transition-colors"
-                @click="authStore.logout(); showUserMenu = false"
-              >
+              <div class="border-t border-gray-800 my-1"/>
+              <button class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-800 transition-colors" @click="authStore.logout(); showUserMenu = false">
                 退出登录
               </button>
             </div>
           </div>
-          <div v-else class="flex items-center gap-3">
-            <NuxtLink to="/auth/login" class="text-sm text-gray-400 hover:text-white transition-colors">
-              登录
-            </NuxtLink>
-            <NuxtLink
-              to="/auth/register"
-              class="bg-violet-600 hover:bg-violet-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium"
-            >
-              免费开始
-            </NuxtLink>
+          <div v-else class="hidden sm:flex items-center gap-2">
+            <NuxtLink to="/auth/login" class="text-sm text-gray-400 hover:text-white transition-colors px-2 py-1">登录</NuxtLink>
           </div>
+
+          <!-- 进入创作台 CTA -->
+          <NuxtLink
+            to="/novel"
+            class="hidden sm:flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-sm px-3.5 py-1.5 rounded-lg transition-colors font-medium whitespace-nowrap"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+            </svg>
+            进入创作台
+          </NuxtLink>
         </div>
       </div>
 
-      <!-- Mobile Navigation Menu -->
-      <div
-        v-if="mobileMenuOpen"
-        class="md:hidden border-t border-gray-800/50 bg-gray-950/95 backdrop-blur-xl"
-      >
+      <!-- Mobile Menu -->
+      <div v-if="mobileMenuOpen" class="md:hidden border-t border-gray-800/50 bg-gray-950/95 backdrop-blur-xl">
         <nav class="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-1">
           <NuxtLink
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
             class="px-3 py-2.5 rounded-lg text-sm transition-colors"
-            :class="route.path === item.to || route.path.startsWith(item.to + '/')
-              ? 'bg-violet-600/20 text-white font-medium'
+            :class="isActive(item)
+              ? 'bg-indigo-600/20 text-white font-medium'
               : 'text-gray-400 hover:text-white hover:bg-gray-800'"
             @click="mobileMenuOpen = false"
           >
             {{ item.label }}
           </NuxtLink>
-          <div v-if="!authStore.isLoggedIn" class="pt-2 flex flex-col gap-2 border-t border-gray-800/50 mt-1">
-            <NuxtLink to="/auth/login" class="px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
-              登录
-            </NuxtLink>
-            <NuxtLink to="/auth/register" class="px-3 py-2.5 rounded-lg text-sm bg-violet-600 hover:bg-violet-500 text-white transition-colors text-center font-medium">
-              免费开始
+          <div class="pt-2 border-t border-gray-800/50 mt-1">
+            <NuxtLink
+              to="/novel"
+              class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm bg-violet-600 hover:bg-violet-500 text-white font-medium transition-colors"
+              @click="mobileMenuOpen = false"
+            >
+              进入创作台
             </NuxtLink>
           </div>
         </nav>
       </div>
     </header>
 
-    <!-- Breadcrumbs -->
-    <div v-if="breadcrumbs.length > 0" class="border-b border-gray-800/50">
-      <div class="max-w-7xl mx-auto px-6 py-3">
-        <ol class="flex items-center gap-2 text-sm">
-          <li>
-            <NuxtLink to="/" class="text-gray-500 hover:text-gray-300 transition-colors">首页</NuxtLink>
-          </li>
-          <li v-for="(crumb, index) in breadcrumbs" :key="crumb.to" class="flex items-center gap-2">
-            <svg class="w-3.5 h-3.5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-            </svg>
-            <NuxtLink v-if="index < breadcrumbs.length - 1" :to="crumb.to" class="text-gray-500 hover:text-gray-300 transition-colors">
-              {{ crumb.label }}
-            </NuxtLink>
-            <span v-else class="text-gray-300 font-medium">{{ crumb.label }}</span>
-          </li>
-        </ol>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-6 py-8">
+    <!-- Main Content (full-width, plaza pages handle own max-width) -->
+    <main>
       <slot />
     </main>
 
-    <!-- Toast notifications -->
     <AppToast />
 
     <!-- Footer -->
     <footer class="border-t border-gray-800 mt-auto">
       <div class="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div class="flex items-center gap-2 text-gray-500 text-sm">
-          <AppLogo :size="20" />
-          <span>简影 © 2025</span>
+        <div class="flex items-center gap-4 text-gray-500 text-sm">
+          <div class="flex items-center gap-2">
+            <AppLogo :size="18" />
+            <span>简影 © 2026</span>
+          </div>
+          <span class="text-gray-700">·</span>
+          <NuxtLink to="/novel" class="hover:text-gray-300 transition-colors flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+            </svg>
+            创作台
+          </NuxtLink>
         </div>
         <div class="flex items-center gap-6 text-sm text-gray-500">
-          <NuxtLink to="/plaza" class="hover:text-gray-300 transition-colors">作品广场</NuxtLink>
           <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>
           <NuxtLink to="/terms" class="hover:text-gray-300 transition-colors">使用条款</NuxtLink>
           <NuxtLink to="/privacy" class="hover:text-gray-300 transition-colors">隐私政策</NuxtLink>
@@ -372,10 +322,6 @@ const breadcrumbs = computed(() => {
     </footer>
   </div>
 
-  <!-- AI Provider Guard Modal -->
-  <AiProviderGuardModal />
-
-  <!-- Feedback Widget -->
   <FeedbackWidget />
 
   <!-- 站内信详情弹窗 -->
@@ -387,50 +333,29 @@ const breadcrumbs = computed(() => {
     >
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showNotifDetail = false"/>
       <div class="relative w-full max-w-md bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
-        <!-- Header -->
         <div class="flex items-start justify-between px-5 py-4 border-b border-gray-800">
           <div class="flex items-center gap-2.5 flex-1 min-w-0 pr-4">
-            <span
-              class="flex-shrink-0 w-2 h-2 rounded-full mt-1"
-              :class="selectedNotif.is_read ? 'bg-gray-600' : 'bg-violet-500'"
-            />
+            <span class="flex-shrink-0 w-2 h-2 rounded-full mt-1" :class="selectedNotif.is_read ? 'bg-gray-600' : 'bg-indigo-500'"/>
             <h3 class="text-base font-semibold text-white leading-snug">{{ selectedNotif.title }}</h3>
           </div>
-          <button
-            class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
-            @click="showNotifDetail = false"
-          >
+          <button class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" @click="showNotifDetail = false">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
-        <!-- Body -->
         <div class="px-5 py-4 max-h-72 overflow-y-auto">
           <p class="text-sm text-gray-300 whitespace-pre-wrap break-words leading-relaxed">{{ selectedNotif.body }}</p>
         </div>
-        <!-- Footer -->
         <div class="px-5 py-3 border-t border-gray-800 flex items-center justify-between">
-          <span class="text-xs text-gray-500">
-            {{ new Date(selectedNotif.created_at).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
-          </span>
-          <button
-            v-if="selectedNotif.link_path"
-            class="text-sm text-violet-400 hover:text-violet-300 font-medium transition-colors flex items-center gap-1"
-            @click="handleNotifDetailNavigate"
-          >
+          <span class="text-xs text-gray-500">{{ new Date(selectedNotif.created_at).toLocaleString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+          <button v-if="selectedNotif.link_path" class="text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors flex items-center gap-1" @click="handleNotifDetailNavigate">
             前往查看
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
             </svg>
           </button>
-          <button
-            v-else
-            class="text-sm text-gray-500 hover:text-gray-300 transition-colors"
-            @click="showNotifDetail = false"
-          >
-            关闭
-          </button>
+          <button v-else class="text-sm text-gray-500 hover:text-gray-300 transition-colors" @click="showNotifDetail = false">关闭</button>
         </div>
       </div>
     </div>

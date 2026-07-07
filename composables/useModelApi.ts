@@ -129,29 +129,6 @@ export const useModelApi = () => {
       body: JSON.stringify(data),
     })
 
-  const getTaskMappings = () =>
-    request<ApiResponse<Record<string, number | null>>>('/models/task-mappings')
-
-  const updateTaskMapping = (data: { task_type: string; provider_id: number | null }) =>
-    request<ApiResponse<{ ok: boolean }>>('/models/task-mappings', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    })
-
-  const listTaskConfigs = () =>
-    request<ApiResponse<any[]>>('/task-configs')
-
-  const updateTaskConfig = (taskType: string, data: {
-    primary_model_id?: number
-    primary_provider_id?: number
-    max_tokens?: number
-    temperature?: number
-  }) =>
-    request<ApiResponse<any>>(`/task-configs/${taskType}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    })
-
   return {
     getProviders,
     getCapableProviders,
@@ -171,10 +148,6 @@ export const useModelApi = () => {
     getProviderTemplates,
     syncProviderGroup,
     testModelPrompt,
-    getTaskMappings,
-    updateTaskMapping,
-    listTaskConfigs,
-    updateTaskConfig,
     voicePreview: (voiceId: string, text?: string) =>
       request<ApiResponse<{ task_id: string }>>('/models/voice-preview', {
         method: 'POST',

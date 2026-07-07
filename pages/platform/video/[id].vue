@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Video, VideoComment } from '~/types'
 
-definePageMeta({ auth: false })
+definePageMeta({ layout: 'plaza', auth: false })
 
 const route = useRoute()
 const platformApi = usePlatformApi()

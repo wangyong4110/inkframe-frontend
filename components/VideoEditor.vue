@@ -220,10 +220,11 @@ async function generateStoryboard(
   temperature?: number,
   timeoutSeconds?: number,
   voiceMode?: string,
+  providerOverride?: string,
 ) {
   await _generateStoryboard({
     videoId: props.videoId,
-    provider: props.llmProvider || undefined,
+    provider: providerOverride || props.llmProvider || undefined,
     userPrompt,
     pacing,
     targetDuration,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Novel } from '~/types'
 
-definePageMeta({ auth: false })
+definePageMeta({ layout: 'plaza', auth: false })
 
 useHead({
   title: '简影 排行榜',
