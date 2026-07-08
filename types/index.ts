@@ -1471,3 +1471,27 @@ export interface DramaTemplate {
   created_at: string
   updated_at: string
 }
+
+// ── MCP Feature Binding (Sysadmin) ──────────────────────────────────────────
+
+export interface McpFeatureBinding {
+  id: number
+  feature_key: string
+  mcp_tool_id?: number
+  enabled: boolean
+  note?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SystemFeature {
+  key: string
+  name: string
+  description: string
+  category: string // chapter / image / video / other
+}
+
+export interface FeatureBindingDTO extends SystemFeature {
+  binding?: McpFeatureBinding
+  tool?: McpTool
+}

@@ -52,6 +52,24 @@ const batchGenProgress = ref(0)
 const batchGenTitle = ref('')
 const batchGenTotal = ref(0)
 
+// 运行时工具选择（空=不传 enabled_tools，沿用默认行为）
+const BATCH_TOOLS = [
+  { name: 'web_search',       label: '联网搜索',  desc: '搜索相关故事片段注入 prompt' },
+  { name: 'wiki_search',      label: '百科知识',  desc: '查询世界观、地名、历史等背景信息' },
+  { name: 'story_pattern',    label: '情节模板',  desc: '注入类型化叙事结构参考' },
+  { name: 'knowledge_search', label: '知识库',   desc: '检索本小说已积累的剧情知识' },
+  { name: 'character_lookup', label: '角色档案',  desc: '日志增强角色一致性（不直接改 prompt）' },
+]
+const batchEnabledTools = ref<Set<string>>(new Set())
+const batchToolsEnabled = ref(false) // false=不干预（使用系统默认）
+
+function toggleBatchTool(name: string, checked: boolean) {
+  const s = new Set(batchEnabledTools.value)
+  if (checked) s.add(name)
+  else s.delete(name)
+  batchEnabledTools.value = s
+}
+
 async function handleBatchGenerate() {
   if (!await guardAiProvider('LLM')) return
   showBatchGenModal.value = false
@@ -59,7 +77,13 @@ async function handleBatchGenerate() {
   batchGenProgress.value = 0
   batchGenTitle.value = '正在准备...'
   try {
-    const resp: any = await batchGenerateChapters(props.novelId, { skip_existing: batchGenSkipExisting.value })
+    const toolsPayload = batchToolsEnabled.value && batchEnabledTools.value.size > 0
+      ? [...batchEnabledTools.value]
+      : undefined
+    const resp: any = await batchGenerateChapters(props.novelId, {
+      skip_existing: batchGenSkipExisting.value,
+      enabled_tools: toolsPayload,
+    })
     const taskId = resp?.task_id ?? resp?.data?.task_id
     batchGenTotal.value = resp?.total ?? resp?.data?.total ?? 0
     // Sync progress from task store into local progress bar
@@ -697,6 +721,39 @@ async function confirmDeleteChapter() {
               <p class="text-xs text-gray-500 mt-0.5">只生成空白章节；取消勾选将重新生成所有章节</p>
             </div>
           </label>
+
+          <!-- 工具选择 -->
+          <div class="border border-white/10 rounded-lg overflow-hidden">
+            <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors">
+              <input
+                v-model="batchToolsEnabled"
+                type="checkbox"
+                class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+              />
+              <div>
+                <span class="text-sm font-medium text-gray-200">自定义 AI 工具</span>
+                <p class="text-xs text-gray-500 mt-0.5">手动选择此次生成启用的工具；不勾选则使用系统默认</p>
+              </div>
+            </label>
+            <div v-if="batchToolsEnabled" class="border-t border-white/10 px-4 py-3 space-y-2.5">
+              <label
+                v-for="tool in BATCH_TOOLS"
+                :key="tool.name"
+                class="flex items-start gap-3 cursor-pointer group"
+              >
+                <input
+                  type="checkbox"
+                  :checked="batchEnabledTools.has(tool.name)"
+                  class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                  @change="(e: Event) => toggleBatchTool(tool.name, (e.target as HTMLInputElement).checked)"
+                />
+                <div>
+                  <span class="text-sm text-gray-300 group-hover:text-gray-100 transition-colors">{{ tool.label }}</span>
+                  <p class="text-xs text-gray-500 mt-0.5">{{ tool.desc }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
 
           <div class="bg-amber-900/20 border border-amber-700/30 rounded-lg px-4 py-3 text-xs text-amber-300 leading-relaxed">
             <strong>注意：</strong>批量生成为顺序执行，章节较多时耗时较长。生成过程中可关闭此对话框，任务将在后台继续运行，完成后页面自动刷新。

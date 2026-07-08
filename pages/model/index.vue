@@ -892,24 +892,41 @@ const {
 } = useMcpApi()
 
 const mcpTools = ref<McpTool[]>([])
+// 工具列表页只展示用户自建工具，系统工具不暴露给用户
+const userMcpTools = computed(() => mcpTools.value.filter(t => !t.is_system))
 const mcpLoading = ref(false)
 const showMcpModal = ref(false)
 const editingTool = ref<McpTool | null>(null)
 const mcpSaving = ref(false)
 const testingMcpId = ref<number | null>(null)
 
-// Add/Edit form
+// Add/Edit form（timeout 单位：秒，与后端一致）
 const mcpForm = ref({
   name: '',
   display_name: '',
   description: '',
   transport_type: 'http' as 'http' | 'sse' | 'stdio',
   endpoint: '',
-  timeout: 30000,
+  timeout: 30,   // seconds
   is_active: true,
-  // headers / env as raw JSON strings for the textarea
   headers_raw: '',
   env_raw: '',
+})
+
+// headers JSON 实时校验
+const headersJsonError = ref('')
+function validateHeadersJson() {
+  const s = mcpForm.value.headers_raw.trim()
+  if (!s) { headersJsonError.value = ''; return }
+  try { JSON.parse(s); headersJsonError.value = '' }
+  catch (e: any) { headersJsonError.value = 'JSON 格式错误：' + e.message }
+}
+
+// 工具标识格式校验（只允许 a-z 0-9 _）
+const nameFormatError = computed(() => {
+  const n = mcpForm.value.name
+  if (!n) return ''
+  return /^[a-z][a-z0-9_]*$/.test(n) ? '' : '只允许小写字母开头，包含字母、数字、下划线'
 })
 
 // Model binding modal
@@ -945,16 +962,18 @@ async function loadMcpTools() {
 
 function openAddMcp() {
   editingTool.value = null
+  headersJsonError.value = ''
   mcpForm.value = { name: '', display_name: '', description: '', transport_type: 'http',
-    endpoint: '', timeout: 30000, is_active: true, headers_raw: '', env_raw: '' }
+    endpoint: '', timeout: 30, is_active: true, headers_raw: '', env_raw: '' }
   showMcpModal.value = true
 }
 function openEditMcp(t: McpTool) {
   editingTool.value = t
+  headersJsonError.value = ''
   mcpForm.value = {
     name: t.name, display_name: t.display_name, description: t.description || '',
     transport_type: t.transport_type, endpoint: t.endpoint,
-    timeout: (t.timeout ?? 30) * 1000, // backend stores seconds, UI uses ms
+    timeout: t.timeout ?? 30, // backend and UI both use seconds
     is_active: t.is_active,
     headers_raw: t.headers ? JSON.stringify(t.headers, null, 2) : '',
     env_raw: t.env ? JSON.stringify(t.env, null, 2) : '',
@@ -963,13 +982,14 @@ function openEditMcp(t: McpTool) {
 }
 
 function parseMcpForm() {
+  if (nameFormatError.value) { toast.error('工具标识格式不正确'); return null }
   let headers: Record<string, string> | undefined
   let env: Record<string, string> | undefined
   if (mcpForm.value.headers_raw.trim()) {
-    try { headers = JSON.parse(mcpForm.value.headers_raw) } catch { toast.error('Headers JSON 格式错误'); return null }
+    try { headers = JSON.parse(mcpForm.value.headers_raw) } catch { toast.error('请求头 JSON 格式错误'); return null }
   }
   if (mcpForm.value.env_raw.trim()) {
-    try { env = JSON.parse(mcpForm.value.env_raw) } catch { toast.error('Env JSON 格式错误'); return null }
+    try { env = JSON.parse(mcpForm.value.env_raw) } catch { toast.error('环境变量 JSON 格式错误'); return null }
   }
   return {
     name: mcpForm.value.name.trim(),
@@ -977,7 +997,7 @@ function parseMcpForm() {
     description: mcpForm.value.description.trim() || undefined,
     transport_type: mcpForm.value.transport_type,
     endpoint: mcpForm.value.endpoint.trim(),
-    timeout: Math.floor(mcpForm.value.timeout / 1000), // convert ms → seconds for backend
+    timeout: mcpForm.value.timeout, // seconds, no conversion needed
     is_active: mcpForm.value.is_active,
     headers,
     env,
@@ -1134,8 +1154,8 @@ watch(activeTab, (tab) => {
           @click="activeTab = 'mcp'"
         >
           MCP 工具
-          <span v-if="mcpTools.length > 0" class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">
-            {{ mcpTools.length }}
+          <span v-if="userMcpTools.length > 0" class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500">
+            {{ userMcpTools.length }}
           </span>
         </button>
       </nav>
@@ -1679,7 +1699,7 @@ watch(activeTab, (tab) => {
       </div>
 
       <!-- Empty -->
-      <div v-else-if="mcpTools.length === 0" class="card p-12 text-center">
+      <div v-else-if="userMcpTools.length === 0" class="card p-12 text-center">
         <div class="mx-auto w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
           <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -1692,7 +1712,7 @@ watch(activeTab, (tab) => {
 
       <!-- Tool cards -->
       <div v-else class="space-y-4">
-        <div v-for="tool in mcpTools" :key="tool.id" class="card overflow-hidden">
+        <div v-for="tool in userMcpTools" :key="tool.id" class="card overflow-hidden">
           <div class="px-5 py-4 flex items-start gap-4">
             <!-- Icon -->
             <div class="w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
@@ -1976,8 +1996,17 @@ watch(activeTab, (tab) => {
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                     工具标识 <span class="text-red-500">*</span>
                   </label>
-                  <div v-if="editingTool" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed">{{ editingTool.name }}</div>
-                  <input v-else v-model="mcpForm.name" type="text" class="input font-mono text-sm" placeholder="web-search" />
+                  <div v-if="editingTool" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed font-mono text-sm">{{ editingTool.name }}</div>
+                  <input
+                    v-else
+                    v-model="mcpForm.name"
+                    type="text"
+                    class="input font-mono text-sm"
+                    :class="nameFormatError ? 'border-red-400 focus:ring-red-400' : ''"
+                    placeholder="my_tool"
+                  />
+                  <p v-if="nameFormatError" class="mt-1 text-xs text-red-500">{{ nameFormatError }}</p>
+                  <p v-else class="mt-1 text-xs text-gray-400">小写字母开头，可含字母、数字、下划线</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
@@ -2018,7 +2047,7 @@ watch(activeTab, (tab) => {
 
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  服务端点 <span class="text-red-500">*</span>
+                  {{ mcpForm.transport_type === 'stdio' ? '命令路径' : '服务端点' }} <span class="text-red-500">*</span>
                 </label>
                 <input
                   v-model="mcpForm.endpoint"
@@ -2029,16 +2058,28 @@ watch(activeTab, (tab) => {
                   :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
                 />
                 <p class="mt-1 text-xs text-gray-400">
-                  {{ mcpForm.transport_type === 'stdio' ? '可执行文件路径' : 'MCP 服务的完整 URL' }}
+                  {{ mcpForm.transport_type === 'stdio' ? '可执行文件的绝对路径，文件需有执行权限' : 'MCP 服务的完整 URL（需可从服务器访问）' }}
                 </p>
               </div>
 
               <!-- Timeout -->
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  超时时间（毫秒）
+                  超时时间（秒）
                 </label>
-                <input v-model.number="mcpForm.timeout" type="number" min="1000" step="1000" class="input" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model.number="mcpForm.timeout"
+                    type="number"
+                    min="1"
+                    max="300"
+                    step="1"
+                    class="input w-28"
+                    :readonly="editingTool?.is_system"
+                    :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
+                  />
+                  <span class="text-sm text-gray-400">秒（建议 10–60）</span>
+                </div>
               </div>
 
               <!-- Headers -->
@@ -2050,10 +2091,12 @@ watch(activeTab, (tab) => {
                   v-model="mcpForm.headers_raw"
                   rows="3"
                   class="input font-mono text-xs"
+                  :class="[headersJsonError ? 'border-red-400 focus:ring-red-400' : '', editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : '']"
                   placeholder='{"Authorization": "Bearer token", "X-API-Key": "key"}'
                   :readonly="editingTool?.is_system"
-                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
+                  @blur="validateHeadersJson"
                 ></textarea>
+                <p v-if="headersJsonError" class="mt-1 text-xs text-red-500">{{ headersJsonError }}</p>
               </div>
 
               <!-- Env vars (for stdio) -->
@@ -2080,7 +2123,10 @@ watch(activeTab, (tab) => {
                   @click="!editingTool?.is_system && (mcpForm.is_active = !mcpForm.is_active)">
                   <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="mcpForm.is_active ? 'translate-x-6' : 'translate-x-1'" />
                 </button>
-                <span class="text-sm text-gray-700 dark:text-gray-300">启用该工具</span>
+                <div>
+                  <span class="text-sm text-gray-700 dark:text-gray-300">启用该工具</span>
+                  <p class="text-xs text-gray-400 mt-0.5">启用后需在模型配置中绑定才能被调用</p>
+                </div>
               </div>
             </div>
 

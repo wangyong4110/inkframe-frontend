@@ -41,6 +41,12 @@ const menuItems: MenuItem[] = [
       { path: '/sysadmin/ai-usage', label: 'AI 用量统计', icon: '🔋' },
     ],
   },
+  {
+    path: '/sysadmin/_mcp', label: 'MCP 管理', icon: '🔌',
+    children: [
+      { path: '/sysadmin/mcp', label: '工具与功能绑定', icon: '🛠️' },
+    ],
+  },
   { path: '/sysadmin/settings', label: '系统设置', icon: '⚙️' },
 ]
 

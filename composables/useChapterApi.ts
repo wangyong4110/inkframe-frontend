@@ -79,6 +79,7 @@ export const useChapterApi = () => {
     start_chapter_no?: number
     end_chapter_no?: number
     model?: string
+    enabled_tools?: string[]
   }) =>
     request<{ task_id: string; total: number; message: string }>(`/novels/${novelId}/chapters/batch-generate`, {
       method: 'POST',
