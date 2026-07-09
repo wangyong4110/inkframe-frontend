@@ -909,18 +909,28 @@ const mcpForm = ref({
   endpoint: '',
   timeout: 30,   // seconds
   is_active: true,
-  headers_raw: '',
-  env_raw: '',
+  headerPairs: [] as { key: string; value: string }[],
+  envPairs: [] as { key: string; value: string }[],
 })
 
-// headers JSON 实时校验
-const headersJsonError = ref('')
-function validateHeadersJson() {
-  const s = mcpForm.value.headers_raw.trim()
-  if (!s) { headersJsonError.value = ''; return }
-  try { JSON.parse(s); headersJsonError.value = '' }
-  catch (e: any) { headersJsonError.value = 'JSON 格式错误：' + e.message }
+// Auth quick-setup
+const authType = ref<'none' | 'bearer' | 'apikey'>('none')
+const authValue = ref('')
+
+function applyAuth() {
+  mcpForm.value.headerPairs = mcpForm.value.headerPairs.filter(
+    p => p.key !== 'Authorization' && p.key !== 'X-API-Key'
+  )
+  if (authType.value === 'bearer' && authValue.value.trim()) {
+    mcpForm.value.headerPairs.unshift({ key: 'Authorization', value: `Bearer ${authValue.value.trim()}` })
+  } else if (authType.value === 'apikey' && authValue.value.trim()) {
+    mcpForm.value.headerPairs.unshift({ key: 'X-API-Key', value: authValue.value.trim() })
+  }
 }
+
+watch(authType, (val) => {
+  if (val === 'none') { authValue.value = ''; applyAuth() }
+})
 
 // 工具标识格式校验（只允许 a-z 0-9 _）
 const nameFormatError = computed(() => {
@@ -962,34 +972,45 @@ async function loadMcpTools() {
 
 function openAddMcp() {
   editingTool.value = null
-  headersJsonError.value = ''
+  authType.value = 'none'
+  authValue.value = ''
   mcpForm.value = { name: '', display_name: '', description: '', transport_type: 'http',
-    endpoint: '', timeout: 30, is_active: true, headers_raw: '', env_raw: '' }
+    endpoint: '', timeout: 30, is_active: true, headerPairs: [], envPairs: [] }
   showMcpModal.value = true
 }
 function openEditMcp(t: McpTool) {
   editingTool.value = t
-  headersJsonError.value = ''
+  const hPairs = t.headers ? Object.entries(t.headers).map(([k, v]) => ({ key: k, value: v })) : []
+  // Detect existing auth header
+  const authHeader = t.headers?.['Authorization']
+  const apiKeyHeader = t.headers?.['X-API-Key']
+  if (authHeader?.startsWith('Bearer ')) {
+    authType.value = 'bearer'; authValue.value = authHeader.slice(7)
+  } else if (apiKeyHeader) {
+    authType.value = 'apikey'; authValue.value = apiKeyHeader
+  } else {
+    authType.value = 'none'; authValue.value = ''
+  }
   mcpForm.value = {
     name: t.name, display_name: t.display_name, description: t.description || '',
     transport_type: t.transport_type, endpoint: t.endpoint,
-    timeout: t.timeout ?? 30, // backend and UI both use seconds
+    timeout: t.timeout ?? 30,
     is_active: t.is_active,
-    headers_raw: t.headers ? JSON.stringify(t.headers, null, 2) : '',
-    env_raw: t.env ? JSON.stringify(t.env, null, 2) : '',
+    headerPairs: hPairs,
+    envPairs: t.env ? Object.entries(t.env).map(([k, v]) => ({ key: k, value: v })) : [],
   }
   showMcpModal.value = true
 }
 
 function parseMcpForm() {
   if (nameFormatError.value) { toast.error('工具标识格式不正确'); return null }
-  let headers: Record<string, string> | undefined
-  let env: Record<string, string> | undefined
-  if (mcpForm.value.headers_raw.trim()) {
-    try { headers = JSON.parse(mcpForm.value.headers_raw) } catch { toast.error('请求头 JSON 格式错误'); return null }
+  const headers: Record<string, string> = {}
+  for (const p of mcpForm.value.headerPairs) {
+    if (p.key.trim()) headers[p.key.trim()] = p.value
   }
-  if (mcpForm.value.env_raw.trim()) {
-    try { env = JSON.parse(mcpForm.value.env_raw) } catch { toast.error('环境变量 JSON 格式错误'); return null }
+  const env: Record<string, string> = {}
+  for (const p of mcpForm.value.envPairs) {
+    if (p.key.trim()) env[p.key.trim()] = p.value
   }
   return {
     name: mcpForm.value.name.trim(),
@@ -997,10 +1018,10 @@ function parseMcpForm() {
     description: mcpForm.value.description.trim() || undefined,
     transport_type: mcpForm.value.transport_type,
     endpoint: mcpForm.value.endpoint.trim(),
-    timeout: mcpForm.value.timeout, // seconds, no conversion needed
+    timeout: mcpForm.value.timeout,
     is_active: mcpForm.value.is_active,
-    headers,
-    env,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    env: Object.keys(env).length > 0 ? env : undefined,
   }
 }
 
@@ -1989,139 +2010,185 @@ watch(activeTab, (tab) => {
               </button>
             </div>
 
-            <div class="px-6 py-5 space-y-4">
-              <!-- Name / Display name -->
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                    工具标识 <span class="text-red-500">*</span>
-                  </label>
-                  <div v-if="editingTool" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed font-mono text-sm">{{ editingTool.name }}</div>
-                  <input
-                    v-else
-                    v-model="mcpForm.name"
-                    type="text"
-                    class="input font-mono text-sm"
-                    :class="nameFormatError ? 'border-red-400 focus:ring-red-400' : ''"
-                    placeholder="my_tool"
-                  />
-                  <p v-if="nameFormatError" class="mt-1 text-xs text-red-500">{{ nameFormatError }}</p>
-                  <p v-else class="mt-1 text-xs text-gray-400">小写字母开头，可含字母、数字、下划线</p>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
-                  <input v-model="mcpForm.display_name" type="text" class="input" placeholder="网络搜索" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+            <div class="px-6 py-5 space-y-5">
+
+              <!-- Section: 基本信息 -->
+              <div>
+                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">基本信息</p>
+                <div class="space-y-3">
+                  <!-- Name / Display name row -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        工具标识 <span class="text-red-500">*</span>
+                      </label>
+                      <div v-if="editingTool" class="input bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed font-mono text-sm">{{ editingTool.name }}</div>
+                      <input v-else v-model="mcpForm.name" type="text" class="input font-mono text-sm"
+                        :class="nameFormatError ? 'border-red-400 focus:ring-red-400' : ''" placeholder="my_tool" />
+                      <p v-if="nameFormatError" class="mt-1 text-xs text-red-500">{{ nameFormatError }}</p>
+                      <p v-else class="mt-1 text-xs text-gray-400">小写字母开头，可含字母、数字、下划线</p>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">显示名称</label>
+                      <input v-model="mcpForm.display_name" type="text" class="input" placeholder="网络搜索"
+                        :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                    </div>
+                  </div>
+                  <!-- Description - textarea not input -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">功能描述</label>
+                    <textarea v-model="mcpForm.description" rows="2" class="input resize-none"
+                      placeholder="说明该工具的功能、适用场景和输入输出（供模型理解何时调用）"
+                      :readonly="editingTool?.is_system"
+                      :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"></textarea>
+                  </div>
                 </div>
               </div>
 
-              <!-- Description -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">功能描述</label>
-                <input v-model="mcpForm.description" type="text" class="input" placeholder="允许模型搜索互联网获取最新信息" :readonly="editingTool?.is_system" :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+              <!-- Section: 连接配置 -->
+              <div class="border-t border-gray-100 dark:border-gray-700 pt-5">
+                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">连接配置</p>
+                <div class="space-y-3">
+                  <!-- Transport protocol -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">传输协议</label>
+                    <div class="grid grid-cols-3 gap-2">
+                      <button v-for="t in ['http', 'sse', 'stdio']" :key="t" type="button"
+                        class="py-2 rounded-lg border-2 text-sm font-medium transition-all"
+                        :class="mcpForm.transport_type === t
+                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                          : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'"
+                        :disabled="editingTool?.is_system"
+                        @click="!editingTool?.is_system && (mcpForm.transport_type = t as any)">
+                        {{ t.toUpperCase() }}
+                      </button>
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-400">
+                      <template v-if="mcpForm.transport_type === 'http'">HTTP：请求/响应模式，最通用</template>
+                      <template v-else-if="mcpForm.transport_type === 'sse'">SSE：服务端推送，适合流式返回</template>
+                      <template v-else>Stdio：本地进程，通过标准输入输出通信，适合命令行工具</template>
+                    </p>
+                  </div>
+                  <!-- Endpoint -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      {{ mcpForm.transport_type === 'stdio' ? '命令路径' : '服务端点' }} <span class="text-red-500">*</span>
+                    </label>
+                    <input v-model="mcpForm.endpoint" type="text" class="input font-mono text-sm"
+                      :placeholder="mcpForm.transport_type === 'stdio' ? '/usr/local/bin/mcp-server' : 'https://mcp.example.com/tools'"
+                      :readonly="editingTool?.is_system"
+                      :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ mcpForm.transport_type === 'stdio' ? '可执行文件的绝对路径，文件需有执行权限' : 'MCP 服务的完整 URL（需可从服务器访问）' }}
+                    </p>
+                  </div>
+                  <!-- Timeout -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">超时时间</label>
+                    <div class="flex items-center gap-2">
+                      <input v-model.number="mcpForm.timeout" type="number" min="1" max="300" step="1" class="input w-28"
+                        :readonly="editingTool?.is_system"
+                        :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                      <span class="text-sm text-gray-400">秒（建议 10–60）</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <!-- Transport type + Endpoint -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">传输协议</label>
-                <div class="grid grid-cols-3 gap-2">
-                  <button
-                    v-for="t in ['http', 'sse', 'stdio']"
-                    :key="t"
-                    type="button"
-                    class="py-2 rounded-lg border-2 text-sm font-medium transition-all"
-                    :class="mcpForm.transport_type === t
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'"
-                    :disabled="editingTool?.is_system"
-                    @click="!editingTool?.is_system && (mcpForm.transport_type = t as any)"
-                  >
-                    {{ t.toUpperCase() }}
+              <!-- Section: 认证与请求头 (HTTP/SSE only) -->
+              <div v-if="mcpForm.transport_type !== 'stdio'" class="border-t border-gray-100 dark:border-gray-700 pt-5">
+                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">认证与请求头</p>
+                <div class="space-y-3">
+                  <!-- Auth quick-setup -->
+                  <div v-if="!editingTool?.is_system">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">快捷认证</label>
+                    <div class="flex gap-2">
+                      <select v-model="authType" class="input flex-none w-36 text-sm" @change="applyAuth">
+                        <option value="none">无认证</option>
+                        <option value="bearer">Bearer Token</option>
+                        <option value="apikey">API Key 头</option>
+                      </select>
+                      <input v-if="authType !== 'none'" v-model="authValue" type="text" class="input flex-1 text-sm font-mono"
+                        :placeholder="authType === 'bearer' ? 'eyJhbGci...' : 'sk-xxxxxxxx'"
+                        @input="applyAuth" />
+                    </div>
+                    <p class="mt-1 text-xs text-gray-400">
+                      <template v-if="authType === 'bearer'">自动设置 Authorization: Bearer &lt;token&gt; 请求头</template>
+                      <template v-else-if="authType === 'apikey'">自动设置 X-API-Key: &lt;key&gt; 请求头</template>
+                      <template v-else>如需认证，选择上方快捷方式或在下方手动添加请求头</template>
+                    </p>
+                  </div>
+                  <!-- Key-value header pairs editor -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      请求头 <span class="text-xs text-gray-400 font-normal ml-1">可选</span>
+                    </label>
+                    <div class="space-y-2">
+                      <div v-for="(pair, i) in mcpForm.headerPairs" :key="i" class="flex gap-2 items-center">
+                        <input v-model="pair.key" type="text" class="input flex-1 font-mono text-xs min-w-0"
+                          placeholder="Header 名（如 X-Custom）"
+                          :readonly="editingTool?.is_system"
+                          :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                        <input v-model="pair.value" type="text" class="input flex-1 text-sm min-w-0"
+                          placeholder="值"
+                          :readonly="editingTool?.is_system"
+                          :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                        <button v-if="!editingTool?.is_system" type="button"
+                          class="flex-none w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          @click="mcpForm.headerPairs.splice(i, 1)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                      <button v-if="!editingTool?.is_system" type="button"
+                        class="flex items-center gap-1.5 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 py-1"
+                        @click="mcpForm.headerPairs.push({ key: '', value: '' })">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        添加请求头
+                      </button>
+                      <p v-if="mcpForm.headerPairs.length === 0" class="text-xs text-gray-400">暂无自定义请求头</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section: 环境变量 (STDIO only) -->
+              <div v-if="mcpForm.transport_type === 'stdio'" class="border-t border-gray-100 dark:border-gray-700 pt-5">
+                <p class="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">环境变量</p>
+                <div class="space-y-2">
+                  <div v-for="(pair, i) in mcpForm.envPairs" :key="i" class="flex gap-2 items-center">
+                    <input v-model="pair.key" type="text" class="input flex-1 font-mono text-xs min-w-0"
+                      placeholder="变量名（如 API_KEY）"
+                      :readonly="editingTool?.is_system"
+                      :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                    <input v-model="pair.value" type="text" class="input flex-1 text-sm min-w-0"
+                      placeholder="值"
+                      :readonly="editingTool?.is_system"
+                      :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''" />
+                    <button v-if="!editingTool?.is_system" type="button"
+                      class="flex-none w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      @click="mcpForm.envPairs.splice(i, 1)">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  <button v-if="!editingTool?.is_system" type="button"
+                    class="flex items-center gap-1.5 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 py-1"
+                    @click="mcpForm.envPairs.push({ key: '', value: '' })">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    添加环境变量
                   </button>
-                </div>
-                <p class="mt-1 text-xs text-gray-400">
-                  <template v-if="mcpForm.transport_type === 'http'">HTTP：请求/响应模式，最通用</template>
-                  <template v-else-if="mcpForm.transport_type === 'sse'">SSE：服务端推送，适合流式输出</template>
-                  <template v-else>Stdio：本地进程，通过标准输入输出通信</template>
-                </p>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  {{ mcpForm.transport_type === 'stdio' ? '命令路径' : '服务端点' }} <span class="text-red-500">*</span>
-                </label>
-                <input
-                  v-model="mcpForm.endpoint"
-                  type="text"
-                  class="input font-mono text-sm"
-                  :placeholder="mcpForm.transport_type === 'stdio' ? '/usr/local/bin/mcp-server' : 'https://mcp.example.com/tools'"
-                  :readonly="editingTool?.is_system"
-                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
-                />
-                <p class="mt-1 text-xs text-gray-400">
-                  {{ mcpForm.transport_type === 'stdio' ? '可执行文件的绝对路径，文件需有执行权限' : 'MCP 服务的完整 URL（需可从服务器访问）' }}
-                </p>
-              </div>
-
-              <!-- Timeout -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  超时时间（秒）
-                </label>
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model.number="mcpForm.timeout"
-                    type="number"
-                    min="1"
-                    max="300"
-                    step="1"
-                    class="input w-28"
-                    :readonly="editingTool?.is_system"
-                    :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
-                  />
-                  <span class="text-sm text-gray-400">秒（建议 10–60）</span>
+                  <p v-if="mcpForm.envPairs.length === 0" class="text-xs text-gray-400">暂无环境变量</p>
                 </div>
               </div>
 
-              <!-- Headers -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  请求头（JSON，可选）
-                </label>
-                <textarea
-                  v-model="mcpForm.headers_raw"
-                  rows="3"
-                  class="input font-mono text-xs"
-                  :class="[headersJsonError ? 'border-red-400 focus:ring-red-400' : '', editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : '']"
-                  placeholder='{"Authorization": "Bearer token", "X-API-Key": "key"}'
-                  :readonly="editingTool?.is_system"
-                  @blur="validateHeadersJson"
-                ></textarea>
-                <p v-if="headersJsonError" class="mt-1 text-xs text-red-500">{{ headersJsonError }}</p>
-              </div>
-
-              <!-- Env vars (for stdio) -->
-              <div v-if="mcpForm.transport_type === 'stdio'">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  环境变量（JSON，可选）
-                </label>
-                <textarea
-                  v-model="mcpForm.env_raw"
-                  rows="3"
-                  class="input font-mono text-xs"
-                  placeholder='{"API_KEY": "xxx", "DEBUG": "false"}'
-                  :readonly="editingTool?.is_system"
-                  :class="editingTool?.is_system ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 cursor-not-allowed' : ''"
-                ></textarea>
-              </div>
-
-              <!-- Active toggle -->
-              <div class="flex items-center gap-3 py-1">
+              <!-- Section: 状态 -->
+              <div class="border-t border-gray-100 dark:border-gray-700 pt-4 flex items-center gap-3">
                 <button type="button" role="switch" :aria-checked="mcpForm.is_active"
                   class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
                   :class="[mcpForm.is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600', editingTool?.is_system ? 'opacity-60 cursor-not-allowed' : '']"
                   :disabled="editingTool?.is_system"
                   @click="!editingTool?.is_system && (mcpForm.is_active = !mcpForm.is_active)">
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="mcpForm.is_active ? 'translate-x-6' : 'translate-x-1'" />
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                    :class="mcpForm.is_active ? 'translate-x-6' : 'translate-x-1'" />
                 </button>
                 <div>
                   <span class="text-sm text-gray-700 dark:text-gray-300">启用该工具</span>
@@ -2130,20 +2197,39 @@ watch(activeTab, (tab) => {
               </div>
             </div>
 
-            <div class="px-6 pb-6 pt-2 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
-              <template v-if="editingTool?.is_system">
-                <button class="btn-primary" @click="showMcpModal = false">关闭</button>
-              </template>
-              <template v-else>
-                <button class="btn-outline" @click="showMcpModal = false">取消</button>
-                <button class="btn-primary min-w-[80px]" :disabled="mcpSaving" @click="submitMcpForm">
-                  <span v-if="mcpSaving" class="flex items-center gap-1.5">
-                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                    保存中...
-                  </span>
-                  <span v-else>{{ editingTool ? '保存更改' : '添加工具' }}</span>
+            <div class="px-6 pb-6 pt-2 flex items-center justify-between gap-3 sticky bottom-0 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+              <!-- Test connection (left, edit mode only, HTTP/SSE only) -->
+              <div>
+                <button v-if="editingTool && !editingTool.is_system && mcpForm.transport_type !== 'stdio'"
+                  type="button" class="btn-outline flex items-center gap-1.5 text-sm"
+                  :disabled="testingMcpId === editingTool?.id"
+                  @click="editingTool && handleTestMcp(editingTool.id)">
+                  <svg v-if="testingMcpId === editingTool?.id" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  {{ testingMcpId === editingTool?.id ? '测试中...' : '测试连接' }}
                 </button>
-              </template>
+              </div>
+              <!-- Right: cancel/save -->
+              <div class="flex gap-3">
+                <template v-if="editingTool?.is_system">
+                  <button class="btn-primary" @click="showMcpModal = false">关闭</button>
+                </template>
+                <template v-else>
+                  <button class="btn-outline" @click="showMcpModal = false">取消</button>
+                  <button class="btn-primary min-w-[80px]" :disabled="mcpSaving" @click="submitMcpForm">
+                    <span v-if="mcpSaving" class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                      保存中...
+                    </span>
+                    <span v-else>{{ editingTool ? '保存更改' : '添加工具' }}</span>
+                  </button>
+                </template>
+              </div>
             </div>
           </div>
         </div>
