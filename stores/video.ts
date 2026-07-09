@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Video, StoryboardShot, VideoBGMSegment } from '~/types'
+import type { Video, StoryboardShot, VideoBGMSegment, AsyncTask } from '~/types'
 import { useTaskStore } from '~/stores/task'
 
 export interface GenerateStoryboardOptions {
@@ -38,8 +38,6 @@ interface VideoState {
   error: string | null
   storyboardTaskId: string | null
   storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
-  /** Cancel function for the active storyboard poll loop; null when not polling */
-  _storyboardPollStop: (() => void) | null
   synthesizeTaskId: string | null
   synthesizeStatus: string | null
   generationProgress: {
@@ -62,7 +60,6 @@ export const useVideoStore = defineStore('video', {
     error: null,
     storyboardTaskId: null,
     storyboardTaskStatus: null,
-    _storyboardPollStop: null,
     synthesizeTaskId: null,
     synthesizeStatus: null,
     generationProgress: {
@@ -241,9 +238,8 @@ export const useVideoStore = defineStore('video', {
         this.storyboardTaskId = taskId
         this.storyboardTaskStatus = 'pending'
         localStorage.setItem(`storyboard_task_${videoId}`, taskId)
-        this.pollStoryboardTask(videoId, taskId)
-        // 同步注册到统一任务面板（右下角【任务进度】）
-        useTaskStore().trackTask(taskId)
+        // 统一走全局任务轮询（同时挂到右下角【任务进度】面板），不再自建一套轮询逻辑
+        useTaskStore().trackTask(taskId, (task) => this._onStoryboardTaskDone(videoId, task))
       } catch (e: any) {
         this.error = e.message || 'Failed to generate storyboard'
         this.generating = false
@@ -252,73 +248,24 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    async pollStoryboardTask(videoId: number, taskId: string) {
-      // Cancel any previous poll loop before starting a new one
-      if (this._storyboardPollStop) {
-        this._storyboardPollStop()
+    // 分镜任务结束（completed/failed/cancelled/dead）时的公共收尾逻辑，由 useTaskStore 的
+    // onDone 回调触发。Complete() 只在 result 里存 shot_count，不存完整分镜数组，所以
+    // completed 时需要重新拉取一次列表，而不是尝试读一个从未写入过的字段。
+    _onStoryboardTaskDone(videoId: number, task: AsyncTask) {
+      this.generating = false
+      this.storyboardTaskStatus = task.status as VideoState['storyboardTaskStatus']
+      localStorage.removeItem(`storyboard_task_${videoId}`)
+      if (task.status === 'completed') {
+        this.fetchStoryboard(videoId)
+        if (task.error) this.error = task.error // 部分完成的警告文案，非硬失败
+      } else if (task.status === 'failed' || task.status === 'dead') {
+        this.error = task.error || '分镜生成失败'
       }
-
-      // 指数退避：初始 1s，最大 8s，最长轮询 10 分钟
-      const MAX_ELAPSED_MS = 10 * 60 * 1000
-      const startTime = Date.now()
-      let delay = 1000
-      let stopped = false
-      const stopFn = () => { stopped = true }
-      this._storyboardPollStop = stopFn
-
-      const poll = async () => {
-        if (stopped) return
-        if (Date.now() - startTime > MAX_ELAPSED_MS) {
-          console.warn('[VideoStore] polling timeout for task', taskId)
-          this.generating = false
-          this.storyboardTaskStatus = 'failed'
-          localStorage.removeItem(`storyboard_task_${videoId}`)
-          return
-        }
-        try {
-          const res = await useTaskApi().getTask(taskId)
-          if (stopped) return
-          const task = res.data
-          if (!task) return
-          this.storyboardTaskStatus = task.status
-          if (task.status === 'completed') {
-            this.generating = false
-            this._storyboardPollStop = null
-            localStorage.removeItem(`storyboard_task_${videoId}`)
-            const shots = task.data?.shots
-            if (shots) this.storyboard = shots
-            return
-          }
-          if (task.status === 'failed') {
-            this.generating = false
-            this._storyboardPollStop = null
-            localStorage.removeItem(`storyboard_task_${videoId}`)
-            this.error = task.error || '分镜生成失败'
-            return
-          }
-          if (task.status === 'cancelled') {
-            this.generating = false
-            this._storyboardPollStop = null
-            localStorage.removeItem(`storyboard_task_${videoId}`)
-            return
-          }
-          // still running/pending — poll again with backoff (cap at 8s)
-          delay = Math.min(delay * 1.5, 8000)
-          setTimeout(poll, delay)
-        } catch {
-          if (stopped) return
-          // 网络抖动不中断轮询，继续重试
-          delay = Math.min(delay * 2, 8000)
-          setTimeout(poll, delay)
-        }
-      }
-      setTimeout(poll, delay)
     },
 
     stopStoryboardPoll() {
-      if (this._storyboardPollStop) {
-        this._storyboardPollStop()
-        this._storyboardPollStop = null
+      if (this.storyboardTaskId) {
+        useTaskStore().stopPolling(this.storyboardTaskId)
       }
     },
 
@@ -330,10 +277,7 @@ export const useVideoStore = defineStore('video', {
       this.storyboardTaskStatus = 'running'
       this.generating = true
       this.storyboardTaskIsNew = false  // resumed task — don't show "generated" toast
-      this.pollStoryboardTask(videoId, taskId)
-      // 刷新后恢复时，task store 的 loadActiveTasks 通常已经覆盖；
-      // 此处兜底注册，保证面板可见
-      useTaskStore().trackTask(taskId)
+      useTaskStore().trackTask(taskId, (task) => this._onStoryboardTaskDone(videoId, task))
     },
 
     async updateShot(videoId: number, shotId: number, data: Partial<StoryboardShot>) {

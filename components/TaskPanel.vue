@@ -43,7 +43,8 @@
         >
           <!-- Status icon -->
           <div class="mt-0.5 flex-shrink-0">
-            <span v-if="task.status === 'completed'" class="text-success-500 text-base">✓</span>
+            <span v-if="task.status === 'completed' && task.error" class="text-amber-500 text-base">⚠</span>
+            <span v-else-if="task.status === 'completed'" class="text-success-500 text-base">✓</span>
             <span v-else-if="task.status === 'failed' || task.status === 'dead'" class="text-error-500 text-base">✕</span>
             <span v-else-if="task.status === 'cancelled'" class="text-gray-400 text-base">⊘</span>
             <span v-else class="inline-block w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
@@ -57,6 +58,11 @@
               <template v-else-if="task.status === 'running'">
                 <span>{{ task.progress > 0 ? task.progress + '%' : '处理中…' }}</span>
                 <span class="text-gray-400 dark:text-gray-500">· {{ formatElapsed(task.created_at) }}</span>
+              </template>
+              <template v-else-if="task.status === 'completed' && task.error">
+                <span class="text-amber-600 dark:text-amber-400">
+                  部分完成 · <button class="underline hover:no-underline" @click.stop="toggleError(task.task_id)">{{ expandedErrors.has(task.task_id) ? '收起' : '查看详情' }}</button>
+                </span>
               </template>
               <template v-else-if="task.status === 'completed'">
                 <span class="text-success-600 dark:text-success-400">已完成</span>
@@ -74,6 +80,11 @@
             <div
               v-if="(task.status === 'failed' || task.status === 'dead') && expandedErrors.has(task.task_id) && task.error"
               class="mt-1.5 text-xs text-error-600 dark:text-error-400 bg-red-50 dark:bg-red-950/30 rounded p-2 break-all whitespace-pre-wrap select-text"
+            >{{ task.error }}</div>
+            <!-- Expanded partial-completion warning -->
+            <div
+              v-if="task.status === 'completed' && task.error && expandedErrors.has(task.task_id)"
+              class="mt-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded p-2 break-all whitespace-pre-wrap select-text"
             >{{ task.error }}</div>
             <!-- Progress bar for running tasks -->
             <div v-if="task.status === 'running'" class="mt-1.5 h-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">

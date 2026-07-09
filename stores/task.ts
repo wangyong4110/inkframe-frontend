@@ -148,7 +148,7 @@ export const useTaskStore = defineStore('task', {
           return
         }
 
-        if (task.status === 'completed' || task.status === 'failed' || task.status === 'dead') {
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'dead' || task.status === 'cancelled') {
           clearTimeout(this._timers[taskId])
           delete this._timers[taskId]
           // Stop data-refresh interval before calling onDone (onDone will do its own final fetch)
@@ -157,8 +157,10 @@ export const useTaskStore = defineStore('task', {
             delete this._refreshIntervals[taskId]
           }
           onDone?.(task)
-          // failed/dead tasks stay visible (no auto-dismiss) so user can read the error
-          if (task.status === 'completed') {
+          // failed/dead/cancelled tasks, and completed-with-warning ("部分完成") tasks, stay
+          // visible (no auto-dismiss) so the user has a chance to read why. Only a clean
+          // completed-with-no-error task auto-dismisses.
+          if (task.status === 'completed' && !task.error) {
             if (!this._dismissed[taskId]) {
               this._dismissTimers[taskId] = setTimeout(() => {
                 this.dismiss(taskId)
