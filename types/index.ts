@@ -201,7 +201,8 @@ export interface CharacterLook {
   chapter_to: number    // 结束章节（含），0 表示无限延伸
   sort_order: number
   description?: string  // 外观描述（中文）
-  visual_prompt?: string // AI 图像生成英文 Prompt
+  visual_prompt?: string // AI 图像生成提示词：完整外观（含服装/鞋履/配饰/姿态），用于三视图
+  face_prompt?: string  // 面部特写专用提示词（仅身份+面部+发型），用于面部参考图；与 visual_prompt 同一次 AI 调用产出
   three_view_sheet?: string
   portrait?: string
   created_at: string
@@ -217,6 +218,7 @@ export interface CreateCharacterLookForm {
   sort_order?: number
   description?: string
   visual_prompt?: string
+  face_prompt?: string
   three_view_sheet?: string
   portrait?: string
 }

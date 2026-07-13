@@ -63,7 +63,7 @@ const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
 const generatingFormPortrait = ref(false)
-const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string; portrait?: string }>({
+const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; face_prompt?: string; three_view_sheet?: string; portrait?: string }>({
   label: '',
   chapter_from: 1,
   chapter_to: 0,
@@ -71,6 +71,7 @@ const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_v
   sort_order: 0,
   description: '',
   visual_prompt: '',
+  face_prompt: '',
   three_view_sheet: '',
   portrait: '',
 })
@@ -102,6 +103,7 @@ function openLookForm(look?: CharacterLook) {
       sort_order: look.sort_order,
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
+      face_prompt: look.face_prompt ?? '',
       three_view_sheet: look.three_view_sheet ?? '',
       portrait: look.portrait ?? '',
     }
@@ -115,6 +117,7 @@ function openLookForm(look?: CharacterLook) {
       sort_order: 0,
       description: character.value?.description ?? '',
       visual_prompt: '',
+      face_prompt: '',
     }
   }
   showLookForm.value = true
@@ -133,6 +136,9 @@ async function handleGenerateLookPrompt() {
       generatingLookPrompt.value = false
       if (task.status === 'completed') {
         lookForm.value.visual_prompt = (task.data?.visual_prompt as string) ?? ''
+        // face_prompt 是后端同一次 AI 调用一并产出的面部特写专用文案（不在此处展示/编辑），
+        // 随表单一起缓存，保存时一并提交，供面部参考图生成使用。
+        lookForm.value.face_prompt = (task.data?.face_prompt as string) ?? ''
         toast.success('视觉提示词已生成')
       } else if (task.status === 'failed') {
         toast.error('生成失败：' + (task.error || '未知错误'))
@@ -159,6 +165,7 @@ async function handleSaveLook() {
         sort_order: lookForm.value.sort_order,
         description: lookForm.value.description,
         visual_prompt: lookForm.value.visual_prompt,
+        face_prompt: lookForm.value.face_prompt,
         three_view_sheet: lookForm.value.three_view_sheet,
         portrait: lookForm.value.portrait,
       }
