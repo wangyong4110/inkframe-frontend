@@ -63,6 +63,7 @@ const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
 const generatingFormPortrait = ref(false)
+const showFacePrompt = ref(false) // 面部提示词编辑区默认收起
 const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; face_prompt?: string; three_view_sheet?: string; portrait?: string }>({
   label: '',
   chapter_from: 1,
@@ -693,6 +694,29 @@ function getRoleLabel(role: string): string {
             </div>
           </div>
 
+          <!-- 面部提示词（与图像提示词同一次 AI 调用产出，默认收起；用于核对/修正面部参考图生成效果） -->
+          <div>
+            <button
+              type="button"
+              class="flex items-center gap-1 text-left group"
+              @click="showFacePrompt = !showFacePrompt"
+            >
+              <svg
+                class="w-3 h-3 text-gray-400 transition-transform flex-shrink-0"
+                :class="{ 'rotate-90': showFacePrompt }"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              ><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+              <span class="text-xs font-medium text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300">面部提示词</span>
+              <span class="text-xs text-gray-400">· 面部特写专用，通常无需手动修改</span>
+            </button>
+            <textarea
+              v-if="showFacePrompt"
+              v-model="lookForm.face_prompt"
+              class="input h-14 resize-none font-mono text-xs mt-1.5 border-dashed bg-gray-50/50 dark:bg-gray-900/20"
+              placeholder="随图像提示词一起由 AI 生成，也可在此手动修正…"
+            />
+          </div>
+
           <!-- 视觉提示词 -->
           <div>
             <div class="flex items-center justify-between mb-1">
@@ -724,15 +748,12 @@ function getRoleLabel(role: string): string {
                 <div class="flex items-center gap-2">
                   <button
                     v-if="editingLook"
-                    class="text-xs text-violet-600 hover:text-violet-700 dark:text-violet-400 disabled:opacity-40"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
                     :disabled="generatingFormPortrait"
                     @click="handleFormGeneratePortrait"
                   >
-                    <span v-if="generatingFormPortrait" class="flex items-center gap-1">
-                      <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      生成中…
-                    </span>
-                    <span v-else>✨ AI 生成</span>
+                    <svg v-if="generatingFormPortrait" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    {{ generatingFormPortrait ? '生成中…' : '✨ AI 生成' }}
                   </button>
                   <button
                     v-if="lookForm.three_view_sheet"
@@ -763,7 +784,7 @@ function getRoleLabel(role: string): string {
                   </div>
                 </div>
                 <button
-                  class="btn-primary text-xs px-3 h-8 flex items-center gap-1"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
                   :disabled="generatingFormThreeView || !editingLook"
                   :title="!editingLook ? '保存形象后再生成' : !lookForm.portrait ? '建议先生成面部参考图（步骤 1），可提升一致性' : ''"
                   @click="handleFormGenerateThreeView"
@@ -771,7 +792,7 @@ function getRoleLabel(role: string): string {
                   <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  {{ generatingFormThreeView ? '生成中...' : 'AI 生成' }}
+                  {{ generatingFormThreeView ? '生成中…' : '✨ AI 生成' }}
                 </button>
               </div>
               <!-- 未生成面部图时的提示条 -->
