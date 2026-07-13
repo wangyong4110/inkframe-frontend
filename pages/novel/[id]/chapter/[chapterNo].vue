@@ -1894,12 +1894,23 @@ const previewDiffFile = computed(() => {
   return file
 })
 
-const applyGenerated = () => {
+const applyingGenerated = ref(false)
+
+const applyGenerated = async () => {
   content.value = previewModal.content
-  savedContent.value = savedContent.value // keep dirty
   previewModal.open = false
   previewDiffMode.value = false
-  toast.success('已应用生成内容')
+  applyingGenerated.value = true
+  try {
+    await doSave()
+    toast.success('已应用并保存生成内容')
+  } catch (e: any) {
+    // Content is already applied locally; only the persist step failed. Leave it dirty
+    // (doSave didn't update savedContent on failure) so autosave/manual save can retry.
+    toast.error('内容已应用，但保存失败，请手动保存：' + (e?.message || '未知错误'))
+  } finally {
+    applyingGenerated.value = false
+  }
 }
 
 // ── 取消生成 ──────────────────────────────────────────────────────────────────
@@ -4201,13 +4212,15 @@ onUnmounted(() => {
             </div>
             <div class="flex gap-2">
               <button
-                class="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors"
+                class="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                :disabled="applyingGenerated"
                 @click="applyGenerated"
               >
-                使用此内容
+                {{ applyingGenerated ? '保存中...' : '使用此内容' }}
               </button>
               <button
-                class="px-4 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                class="px-4 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                :disabled="applyingGenerated"
                 @click="previewModal.open = false; previewDiffMode = false"
               >
                 放弃
