@@ -120,9 +120,19 @@ async function handleGenerateCharacterImages() {
 }
 
 async function handleBatchCharacterImages() {
+  if (!chapter.value) return
+  const boundCharacterIds = effectiveCharacters.value.map((c: any) => c.id)
+  if (boundCharacterIds.length === 0) {
+    toast.error('本章暂无绑定角色，无法生成角色图片')
+    return
+  }
   generatingCharImages.value = true
   try {
-    const data: any = await characterApi.batchGenerateImages(Number(novelId))
+    const data: any = await characterApi.generateChapterCharacterImages(
+      Number(novelId),
+      chapter.value.chapter_no,
+      boundCharacterIds,
+    )
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingCharImages.value = false; return }
     toast.info('角色批量生成任务已提交，正在处理...')
@@ -143,9 +153,19 @@ async function handleBatchCharacterImages() {
 }
 
 async function handleBatchItemImages() {
+  if (!chapter.value) return
+  const boundItemIds = chapterItems.value.map((i: any) => i.id)
+  if (boundItemIds.length === 0) {
+    toast.error('本章暂无绑定物品，无法生成物品图片')
+    return
+  }
   generatingItemImages.value = true
   try {
-    const data: any = await itemApi.batchGenerateImages(Number(novelId))
+    const data: any = await itemApi.generateChapterItemImages(
+      Number(novelId),
+      chapter.value.chapter_no,
+      boundItemIds,
+    )
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingItemImages.value = false; return }
     toast.info('物品批量生成任务已提交，正在处理...')
@@ -165,9 +185,19 @@ async function handleBatchItemImages() {
 }
 
 async function handleBatchSceneImages() {
+  if (!chapter.value) return
+  const boundAnchorIds = chapterAnchors.value.map((a: any) => a.id)
+  if (boundAnchorIds.length === 0) {
+    toast.error('本章暂无绑定场景，无法生成场景图片')
+    return
+  }
   generatingSceneImages.value = true
   try {
-    const data: any = await sceneAnchorApi.batchGenerateRefImages(Number(novelId))
+    const data: any = await sceneAnchorApi.generateChapterRefImages(
+      Number(novelId),
+      chapter.value.chapter_no,
+      boundAnchorIds,
+    )
     const taskId: string | undefined = data?.task_id
     if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingSceneImages.value = false; return }
     toast.info('场景批量生成任务已提交，正在处理...')

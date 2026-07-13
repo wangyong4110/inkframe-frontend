@@ -62,6 +62,12 @@ export const useItemApi = () => {
       body: JSON.stringify({ provider: provider ?? '', force }),
     })
 
+  const generateChapterItemImages = (novelId: number, chapterNo: number, itemIds: number[], provider?: string) =>
+    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/${chapterNo}/items/generate-images`, {
+      method: 'POST',
+      body: JSON.stringify({ item_ids: itemIds, provider: provider ?? '' }),
+    })
+
   return {
     listItems,
     createItem,
@@ -76,5 +82,6 @@ export const useItemApi = () => {
     deleteChapterItem,
     aiExtract,
     batchGenerateImages,
+    generateChapterItemImages,
   }
 }

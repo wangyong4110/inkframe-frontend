@@ -11,7 +11,8 @@ const taskStore = useTaskStore()
 
 const generatingOutline = ref(false)
 const chapterPage = ref(1)
-const CHAPTER_PAGE_SIZE = 20
+const chapterPageSize = ref(20)
+const chapterSearchQuery = ref('')
 const showDeleteChapterConfirm = ref(false)
 const chapterToDelete = ref<Chapter | null>(null)
 const publishingChapterId = ref<number | null>(null)
@@ -213,7 +214,20 @@ onMounted(() => {
 })
 
 const chapters = computed(() => chapterStore.chapters)
-const chapterTotalPages = computed(() => Math.max(1, Math.ceil(chapters.value.length / CHAPTER_PAGE_SIZE)))
+const isFilteringChapters = computed(() => chapterSearchQuery.value.trim().length > 0)
+const filteredChapters = computed(() => {
+  const q = chapterSearchQuery.value.trim().toLowerCase()
+  if (!q) return chapters.value
+  return chapters.value.filter((c: Chapter) => (c.title || '').toLowerCase().includes(q))
+})
+const chapterTotalPages = computed(() => Math.max(1, Math.ceil(filteredChapters.value.length / chapterPageSize.value)))
+
+watch([chapterSearchQuery, chapterPageSize], () => {
+  chapterPage.value = 1
+})
+watch(chapterTotalPages, (total) => {
+  if (chapterPage.value > total) chapterPage.value = total
+})
 
 const creatingChapter = ref(false)
 const createStep = ref<'idle' | 'creating' | 'generating'>('idle')
@@ -252,10 +266,13 @@ async function onDrop(toIdx: number, event: DragEvent) {
   dragSrcIndex.value = null
   dragOverIndex.value = null
   if (fromIdx === null || fromIdx === toIdx) return
+  // Reordering while a search filter is active would map paged indices back
+  // to the wrong position in the full chapter list, so it's disabled (see :draggable in template).
+  if (isFilteringChapters.value) return
 
   // Build the new order by moving the item
   const allChapters = [...chapters.value]
-  const pageOffset = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
+  const pageOffset = (chapterPage.value - 1) * chapterPageSize.value
   const fromGlobal = pageOffset + fromIdx
   const toGlobal = pageOffset + toIdx
 
@@ -346,8 +363,8 @@ async function handleCreateChapter() {
   }
 }
 const pagedChapters = computed(() => {
-  const start = (chapterPage.value - 1) * CHAPTER_PAGE_SIZE
-  return chapters.value.slice(start, start + CHAPTER_PAGE_SIZE)
+  const start = (chapterPage.value - 1) * chapterPageSize.value
+  return filteredChapters.value.slice(start, start + chapterPageSize.value)
 })
 
 function getStatusColor(status: string): string {
@@ -463,6 +480,34 @@ async function confirmDeleteChapter() {
           </button>
         </div>
       </div>
+
+      <!-- 搜索 + 每页数量（章节数 > 10 时显示） -->
+      <div v-if="chapters.length > 10" class="flex items-center justify-between gap-3">
+        <div class="relative flex-1 max-w-xs">
+          <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+          </svg>
+          <input
+            v-model="chapterSearchQuery"
+            type="text"
+            placeholder="按章节标题搜索"
+            class="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+          />
+        </div>
+        <div class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+          <span>每页</span>
+          <select
+            v-model.number="chapterPageSize"
+            class="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-400"
+          >
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+          <span>章</span>
+        </div>
+      </div>
     </div>
 
     <div v-if="chapterStore.loading && chapters.length === 0" class="space-y-3">
@@ -477,6 +522,13 @@ async function confirmDeleteChapter() {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
       <p class="text-gray-500 dark:text-gray-400">还没有章节，创建你的第一章</p>
+    </div>
+
+    <div v-else-if="filteredChapters.length === 0" class="card p-8 text-center">
+      <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+      </svg>
+      <p class="text-gray-500 dark:text-gray-400">没有找到标题包含「{{ chapterSearchQuery }}」的章节</p>
     </div>
 
     <div v-else class="space-y-0">
@@ -496,7 +548,7 @@ async function confirmDeleteChapter() {
         <div class="flex-1 border-t border-dashed border-transparent group-hover/ins:border-gray-300 dark:group-hover/ins:border-gray-600 transition-colors"/>
       </div>
       <div
-        draggable="true"
+        :draggable="!isFilteringChapters"
         class="card p-4 hover:shadow-soft transition-all cursor-pointer group mt-1.5 mb-0 select-none"
         :class="{
           'opacity-40 scale-[0.98]': dragSrcIndex === idx,
@@ -628,7 +680,7 @@ async function confirmDeleteChapter() {
       <!-- 分页控件 -->
       <div v-if="chapterTotalPages > 1" class="flex items-center justify-between pt-2">
         <span class="text-sm text-gray-500 dark:text-gray-400">
-          第 {{ chapterPage }} / {{ chapterTotalPages }} 页，共 {{ chapters.length }} 章
+          第 {{ chapterPage }} / {{ chapterTotalPages }} 页，共 {{ filteredChapters.length }} 章
         </span>
         <div class="flex items-center gap-1">
           <button

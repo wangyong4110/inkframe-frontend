@@ -139,6 +139,19 @@ export function useSceneAnchorApi() {
   const unbindChapterAnchor = (novelId: number, chapterNo: number, anchorId: number) =>
     request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/${anchorId}`, { method: 'DELETE' })
 
+  async function generateChapterRefImages(
+    novelId: number,
+    chapterNo: number,
+    anchorIds: number[],
+    provider?: string,
+  ): Promise<{ task_id: string }> {
+    const res: { code: number; data: { task_id: string } } = await request(
+      `/novels/${novelId}/chapters/${chapterNo}/scene-anchors/generate-images`,
+      { method: 'POST', body: JSON.stringify({ anchor_ids: anchorIds, provider: provider ?? '' }) },
+    )
+    return res.data
+  }
+
   return {
     getSceneAnchor,
     listSceneAnchors,
@@ -158,5 +171,6 @@ export function useSceneAnchorApi() {
     listChapterAnchors,
     bindChapterAnchor,
     unbindChapterAnchor,
+    generateChapterRefImages,
   }
 }
