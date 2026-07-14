@@ -306,6 +306,29 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
+    async regenerateShotPrompt(videoId: number, shotId: number) {
+      this.loading = true
+      this.error = null
+      try {
+        const api = useVideoApi()
+        const response = await api.regenerateShotPrompt(videoId, shotId)
+
+        const index = this.storyboard.findIndex(s => s.id === shotId)
+        if (index !== -1) {
+          this.storyboard[index] = response.data
+        }
+        if (this.currentShot?.id === shotId) {
+          this.currentShot = response.data
+        }
+        return response.data
+      } catch (e: any) {
+        this.error = e.message || 'Failed to regenerate shot prompt'
+        throw e
+      } finally {
+        this.loading = false
+      }
+    },
+
     async generateShot(videoId: number, shotId: number, provider?: string) {
       try {
         const api = useVideoApi()

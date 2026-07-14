@@ -312,6 +312,11 @@ export const useVideoApi = () => {
       body: JSON.stringify({ item_ids: itemIds }),
     })
 
+  const regenerateShotPrompt = (videoId: number, shotId: number) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/regenerate-prompt`, {
+      method: 'POST',
+    })
+
   const listVoiceSegments = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
 
@@ -455,6 +460,7 @@ export const useVideoApi = () => {
     reorderShot,
     setShotCharacters,
     setShotItems,
+    regenerateShotPrompt,
     listVoiceSegments,
     appendVoiceSegment,
     insertVoiceSegment,

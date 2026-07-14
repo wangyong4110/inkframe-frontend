@@ -28,6 +28,32 @@ const generatingStoryboard = computed(() => videoStore.generating)
 const uploadingShotId = ref<number | null>(null)
 const shotImageInputRef = ref<HTMLInputElement | null>(null)
 const shotImageTargetId = ref<number | null>(null)
+
+// ── 绑定变化后的提示词同步提示 ──
+// 绑定/解绑场景、角色、物品只更新结构化关联字段，不会自动重写 gen_meta 里的叙事文本提示词
+// （见后端 RegenerateShotPrompt 的注释）。这里只做前端本地的"待同步"标记，纯会话内状态，
+// 不持久化——用户点了"重新生成提示词"或刷新页面后就清空，避免额外的后端 staleness 字段。
+const staleBindingShotIds = ref<Set<number>>(new Set())
+const regeneratingPromptShotId = ref<number | null>(null)
+
+async function handleRegeneratePrompt(shot: StoryboardShot) {
+  regeneratingPromptShotId.value = shot.id
+  try {
+    const updated = await videoStore.regenerateShotPrompt(props.videoId, shot.id)
+    staleBindingShotIds.value.delete(shot.id)
+    // 若正在编辑这个分镜，编辑框里的草稿是独立于 store 的本地拷贝，需要同步更新，
+    // 否则界面上看到的还是重新生成前的旧文本。
+    if (editingId.value === shot.id && updated) {
+      editForm.value.prompt = updated.prompt || ''
+      editForm.value.motion_prompt = updated.motion_prompt || ''
+    }
+    toast.success('提示词已根据当前绑定重新生成')
+  } catch (e: any) {
+    toast.error('重新生成失败：' + (e.message || ''))
+  } finally {
+    regeneratingPromptShotId.value = null
+  }
+}
 const editingId = ref<number | null>(null)
 const generatingImageShotIds = ref<Set<number>>(new Set())
 const editForm = ref<Partial<StoryboardShot & { emotional_tone: string }>>({})
@@ -452,6 +478,7 @@ async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null
   try {
     const api = useSceneAnchorApi()
     await api.setShotAnchor(props.videoId, shot.id, anchorId)
+    staleBindingShotIds.value.add(shot.id)
     scheduleRefresh()
   } catch (e: any) {
     toast.error('绑定失败：' + (e.message || ''))
@@ -461,6 +488,7 @@ async function handleSetShotAnchor(shot: StoryboardShot, anchorId: number | null
 async function handleSetShotCharacters(shot: StoryboardShot, characterIds: number[]) {
   try {
     await videoApi.setShotCharacters(props.videoId, shot.id, characterIds)
+    staleBindingShotIds.value.add(shot.id)
     scheduleRefresh()
   } catch (e: any) {
     toast.error('角色绑定失败：' + (e.message || ''))
@@ -509,6 +537,7 @@ const unassignedItemsMap = computed(() => {
 async function handleSetShotItems(shot: StoryboardShot, itemIds: number[]) {
   try {
     await videoApi.setShotItems(props.videoId, shot.id, itemIds)
+    staleBindingShotIds.value.add(shot.id)
     scheduleRefresh()
   } catch (e: any) {
     toast.error('物品绑定失败：' + (e.message || ''))
@@ -693,7 +722,25 @@ defineExpose({ handleReviewStoryboard })
               <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="场景画面描述（供参考，不直接用于生图）" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">图片生成提示词<span class="ml-1 text-blue-500 font-normal">（实际用于AI生图）</span></label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-gray-500">图片生成提示词<span class="ml-1 text-blue-500 font-normal">（实际用于AI生图）</span></label>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2 h-6 rounded transition-colors disabled:opacity-40"
+                  :disabled="regeneratingPromptShotId === shot.id"
+                  title="根据当前绑定的场景/角色/物品重新生成图像和视频提示词"
+                  @click="handleRegeneratePrompt(shot)"
+                >
+                  <svg v-if="regeneratingPromptShotId === shot.id" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  {{ regeneratingPromptShotId === shot.id ? '生成中…' : '按当前绑定重新生成' }}
+                </button>
+              </div>
               <textarea v-model="editForm.prompt" rows="3" class="input text-sm resize-none font-mono" placeholder="English structured image prompt — leave empty to use auto-generated prompt from storyboard AI..." />
             </div>
             <div>
@@ -928,6 +975,30 @@ defineExpose({ handleReviewStoryboard })
                     </div>
                   </template>
 
+                </div>
+
+                <!-- Row 4: 绑定变化后的提示词同步提示 -->
+                <div
+                  v-if="staleBindingShotIds.has(shot.id)"
+                  class="mt-1.5 flex items-center justify-between gap-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40"
+                >
+                  <span class="text-xs text-amber-700 dark:text-amber-400">绑定已更改，图像/视频提示词可能未同步</span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 hover:bg-violet-100 dark:hover:bg-violet-900/50 px-2 h-6 rounded transition-colors disabled:opacity-40 flex-shrink-0"
+                    :disabled="regeneratingPromptShotId === shot.id"
+                    title="根据当前绑定的场景/角色/物品重新生成图像和视频提示词"
+                    @click="handleRegeneratePrompt(shot)"
+                  >
+                    <svg v-if="regeneratingPromptShotId === shot.id" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    {{ regeneratingPromptShotId === shot.id ? '生成中…' : '重新生成提示词' }}
+                  </button>
                 </div>
               </div>
             </div>
