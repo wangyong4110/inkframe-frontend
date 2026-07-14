@@ -155,7 +155,7 @@ async function handleGenerateRefImage() {
   if (!await guardAiProvider('IMAGE')) return
   generatingRefImage.value = true
   try {
-    const updated = await api.generateRefImage(anchorId)
+    const updated = await api.generateRefImage(anchorId, undefined, form.value.description)
     if (anchor.value) anchor.value = updated
     toast.success('参考图已生成')
   } catch (e: any) {

@@ -261,7 +261,9 @@ async function handleFormGeneratePortrait() {
   if (!await guardAiProvider('IMAGE')) return
   generatingFormPortrait.value = true
   try {
-    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'portrait', selectedImageProvider.value || undefined)
+    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'portrait', selectedImageProvider.value || undefined, {
+      facePrompt: lookForm.value.face_prompt,
+    })
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormPortrait.value = false; return }
     taskStore.trackTask(taskId, async (task) => {
@@ -286,7 +288,9 @@ async function handleFormGenerateThreeView() {
   if (!await guardAiProvider('IMAGE')) return
   generatingFormThreeView.value = true
   try {
-    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined)
+    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined, {
+      visualPrompt: lookForm.value.visual_prompt,
+    })
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormThreeView.value = false; return }
     taskStore.trackTask(taskId, async (task) => {

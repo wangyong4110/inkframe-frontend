@@ -106,10 +106,21 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ description }),
     })
 
-  const generateLookImages = (characterId: number, lookId: number, type: 'three_view' | 'portrait', provider?: string) =>
+  const generateLookImages = (
+    characterId: number,
+    lookId: number,
+    type: 'three_view' | 'portrait',
+    provider?: string,
+    prompt?: { facePrompt?: string; visualPrompt?: string },
+  ) =>
     request<ApiResponse<{ task_id: string }>>(`/characters/${characterId}/looks/${lookId}/images`, {
       method: 'POST',
-      body: JSON.stringify({ type, provider: provider ?? '' }),
+      body: JSON.stringify({
+        type,
+        provider: provider ?? '',
+        face_prompt: prompt?.facePrompt ?? '',
+        visual_prompt: prompt?.visualPrompt ?? '',
+      }),
     })
 
   const reanalyzeCharacter = (id: number) =>

@@ -81,10 +81,10 @@ export function useSceneAnchorApi() {
     return res.data
   }
 
-  async function generateRefImage(anchorId: number, provider?: string): Promise<SceneAnchor> {
+  async function generateRefImage(anchorId: number, provider?: string, description?: string): Promise<SceneAnchor> {
     const res: { code: number; data: SceneAnchor } = await request(
       `/scene-anchors/${anchorId}/generate-ref-image`,
-      { method: 'POST', body: JSON.stringify({ provider: provider ?? '' }) },
+      { method: 'POST', body: JSON.stringify({ provider: provider ?? '', description: description ?? '' }) },
     )
     return res.data
   }

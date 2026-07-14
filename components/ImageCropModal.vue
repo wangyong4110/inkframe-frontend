@@ -8,6 +8,9 @@
  *   - 拖动矩形自定义裁剪区域（拖内部移动，拖四角缩放）
  *   - 右侧实时预览
  *   - 确认后上传至 OSS，emit('done', url)
+ *
+ * imageUrl 通常是 OSS 直链，经 /media/proxy 转成同源 blob: URL 后再显示/裁剪——
+ * 避免依赖 OSS 侧 CORS 配置（否则 <img crossorigin> 可能直接加载失败，画面空白）。
  */
 const props = defineProps<{
   imageUrl: string
@@ -20,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const { uploading, uploadImage } = useImageUpload()
+const { requestBlob } = useApi()
 
 const imgRef = ref<HTMLImageElement | null>(null)
 const previewCanvas = ref<HTMLCanvasElement | null>(null)
@@ -34,6 +38,39 @@ const panels = computed(() => props.panelCount ?? 4)
 
 // crop rect in display-pixel coords
 const crop = ref({ x: 0, y: 0, w: 0, h: 0 })
+
+// ── 图片加载：走后端代理转成同源 blob: URL ──────────────────────────────────────
+// imageUrl 通常指向 OSS，直接用 <img crossorigin> 加载依赖 OSS 侧 CORS 配置——一旦没配置，
+// <img> 会整个加载失败（页面显示空白），而不仅仅是后面 canvas 读像素时报错。
+// 经 /media/proxy 中转后拿到的是与本页面同源的二进制数据，不再受浏览器跨域限制。
+const displaySrc = ref('')
+const loadError = ref('')
+let objectUrl = ''
+
+function revokeObjectUrl() {
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl)
+    objectUrl = ''
+  }
+}
+
+async function loadImage(url: string) {
+  loadError.value = ''
+  displaySrc.value = ''
+  if (!url) return
+  try {
+    const blob = await requestBlob(`/media/proxy?url=${encodeURIComponent(url)}`)
+    revokeObjectUrl()
+    objectUrl = URL.createObjectURL(blob)
+    displaySrc.value = objectUrl
+  } catch (e: any) {
+    loadError.value = e?.message || '图片加载失败'
+  }
+}
+
+watch(() => props.imageUrl, (url) => { loadImage(url) }, { immediate: true })
+
+onUnmounted(() => { revokeObjectUrl() })
 
 function onImageLoad() {
   const img = imgRef.value
@@ -160,7 +197,7 @@ async function handleConfirm() {
   try {
     ctx.drawImage(img, nc.x, nc.y, nc.w, nc.h, 0, 0, nc.w, nc.h)
   } catch {
-    confirmError.value = '图片跨域限制，请确认 OSS 已开启 CORS'
+    confirmError.value = '图片处理失败，请重新打开裁剪窗口重试'
     return
   }
 
@@ -222,13 +259,16 @@ async function handleConfirm() {
             style="min-height: 120px;"
           >
             <img
+              v-if="displaySrc"
               ref="imgRef"
-              :src="imageUrl"
-              crossorigin="anonymous"
+              :src="displaySrc"
               class="block w-full h-auto"
               draggable="false"
               @load="onImageLoad"
             />
+            <div v-else class="flex items-center justify-center h-full min-h-[200px] text-xs text-gray-400">
+              {{ loadError || '图片加载中…' }}
+            </div>
 
             <!-- Dark overlay: 4 rects surrounding crop rect -->
             <template v-if="displayW > 0">
