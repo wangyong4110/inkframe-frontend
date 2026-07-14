@@ -56,6 +56,12 @@ export const useItemApi = () => {
   const aiExtract = (novelId: number) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/items/ai-extract`, { method: 'POST' })
 
+  const generateItemInfo = (novelId: number, name: string, hint?: string) =>
+    request<ApiResponse<{ description: string; visual_prompt: string }>>(`/novels/${novelId}/items/ai-generate`, {
+      method: 'POST',
+      body: JSON.stringify({ name, hint: hint ?? '' }),
+    })
+
   const batchGenerateImages = (novelId: number, provider?: string, force = false) =>
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/items/batch-images`, {
       method: 'POST',
@@ -81,6 +87,7 @@ export const useItemApi = () => {
     upsertChapterItem,
     deleteChapterItem,
     aiExtract,
+    generateItemInfo,
     batchGenerateImages,
     generateChapterItemImages,
   }

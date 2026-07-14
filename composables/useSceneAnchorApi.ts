@@ -81,6 +81,20 @@ export function useSceneAnchorApi() {
     return res.data
   }
 
+  async function generateSceneAnchorInfo(
+    novelId: number,
+    name: string,
+    type?: string,
+    variant?: string,
+    hint?: string,
+  ): Promise<{ description: string }> {
+    const res: { code: number; data: { description: string } } = await request(
+      `/novels/${novelId}/scene-anchors/ai-generate`,
+      { method: 'POST', body: JSON.stringify({ name, type: type ?? '', variant: variant ?? '', hint: hint ?? '' }) },
+    )
+    return res.data
+  }
+
   async function generateRefImage(anchorId: number, provider?: string, description?: string): Promise<SceneAnchor> {
     const res: { code: number; data: SceneAnchor } = await request(
       `/scene-anchors/${anchorId}/generate-ref-image`,
@@ -163,6 +177,7 @@ export function useSceneAnchorApi() {
     aiExtractFromNovel,
     generateRefImage,
     aiAnalyzeAnchor,
+    generateSceneAnchorInfo,
     editRefImage,
     lockRefImage,
     getConsistencyLogs,

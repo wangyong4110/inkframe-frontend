@@ -21,6 +21,7 @@ const characterToDelete = ref<Character | null>(null)
 const showCharacterModal = ref(false)
 const newCharacterForm = ref({ name: '', role: 'supporting' as string, description: '' })
 const savingCharacter = ref(false)
+const generatingCharacterInfo = ref(false)
 
 const characters = computed(() => characterStore.characters)
 
@@ -99,6 +100,22 @@ async function handleBatchCharacterImages(force = false) {
   } catch (e: any) {
     batchGeneratingCharImages.value = false
     toast.error('批量生成失败：' + (e.message || ''))
+  }
+}
+
+async function handleGenerateCharacterInfo() {
+  const name = newCharacterForm.value.name.trim()
+  if (!name) return
+  if (!await guardAiProvider('LLM')) return
+  generatingCharacterInfo.value = true
+  try {
+    const res = await characterApi.generateCharacterInfo(props.novelId, name, newCharacterForm.value.role, newCharacterForm.value.description.trim())
+    const description = (res as any)?.data?.description ?? (res as any)?.description
+    if (description) newCharacterForm.value.description = description
+  } catch (e: any) {
+    toast.error('AI 生成失败：' + (e.message || ''))
+  } finally {
+    generatingCharacterInfo.value = false
   }
 }
 
@@ -307,7 +324,25 @@ async function confirmDeleteCharacter() {
                 </select>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">描述</label>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
+                    :disabled="generatingCharacterInfo || !newCharacterForm.name.trim()"
+                    title="根据角色名称由 AI 自动生成描述"
+                    @click="handleGenerateCharacterInfo"
+                  >
+                    <svg v-if="generatingCharacterInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    {{ generatingCharacterInfo ? '生成中...' : 'AI 生成' }}
+                  </button>
+                </div>
                 <textarea v-model="newCharacterForm.description" rows="3" class="input resize-none" placeholder="角色的外貌、性格、背景..."></textarea>
               </div>
             </div>

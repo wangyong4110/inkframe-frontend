@@ -4,6 +4,7 @@ const props = defineProps<{ novelId: number }>()
 const router = useRouter()
 const toast = useToast()
 const sceneAnchorStore = useSceneAnchorStore()
+const sceneAnchorApi = useSceneAnchorApi()
 const chapterStore = useChapterStore()
 const taskStore = useTaskStore()
 const { url: lightboxUrl, openLightbox } = useImageLightbox()
@@ -21,6 +22,7 @@ const anchorForm = ref({
   parent_anchor_id: undefined as number | undefined,
 })
 const savingAnchor = ref(false)
+const generatingAnchorInfo = ref(false)
 const extractingAnchors = ref(false)
 const extractingAllAnchors = ref(false)
 const selectedChapterForExtract = ref<number | 'all'>('all')
@@ -46,6 +48,22 @@ function startAnchorCreate() {
 
 function startAnchorEdit(anchor: any) {
   router.push(`/scene-anchor/${anchor.id}?novelId=${props.novelId}`)
+}
+
+async function handleGenerateAnchorInfo() {
+  const name = anchorForm.value.name.trim()
+  if (!name) return
+  generatingAnchorInfo.value = true
+  try {
+    const res = await sceneAnchorApi.generateSceneAnchorInfo(
+      props.novelId, name, anchorForm.value.type, anchorForm.value.variant, anchorForm.value.description.trim(),
+    )
+    if (res?.description) anchorForm.value.description = res.description
+  } catch (e: any) {
+    toast.error('AI 生成失败：' + (e.message || ''))
+  } finally {
+    generatingAnchorInfo.value = false
+  }
 }
 
 async function saveAnchor() {
@@ -385,7 +403,25 @@ function getTypeLabel(type: string): string {
                 </div>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉描述</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">视觉描述</label>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
+                    :disabled="generatingAnchorInfo || !anchorForm.name.trim()"
+                    title="根据场景名称由 AI 自动生成视觉描述"
+                    @click="handleGenerateAnchorInfo"
+                  >
+                    <svg v-if="generatingAnchorInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    {{ generatingAnchorInfo ? '生成中...' : 'AI 生成' }}
+                  </button>
+                </div>
                 <textarea v-model="anchorForm.description" class="input resize-none" rows="2" placeholder="场景的视觉描述..."></textarea>
               </div>
             </div>
