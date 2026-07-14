@@ -244,15 +244,21 @@ function goBack() {
           </span>
           <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
         </transition>
-        <button class="btn-secondary flex items-center gap-1.5" :disabled="aiUpdating || saving" @click="handleAIUpdate">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-3 h-8 rounded-md transition-colors disabled:opacity-40"
+          :disabled="aiUpdating || saving"
+          title="基于当前名称/描述由 AI 重新分析并更新场景信息"
+          @click="handleAIUpdate"
+        >
           <svg v-if="aiUpdating" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
           </svg>
           <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.5 3.5 0 01-4.95 0l-.347-.347z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
-          {{ aiUpdating ? 'AI分析中…' : 'AI更新' }}
+          {{ aiUpdating ? '更新中…' : 'AI 更新' }}
         </button>
       </div>
     </div>

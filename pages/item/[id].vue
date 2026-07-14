@@ -151,6 +151,8 @@ const statusOptions = [
   { value: 'unknown',   label: '未知',   color: 'text-gray-500' },
 ]
 
+const currentCategory = computed(() => categoryOptions.find(o => o.value === form.value.category))
+
 const tabs = [
   { key: 'profile', label: '基本档案' },
   { key: 'image',   label: '视觉设计' },
@@ -270,61 +272,71 @@ function goBack() {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <button
-          class="btn-ghost p-2"
-          @click="goBack"
-        >
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <button class="btn-ghost p-2 flex-shrink-0" @click="goBack">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-xl font-bold text-gray-900 dark:text-white">{{ form.name || '物品详情' }}</h1>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">{{ form.name || '物品详情' }}</h1>
+            <span v-if="currentCategory" class="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
+              {{ currentCategory.icon }} {{ currentCategory.label }}
+            </span>
           </div>
-          <p class="text-sm text-gray-500">物品编辑器</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">物品编辑器</p>
         </div>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <!-- 自动保存状态 -->
+        <transition name="fade">
+          <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
+            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            保存中…
+          </span>
+          <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            已自动保存
+          </span>
+          <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+        </transition>
         <!-- AI 更新物品信息 -->
         <button
           type="button"
-          class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-3 h-8 rounded-md transition-colors disabled:opacity-40"
           :disabled="updatingInfo || !form.name.trim()"
           title="基于当前名称/描述由 AI 重新分析并更新物品信息"
           @click="handleAIUpdate"
         >
-          <svg v-if="updatingInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <svg v-if="updatingInfo" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
           </svg>
-          <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
-          {{ updatingInfo ? '更新中...' : 'AI 更新' }}
+          {{ updatingInfo ? '更新中…' : 'AI 更新' }}
         </button>
-        <!-- 自动保存状态 -->
-        <transition name="fade">
-        <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
-          <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-          </svg>
-          保存中…
-        </span>
-        <span v-else-if="saveStatus === 'saved'" class="flex items-center gap-1 text-xs text-green-500">
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-          </svg>
-          已自动保存
-        </span>
-        <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
-        </transition>
       </div>
     </div>
 
+    <!-- Loading -->
+    <div v-if="loading" class="card p-8 flex items-center justify-center">
+      <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+      </svg>
+      <span class="ml-2 text-gray-500">加载中…</span>
+    </div>
+
+    <template v-else>
     <!-- Tabs -->
     <div class="border-b border-gray-200 dark:border-gray-700">
       <nav class="flex space-x-8">
@@ -454,6 +466,7 @@ function goBack() {
 
       <p class="text-xs text-gray-500">需填写「物品描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
+    </template>
   </div>
 </template>
 

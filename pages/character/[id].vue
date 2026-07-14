@@ -21,6 +21,7 @@ if (isNaN(characterId)) {
 const validTabs = ['profile', 'voice', 'looks']
 const initialTab = validTabs.includes(route.query.tab as string) ? (route.query.tab as string) : 'profile'
 const activeTab = ref(initialTab)
+const loading = ref(true)
 const saving = ref(false)
 const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const reanalyzing = ref(false)
@@ -373,7 +374,7 @@ watch(character, () => {
 }, { deep: true })
 
 onMounted(async () => {
-  if (!characterId) return
+  if (!characterId) { loading.value = false; return }
   try {
     await characterStore.fetchCharacter(characterId)
     const c = characterStore.currentCharacter
@@ -397,6 +398,8 @@ onMounted(async () => {
     if (activeTab.value === 'looks') fetchLooks()
   } catch (e: any) {
     toast.error('角色加载失败：' + (e.message || '请检查网络或刷新页面'))
+  } finally {
+    loading.value = false
   }
 })
 
@@ -475,12 +478,12 @@ async function autoSaveIfDirty() {
 
 function getRoleColor(role: string): string {
   const colors: Record<string, string> = {
-    protagonist: 'bg-red-100 text-red-800',
-    antagonist: 'bg-purple-100 text-purple-800',
-    supporting: 'bg-blue-100 text-blue-800',
-    minor: 'bg-gray-100 text-gray-800',
+    protagonist: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    antagonist: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    supporting: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    minor: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
   }
-  return colors[role] || 'bg-gray-100 text-gray-800'
+  return colors[role] || 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
 }
 
 function getRoleLabel(role: string): string {
@@ -497,26 +500,26 @@ function getRoleLabel(role: string): string {
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center space-x-4">
-        <button class="btn-ghost p-2" @click="goBack">
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <button class="btn-ghost p-2 flex-shrink-0" @click="goBack">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-              {{ character.name || '加载中...' }}
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">
+              {{ character.name || '角色详情' }}
             </h1>
-            <span class="px-2 py-0.5 text-xs font-medium rounded-full" :class="getRoleColor(character.role)">
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" :class="getRoleColor(character.role)">
               {{ getRoleLabel(character.role) }}
             </span>
           </div>
-          <p class="text-sm text-gray-500 dark:text-gray-400">角色编辑器</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">角色编辑器</p>
         </div>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-shrink-0">
         <!-- 自动保存状态 -->
         <transition name="fade">
           <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
@@ -534,19 +537,43 @@ function getRoleLabel(role: string): string {
           </span>
           <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
         </transition>
-        <button class="btn-secondary" :disabled="reanalyzing || saving" @click="handleReanalyze">
-          {{ reanalyzing ? '分析中...' : '重新分析' }}
+        <!-- 从章节内容重新分析角色（比"AI 更新"更重量级——重新提取外观/性别/年龄/配音配置） -->
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-3 h-8 rounded-md transition-colors disabled:opacity-40"
+          :disabled="reanalyzing || saving"
+          title="从章节内容重新提取角色外观/性别/年龄等信息"
+          @click="handleReanalyze"
+        >
+          <svg v-if="reanalyzing" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          {{ reanalyzing ? '分析中…' : '重新分析' }}
         </button>
       </div>
     </div>
 
+    <!-- Loading -->
+    <div v-if="loading" class="card p-8 flex items-center justify-center">
+      <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+      </svg>
+      <span class="ml-2 text-gray-500">加载中…</span>
+    </div>
+
+    <template v-else>
     <!-- Tabs -->
     <div class="border-b border-gray-200 dark:border-gray-700">
       <nav class="flex space-x-8">
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
           :class="[
             activeTab === tab.key
               ? 'border-primary-500 text-primary-600'
@@ -850,6 +877,7 @@ function getRoleLabel(role: string): string {
         @change="handleLookImageUpload"
       />
     </div>
+    </template>
   </div>
 </template>
 
