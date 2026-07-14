@@ -21,7 +21,6 @@ const characterToDelete = ref<Character | null>(null)
 const showCharacterModal = ref(false)
 const newCharacterForm = ref({ name: '', role: 'supporting' as string, description: '' })
 const savingCharacter = ref(false)
-const generatingCharacterInfo = ref(false)
 
 const characters = computed(() => characterStore.characters)
 
@@ -103,22 +102,6 @@ async function handleBatchCharacterImages(force = false) {
   }
 }
 
-async function handleGenerateCharacterInfo() {
-  const name = newCharacterForm.value.name.trim()
-  if (!name) return
-  if (!await guardAiProvider('LLM')) return
-  generatingCharacterInfo.value = true
-  try {
-    const res = await characterApi.generateCharacterInfo(props.novelId, name, newCharacterForm.value.role, newCharacterForm.value.description.trim())
-    const description = (res as any)?.data?.description ?? (res as any)?.description
-    if (description) newCharacterForm.value.description = description
-  } catch (e: any) {
-    toast.error('AI 生成失败：' + (e.message || ''))
-  } finally {
-    generatingCharacterInfo.value = false
-  }
-}
-
 async function createCharacter() {
   const trimmedName = newCharacterForm.value.name.trim()
   if (!trimmedName) return
@@ -128,10 +111,22 @@ async function createCharacter() {
   }
   savingCharacter.value = true
   try {
+    let description = newCharacterForm.value.description.trim()
+    // 描述为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
+    // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空描述继续，
+    // 避免把"创建角色"这个核心操作跟 AI 可用性绑死。
+    if (!description) {
+      try {
+        const res = await characterApi.generateCharacterInfo(props.novelId, trimmedName, newCharacterForm.value.role, '')
+        description = (res as any)?.data?.description ?? (res as any)?.description ?? ''
+      } catch {
+        /* 静默降级为空描述 */
+      }
+    }
     await characterStore.createCharacter(props.novelId, {
-      name: newCharacterForm.value.name.trim(),
+      name: trimmedName,
       role: newCharacterForm.value.role as any,
-      description: newCharacterForm.value.description.trim(),
+      description,
     })
     newCharacterForm.value = { name: '', role: 'supporting', description: '' }
     showCharacterModal.value = false
@@ -323,29 +318,8 @@ async function confirmDeleteCharacter() {
                   <option value="minor">路人</option>
                 </select>
               </div>
-              <div>
-                <div class="flex items-center justify-between mb-1">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">描述</label>
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
-                    :disabled="generatingCharacterInfo || !newCharacterForm.name.trim()"
-                    title="根据角色名称由 AI 自动生成描述"
-                    @click="handleGenerateCharacterInfo"
-                  >
-                    <svg v-if="generatingCharacterInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    {{ generatingCharacterInfo ? '生成中...' : 'AI 生成' }}
-                  </button>
-                </div>
-                <textarea v-model="newCharacterForm.description" rows="3" class="input resize-none" placeholder="角色的外貌、性格、背景..."></textarea>
-              </div>
             </div>
+            <p class="mt-3 text-xs text-gray-400">外貌、性格、背景由 AI 自动生成，创建后可在详情页查看/修改。</p>
             <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button class="btn-secondary" @click="showCharacterModal = false">取消</button>
               <button class="btn-primary" :disabled="savingCharacter || !newCharacterForm.name.trim()" @click="createCharacter">

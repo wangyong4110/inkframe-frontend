@@ -21,7 +21,6 @@ const batchGeneratingItemImages = ref(false)
 const showBatchItemMenu = ref(false)
 const newItemForm = ref({ name: '', description: '', visual_prompt: '' })
 const savingItem = ref(false)
-const generatingItemInfo = ref(false)
 
 async function fetchItems() {
   itemsLoading.value = true
@@ -100,30 +99,30 @@ async function handleBatchItemImages(force = false) {
   }
 }
 
-async function handleGenerateItemInfo() {
-  const name = newItemForm.value.name.trim()
-  if (!name) return
-  generatingItemInfo.value = true
-  try {
-    const resp = await itemApi.generateItemInfo(props.novelId, name, newItemForm.value.description.trim())
-    const data = (resp as any)?.data ?? resp
-    newItemForm.value.description = data?.description ?? newItemForm.value.description
-    newItemForm.value.visual_prompt = data?.visual_prompt ?? ''
-  } catch (e: any) {
-    toast.error('AI 生成失败：' + (e.message || ''))
-  } finally {
-    generatingItemInfo.value = false
-  }
-}
-
 async function createItem() {
-  if (!newItemForm.value.name.trim()) return
+  const trimmedName = newItemForm.value.name.trim()
+  if (!trimmedName) return
   savingItem.value = true
   try {
+    let description = newItemForm.value.description.trim()
+    let visualPrompt = newItemForm.value.visual_prompt.trim()
+    // 描述为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
+    // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空描述继续，
+    // 避免把"创建物品"这个核心操作跟 AI 可用性绑死。
+    if (!description) {
+      try {
+        const resp = await itemApi.generateItemInfo(props.novelId, trimmedName, '')
+        const data = (resp as any)?.data ?? resp
+        description = data?.description ?? ''
+        visualPrompt = data?.visual_prompt ?? ''
+      } catch {
+        /* 静默降级为空描述 */
+      }
+    }
     const resp = await itemApi.createItem(props.novelId, {
-      name: newItemForm.value.name.trim(),
-      description: newItemForm.value.description.trim(),
-      visual_prompt: newItemForm.value.visual_prompt.trim(),
+      name: trimmedName,
+      description,
+      visual_prompt: visualPrompt,
     })
     items.value.push((resp as any).data)
     newItemForm.value = { name: '', description: '', visual_prompt: '' }
@@ -305,29 +304,8 @@ async function confirmDeleteItem() {
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
                 <input v-model="newItemForm.name" type="text" class="input" placeholder="物品名称" maxlength="100" />
               </div>
-              <div>
-                <div class="flex items-center justify-between mb-1">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">描述</label>
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
-                    :disabled="generatingItemInfo || !newItemForm.name.trim()"
-                    title="根据物品名称由 AI 自动生成描述"
-                    @click="handleGenerateItemInfo"
-                  >
-                    <svg v-if="generatingItemInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    {{ generatingItemInfo ? '生成中...' : 'AI 生成' }}
-                  </button>
-                </div>
-                <textarea v-model="newItemForm.description" rows="3" class="input resize-none" placeholder="物品的来历、用途、特殊属性..."></textarea>
-              </div>
             </div>
+            <p class="mt-3 text-xs text-gray-400">来历、用途、特殊属性由 AI 自动生成，创建后可在详情页查看/修改。</p>
             <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button class="btn-secondary" @click="showItemModal = false">取消</button>
               <button class="btn-primary" :disabled="savingItem || !newItemForm.name.trim()" @click="createItem">

@@ -22,7 +22,6 @@ const anchorForm = ref({
   parent_anchor_id: undefined as number | undefined,
 })
 const savingAnchor = ref(false)
-const generatingAnchorInfo = ref(false)
 const extractingAnchors = ref(false)
 const extractingAllAnchors = ref(false)
 const selectedChapterForExtract = ref<number | 'all'>('all')
@@ -50,26 +49,24 @@ function startAnchorEdit(anchor: any) {
   router.push(`/scene-anchor/${anchor.id}?novelId=${props.novelId}`)
 }
 
-async function handleGenerateAnchorInfo() {
-  const name = anchorForm.value.name.trim()
-  if (!name) return
-  generatingAnchorInfo.value = true
-  try {
-    const res = await sceneAnchorApi.generateSceneAnchorInfo(
-      props.novelId, name, anchorForm.value.type, anchorForm.value.variant, anchorForm.value.description.trim(),
-    )
-    if (res?.description) anchorForm.value.description = res.description
-  } catch (e: any) {
-    toast.error('AI 生成失败：' + (e.message || ''))
-  } finally {
-    generatingAnchorInfo.value = false
-  }
-}
-
 async function saveAnchor() {
   if (!anchorForm.value.name) { toast.error('请输入场景名称'); return }
   savingAnchor.value = true
   try {
+    const name = anchorForm.value.name.trim()
+    // 视觉描述为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
+    // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空描述继续，
+    // 避免把"创建场景"这个核心操作跟 AI 可用性绑死。
+    if (!anchorForm.value.description.trim()) {
+      try {
+        const res = await sceneAnchorApi.generateSceneAnchorInfo(
+          props.novelId, name, anchorForm.value.type, anchorForm.value.variant, '',
+        )
+        if (res?.description) anchorForm.value.description = res.description
+      } catch {
+        /* 静默降级为空描述 */
+      }
+    }
     const created = await sceneAnchorStore.createAnchor(props.novelId, anchorForm.value)
     showAnchorModal.value = false
     toast.success('场景已创建，跳转到详情页编辑…')
@@ -388,44 +385,16 @@ function getTypeLabel(type: string): string {
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
                 <input v-model="anchorForm.name" class="input" placeholder="如：皇宫正殿" maxlength="100" />
               </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
-                  <select v-model="anchorForm.type" class="input">
-                    <option value="exterior">室外</option>
-                    <option value="interior">室内</option>
-                    <option value="imaginary">虚幻</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">变体</label>
-                  <input v-model="anchorForm.variant" class="input" placeholder="day/night/winter" />
-                </div>
-              </div>
               <div>
-                <div class="flex items-center justify-between mb-1">
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">视觉描述</label>
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
-                    :disabled="generatingAnchorInfo || !anchorForm.name.trim()"
-                    title="根据场景名称由 AI 自动生成视觉描述"
-                    @click="handleGenerateAnchorInfo"
-                  >
-                    <svg v-if="generatingAnchorInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
-                    {{ generatingAnchorInfo ? '生成中...' : 'AI 生成' }}
-                  </button>
-                </div>
-                <textarea v-model="anchorForm.description" class="input resize-none" rows="2" placeholder="场景的视觉描述..."></textarea>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
+                <select v-model="anchorForm.type" class="input">
+                  <option value="exterior">室外</option>
+                  <option value="interior">室内</option>
+                  <option value="imaginary">虚幻</option>
+                </select>
               </div>
             </div>
-            <p class="mt-3 text-xs text-gray-400">创建后可在详情页完善提示词锁定等高级设置。</p>
+            <p class="mt-3 text-xs text-gray-400">视觉描述由 AI 自动生成，创建后可在详情页查看/修改，或完善变体、提示词锁定等高级设置。</p>
             <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button class="btn-secondary" @click="showAnchorModal = false">取消</button>
               <button class="btn-primary" :disabled="savingAnchor" @click="saveAnchor">
