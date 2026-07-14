@@ -19,11 +19,13 @@ if (isNaN(itemId)) {
 const novelId = parseInt(route.query.novelId as string)
 
 const activeTab = ref('profile')
+const loading = ref(true)
 const saving = ref(false)
 const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const isDirty = ref(false)
 const dataLoaded = ref(false)
 const generatingImage = ref(false)
+const updatingInfo = ref(false)
 
 // 使用小说配置的图像生成模型
 const selectedImageProvider = computed(() => novelStore.currentNovel?.image_model || '')
@@ -161,7 +163,7 @@ onMounted(async () => {
   if (novelId && novelStore.currentNovel?.id !== novelId) {
     novelStore.fetchNovel(novelId).catch(() => {})
   }
-  if (!itemId) return
+  if (!itemId) { loading.value = false; return }
   try {
     const res = await itemApi.getItem(itemId)
     const item: Item = (res as any).data ?? res
@@ -181,6 +183,7 @@ onMounted(async () => {
   } catch (e: any) {
     toast.error('加载物品失败：' + (e.message || '未知错误'))
   }
+  loading.value = false
   await nextTick()
   isDirty.value = false
   dataLoaded.value = true
@@ -240,6 +243,23 @@ async function generateImage() {
   }
 }
 
+async function handleAIUpdate() {
+  if (!form.value.name.trim()) return
+  if (!await guardAiProvider('LLM')) return
+  updatingInfo.value = true
+  try {
+    const resp = await itemApi.generateItemInfo(novelId, form.value.name.trim(), form.value.description.trim())
+    const data = (resp as any)?.data ?? resp
+    if (data?.description) form.value.description = data.description
+    if (data?.visual_prompt) form.value.visual_prompt = data.visual_prompt
+    toast.success('物品信息已更新')
+  } catch (e: any) {
+    toast.error('AI 更新失败：' + (e.message || '未知错误'))
+  } finally {
+    updatingInfo.value = false
+  }
+}
+
 function goBack() {
   const from = route.query.from as string | undefined
   if (from) { router.push(decodeURIComponent(from)); return }
@@ -267,8 +287,26 @@ function goBack() {
           <p class="text-sm text-gray-500">物品编辑器</p>
         </div>
       </div>
-      <!-- 自动保存状态 -->
-      <transition name="fade">
+      <div class="flex items-center gap-3">
+        <!-- AI 更新物品信息 -->
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
+          :disabled="updatingInfo || !form.name.trim()"
+          title="基于当前名称/描述由 AI 重新分析并更新物品信息"
+          @click="handleAIUpdate"
+        >
+          <svg v-if="updatingInfo" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          {{ updatingInfo ? '更新中...' : 'AI 更新' }}
+        </button>
+        <!-- 自动保存状态 -->
+        <transition name="fade">
         <span v-if="saveStatus === 'saving'" class="flex items-center gap-1 text-xs text-gray-400">
           <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -283,7 +321,8 @@ function goBack() {
           已自动保存
         </span>
         <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
-      </transition>
+        </transition>
+      </div>
     </div>
 
     <!-- Tabs -->
