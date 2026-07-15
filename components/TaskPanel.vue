@@ -172,7 +172,6 @@ const TYPE_LABELS: Record<string, string> = {
   char_gen: '角色生成',
   char_reanalyze: '角色重分析',
   char_image_gen: '角色图像',
-  char_profile_gen: '角色档案',
   look_prompt_gen: '形象描述',
   look_image_gen: '形象图像',
   item_extract: '物品提取',

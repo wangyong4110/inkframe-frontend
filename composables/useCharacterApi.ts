@@ -24,12 +24,6 @@ export const useCharacterApi = () => {
   const deleteCharacter = (id: number) =>
     request<void>(`/characters/${id}`, { method: 'DELETE' })
 
-  const generateCharacterProfile = (novelId: number, description: string) =>
-    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/characters/generate`, {
-      method: 'POST',
-      body: JSON.stringify({ description }),
-    })
-
   const generateCharacterInfo = (novelId: number, name: string, role?: string, hint?: string) =>
     request<ApiResponse<{ description: string }>>(`/novels/${novelId}/characters/ai-generate`, {
       method: 'POST',
@@ -153,7 +147,6 @@ export const useCharacterApi = () => {
     createCharacter,
     updateCharacter,
     deleteCharacter,
-    generateCharacterProfile,
     generateCharacterInfo,
     generateThreeView,
     uploadPortrait,

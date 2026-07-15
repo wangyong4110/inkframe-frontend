@@ -142,21 +142,6 @@ export const useCharacterStore = defineStore('character', {
       }
     },
 
-    async generateCharacterProfile(novelId: number, description: string): Promise<string> {
-      this.generating = true
-      this.error = null
-      try {
-        const api = useCharacterApi()
-        const response = await api.generateCharacterProfile(novelId, description)
-        return (response as any)?.data?.task_id ?? ''
-      } catch (e: any) {
-        this.error = e.message || 'Failed to generate character profile'
-        throw e
-      } finally {
-        this.generating = false
-      }
-    },
-
     setCurrentCharacter(character: Character | null) {
       this.currentCharacter = character
     },

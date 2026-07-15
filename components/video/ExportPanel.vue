@@ -115,6 +115,7 @@ const otherFormats = [
   { key: 'edl',    label: 'EDL',            desc: '.edl · Avid / Premiere / Vegas',    ext: '.edl'  },
   { key: 'otio',   label: 'OpenTimelineIO', desc: '.otio · Premiere / FCP / DaVinci',  ext: '.otio' },
   { key: 'csv',    label: '分镜表',         desc: '.csv · Excel / Notion',             ext: '.csv'  },
+  { key: 'xlsx',   label: '分镜脚本',       desc: '.xlsx · 制片/审片查阅',             ext: '.xlsx' },
 ] as const
 
 async function handleExport(format: string, ext: string) {
