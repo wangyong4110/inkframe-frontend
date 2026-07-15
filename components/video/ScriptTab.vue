@@ -579,7 +579,10 @@ async function handleGenerateShotImage(shot: StoryboardShot) {
   if (!await guardAiProvider('IMAGE')) return
   generatingImageShotIds.value = new Set([...generatingImageShotIds.value, shot.id])
   try {
-    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
+    // 显式单镜头生成：始终 force=true。仅靠 !!shot.image_url 判断会漏掉"状态卡在
+    // generating 但还没有图"的情况（如上次生成中途崩溃/中断）——后端幂等跳过逻辑
+    // 见到 status=="generating" 就直接跳过且不报错，导致用户点了生成但永远没反应。
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], true)
     if (taskId) {
       useTaskStore().trackTask(taskId, async (task) => {
         generatingImageShotIds.value = new Set([...generatingImageShotIds.value].filter(id => id !== shot.id))

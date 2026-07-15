@@ -312,7 +312,9 @@ async function handleGenerateShot(shot: StoryboardShot) {
 async function doGenerateShotImage(shot: StoryboardShot) {
   generatingShotImageIds.value[shot.id] = true
   try {
-    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], !!shot.image_url)
+    // 显式单镜头生成：始终 force=true，避免 status 卡在 "generating"（如上次生成中途崩溃/
+    // 中断）时被后端幂等跳过逻辑静默吞掉——见 ScriptTab.vue 里 doGenerateShotImage 的同款注释。
+    const taskId = await videoStore.batchGenerateShotImages(props.videoId, [shot.id], true)
     if (!taskId) {
       delete generatingShotImageIds.value[shot.id]
       toast.error('生成失败：未获取到任务ID')
