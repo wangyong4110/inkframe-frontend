@@ -2236,7 +2236,12 @@ onUnmounted(() => {
             <div class="flex items-start justify-between mb-6">
               <div>
                 <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">第 {{ chapterNo }} 章大纲</p>
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
+                <input
+                  v-model="chapterTitle"
+                  type="text"
+                  class="text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-none outline-none rounded-lg px-1 -mx-1 w-full max-w-md hover:bg-gray-100 dark:hover:bg-gray-800/50 focus:bg-gray-50 dark:focus:bg-gray-800 focus:ring-2 focus:ring-primary-500 transition-colors"
+                  :placeholder="`第${chapterNo}章`"
+                >
               </div>
               <!-- Actions: view mode -->
               <div v-if="!outlineEditMode" class="flex items-center gap-2 flex-shrink-0 mt-1">
@@ -2366,7 +2371,12 @@ onUnmounted(() => {
             <div class="max-w-2xl mx-auto px-8 pt-10 pb-4 flex items-start justify-between">
               <div>
                 <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">第 {{ chapterNo }} 章</p>
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ chapterTitle || `第${chapterNo}章` }}</h1>
+                <input
+                  v-model="chapterTitle"
+                  type="text"
+                  class="text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-none outline-none rounded-lg px-1 -mx-1 w-full max-w-md hover:bg-gray-100 dark:hover:bg-gray-800/50 focus:bg-gray-50 dark:focus:bg-gray-800 focus:ring-2 focus:ring-primary-500 transition-colors"
+                  :placeholder="`第${chapterNo}章`"
+                >
               </div>
               <!-- View mode: 历史版本 + 编辑 buttons -->
               <div v-if="!writeEditMode" class="flex items-center gap-2 flex-shrink-0 mt-1">
