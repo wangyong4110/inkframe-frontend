@@ -107,16 +107,25 @@ async function handleSynthesize() {
 const moreOpen = ref(false)
 const exporting = ref<Record<string, boolean>>({})
 
+// needsMedia: true 表示导出内容打包了图片/视频素材，必须先生成完成才有意义
+// （素材包/FCPXML/EDL/OTIO 都会写入 image_url/video_url 或依赖实际生成的时长）。
+// false 表示纯文本导出（字幕/分镜表/分镜脚本），只依赖分镜的文案字段，
+// 分镜一旦创建即可导出，不必等图片/视频生成完成。
 const otherFormats = [
-  { key: 'zip',    label: '素材包',         desc: '.zip · 任意剪辑软件',               ext: '.zip'  },
-  { key: 'srt',    label: 'SRT 字幕',       desc: '.srt · 通用字幕',                   ext: '.srt'  },
-  { key: 'vtt',    label: 'WebVTT',         desc: '.vtt · 浏览器 / 网络视频',          ext: '.vtt'  },
-  { key: 'fcpxml', label: 'FCPXML',         desc: '.zip · Final Cut / DaVinci',        ext: '.zip'  },
-  { key: 'edl',    label: 'EDL',            desc: '.edl · Avid / Premiere / Vegas',    ext: '.edl'  },
-  { key: 'otio',   label: 'OpenTimelineIO', desc: '.otio · Premiere / FCP / DaVinci',  ext: '.otio' },
-  { key: 'csv',    label: '分镜表',         desc: '.csv · Excel / Notion',             ext: '.csv'  },
-  { key: 'xlsx',   label: '分镜脚本',       desc: '.xlsx · 制片/审片查阅',             ext: '.xlsx' },
+  { key: 'zip',    label: '素材包',         desc: '.zip · 任意剪辑软件',               ext: '.zip',  needsMedia: true  },
+  { key: 'srt',    label: 'SRT 字幕',       desc: '.srt · 通用字幕',                   ext: '.srt',  needsMedia: false },
+  { key: 'vtt',    label: 'WebVTT',         desc: '.vtt · 浏览器 / 网络视频',          ext: '.vtt',  needsMedia: false },
+  { key: 'fcpxml', label: 'FCPXML',         desc: '.zip · Final Cut / DaVinci',        ext: '.zip',  needsMedia: true  },
+  { key: 'edl',    label: 'EDL',            desc: '.edl · Avid / Premiere / Vegas',    ext: '.edl',  needsMedia: true  },
+  { key: 'otio',   label: 'OpenTimelineIO', desc: '.otio · Premiere / FCP / DaVinci',  ext: '.otio', needsMedia: true  },
+  { key: 'csv',    label: '分镜表',         desc: '.csv · Excel / Notion',             ext: '.csv',  needsMedia: false },
+  { key: 'xlsx',   label: '分镜脚本',       desc: '.xlsx · 制片/审片查阅',             ext: '.xlsx', needsMedia: false },
 ] as const
+
+function isFormatDisabled(fmt: typeof otherFormats[number]) {
+  if (exporting.value[fmt.key]) return true
+  return fmt.needsMedia ? completedShots.value.length === 0 : props.shots.length === 0
+}
 
 async function handleExport(format: string, ext: string) {
   exporting.value = { ...exporting.value, [format]: true }
@@ -311,11 +320,11 @@ function triggerDownload(blob: Blob, filename: string) {
             <span class="text-xs text-gray-400 ml-2">{{ fmt.desc }}</span>
           </div>
           <button
-            class="text-xs px-3 py-1 rounded-lg font-medium transition-colors"
-            :class="completedShots.length === 0 || exporting[fmt.key]
-              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
-            :disabled="completedShots.length === 0 || exporting[fmt.key]"
+            class="text-xs px-3 py-1 rounded-lg font-medium border transition-colors"
+            :class="isFormatDisabled(fmt)
+              ? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 opacity-60 cursor-not-allowed'
+              : 'bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/25'"
+            :disabled="isFormatDisabled(fmt)"
             @click="handleExport(fmt.key, fmt.ext)"
           >
             {{ exporting[fmt.key] ? '导出中...' : '导出' }}
