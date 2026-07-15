@@ -307,7 +307,10 @@ export const useVideoStore = defineStore('video', {
     },
 
     async regenerateShotPrompt(videoId: number, shotId: number) {
-      this.loading = true
+      // 不设置 this.loading —— 这个全局标记会让 ScriptTab 的分镜列表整个换成骨架屏占位
+      // （v-else-if="videoStore.loading"）。这个操作是单个分镜的 LLM 调用，耗时数秒到数十秒，
+      // 之前误用 this.loading 会导致点击按钮后整个列表（含正在编辑的表单）被骨架屏替换掉，
+      // 看起来就像"页面变空白"。单分镜级别的 loading 反馈由调用方组件自己的本地状态处理。
       this.error = null
       try {
         const api = useVideoApi()
@@ -324,8 +327,6 @@ export const useVideoStore = defineStore('video', {
       } catch (e: any) {
         this.error = e.message || 'Failed to regenerate shot prompt'
         throw e
-      } finally {
-        this.loading = false
       }
     },
 
