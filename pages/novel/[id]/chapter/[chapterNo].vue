@@ -396,10 +396,16 @@ const isDirty = computed(() =>
 
 useUnsavedGuard(isDirty, '章节有未保存的修改，确认离开？')
 
-const { lastSavedAt, autoSaving, saveFailed } = useAutosave(
+const { lastSavedAt, autoSaving, saveFailed, flush: flushAutosave } = useAutosave(
   () => doSave(),
   [content, chapterTitle],
 )
+
+// 标题输入框失焦时立即落盘，不等 30 秒的自动保存防抖——
+// 否则改完标题马上切走/离开页面会命中"未保存"确认框，看起来像没有自动保存。
+function handleTitleBlur() {
+  flushAutosave()
+}
 
 const autoSaveLabel = computed(() => {
   if (autoSaving.value) return '保存中...'
@@ -2177,6 +2183,7 @@ onUnmounted(() => {
           type="text"
           class="text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 min-w-0 w-36 truncate"
           :placeholder="`第${chapterNo}章`"
+          @blur="handleTitleBlur"
         />
       </div>
 
@@ -2241,6 +2248,7 @@ onUnmounted(() => {
                   type="text"
                   class="text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-none outline-none rounded-lg px-1 -mx-1 w-full max-w-md hover:bg-gray-100 dark:hover:bg-gray-800/50 focus:bg-gray-50 dark:focus:bg-gray-800 focus:ring-2 focus:ring-primary-500 transition-colors"
                   :placeholder="`第${chapterNo}章`"
+                  @blur="handleTitleBlur"
                 >
               </div>
               <!-- Actions: view mode -->
@@ -2376,6 +2384,7 @@ onUnmounted(() => {
                   type="text"
                   class="text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-none outline-none rounded-lg px-1 -mx-1 w-full max-w-md hover:bg-gray-100 dark:hover:bg-gray-800/50 focus:bg-gray-50 dark:focus:bg-gray-800 focus:ring-2 focus:ring-primary-500 transition-colors"
                   :placeholder="`第${chapterNo}章`"
+                  @blur="handleTitleBlur"
                 >
               </div>
               <!-- View mode: 历史版本 + 编辑 buttons -->
