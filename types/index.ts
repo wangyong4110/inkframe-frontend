@@ -1009,31 +1009,6 @@ export interface AssetShareRequest {
   created_at: string
 }
 
-export interface AssetVersion {
-  id: number
-  asset_id: number
-  version_no: number
-  storage_url: string
-  thumbnail_url?: string
-  file_size: number
-  change_note: string
-  created_by: number
-  created_at: string
-}
-
-export interface AssetCollection {
-  id: number
-  scope: 'personal' | 'public'
-  tenant_id: number
-  name: string
-  description?: string
-  cover_url?: string
-  asset_count: number
-  creator_id: number
-  created_at: string
-  updated_at: string
-}
-
 export interface Foreshadow {
   id: number
   novel_id: number

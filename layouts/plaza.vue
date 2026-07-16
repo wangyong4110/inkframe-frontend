@@ -305,13 +305,6 @@ function isActive(item: { to: string }) {
             <AppLogo :size="18" />
             <span>简影 © 2026</span>
           </div>
-          <span class="text-gray-700">·</span>
-          <NuxtLink to="/novel" class="hover:text-gray-300 transition-colors flex items-center gap-1">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-            </svg>
-            创作台
-          </NuxtLink>
         </div>
         <div class="flex items-center gap-6 text-sm text-gray-500">
           <NuxtLink to="/manual" class="hover:text-gray-300 transition-colors">功能介绍</NuxtLink>

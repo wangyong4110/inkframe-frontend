@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { Asset, AssetSearchParams, Tag } from '~/types'
+import type { Asset, AssetSearchParams } from '~/types'
+// NuxtLink 的自动导入只对模板里直接写 <NuxtLink> 标签生效，:is="... : NuxtLink" 这种
+// 动态组件绑定需要把它当成真正的 JS 变量引用，必须显式 import，否则求值为 undefined。
+import { NuxtLink } from '#components'
 
 definePageMeta({ auth: true })
 
@@ -43,16 +46,9 @@ const playingAsset = ref<Asset | null>(null)
 // Upload dialog
 const showUpload = ref(false)
 const uploadFile = ref<File | null>(null)
+const uploadPreviewUrl = ref('')
 const uploadTitle = ref('')
 const uploading = ref(false)
-const uploadStep = ref<'form' | 'tags'>('form')
-const uploadedAsset = ref<Asset | null>(null)
-const tagsLoading = ref(false)
-const assetTags = ref<Tag[]>([])
-const newTagInput = ref('')
-const tagSuggestions = ref<Tag[]>([])
-let tagPollTimer: ReturnType<typeof setTimeout> | null = null
-let tagPollCount = 0
 
 const activeFilterKey = computed(() =>
   typeFilters.find(f => f.type === filterType.value && f.subType === filterSubType.value)?.key ?? ''
@@ -79,13 +75,10 @@ const uploadTypeLabel = computed(() => {
 })
 
 function setTypeFilter(f: typeof typeFilters[number]) {
-  if (activeFilterKey.value === f.key) {
-    filterType.value = ''
-    filterSubType.value = ''
-  } else {
-    filterType.value = f.type
-    filterSubType.value = f.subType
-  }
+  // 素材类型必须始终有且只有一个选中，再次点击当前已选中的按钮不做任何事（不能取消选中）。
+  if (activeFilterKey.value === f.key) return
+  filterType.value = f.type
+  filterSubType.value = f.subType
   page.value = 1
 }
 
@@ -174,6 +167,10 @@ function onFileChange(e: Event) {
   if (f) {
     uploadFile.value = f
     if (!uploadTitle.value) uploadTitle.value = f.name.replace(/\.[^.]+$/, '')
+    if (uploadPreviewUrl.value) URL.revokeObjectURL(uploadPreviewUrl.value)
+    uploadPreviewUrl.value = (f.type.startsWith('image/') || f.type.startsWith('video/'))
+      ? URL.createObjectURL(f)
+      : ''
   }
 }
 
@@ -184,17 +181,13 @@ async function doUpload() {
     const mime = uploadFile.value.type
     const type = mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'image'
     const subType = filterSubType.value || undefined
-    const res = await assetApi.uploadAsset(uploadFile.value, {
+    await assetApi.uploadAsset(uploadFile.value, {
       title: uploadTitle.value || uploadFile.value.name,
       type,
       sub_type: subType,
     })
-    uploadedAsset.value = res?.data ?? null
-    assetTags.value = uploadedAsset.value?.tags ?? []
-    uploadStep.value = 'tags'
-    tagsLoading.value = true
-    tagPollCount = 0
-    pollForTags()
+    toast.success('上传成功')
+    closeUploadDialog()
     page.value = 1
     load()
   } catch (e: any) {
@@ -204,74 +197,12 @@ async function doUpload() {
   }
 }
 
-function pollForTags() {
-  if (!uploadedAsset.value) return
-  tagPollTimer = setTimeout(async () => {
-    try {
-      const res = await assetApi.getAsset(uploadedAsset.value!.id)
-      const fetched = res?.data
-      if (fetched?.tags && fetched.tags.length > 0) {
-        assetTags.value = fetched.tags
-        tagsLoading.value = false
-        return
-      }
-    } catch {}
-    if (++tagPollCount < 6) pollForTags()
-    else tagsLoading.value = false
-  }, 2000)
-}
-
-async function removeAssetTag(tag: Tag) {
-  if (!uploadedAsset.value) return
-  try {
-    await assetApi.removeTag(uploadedAsset.value.id, tag.id)
-    assetTags.value = assetTags.value.filter(t => t.id !== tag.id)
-  } catch { toast.error('删除标签失败') }
-}
-
-async function addAssetTag() {
-  const name = newTagInput.value.trim()
-  if (!name || !uploadedAsset.value) return
-  try {
-    const res = await assetApi.addTags(uploadedAsset.value.id, [name])
-    for (const t of (res?.data ?? [])) {
-      if (!assetTags.value.find(x => x.id === t.id)) assetTags.value.push(t)
-    }
-    newTagInput.value = ''
-    tagSuggestions.value = []
-  } catch { toast.error('添加标签失败') }
-}
-
-let suggestTimer: ReturnType<typeof setTimeout>
-async function onTagInput() {
-  clearTimeout(suggestTimer)
-  const q = newTagInput.value.trim()
-  if (!q) { tagSuggestions.value = []; return }
-  suggestTimer = setTimeout(async () => {
-    try {
-      const res = await assetApi.suggestTags(q)
-      tagSuggestions.value = (res?.data ?? []).filter((t: Tag) => !assetTags.value.find(x => x.id === t.id))
-    } catch {}
-  }, 300)
-}
-
-function selectSuggestion(tag: Tag) {
-  newTagInput.value = tag.name
-  tagSuggestions.value = []
-  addAssetTag()
-}
-
 function closeUploadDialog() {
-  if (tagPollTimer) clearTimeout(tagPollTimer)
+  if (uploadPreviewUrl.value) URL.revokeObjectURL(uploadPreviewUrl.value)
+  uploadPreviewUrl.value = ''
   showUpload.value  = false
-  uploadStep.value  = 'form'
   uploadFile.value  = null
   uploadTitle.value = ''
-  uploadedAsset.value = null
-  assetTags.value   = []
-  newTagInput.value = ''
-  tagSuggestions.value = []
-  tagsLoading.value = false
 }
 
 // ─── Single asset actions ─────────────────────────────────────────────────────
@@ -482,7 +413,7 @@ function formatSize(bytes?: number) {
         <!-- Checkbox overlay (personal only) -->
         <div
           v-if="activeScope === 'personal'"
-          class="absolute top-2 left-2 z-10 transition-opacity"
+          class="absolute top-2 left-2 z-10 transition-opacity bg-black/50 rounded p-0.5"
           :class="selectMode || selected.has(asset.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
           @click.stop="toggleSelect(asset.id)"
         >
@@ -507,15 +438,27 @@ function formatSize(bytes?: number) {
             :is="selectMode && activeScope === 'personal' ? 'div' : NuxtLink"
             v-bind="selectMode && activeScope === 'personal' ? {} : { to: `/assets/${asset.id}` }"
           >
-            <div style="aspect-ratio: 3/4" class="bg-gray-800">
+            <div style="aspect-ratio: 3/2; min-height: 60px" class="bg-gray-800">
               <img
                 v-if="asset.thumbnail_url || (asset.type === 'image' && asset.storage_url)"
                 :src="asset.thumbnail_url || asset.storage_url"
                 :alt="asset.title"
                 class="w-full h-full object-cover"
               />
-              <div v-else class="w-full h-full flex items-center justify-center text-4xl">
-                {{ asset.type === 'video' ? '🎬' : asset.sub_type === 'bgm' ? '🎼' : asset.type === 'audio' ? '🎵' : '📄' }}
+              <div v-else class="w-full h-full flex items-center justify-center text-gray-500">
+                <!-- 用 SVG 而不是 emoji 字符：emoji 依赖系统装了彩色 emoji 字体，
+                     没装的环境会用兜底字体渲染出异常放大、走样的字形，撑破卡片布局。 -->
+                <svg v-if="asset.type === 'video'" class="w-10 h-10" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                <svg v-else-if="asset.type === 'audio'" class="w-10 h-10" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5a.75.75 0 01.9-.735l9 1.8a.75.75 0 01.6.735V15" />
+                  <circle cx="7" cy="17" r="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="17.5" cy="15" r="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <svg v-else class="w-10 h-10" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
               </div>
             </div>
           </component>
@@ -612,7 +555,11 @@ function formatSize(bytes?: number) {
           </template>
           <template v-else-if="playingAsset.type === 'audio'">
             <div class="bg-gray-900 border border-gray-700 rounded-2xl p-8 text-center shadow-2xl" @click.stop>
-              <div class="text-6xl mb-4">{{ playingAsset.sub_type === 'bgm' ? '🎼' : '🎵' }}</div>
+              <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5a.75.75 0 01.9-.735l9 1.8a.75.75 0 01.6.735V15" />
+                <circle cx="7" cy="17" r="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="17.5" cy="15" r="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
               <p class="text-white font-semibold text-lg mb-1 truncate">{{ playingAsset.title }}</p>
               <p class="text-gray-400 text-sm mb-6">
                 {{ playingAsset.sub_type === 'bgm' ? '背景音乐' : '音效' }}
@@ -632,101 +579,34 @@ function formatSize(bytes?: number) {
     <!-- Upload Dialog -->
     <div v-if="showUpload" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="closeUploadDialog">
       <div class="bg-gray-900 rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
-        <template v-if="uploadStep === 'form'">
-          <h3 class="text-lg font-semibold text-white mb-4">上传{{ uploadTypeLabel }}</h3>
-          <div
-            class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 transition-colors mb-4"
-            @click="($refs.fileInput as HTMLInputElement)?.click()"
-          >
-            <input ref="fileInput" type="file" class="hidden" :accept="uploadAccept" @change="onFileChange" />
-            <p v-if="!uploadFile" class="text-gray-400 text-sm">点击或拖拽文件到此处</p>
-            <p v-else class="text-gray-300 text-sm font-medium">{{ uploadFile.name }}</p>
-          </div>
-          <input
-            v-model="uploadTitle"
-            type="text"
-            placeholder="素材标题（可选）"
-            class="w-full px-3 py-2 text-sm border border-gray-700 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
-          <div class="flex gap-3 justify-end">
-            <button class="px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg" @click="closeUploadDialog">取消</button>
-            <button
-              :disabled="!uploadFile || uploading"
-              class="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
-              @click="doUpload"
-            >{{ uploading ? '上传中...' : '确认上传' }}</button>
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-white">AI 标签分析</h3>
-            <span class="text-xs text-gray-400">{{ uploadedAsset?.title }}</span>
-          </div>
-          <div v-if="tagsLoading" class="flex items-center gap-2 py-3 mb-4">
-            <svg class="w-4 h-4 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            <span class="text-sm text-gray-400">AI 分析中，请稍候...</span>
-          </div>
-          <div class="mb-4">
-            <p class="text-xs text-gray-400 mb-2">{{ tagsLoading ? '' : (assetTags.length ? 'AI 已识别以下标签，可点击 × 删除：' : '未识别到标签，请手动添加') }}</p>
-            <div class="flex flex-wrap gap-2 min-h-[2rem]">
-              <span
-                v-for="tag in assetTags"
-                :key="tag.id"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                :class="tag.category === 'style'   ? 'bg-purple-900/50 text-purple-300' :
-                        tag.category === 'mood'    ? 'bg-yellow-900/50 text-yellow-300' :
-                        tag.category === 'subject' ? 'bg-blue-900/50 text-blue-300'   :
-                        tag.category === 'color'   ? 'bg-pink-900/50 text-pink-300'   :
-                        'bg-gray-700 text-gray-300'"
-              >
-                {{ tag.name }}
-                <button class="ml-0.5 hover:text-white opacity-60 hover:opacity-100" @click="removeAssetTag(tag)">×</button>
-              </span>
-            </div>
-          </div>
-          <div class="relative mb-4">
-            <div class="flex gap-2">
-              <input
-                v-model="newTagInput"
-                type="text"
-                placeholder="输入标签名称，按回车添加"
-                class="flex-1 px-3 py-2 text-sm border border-gray-700 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @input="onTagInput"
-                @keydown.enter.prevent="addAssetTag"
-                @keydown.escape="tagSuggestions = []"
-              />
-              <button
-                :disabled="!newTagInput.trim()"
-                class="px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-40"
-                @click="addAssetTag"
-              >添加</button>
-            </div>
-            <div
-              v-if="tagSuggestions.length"
-              class="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto"
-            >
-              <button
-                v-for="s in tagSuggestions"
-                :key="s.id"
-                class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center justify-between"
-                @click="selectSuggestion(s)"
-              >
-                <span>{{ s.name }}</span>
-                <span class="text-xs text-gray-500">{{ s.category }}</span>
-              </button>
-            </div>
-          </div>
-          <div class="flex justify-end">
-            <button
-              class="px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              @click="closeUploadDialog"
-            >完成</button>
-          </div>
-        </template>
+        <h3 class="text-lg font-semibold text-white mb-4">上传{{ uploadTypeLabel }}</h3>
+        <div
+          class="border-2 border-dashed border-gray-600 rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 transition-colors mb-4 overflow-hidden"
+          :class="uploadFile ? '' : 'p-8'"
+          @click="($refs.fileInput as HTMLInputElement)?.click()"
+        >
+          <input ref="fileInput" type="file" class="hidden" :accept="uploadAccept" @change="onFileChange" />
+          <p v-if="!uploadFile" class="text-gray-400 text-sm">点击或拖拽文件到此处</p>
+          <template v-else>
+            <img v-if="uploadPreviewUrl && uploadFile.type.startsWith('image/')" :src="uploadPreviewUrl" class="max-h-48 mx-auto rounded-lg object-contain" />
+            <video v-else-if="uploadPreviewUrl && uploadFile.type.startsWith('video/')" :src="uploadPreviewUrl" class="max-h-48 mx-auto rounded-lg" controls />
+            <p class="text-gray-300 text-sm font-medium mt-2 truncate">{{ uploadFile.name }}</p>
+          </template>
+        </div>
+        <input
+          v-model="uploadTitle"
+          type="text"
+          placeholder="素材标题（可选）"
+          class="w-full px-3 py-2 text-sm border border-gray-700 rounded-lg bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+        />
+        <div class="flex gap-3 justify-end">
+          <button class="px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg" @click="closeUploadDialog">取消</button>
+          <button
+            :disabled="!uploadFile || uploading"
+            class="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+            @click="doUpload"
+          >{{ uploading ? '上传中...' : '确认上传' }}</button>
+        </div>
       </div>
     </div>
   </div>

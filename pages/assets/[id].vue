@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Asset, AssetVersion, AssetComment, Tag, ShareLink } from '~/types'
+import type { Asset, AssetComment, Tag, ShareLink } from '~/types'
 
 definePageMeta({ auth: true })
 
@@ -9,7 +9,6 @@ const authStore = useAuthStore()
 
 const assetId = computed(() => Number(route.params.id))
 const asset = ref<Asset | null>(null)
-const versions = ref<AssetVersion[]>([])
 const comments = ref<AssetComment[]>([])
 const shareLinks = ref<ShareLink[]>([])
 const loading = ref(true)
@@ -34,12 +33,6 @@ const showShareDialog = ref(false)
 const newShareExpiry = ref(7)
 const newShareDownload = ref(false)
 const creatingLink = ref(false)
-
-// Version upload
-const showVersionDialog = ref(false)
-const versionFile = ref<File | null>(null)
-const versionNote = ref('')
-const uploadingVersion = ref(false)
 
 // Share request
 const shareRequestStatus = ref<string>('')
@@ -92,12 +85,6 @@ async function loadAsset() {
   }
 }
 
-async function loadVersions() {
-  if (!isOwner.value) return
-  const res = await assetApi.listVersions(assetId.value)
-  versions.value = res.data ?? []
-}
-
 async function loadComments() {
   const res = await assetApi.listComments(assetId.value)
   comments.value = res.data ?? []
@@ -112,7 +99,7 @@ async function loadShareLinks() {
 onMounted(async () => {
   await loadAsset()
   if (asset.value) {
-    await Promise.all([loadVersions(), loadComments(), loadShareLinks()])
+    await Promise.all([loadComments(), loadShareLinks()])
   }
 })
 
@@ -209,27 +196,6 @@ async function postComment() {
 async function deleteComment(cid: number) {
   await assetApi.deleteComment(assetId.value, cid)
   comments.value = comments.value.filter(c => c.id !== cid)
-}
-
-// Version
-async function uploadVersion() {
-  if (!versionFile.value) return
-  uploadingVersion.value = true
-  try {
-    await assetApi.createVersion(assetId.value, versionFile.value, versionNote.value)
-    await loadVersions()
-    showVersionDialog.value = false
-    versionFile.value = null
-    versionNote.value = ''
-  } finally {
-    uploadingVersion.value = false
-  }
-}
-
-async function restoreVersion(versionNo: number) {
-  if (!confirm(`确认回退到版本 v${versionNo}？`)) return
-  await assetApi.restoreVersion(assetId.value, versionNo)
-  await loadAsset()
 }
 
 // Share link
@@ -405,10 +371,6 @@ function formatDate(s?: string) {
                 class="w-full px-3 py-2 border border-yellow-400 text-yellow-700 rounded-lg text-sm disabled:opacity-50">
                 {{ processingShare ? '处理中...' : '撤回共享申请' }}
               </button>
-              <button @click="showVersionDialog = true"
-                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                上传新版本
-              </button>
               <button @click="showShareDialog = true"
                 class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                 生成分享链接
@@ -523,24 +485,6 @@ function formatDate(s?: string) {
           </div>
         </div>
 
-        <!-- Version history (personal owner) -->
-        <div v-if="isOwner && versions.length" class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
-          <h3 class="font-semibold text-gray-800 dark:text-gray-200 mb-3">版本历史</h3>
-          <div class="space-y-2">
-            <div v-for="v in versions" :key="v.id" class="flex items-center justify-between text-sm">
-              <div>
-                <span class="font-medium text-gray-700 dark:text-gray-300">v{{ v.version_no }}</span>
-                <span v-if="v.change_note" class="ml-2 text-gray-400 text-xs">{{ v.change_note }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-gray-400 text-xs">
-                <span>{{ formatBytes(v.file_size) }}</span>
-                <button @click="restoreVersion(v.version_no)"
-                  class="text-indigo-500 hover:text-indigo-700">回退</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Share links (personal owner) -->
         <div v-if="isOwner" class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-5">
           <div class="flex items-center justify-between mb-3">
@@ -562,33 +506,6 @@ function formatDate(s?: string) {
             </div>
             <p v-if="!shareLinks.length" class="text-xs text-gray-400">暂无分享链接</p>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Version upload dialog -->
-    <div v-if="showVersionDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" @click.self="showVersionDialog = false">
-      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-        <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">上传新版本</h3>
-        <div class="space-y-3">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">文件</label>
-            <input type="file" @change="(e) => versionFile = (e.target as HTMLInputElement).files?.[0] ?? null"
-              class="w-full text-sm text-gray-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">变更说明</label>
-            <input v-model="versionNote" type="text" placeholder="简要描述改动..."
-              class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700" />
-          </div>
-        </div>
-        <div class="mt-4 flex gap-2 justify-end">
-          <button @click="showVersionDialog = false"
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300">取消</button>
-          <button :disabled="!versionFile || uploadingVersion" @click="uploadVersion"
-            class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50">
-            {{ uploadingVersion ? '上传中...' : '上传' }}
-          </button>
         </div>
       </div>
     </div>

@@ -270,7 +270,7 @@ const genreLabels: Record<string, string> = {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>

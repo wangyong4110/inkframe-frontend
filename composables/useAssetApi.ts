@@ -1,11 +1,9 @@
 import type {
   Asset,
-  AssetCollection,
   AssetComment,
   AssetSearchParams,
   AssetShareRequest,
   AssetStorageQuota,
-  AssetVersion,
   CrawlJob,
   ShareLink,
   Tag,
@@ -99,29 +97,6 @@ export const useAssetApi = () => {
   const withdrawShare = (id: number) =>
     request<ApiResponse<Asset>>(`/assets/${id}/withdraw`, { method: 'POST' })
 
-  // ─── Versions ──────────────────────────────────────────────────────────────
-
-  const listVersions = (id: number) =>
-    request<ApiResponse<AssetVersion[]>>(`/assets/${id}/versions`)
-
-  const createVersion = async (id: number, file: File, note: string) => {
-    const config = useRuntimeConfig()
-    const { getAuthToken } = await import('~/utils/auth')
-    const token = getAuthToken()
-    const form = new FormData()
-    form.append('file', file)
-    form.append('note', note)
-    const res = await fetch(`${config.public.apiBase}/assets/${id}/versions`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    })
-    return res.json() as Promise<ApiResponse<AssetVersion>>
-  }
-
-  const restoreVersion = (id: number, versionNo: number) =>
-    request<void>(`/assets/${id}/versions/${versionNo}/restore`, { method: 'POST' })
-
   // ─── Tags ───────────────────────────────────────────────────────────────────
 
   const listTags = () =>
@@ -154,23 +129,6 @@ export const useAssetApi = () => {
 
   const batchShareRequest = (assetIds: number[]) =>
     request<ApiResponse<{ submitted: number; failed: number }>>('/assets/batch-share-request', { method: 'POST', body: JSON.stringify({ asset_ids: assetIds }) })
-
-  // ─── Collections ────────────────────────────────────────────────────────────
-
-  const listCollections = () =>
-    request<ApiResponse<AssetCollection[]>>('/asset-collections')
-
-  const createCollection = (data: { name: string; description?: string; scope: 'personal' | 'public' }) =>
-    request<ApiResponse<AssetCollection>>('/asset-collections', { method: 'POST', body: JSON.stringify(data) })
-
-  const listCollectionItems = (collectionId: number) =>
-    request<ApiResponse<Asset[]>>(`/asset-collections/${collectionId}/items`)
-
-  const addToCollection = (collectionId: number, assetIds: number[]) =>
-    request<void>(`/asset-collections/${collectionId}/items`, { method: 'POST', body: JSON.stringify({ asset_ids: assetIds }) })
-
-  const removeFromCollection = (collectionId: number, assetIds: number[]) =>
-    request<void>(`/asset-collections/${collectionId}/items`, { method: 'DELETE', body: JSON.stringify({ asset_ids: assetIds }) })
 
   // ─── Share Links ─────────────────────────────────────────────────────────────
 
@@ -238,11 +196,9 @@ export const useAssetApi = () => {
   return {
     searchAssets, getAsset, uploadAsset, updateAsset, softDeleteAsset, restoreAsset, purgeAsset, listTrash,
     requestShare, getShareRequest, cancelShareRequest, withdrawShare,
-    listVersions, createVersion, restoreVersion,
     listTags, suggestTags, addTags, removeTag, triggerAutoTag,
     toggleLike, useAsset,
     batchDelete, batchShareRequest,
-    listCollections, createCollection, listCollectionItems, addToCollection, removeFromCollection,
     createShareLink, listShareLinks, revokeShareLink, getSharePage,
     listComments, addComment, deleteComment,
     listCrawlJobs, createCrawlJob, getCrawlJob, cancelCrawlJob, retryCrawlJob,
