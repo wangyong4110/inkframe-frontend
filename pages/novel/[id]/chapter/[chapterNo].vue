@@ -156,7 +156,7 @@ async function handleBatchItemImages() {
   if (!chapter.value) return
   const boundItemIds = chapterItems.value.map((i: any) => i.id)
   if (boundItemIds.length === 0) {
-    toast.error('本章暂无绑定物品，无法生成物品图片')
+    toast.error('本章暂无绑定道具，无法生成道具图片')
     return
   }
   generatingItemImages.value = true
@@ -168,12 +168,12 @@ async function handleBatchItemImages() {
     )
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingItemImages.value = false; return }
-    toast.info('物品批量生成任务已提交，正在处理...')
+    toast.info('道具批量生成任务已提交，正在处理...')
     taskStore.trackTask(taskId, async (task) => {
       generatingItemImages.value = false
       if (task.status === 'completed') {
         const succeeded = (task.data?.succeeded as number) ?? 0
-        toast.success(`物品图片批量生成完成，${succeeded} 个已更新`)
+        toast.success(`道具图片批量生成完成，${succeeded} 个已更新`)
       } else if (task.status === 'failed') {
         toast.error('批量生成失败：' + (task.error || '未知错误'))
       }
@@ -1569,7 +1569,7 @@ async function fetchChapterItems() {
   }
 }
 
-// ── 物品手动绑定 ──────────────────────────────────────────────────────────────
+// ── 道具手动绑定 ──────────────────────────────────────────────────────────────
 const showBindItemModal = ref(false)
 const bindingItemId = ref<number | null>(null)
 const unbindingItemId = ref<number | null>(null)
@@ -1780,23 +1780,23 @@ async function handleExtractChapterItems() {
     })
     const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
     if (taskId) {
-      toast.info('物品提取任务已提交，正在处理...')
+      toast.info('道具提取任务已提交，正在处理...')
       taskStore.trackTask(taskId, async (task) => {
         extractingChapterItems.value = false
         if (task.status === 'completed') {
           const count = (task.data?.new_count as number) ?? (task.data?.count as number) ?? 0
-          toast.success(`物品提取完成，新增 ${count} 个`)
+          toast.success(`道具提取完成，新增 ${count} 个`)
           fetchChapterItems()
         } else if (task.status === 'failed') {
-          toast.error('物品提取失败：' + (task.error || '未知错误'))
+          toast.error('道具提取失败：' + (task.error || '未知错误'))
         }
       })
     } else {
       const count: number = data?.data?.count ?? data?.count ?? 0
       if (count > 0) {
-        toast.success(`物品提取完成，新增 ${count} 个`)
+        toast.success(`道具提取完成，新增 ${count} 个`)
       } else {
-        toast.info('物品提取完成，本章未发现新物品')
+        toast.info('道具提取完成，本章未发现新道具')
       }
       fetchChapterItems()
       extractingChapterItems.value = false
@@ -2193,7 +2193,7 @@ onUnmounted(() => {
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
-          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('items')" @click="switchToItems">物品</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('items')" @click="switchToItems">道具</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('script')" @click="switchToScript">视频</button>
         </div>
@@ -2891,12 +2891,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- ─ 物品模式 ─ -->
+        <!-- ─ 道具模式 ─ -->
         <div v-else-if="pageMode === 'items'" class="h-full overflow-auto">
           <div class="max-w-2xl mx-auto px-8 py-10 space-y-8">
             <div>
               <div class="flex items-center justify-between mb-4">
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章物品</h4>
+                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">本章道具</h4>
                 <button
                   class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
                   @click="fetchNovelItems(); showBindItemModal = true"
@@ -2916,8 +2916,8 @@ onUnmounted(() => {
                 <svg class="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                 </svg>
-                <p class="text-xs text-gray-400 dark:text-gray-500">暂无物品记录</p>
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">点击右侧「提取物品」自动识别，或「手动绑定」从物品库添加</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500">暂无道具记录</p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">点击右侧「提取道具」自动识别，或「手动绑定」从道具库添加</p>
               </div>
               <!-- 网格卡片 -->
               <div v-else class="grid grid-cols-3 gap-2">
@@ -2962,12 +2962,12 @@ onUnmounted(() => {
                     <div class="flex-1 min-w-0">
                       <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ item.name }}</p>
                       <p class="text-[10px] text-amber-500 dark:text-amber-400 truncate text-center leading-tight">
-                        {{ item.effective_location || item.description || '本章物品' }}
+                        {{ item.effective_location || item.description || '本章道具' }}
                       </p>
                     </div>
                     <button
                       class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
-                      title="编辑物品"
+                      title="编辑道具"
                       @click.stop="router.push(`/item/${item.id}?novelId=${novelId}&from=${encodeURIComponent(route.fullPath)}`)"
                     >
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3142,7 +3142,7 @@ onUnmounted(() => {
                 pageMode === 'outline' ? '大纲' :
                 pageMode === 'write' ? '写作' :
                 pageMode === 'character' ? '角色' :
-                pageMode === 'items' ? '物品' :
+                pageMode === 'items' ? '道具' :
                 pageMode === 'scenes' ? '场景' :
                 videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
@@ -3867,7 +3867,7 @@ onUnmounted(() => {
             </div>
           </template>
 
-          <!-- ── 物品 AI ── -->
+          <!-- ── 道具 AI ── -->
           <template v-else-if="pageMode === 'items'">
             <div class="p-4 space-y-4">
               <!-- AI 本章提取 -->
@@ -3886,7 +3886,7 @@ onUnmounted(() => {
                 >
                   <svg v-if="extractingChapterItems" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  {{ extractingChapterItems ? '提取中...' : '物品提取' }}
+                  {{ extractingChapterItems ? '提取中...' : '道具提取' }}
                 </button>
                 <button
                   :disabled="generatingItemImages"
@@ -3895,7 +3895,7 @@ onUnmounted(() => {
                 >
                   <svg v-if="generatingItemImages" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                  {{ generatingItemImages ? '生成中...' : '生成物品图片' }}
+                  {{ generatingItemImages ? '生成中...' : '生成道具图片' }}
                 </button>
               </div>
             </div>
@@ -4554,12 +4554,12 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <!-- 手动绑定物品弹窗 -->
+  <!-- 手动绑定道具弹窗 -->
   <div v-if="showBindItemModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showBindItemModal = false" />
     <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">绑定物品到本章</h3>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">绑定道具到本章</h3>
         <button class="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" @click="showBindItemModal = false">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -4573,7 +4573,7 @@ onUnmounted(() => {
           </svg>
         </div>
         <p v-else-if="unboundItems.length === 0" class="text-center text-sm text-gray-400 dark:text-gray-500 py-8">
-          所有物品已绑定到本章
+          所有道具已绑定到本章
         </p>
         <div v-else class="space-y-2">
           <button

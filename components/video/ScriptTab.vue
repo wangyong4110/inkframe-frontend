@@ -30,7 +30,7 @@ const shotImageInputRef = ref<HTMLInputElement | null>(null)
 const shotImageTargetId = ref<number | null>(null)
 
 // ── 绑定变化后的提示词同步提示 ──
-// 绑定/解绑场景、角色、物品只更新结构化关联字段，不会自动重写 gen_meta 里的叙事文本提示词
+// 绑定/解绑场景、角色、道具只更新结构化关联字段，不会自动重写 gen_meta 里的叙事文本提示词
 // （见后端 RegenerateShotPrompt 的注释）。这里只做前端本地的"待同步"标记，纯会话内状态，
 // 不持久化——用户点了"重新生成提示词"或刷新页面后就清空，避免额外的后端 staleness 字段。
 const staleBindingShotIds = ref<Set<number>>(new Set())
@@ -506,7 +506,7 @@ function removeCharFromShot(shot: StoryboardShot, charId: number) {
   handleSetShotCharacters(shot, (shot.character_ids || []).filter(id => id !== charId))
 }
 
-// ── 物品绑定 ──
+// ── 道具绑定 ──
 const itemApi = useItemApi()
 const novelItems = ref<any[]>([])
 
@@ -540,7 +540,7 @@ async function handleSetShotItems(shot: StoryboardShot, itemIds: number[]) {
     staleBindingShotIds.value.add(shot.id)
     scheduleRefresh()
   } catch (e: any) {
-    toast.error('物品绑定失败：' + (e.message || ''))
+    toast.error('道具绑定失败：' + (e.message || ''))
   }
 }
 
@@ -731,7 +731,7 @@ defineExpose({ handleReviewStoryboard })
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2 h-6 rounded transition-colors disabled:opacity-40"
                   :disabled="regeneratingPromptShotId === shot.id"
-                  title="根据当前绑定的场景/角色/物品重新生成图像和视频提示词"
+                  title="根据当前绑定的场景/角色/道具重新生成图像和视频提示词"
                   @click="handleRegeneratePrompt(shot)"
                 >
                   <svg v-if="regeneratingPromptShotId === shot.id" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -918,7 +918,7 @@ defineExpose({ handleReviewStoryboard })
                 <!-- Error message -->
                 <p v-if="shot.status === 'failed' && shot.error_message" class="text-xs text-red-500 mt-1.5 line-clamp-2" :title="shot.error_message">{{ shot.error_message }}</p>
 
-                <!-- Row 3: 场景 / 角色 / 物品 — unified binding strip -->
+                <!-- Row 3: 场景 / 角色 / 道具 — unified binding strip -->
                 <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-x-2 gap-y-1 flex-wrap">
 
                   <!-- 📍 场景 -->
@@ -960,7 +960,7 @@ defineExpose({ handleReviewStoryboard })
                     </select>
                   </div>
 
-                  <!-- 📦 物品（仅在小说有物品时显示） -->
+                  <!-- 📦 道具（仅在小说有道具时显示） -->
                   <template v-if="novelItems.length > 0 || (shot.item_ids?.length ?? 0) > 0">
                     <div class="w-px h-3.5 bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
                     <div class="flex items-center gap-1 flex-wrap flex-shrink-0">
@@ -972,7 +972,7 @@ defineExpose({ handleReviewStoryboard })
                         </span>
                       </template>
                       <select class="input text-xs py-0.5 h-6 max-w-[90px]" @change="addItemToShot(shot, $event)">
-                        <option value="">+ 绑定物品</option>
+                        <option value="">+ 绑定道具</option>
                         <option v-for="item in (unassignedItemsMap.get(shot.id) ?? [])" :key="item.id" :value="item.id">{{ item.name }}</option>
                       </select>
                     </div>
@@ -990,7 +990,7 @@ defineExpose({ handleReviewStoryboard })
                     type="button"
                     class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30 hover:bg-violet-100 dark:hover:bg-violet-900/50 px-2 h-6 rounded transition-colors disabled:opacity-40 flex-shrink-0"
                     :disabled="regeneratingPromptShotId === shot.id"
-                    title="根据当前绑定的场景/角色/物品重新生成图像和视频提示词"
+                    title="根据当前绑定的场景/角色/道具重新生成图像和视频提示词"
                     @click="handleRegeneratePrompt(shot)"
                   >
                     <svg v-if="regeneratingPromptShotId === shot.id" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">

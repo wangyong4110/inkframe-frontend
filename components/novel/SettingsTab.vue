@@ -816,7 +816,7 @@ const selectedAspectRatio = computed(() =>
               </div>
               <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">此操作 <strong class="text-red-600">不可撤销</strong>，以下所有数据将被永久删除：</p>
               <ul class="space-y-1.5 mb-5">
-                <li v-for="item in ['全部章节内容及版本历史','角色、物品、世界观设定','故事板与视频镜头','审查记录与弧线摘要','场景与参考图']"
+                <li v-for="item in ['全部章节内容及版本历史','角色、道具、世界观设定','故事板与视频镜头','审查记录与弧线摘要','场景与参考图']"
                   :key="item" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                   <svg class="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />

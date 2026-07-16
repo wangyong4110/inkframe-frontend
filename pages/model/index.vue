@@ -224,6 +224,10 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     akLabel: 'API Key', akPlaceholder: 'MiniMax API Key（Bearer Token 鉴权）',
     skLabel: '', skPlaceholder: '', skHint: '',
   },
+  'minimax-music': {
+    akLabel: 'API Key', akPlaceholder: 'MiniMax API Key（与 MiniMax TTS 可共用同一把 Key）',
+    skLabel: '', skPlaceholder: '', skHint: '文生音乐，用于生成分镜背景音乐（BGM）',
+  },
 }
 const credentialMeta = computed<CredentialMeta>(() => {
   const name = editingProvider.value?.name ?? providerForm.value.name
@@ -381,6 +385,8 @@ const PROVIDER_CONSOLE_URL: Record<string, string> = {
   'baidu-tts':         'https://ai.baidu.com/tech/speech',
   'minimax-tts':       'https://platform.minimaxi.com/console/access',
   'tencent-tts':       'https://console.cloud.tencent.com/tts',
+  // 背景音乐
+  'minimax-music':     'https://platform.minimaxi.com/console/access',
   // 音效
   'elevenlabs-sfx':    'https://elevenlabs.io/app/settings/api-keys',
   freesound:           'https://freesound.org/api/apply',

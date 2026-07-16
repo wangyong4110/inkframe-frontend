@@ -58,7 +58,7 @@ const deleteItem = async (id: number) => {
 }
 
 const typeLabels: Record<string, string> = {
-  character: '角色', location: '地点', item: '物品', event: '事件',
+  character: '角色', location: '地点', item: '道具', event: '事件',
   plot_point: '剧情', worldview: '世界观', other: '其他',
 }
 

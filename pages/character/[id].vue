@@ -63,7 +63,6 @@ const editingLook = ref<CharacterLook | null>(null)
 const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
-const generatingFormPortrait = ref(false)
 const showFacePrompt = ref(false) // 面部提示词编辑区默认收起
 const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; face_prompt?: string; three_view_sheet?: string; portrait?: string }>({
   label: '',
@@ -257,33 +256,8 @@ async function handleDeleteLookFromForm() {
   }
 }
 
-async function handleFormGeneratePortrait() {
-  if (!editingLook.value) return
-  if (!await guardAiProvider('IMAGE')) return
-  generatingFormPortrait.value = true
-  try {
-    const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'portrait', selectedImageProvider.value || undefined, {
-      facePrompt: lookForm.value.face_prompt,
-    })
-    const taskId = (res as any)?.data?.task_id ?? ''
-    if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormPortrait.value = false; return }
-    taskStore.trackTask(taskId, async (task) => {
-      generatingFormPortrait.value = false
-      if (task.status === 'completed') {
-        await fetchLooks()
-        const updated = looks.value.find(l => l.id === editingLook.value!.id)
-        if (updated?.portrait) lookForm.value.portrait = updated.portrait
-        toast.success('面部参考图已生成，可继续生成三视图')
-      } else if (task.status === 'failed') {
-        toast.error('生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    toast.error('生成失败：' + (e.message || ''))
-    generatingFormPortrait.value = false
-  }
-}
-
+// 三视图与面部参考图不再分两步生成——一次调用同框合图（正面/侧面/背面/面部特写），
+// 后端自动从合图裁出面部特写存为 portrait，前端只需触发一次并等待一个任务完成。
 async function handleFormGenerateThreeView() {
   if (!editingLook.value) return
   if (!await guardAiProvider('IMAGE')) return
@@ -291,6 +265,7 @@ async function handleFormGenerateThreeView() {
   try {
     const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined, {
       visualPrompt: lookForm.value.visual_prompt,
+      facePrompt: lookForm.value.face_prompt,
     })
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormThreeView.value = false; return }
@@ -300,7 +275,8 @@ async function handleFormGenerateThreeView() {
         await fetchLooks()
         const updated = looks.value.find(l => l.id === editingLook.value!.id)
         if (updated?.three_view_sheet) lookForm.value.three_view_sheet = updated.three_view_sheet
-        toast.success('三视图已生成')
+        if (updated?.portrait) lookForm.value.portrait = updated.portrait
+        toast.success('角色参考图已生成（三视图+面部特写）')
       } else if (task.status === 'failed') {
         toast.error('生成失败：' + (task.error || '未知错误'))
       }
@@ -767,57 +743,40 @@ function getRoleLabel(role: string): string {
             />
           </div>
 
-          <!-- 图片区：左侧面部参考图（第一步）+ 右侧三视图（第二步） -->
+          <!-- 图片区：一次生成同框合图（正面/侧面/背面/面部特写），面部参考图由后端自动裁剪 -->
           <div class="grid grid-cols-3 gap-3 items-start">
-            <!-- 面部参考图（1 col）— 第一步 -->
+            <!-- 面部参考图（1 col）— 由角色参考图第4格自动裁剪，不单独生成 -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <div class="flex items-center gap-1.5">
-                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-violet-500 text-white text-[10px] font-bold flex-shrink-0">1</span>
-                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button
-                    v-if="editingLook"
-                    class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
-                    :disabled="generatingFormPortrait"
-                    @click="handleFormGeneratePortrait"
-                  >
-                    <svg v-if="generatingFormPortrait" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    {{ generatingFormPortrait ? '生成中…' : '✨ AI 生成' }}
-                  </button>
-                  <button
-                    v-if="lookForm.three_view_sheet"
-                    class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    @click="showCropModal = true"
-                  >✂ 裁剪</button>
-                </div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
+                <button
+                  v-if="lookForm.three_view_sheet"
+                  class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  @click="showCropModal = true"
+                >✂ 裁剪</button>
               </div>
-              <p class="text-xs text-gray-400 mb-1">正面半身像，用作三视图的面部锚点</p>
+              <p class="text-xs text-gray-400 mb-1">由右侧角色参考图自动裁剪生成，无需单独生成</p>
               <ImageUploadBox
                 v-model="lookForm.portrait"
                 aspect-ratio="3/4"
-                placeholder="面部参考图（正面半身像）"
+                placeholder="面部参考图（随角色参考图自动生成）"
                 :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
                 :on-save="(url: string) => { lookForm.portrait = url }"
                 @error="toast.error"
               />
             </div>
 
-            <!-- 三视图参考图（2 col）— 第二步 -->
+            <!-- 角色参考图（2 col）— 正面/侧面/背面/面部特写一次生成 -->
             <div class="col-span-2">
               <div class="flex items-center justify-between mb-1">
-                <div class="flex items-center gap-1.5">
-                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-violet-500 text-white text-[10px] font-bold flex-shrink-0">2</span>
-                  <div>
-                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">三视图参考图</p>
-                    <p class="text-xs text-gray-400">正视 / 侧视 / 背视合为一张图{{ lookForm.portrait ? '，将以面部图为参考' : '' }}</p>
-                  </div>
+                <div>
+                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">角色参考图</p>
+                  <p class="text-xs text-gray-400">正视 / 侧视 / 背视 / 面部特写合为一张图，一次生成</p>
                 </div>
                 <button
                   class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
                   :disabled="generatingFormThreeView || !editingLook"
-                  :title="!editingLook ? '保存形象后再生成' : !lookForm.portrait ? '建议先生成面部参考图（步骤 1），可提升一致性' : ''"
+                  :title="!editingLook ? '保存形象后再生成' : ''"
                   @click="handleFormGenerateThreeView"
                 >
                   <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -826,14 +785,10 @@ function getRoleLabel(role: string): string {
                   {{ generatingFormThreeView ? '生成中…' : '✨ AI 生成' }}
                 </button>
               </div>
-              <!-- 未生成面部图时的提示条 -->
-              <div v-if="!lookForm.portrait && editingLook" class="mb-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-xs text-amber-700 dark:text-amber-400">
-                建议先完成步骤 1（生成面部参考图），以提高三视图的面部一致性
-              </div>
               <ImageUploadBox
                 v-model="lookForm.three_view_sheet"
                 aspect-ratio="16/9"
-                placeholder="三视图参考图（正面+侧面+背面合图）"
+                placeholder="角色参考图（正面+侧面+背面+面部特写合图）"
                 :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
                 :on-save="(url: string) => { lookForm.three_view_sheet = url }"
                 @error="toast.error"

@@ -102,7 +102,7 @@ async function handleReferenceUpload(e: Event) {
   referenceImagePreview.value = localPreview
   uploadingRef.value = true
   try {
-    // 使用物品专属上传接口，将参考图 URL 存入 item.reference_image_url
+    // 使用道具专属上传接口，将参考图 URL 存入 item.reference_image_url
     const data = await itemApi.uploadItemReference(itemId, file)
     referenceImageUrl.value = data.url
     // 若服务端返回了绝对 URL，用于更清晰的预览；否则保留 ObjectURL
@@ -159,7 +159,7 @@ const tabs = [
 ]
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
-useUnsavedGuard(isDirty, '物品信息有未保存的修改，确认离开？')
+useUnsavedGuard(isDirty, '道具信息有未保存的修改，确认离开？')
 
 onMounted(async () => {
   if (novelId && novelStore.currentNovel?.id !== novelId) {
@@ -183,7 +183,7 @@ onMounted(async () => {
       referenceImagePreview.value = item.reference_image_url
     }
   } catch (e: any) {
-    toast.error('加载物品失败：' + (e.message || '未知错误'))
+    toast.error('加载道具失败：' + (e.message || '未知错误'))
   }
   loading.value = false
   await nextTick()
@@ -254,7 +254,7 @@ async function handleAIUpdate() {
     const data = (resp as any)?.data ?? resp
     if (data?.description) form.value.description = data.description
     if (data?.visual_prompt) form.value.visual_prompt = data.visual_prompt
-    toast.success('物品信息已更新')
+    toast.success('道具信息已更新')
   } catch (e: any) {
     toast.error('AI 更新失败：' + (e.message || '未知错误'))
   } finally {
@@ -281,12 +281,12 @@ function goBack() {
         </button>
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">{{ form.name || '物品详情' }}</h1>
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">{{ form.name || '道具详情' }}</h1>
             <span v-if="currentCategory" class="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
               {{ currentCategory.icon }} {{ currentCategory.label }}
             </span>
           </div>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">物品编辑器</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">道具编辑器</p>
         </div>
       </div>
       <div class="flex items-center gap-3 flex-shrink-0">
@@ -307,12 +307,12 @@ function goBack() {
           </span>
           <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
         </transition>
-        <!-- AI 更新物品信息 -->
+        <!-- AI 更新道具信息 -->
         <button
           type="button"
           class="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-3 h-8 rounded-md transition-colors disabled:opacity-40"
           :disabled="updatingInfo || !form.name.trim()"
-          title="基于当前名称/描述由 AI 重新分析并更新物品信息"
+          title="基于当前名称/描述由 AI 重新分析并更新道具信息"
           @click="handleAIUpdate"
         >
           <svg v-if="updatingInfo" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -362,7 +362,7 @@ function goBack() {
           <!-- Name -->
           <div class="sm:col-span-2">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
-            <input v-model="form.name" type="text" class="input" placeholder="物品名称" maxlength="100" />
+            <input v-model="form.name" type="text" class="input" placeholder="道具名称" maxlength="100" />
           </div>
           <!-- Category -->
           <div>
@@ -384,7 +384,7 @@ function goBack() {
       </div>
 
       <div class="card p-6 space-y-5">
-        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">物品描述</h3>
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">道具描述</h3>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
           <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">包含外观（材质、颜色、形态、纹路等）、功能、特殊能力及故事背景</p>
@@ -413,7 +413,7 @@ function goBack() {
       <div>
         <div class="flex items-center justify-between mb-3">
           <div>
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white">物品图片</h4>
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">道具图片</h4>
             <p class="text-xs text-gray-500 mt-0.5">
               参考图（可选）：
               <span v-if="referenceImagePreview" class="text-primary-500 cursor-pointer" @click="openLightbox(referenceImagePreview, (currentUrl, s) => editImage(currentUrl, s, novelId), (url) => { referenceImageUrl = url; referenceImagePreview = url })">已上传</span>
@@ -445,7 +445,7 @@ function goBack() {
           <ImageUploadBox
             v-model="imageUrl"
             aspect-ratio="1/1"
-            placeholder="物品图片"
+            placeholder="道具图片"
             :on-refine="(currentUrl: string, s: string) => editImage(currentUrl, s, novelId)"
             :on-save="(url: string) => { imageUrl = url }"
             @error="toast.error"
@@ -464,7 +464,7 @@ function goBack() {
         </div>
       </div>
 
-      <p class="text-xs text-gray-500">需填写「物品描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
+      <p class="text-xs text-gray-500">需填写「道具描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
     </template>
   </div>

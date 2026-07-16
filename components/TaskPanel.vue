@@ -174,7 +174,7 @@ const TYPE_LABELS: Record<string, string> = {
   char_image_gen: '角色图像',
   look_prompt_gen: '形象描述',
   look_image_gen: '形象图像',
-  item_extract: '物品提取',
+  item_extract: '道具提取',
   plot_extract: '情节提取',
   asset_gen: '素材',
   scene_anchor_extract: '场景提取',

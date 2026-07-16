@@ -69,7 +69,7 @@ const onVisibilityChange = () => {
 const tabs = [
   { key: 'chapters', label: '章节', icon: 'book-open' },
   { key: 'characters', label: '角色', icon: 'users' },
-  { key: 'items', label: '物品', icon: 'archive' },
+  { key: 'items', label: '道具', icon: 'archive' },
   { key: 'worldview', label: '世界观', icon: 'globe' },
   { key: 'scene_anchors', label: '场景', icon: 'map-pin' },
   { key: 'knowledge', label: '知识库', icon: 'database' },
@@ -596,7 +596,7 @@ onMounted(async () => {
         </button>
       </div>
       <p class="text-sm text-blue-700 dark:text-blue-300 mb-4">
-        从导入的章节中自动提取角色、物品、世界观、剧情点、场景，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
+        从导入的章节中自动提取角色、道具、世界观、剧情点、场景，并生成故事大纲、项目设置和章节大纲，将小说转化为可编辑的创作项目
       </p>
 
       <!-- 运行中 / 进行状态 -->
@@ -621,7 +621,7 @@ onMounted(async () => {
             {{ analysisStatus.progress >= 30 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 角色
           </span>
           <span :class="analysisStatus.progress >= 40 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
-            {{ analysisStatus.progress >= 40 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 物品
+            {{ analysisStatus.progress >= 40 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 道具
           </span>
           <span :class="analysisStatus.progress >= 50 ? 'text-green-600' : (analysisStatus.progress >= 20 ? 'text-blue-500' : 'text-gray-400')">
             {{ analysisStatus.progress >= 50 ? '✓' : (analysisStatus.progress >= 20 ? '⟳' : '○') }} 世界观
@@ -650,7 +650,7 @@ onMounted(async () => {
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          分析完成！角色、物品、世界观、剧情点、场景、项目设置、故事大纲和章节大纲已全部更新。
+          分析完成！角色、道具、世界观、剧情点、场景、项目设置、故事大纲和章节大纲已全部更新。
         </div>
         <p v-if="analysisStatus.error" class="text-yellow-600 dark:text-yellow-400 text-xs">
           ⚠️ {{ analysisStatus.error }}

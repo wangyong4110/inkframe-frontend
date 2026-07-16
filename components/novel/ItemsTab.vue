@@ -66,11 +66,11 @@ async function handleAIItems() {
     taskStore.trackTask(taskId, async (task) => {
       extractingItems.value = false
       if (task?.status === 'failed') {
-        toast.error('物品提取失败：' + (task.error || '未知错误'))
+        toast.error('道具提取失败：' + (task.error || '未知错误'))
         return
       }
       await fetchItems()
-      toast.success('物品已提取/更新')
+      toast.success('道具已提取/更新')
     })
   } catch (e: any) {
     extractingItems.value = false
@@ -90,7 +90,7 @@ async function handleBatchItemImages(force = false) {
         return
       }
       const result = task?.result as any
-      toast.success(`物品图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
+      toast.success(`道具图片生成完成：成功 ${result?.succeeded ?? 0} / 失败 ${result?.failed ?? 0}`)
       await fetchItems()
     }, fetchItems)
   } catch (e: any) {
@@ -108,7 +108,7 @@ async function createItem() {
     let visualPrompt = newItemForm.value.visual_prompt.trim()
     // 描述为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
     // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空描述继续，
-    // 避免把"创建物品"这个核心操作跟 AI 可用性绑死。
+    // 避免把"创建道具"这个核心操作跟 AI 可用性绑死。
     if (!description) {
       try {
         const resp = await itemApi.generateItemInfo(props.novelId, trimmedName, '')
@@ -127,7 +127,7 @@ async function createItem() {
     items.value.push((resp as any).data)
     newItemForm.value = { name: '', description: '', visual_prompt: '' }
     showItemModal.value = false
-    toast.success('物品已创建')
+    toast.success('道具已创建')
   } catch (e: any) {
     toast.error('创建失败：' + (e.message || ''))
   } finally {
@@ -146,7 +146,7 @@ async function confirmDeleteItem() {
   try {
     await itemApi.deleteItem(itemToDelete.value.id)
     items.value = items.value.filter(i => i.id !== itemToDelete.value!.id)
-    toast.success('物品已删除')
+    toast.success('道具已删除')
     itemToDelete.value = null
   } catch (e: any) {
     toast.error('删除失败：' + (e.message || ''))
@@ -158,7 +158,7 @@ async function confirmDeleteItem() {
   <div class="space-y-4">
     <!-- 工具栏 -->
     <div class="flex items-center justify-between gap-3 flex-wrap">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">物品列表</h2>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">道具列表</h2>
       <div class="flex items-center gap-2">
         <button class="btn-secondary text-sm" :disabled="extractingItems" @click="handleAIItems">
           <svg v-if="extractingItems" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -168,14 +168,14 @@ async function confirmDeleteItem() {
           <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
           </svg>
-          {{ extractingItems ? 'AI 提取中...' : (items.length > 0 ? 'AI 更新物品' : 'AI 提取物品') }}
+          {{ extractingItems ? 'AI 提取中...' : (items.length > 0 ? 'AI 更新道具' : 'AI 提取道具') }}
         </button>
         <!-- 批量生成图片（分裂按钮） -->
         <div class="relative inline-flex">
           <button
             class="btn-secondary text-sm rounded-r-none border-r border-gray-300 dark:border-gray-600"
             :disabled="batchGeneratingItemImages || items.length === 0"
-            title="批量为所有物品生成图片（跳过已有图片的物品）"
+            title="批量为所有道具生成图片（跳过已有图片的道具）"
             @click="handleBatchItemImages(false)"
           >
             <svg v-if="batchGeneratingItemImages" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -214,7 +214,7 @@ async function confirmDeleteItem() {
           <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          新建物品
+          新建道具
         </button>
       </div>
     </div>
@@ -235,11 +235,11 @@ async function confirmDeleteItem() {
       <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
       </svg>
-      <p class="text-gray-500 dark:text-gray-400 mb-1">暂无物品</p>
+      <p class="text-gray-500 dark:text-gray-400 mb-1">暂无道具</p>
       <p class="text-xs text-gray-400 dark:text-gray-500">可手动添加，或通过「AI 分析」自动从章节内容中提取</p>
     </div>
 
-    <!-- 物品网格 -->
+    <!-- 道具网格 -->
     <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="item in items"
@@ -268,7 +268,7 @@ async function confirmDeleteItem() {
           <!-- 删除按钮（右下，hover 显示） -->
           <button
             class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-            title="删除物品"
+            title="删除道具"
             @click.stop="handleDeleteItem(item, $event)"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,14 +285,14 @@ async function confirmDeleteItem() {
       </div>
     </div>
 
-    <!-- 新建物品弹窗 -->
+    <!-- 新建道具弹窗 -->
     <Teleport to="body">
       <div v-if="showItemModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/50" @click="showItemModal = false" />
         <div class="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-md">
           <div class="p-6">
             <div class="flex items-center justify-between mb-5">
-              <h2 class="text-lg font-bold text-gray-900 dark:text-white">添加物品</h2>
+              <h2 class="text-lg font-bold text-gray-900 dark:text-white">添加道具</h2>
               <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showItemModal = false">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -302,7 +302,7 @@ async function confirmDeleteItem() {
             <div class="space-y-4">
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
-                <input v-model="newItemForm.name" type="text" class="input" placeholder="物品名称" maxlength="100" />
+                <input v-model="newItemForm.name" type="text" class="input" placeholder="道具名称" maxlength="100" />
               </div>
             </div>
             <p class="mt-3 text-xs text-gray-400">来历、用途、特殊属性由 AI 自动生成，创建后可在详情页查看/修改。</p>
@@ -324,8 +324,8 @@ async function confirmDeleteItem() {
     <!-- 删除确认弹窗 -->
     <ConfirmDialog
       v-model="showDeleteConfirm"
-      title="删除物品"
-      :description="`确认删除物品「${itemToDelete?.name || ''}」？此操作不可撤销。`"
+      title="删除道具"
+      :description="`确认删除道具「${itemToDelete?.name || ''}」？此操作不可撤销。`"
       variant="danger"
       confirm-text="确认删除"
       @confirm="confirmDeleteItem"

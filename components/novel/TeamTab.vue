@@ -239,7 +239,7 @@ onMounted(load)
         </div>
         <div class="flex gap-3">
           <span class="w-16 font-medium text-violet-600 dark:text-violet-400 shrink-0">编辑者</span>
-          <span>可编辑章节、角色、物品、世界观等全部内容</span>
+          <span>可编辑章节、角色、道具、世界观等全部内容</span>
         </div>
         <div class="flex gap-3">
           <span class="w-16 font-medium text-gray-500 dark:text-gray-400 shrink-0">浏览者</span>
