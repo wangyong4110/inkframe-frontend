@@ -196,9 +196,6 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
-  const deleteVideo = (id: number) =>
-    request<void>(`/videos/${id}`, { method: 'DELETE' })
-
   const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number; voice_mode?: string }) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
@@ -230,12 +227,6 @@ export const useVideoApi = () => {
         ...(provider ? { provider } : {}),
         ...(previousScore ? { previous_score: previousScore } : {}),
       }),
-    })
-
-  const optimizeStoryboardFromReview = (id: number, review: object, provider?: string) =>
-    request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/optimize-from-review`, {
-      method: 'POST',
-      body: JSON.stringify({ ...review, ...(provider ? { provider } : {}) }),
     })
 
   const applyStoryboardDiffs = (id: number, diffs: Array<{ shot_no: number; fields: Record<string, string> }>, recordId?: number) =>
@@ -425,7 +416,6 @@ export const useVideoApi = () => {
     getVideo,
     createVideo,
     updateVideo,
-    deleteVideo,
     generateStoryboard,
     getStoryboard,
     updateStoryboardShot,
@@ -450,7 +440,6 @@ export const useVideoApi = () => {
     getVideoProviders,
     generateVoice,
     reviewStoryboard,
-    optimizeStoryboardFromReview,
     applyStoryboardDiffs,
     listReviewRecords,
     rollbackReview,

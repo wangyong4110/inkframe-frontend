@@ -34,20 +34,6 @@ export const useNovelStore = defineStore('novel', {
     _updateSeq: 0,
   }),
 
-  getters: {
-    novelsByStatus: (state) => (status: NovelStatus) => {
-      return state.novels.filter(n => n.status === status)
-    },
-
-    totalWords: (state) => {
-      return state.novels.reduce((sum, n) => sum + n.total_words, 0)
-    },
-
-    totalChapters: (state) => {
-      return state.novels.reduce((sum, n) => sum + n.chapter_count, 0)
-    },
-  },
-
   actions: {
     async fetchNovels() {
       this.loading = true
@@ -84,28 +70,6 @@ export const useNovelStore = defineStore('novel', {
         if (this._updateSeq === seqBeforeFetch) {
           this.currentNovel = response.data
         }
-        return response.data
-      } catch (e) {
-        this.error = e instanceof Error ? e.message : String(e)
-        throw e
-      } finally {
-        this.loading = false
-      }
-    },
-
-    async createNovel(data: {
-      title: string
-      description?: string
-      genre: NovelGenre
-      worldview_id?: number
-    }) {
-      this.loading = true
-      this.error = null
-
-      try {
-        const api = useNovelApi()
-        const response = await api.createNovel(data)
-        this.novels.unshift(response.data)
         return response.data
       } catch (e) {
         this.error = e instanceof Error ? e.message : String(e)
@@ -218,10 +182,6 @@ export const useNovelStore = defineStore('novel', {
     setPage(page: number) {
       this.pagination.page = page
       this.fetchNovels()
-    },
-
-    clearCurrentNovel() {
-      this.currentNovel = null
     },
   },
 })

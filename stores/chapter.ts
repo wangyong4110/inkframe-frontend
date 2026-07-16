@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Chapter, ChapterStatus, QualityReport } from '~/types'
+import type { Chapter, QualityReport } from '~/types'
 import { useTaskStore } from '~/stores/task'
 
 interface ChapterState {
@@ -26,25 +26,6 @@ export const useChapterStore = defineStore('chapter', {
     _genTaskId: null,
     _currentNovelId: null,
   }),
-
-  getters: {
-    completedChapters: (state) => {
-      return state.chapters.filter(c => c.status === 'completed')
-    },
-
-    currentChapterProgress: (state) => {
-      if (!state.currentChapter || !state.wordCountGoal) return 0
-      return Math.min(100, ((state.currentChapter.word_count ?? 0) / state.wordCountGoal) * 100)
-    },
-
-    chaptersByStatus: (state) => (status: ChapterStatus) => {
-      return state.chapters.filter(c => c.status === status)
-    },
-
-    totalWordCount: (state) => {
-      return state.chapters.reduce((sum, c) => sum + c.word_count, 0)
-    },
-  },
 
   actions: {
     async fetchChapters(novelId: number) {
@@ -231,10 +212,6 @@ export const useChapterStore = defineStore('chapter', {
       }
     },
 
-    setWordCountGoal(goal: number) {
-      this.wordCountGoal = goal
-    },
-
     // Partially update a chapter in the chapters list by id (e.g. after generation
     // completes) without refetching the full list from the server.
     updateChapterInList(update: { id: number; [key: string]: any }) {
@@ -242,11 +219,6 @@ export const useChapterStore = defineStore('chapter', {
       if (idx !== -1) {
         Object.assign(this.chapters[idx], update)
       }
-    },
-
-    clearCurrentChapter() {
-      this.currentChapter = null
-      this.qualityReport = null
     },
 
     // Clear store data when switching to a different novel to prevent stale content

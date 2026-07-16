@@ -21,8 +21,6 @@ export const useTaskStore = defineStore('task', {
   getters: {
     activeTasks: (state): AsyncTask[] =>
       state.tasks.filter(t => t.status === 'pending' || t.status === 'running'),
-    taskById: (state) => (taskId: string): AsyncTask | undefined =>
-      state.tasks.find(t => t.task_id === taskId),
   },
 
   actions: {

@@ -20,28 +20,6 @@ export const useCharacterStore = defineStore('character', {
     _currentNovelId: null,
   }),
 
-  getters: {
-    protagonists: (state) => {
-      return state.characters.filter(c => c.role === 'protagonist')
-    },
-
-    antagonists: (state) => {
-      return state.characters.filter(c => c.role === 'antagonist')
-    },
-
-    supporting: (state) => {
-      return state.characters.filter(c => c.role === 'supporting')
-    },
-
-    charactersByRole: (state) => (role: CharacterRole) => {
-      return state.characters.filter(c => c.role === role)
-    },
-
-    activeCharacters: (state) => {
-      return state.characters.filter(c => c.role !== 'minor')
-    },
-  },
-
   actions: {
     async fetchCharacters(novelId: number) {
       this.loading = true
@@ -142,19 +120,10 @@ export const useCharacterStore = defineStore('character', {
       }
     },
 
-    setCurrentCharacter(character: Character | null) {
-      this.currentCharacter = character
-    },
-
     patchCurrentCharacter(data: Partial<Character>) {
       if (this.currentCharacter) {
         Object.assign(this.currentCharacter, data)
       }
-    },
-
-    clearCharacters() {
-      this.characters = []
-      this.currentCharacter = null
     },
 
     // Clear store data when switching to a different novel to prevent stale content

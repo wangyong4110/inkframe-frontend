@@ -1,4 +1,4 @@
-import type { Novel, ApiResponse, CreateNovelForm } from '~/types'
+import type { Novel, ApiResponse } from '~/types'
 
 export const useNovelApi = () => {
   const { request } = useApi()
@@ -21,12 +21,6 @@ export const useNovelApi = () => {
 
   const getNovel = (id: number) =>
     request<ApiResponse<Novel>>(`/novels/${id}`)
-
-  const createNovel = (data: CreateNovelForm) =>
-    request<ApiResponse<Novel>>('/novels', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
 
   const updateNovel = (id: number, data: Partial<Novel>) =>
     request<ApiResponse<Novel>>(`/novels/${id}`, {
@@ -69,7 +63,6 @@ export const useNovelApi = () => {
   return {
     getNovels,
     getNovel,
-    createNovel,
     updateNovel,
     deleteNovel,
     generateOutline,

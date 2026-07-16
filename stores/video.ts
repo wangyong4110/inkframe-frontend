@@ -40,12 +40,6 @@ interface VideoState {
   storyboardTaskStatus: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | null
   synthesizeTaskId: string | null
   synthesizeStatus: string | null
-  generationProgress: {
-    currentShot: number
-    totalShots: number
-    currentFrame: number
-    totalFrames: number
-  }
 }
 
 export const useVideoStore = defineStore('video', {
@@ -62,29 +56,7 @@ export const useVideoStore = defineStore('video', {
     storyboardTaskStatus: null,
     synthesizeTaskId: null,
     synthesizeStatus: null,
-    generationProgress: {
-      currentShot: 0,
-      totalShots: 0,
-      currentFrame: 0,
-      totalFrames: 0,
-    },
   }),
-
-  getters: {
-    completedVideos: (state) => {
-      return state.videos.filter(v => v.status === 'completed')
-    },
-
-    pendingVideos: (state) => {
-      return state.videos.filter(v => v.status === 'planning')
-    },
-
-    generationProgressPercent: (state) => {
-      const p = state.generationProgress
-      if (p.totalShots === 0) return 0
-      return Math.round((p.currentShot / p.totalShots) * 100)
-    },
-  },
 
   actions: {
     async fetchVideos(params?: { novel_id?: number }) {
@@ -168,26 +140,6 @@ export const useVideoStore = defineStore('video', {
         return response.data
       } catch (e: any) {
         this.error = e.message || 'Failed to update video'
-        throw e
-      } finally {
-        this.loading = false
-      }
-    },
-
-    async deleteVideo(id: number) {
-      this.loading = true
-      this.error = null
-
-      try {
-        const api = useVideoApi()
-        await api.deleteVideo(id)
-        this.videos = this.videos.filter(v => v.id !== id)
-
-        if (this.currentVideo?.id === id) {
-          this.currentVideo = null
-        }
-      } catch (e: any) {
-        this.error = e.message || 'Failed to delete video'
         throw e
       } finally {
         this.loading = false
@@ -382,26 +334,6 @@ export const useVideoStore = defineStore('video', {
       }
     },
 
-    setCurrentShot(shot: StoryboardShot | null) {
-      this.currentShot = shot
-    },
-
-    updateGenerationProgress(progress: Partial<VideoState['generationProgress']>) {
-      this.generationProgress = { ...this.generationProgress, ...progress }
-    },
-
-    clearCurrentVideo() {
-      this.currentVideo = null
-      this.storyboard = []
-      this.currentShot = null
-    },
-
-    async updateBGMSegment(videoId: number, segId: number, data: Partial<VideoBGMSegment>) {
-      const { updateBGMSegment } = useVideoApi()
-      const updated = await updateBGMSegment(videoId, segId, data)
-      return updated?.data
-    },
-
     async reviewStoryboard(videoId: number, provider?: string, previousScore?: number, onDone?: (task: import('~/types').AsyncTask) => void) {
       const api = useVideoApi()
       const response = await api.reviewStoryboard(videoId, provider, previousScore)
@@ -411,13 +343,5 @@ export const useVideoStore = defineStore('video', {
       return taskId
     },
 
-    async optimizeStoryboardFromReview(videoId: number, review: object, provider?: string, onDone?: (task: import('~/types').AsyncTask) => void) {
-      const api = useVideoApi()
-      const response = await api.optimizeStoryboardFromReview(videoId, review, provider)
-      const taskId = response.data?.task_id
-      if (!taskId) throw new Error('未获取到优化任务 ID')
-      useTaskStore().trackTask(taskId, onDone)
-      return taskId
-    },
   },
 })
