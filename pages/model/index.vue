@@ -220,12 +220,16 @@ const CREDENTIAL_META: Record<string, CredentialMeta> = {
     akLabel: 'API Key', akPlaceholder: 'ElevenLabs API Key（xi-api-key 鉴权，0.5~22 秒音效生成）',
     skLabel: '', skPlaceholder: '', skHint: '',
   },
+  'minimax-tts': {
+    akLabel: 'API Key', akPlaceholder: 'MiniMax API Key（Bearer Token 鉴权）',
+    skLabel: '', skPlaceholder: '', skHint: '',
+  },
 }
 const credentialMeta = computed<CredentialMeta>(() => {
   const name = editingProvider.value?.name ?? providerForm.value.name
   return CREDENTIAL_META[name] ?? {
-    akLabel: 'Access Key（AK）', akPlaceholder: '火山引擎 AccessKey',
-    skLabel: 'Secret Key（SK）', skPlaceholder: '火山引擎 SecretKey',
+    akLabel: 'Access Key（AK）', akPlaceholder: 'Access Key',
+    skLabel: 'Secret Key（SK）', skPlaceholder: 'Secret Key',
     skHint: '',
   }
 })
@@ -375,7 +379,7 @@ const PROVIDER_CONSOLE_URL: Record<string, string> = {
   'doubao-speech':     'https://console.volcengine.com/speech/new/overview?projectName=default',
   'doubao-speech-v1':  'https://console.volcengine.com/speech/new/overview?projectName=default',
   'baidu-tts':         'https://ai.baidu.com/tech/speech',
-  'minimax-tts':       'https://platform.minimax.chat/user-center/basic-information/interface-key',
+  'minimax-tts':       'https://platform.minimaxi.com/console/access',
   'tencent-tts':       'https://console.cloud.tencent.com/tts',
   // 音效
   'elevenlabs-sfx':    'https://elevenlabs.io/app/settings/api-keys',
