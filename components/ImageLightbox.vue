@@ -7,8 +7,6 @@ const refineError = ref('')
 
 const upscaling = ref(false)
 const upscaleError = ref('')
-const upscaleMethod = ref<'bicubic' | 'ai'>('bicubic')
-const showUpscaleMenu = ref(false)
 const { upscaleImage } = useImageUpscaleApi()
 
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
@@ -18,7 +16,6 @@ watch(visible, async (v) => {
     suggestion.value = ''
     refineError.value = ''
     upscaleError.value = ''
-    showUpscaleMenu.value = false
     if (refineCallback.value) {
       await nextTick()
       textareaEl.value?.focus()
@@ -26,14 +23,12 @@ watch(visible, async (v) => {
   }
 })
 
-async function handleUpscale(method: 'bicubic' | 'ai') {
+async function handleUpscale() {
   if (!url.value || upscaling.value) return
-  upscaleMethod.value = method
-  showUpscaleMenu.value = false
   upscaling.value = true
   upscaleError.value = ''
   try {
-    const newUrl = await upscaleImage(url.value, 2, method)
+    const newUrl = await upscaleImage(url.value, 2)
     if (newUrl) updateLightboxUrl(newUrl)
   } catch (e: any) {
     upscaleError.value = e?.message || '高清处理失败'
@@ -131,71 +126,28 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               @keydown.meta.enter="handleRefine"
             />
 
-            <!-- Action row: hint | upscale split-btn | 重新生成 -->
+            <!-- Action row: hint | upscale | 重新生成 -->
             <div class="flex items-center gap-2">
               <!-- Hint / error text -->
               <span v-if="refineError || upscaleError" class="text-red-300 text-xs flex-1">{{ refineError || upscaleError }}</span>
               <span v-else-if="refineCallback" class="text-white/40 text-xs flex-1">Ctrl+Enter 提交</span>
               <span v-else class="flex-1" />
 
-              <!-- Upscale split-button -->
-              <div class="relative flex items-stretch flex-shrink-0">
-                <button
-                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-l-lg bg-white/15 hover:bg-white/25 text-white/80 hover:text-white text-sm transition-colors disabled:opacity-40"
-                  :disabled="upscaling || refining"
-                  :title="upscaleMethod === 'ai' ? 'AI 高清放大（2×，重新生成）' : '算法高清放大（2×，双三次插值）'"
-                  @click="handleUpscale(upscaleMethod)"
-                >
-                  <svg v-if="upscaling" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                  {{ upscaling ? '处理中…' : (upscaleMethod === 'ai' ? 'AI 高清' : '高清处理') }}
-                </button>
-                <button
-                  class="px-1.5 rounded-r-lg border-l border-white/20 bg-white/15 hover:bg-white/25 text-white/70 hover:text-white transition-colors disabled:opacity-40"
-                  :disabled="upscaling || refining"
-                  @click.stop="showUpscaleMenu = !showUpscaleMenu"
-                >
-                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-                  </svg>
-                </button>
-                <!-- Dropdown menu — opens upward -->
-                <div
-                  v-if="showUpscaleMenu"
-                  class="absolute bottom-full right-0 mb-1 w-52 rounded-lg bg-gray-900 border border-white/10 shadow-xl z-10 overflow-hidden"
-                >
-                  <button
-                    class="w-full text-left px-3 py-2.5 text-sm text-white/80 hover:bg-white/10 transition-colors flex items-center gap-2"
-                    :class="upscaleMethod === 'bicubic' ? 'bg-white/5' : ''"
-                    @click="upscaleMethod = 'bicubic'; handleUpscale('bicubic')"
-                  >
-                    <svg class="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                    <div>
-                      <div class="font-medium text-white/90">算法放大</div>
-                      <div class="text-xs text-white/40">双三次插值，秒级完成</div>
-                    </div>
-                  </button>
-                  <button
-                    class="w-full text-left px-3 py-2.5 text-sm text-white/80 hover:bg-white/10 transition-colors flex items-center gap-2"
-                    :class="upscaleMethod === 'ai' ? 'bg-white/5' : ''"
-                    @click="upscaleMethod = 'ai'; handleUpscale('ai')"
-                  >
-                    <svg class="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                    <div>
-                      <div class="font-medium text-white/90">AI 放大</div>
-                      <div class="text-xs text-white/40">AI 重绘增强，质量更好</div>
-                    </div>
-                  </button>
-                </div>
-              </div>
+              <!-- Upscale button -->
+              <button
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white/80 hover:text-white text-sm transition-colors disabled:opacity-40 flex-shrink-0"
+                :disabled="upscaling || refining"
+                title="AI 高清放大（2×，重新生成）"
+                @click="handleUpscale"
+              >
+                <svg v-if="upscaling" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                {{ upscaling ? '处理中…' : 'AI 高清' }}
+              </button>
 
               <!-- 重新生成 — only when refine is supported -->
               <button

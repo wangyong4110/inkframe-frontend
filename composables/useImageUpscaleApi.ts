@@ -1,11 +1,10 @@
 export function useImageUpscaleApi() {
-  // method: "bicubic" = 算法放大（秒级），"ai" = AI 增强（较慢，质量更好）
-  async function upscaleImage(imageUrl: string, scale = 2, method: 'bicubic' | 'ai' = 'bicubic', novelId?: number): Promise<string> {
+  async function upscaleImage(imageUrl: string, scale = 2, novelId?: number): Promise<string> {
     if (!imageUrl) throw new Error('请先生成或上传一张图片，再进行高清处理')
     const { request } = useApi()
     const res: any = await request('/images/upscale', {
       method: 'POST',
-      body: JSON.stringify({ image_url: imageUrl, scale, method, novel_id: novelId ?? 0 }),
+      body: JSON.stringify({ image_url: imageUrl, scale, novel_id: novelId ?? 0 }),
     })
     const taskId: string = res?.data?.task_id ?? res?.task_id ?? ''
     if (!taskId) throw new Error('未获取到任务ID')
