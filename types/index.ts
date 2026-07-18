@@ -702,7 +702,6 @@ export interface SceneAnchor {
   description: string
   ref_image_url: string
   ref_image_locked_at?: string
-  prompt_lock?: string
   avg_cons_score: number
   created_at: string
   updated_at: string

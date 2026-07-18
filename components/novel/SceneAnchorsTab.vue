@@ -16,7 +16,6 @@ const anchorToDelete = ref<any | null>(null)
 const anchorForm = ref({
   name: '',
   description: '',
-  prompt_lock: '',
 })
 const savingAnchor = ref(false)
 const extractingAnchors = ref(false)
@@ -38,7 +37,7 @@ function openAnchorImage(anchor: any) {
 }
 
 function startAnchorCreate() {
-  anchorForm.value = { name: '', description: '', prompt_lock: '' }
+  anchorForm.value = { name: '', description: '' }
   showAnchorModal.value = true
 }
 

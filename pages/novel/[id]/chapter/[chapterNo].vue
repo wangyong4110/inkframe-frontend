@@ -1292,12 +1292,12 @@ function openScenePreview(chapterId: number, sceneNo: number) {
 const anchors = computed(() => sceneAnchorStore.anchors)
 const showAnchorForm = ref(false)
 const editingAnchorId = ref<number | null>(null)
-const anchorForm = ref({ name: '', description: '', prompt_lock: '' })
+const anchorForm = ref({ name: '', description: '' })
 const savingAnchor = ref(false)
 
 function startAnchorCreate() {
   editingAnchorId.value = null
-  anchorForm.value = { name: '', description: '', prompt_lock: '' }
+  anchorForm.value = { name: '', description: '' }
   showAnchorForm.value = true
 }
 
@@ -1305,7 +1305,7 @@ function startAnchorEdit(anchor: any) {
   editingAnchorId.value = anchor.id
   anchorForm.value = {
     name: anchor.name,
-    description: anchor.description || '', prompt_lock: anchor.prompt_lock || '',
+    description: anchor.description || '',
   }
   showAnchorForm.value = true
 }
@@ -2862,10 +2862,6 @@ onUnmounted(() => {
               <div>
                 <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
                 <textarea v-model="anchorForm.description" rows="2" placeholder="用自然语言描述场景外观、氛围…" class="input w-full text-sm resize-none" />
-              </div>
-              <div>
-                <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">锁定关键词</label>
-                <input v-model="anchorForm.prompt_lock" type="text" placeholder="ancient wooden beams, paper lanterns, warm candlelight" class="input w-full text-sm" />
               </div>
               <div class="flex gap-2 pt-1">
                 <button class="btn-primary text-sm" :disabled="savingAnchor" @click="saveAnchor">
