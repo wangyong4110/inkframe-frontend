@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlotPoint, ChapterVersion, CharacterLook, EpisodeSummary } from '~/types'
+import type { PlotPoint, ChapterVersion, CharacterLook } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
@@ -29,7 +29,6 @@ const { guardAiProvider } = useAiProviderGuard()
 const { getLLMCapableProviders } = useModelApi()
 const characterApi = useCharacterApi()
 const itemApi = useItemApi()
-const videoApi = useVideoApi()
 
 // 内联模型选择
 const llmProviders = ref<{ name: string; display_name: string }[]>([])
@@ -1166,55 +1165,9 @@ async function switchToScenes() {
   fetchShotsForChapter()
 }
 
-// ── 剧集列表（剧本 Tab）──────────────────────────────────────────────────────
-const episodeSummaries = ref<EpisodeSummary[]>([])
-const loadingEpisodes = ref(false)
-
-async function switchToEpisodes() {
+// ── 剧本 Tab：展示当前章节的分场剧本（VideoScreenplayTab，:chapter-id 直接绑定当前章节）──
+function switchToEpisodes() {
   pageMode.value = 'episodes'
-  loadingEpisodes.value = true
-  try {
-    const res = await videoApi.getEpisodeSummaries(novelId)
-    episodeSummaries.value = res.data ?? []
-  } catch (e: any) {
-    toast.error('加载剧集列表失败：' + (e.message || '未知错误'))
-  } finally {
-    loadingEpisodes.value = false
-  }
-}
-
-function episodeTargetUrl(ep: EpisodeSummary, sceneNo?: number) {
-  // "进入视频生成环节"跳到独立的视频制作工作台（有视频项目时）；
-  // 还没有视频项目时，退回章节页内的分镜脚本 tab（vtab=script）作为兜底。
-  const sceneQuery = sceneNo ? `?scene=${sceneNo}` : ''
-  if (ep.video_id) {
-    return `/video/${ep.video_id}/produce-v2${sceneQuery}`
-  }
-  const legacySceneQuery = sceneNo ? `&scene=${sceneNo}` : ''
-  return `/novel/${novelId}/chapter/${ep.chapter_no}?tab=script&vtab=script${legacySceneQuery}`
-}
-
-async function openEpisode(ep: EpisodeSummary, sceneNo?: number) {
-  const url = episodeTargetUrl(ep, sceneNo)
-  if (ep.chapter_no === chapterNo && !url.startsWith('/video/')) {
-    // 目标就是当前已加载的章节页，只是切换 tab/scene 查询参数：路由不会重新挂载组件
-    // （definePageMeta key 只跟路径走），onMounted 里"从 URL 恢复 tab"的逻辑不会重新执行，
-    // 需要在这里手动切到目标 tab，否则点击会看起来毫无反应。
-    await router.replace(url)
-    await switchToScript()
-  } else {
-    router.push(url)
-  }
-}
-
-// ── 场次剧本预览弹窗（"剧本"列表卡片里"查看完整剧本"按钮）────────────────────
-const showScenePreview = ref(false)
-const previewChapterId = ref<number | null>(null)
-const previewSceneNo = ref<number | null>(null)
-function openScenePreview(chapterId: number, sceneNo: number) {
-  previewChapterId.value = chapterId
-  previewSceneNo.value = sceneNo
-  showScenePreview.value = true
 }
 
 // ── 场景管理（场景管理 Tab）──────────────────────────────────────────────
@@ -2805,82 +2758,13 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- ─ 剧本（剧集列表）模式 ─ -->
-        <div v-else-if="pageMode === 'episodes'" class="h-full overflow-auto p-6 space-y-4">
-          <div v-if="loadingEpisodes" class="text-center py-16 text-gray-400 text-sm">加载中…</div>
-          <div v-else-if="!episodeSummaries.length" class="text-center py-16 text-gray-400 text-sm">暂无剧集</div>
-
-          <div
-            v-for="ep in episodeSummaries"
-            :key="ep.chapter_id"
-            class="card p-5 border-l-4 transition-colors"
-            :class="ep.video_id ? 'border-l-primary-500' : 'border-l-gray-200 dark:border-l-gray-700'"
-          >
-            <!-- 卡片头：章节标题 + 状态徽标 -->
-            <div class="flex items-start justify-between gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
-              <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
-                第{{ ep.chapter_no }}章 {{ ep.title }}
-              </h3>
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <span v-if="ep.duration" class="tag bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">{{ Math.round(ep.duration) }}s</span>
-                <span
-                  class="tag"
-                  :class="ep.scenes.length > 0 ? 'tag-success' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'"
-                >{{ ep.scenes.length > 0 ? `剧本完成（${ep.scenes.length}场）` : '剧本未生成' }}</span>
-                <div v-if="ep.shots_total > 0" class="flex items-center gap-1.5">
-                  <span class="tag bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 whitespace-nowrap">视频 {{ ep.shots_with_video }}/{{ ep.shots_total }}</span>
-                  <div class="progress-bar w-12 dark:bg-gray-700">
-                    <div class="progress-bar-fill" :style="{ width: `${Math.round((ep.shots_with_video / ep.shots_total) * 100)}%` }" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="ep.scenes.length" class="space-y-2.5">
-              <div
-                v-for="scene in ep.scenes" :key="scene.scene_no"
-                class="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-4 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              >
-                <div class="flex items-start gap-2.5">
-                  <span class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-semibold flex items-center justify-center mt-0.5">
-                    {{ scene.scene_no }}
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center justify-between gap-2">
-                      <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ scene.heading }}</p>
-                      <div class="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          class="p-1.5 rounded-md text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-                          title="查看完整剧本"
-                          @click="openScenePreview(ep.chapter_id, scene.scene_no)"
-                        >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        </button>
-                        <button
-                          class="p-1.5 rounded-md text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-                          title="进入视频生成环节"
-                          @click="openEpisode(ep, scene.scene_no)"
-                        >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">{{ scene.synopsis }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div v-else class="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-6 text-center">
-              <p class="text-sm text-gray-400 mb-3">暂无剧本内容</p>
-              <div class="flex items-center gap-2 max-w-sm mx-auto">
-                <button class="btn-primary flex-1 text-sm flex items-center justify-center gap-1.5 px-4" @click="openEpisode(ep)">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                  进入视频生成环节
-                </button>
-              </div>
-            </div>
-          </div>
+        <!-- ─ 剧本模式：当前章节的分场剧本（含"生成剧本"按钮、历史版本） ─ -->
+        <div v-else-if="pageMode === 'episodes'" class="h-full overflow-auto">
+          <VideoScreenplayTab
+            v-if="chapter"
+            :chapter-id="chapter.id"
+            :llm-provider="novel?.ai_model || ''"
+          />
         </div>
 
         <!-- ─ 脚本模式 ─ -->
@@ -4057,23 +3941,4 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
-
-  <!-- 场次剧本预览弹窗（"剧本"列表卡片"查看完整剧本"按钮） -->
-  <Teleport to="body">
-    <div v-if="showScenePreview" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" @click="showScenePreview = false"></div>
-      <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-        <button class="absolute top-3 right-3 z-10 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showScenePreview = false">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-        <VideoScreenplayTab
-          v-if="previewChapterId"
-          :chapter-id="previewChapterId"
-          :focus-scene-no="previewSceneNo ?? undefined"
-          :llm-provider="novel?.ai_model || ''"
-          @saved="showScenePreview = false"
-        />
-      </div>
-    </div>
-  </Teleport>
 </template>
