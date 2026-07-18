@@ -1596,21 +1596,7 @@ const applyGenerated = async () => {
   }
 }
 
-// ── 取消生成 ──────────────────────────────────────────────────────────────────
 const currentTaskId = ref<string | null>(null)
-
-const cancelGeneration = async () => {
-  chapterStore.stopGenPoll()
-  if (currentTaskId.value) {
-    try {
-      const { request } = useApi()
-      await request(`/tasks/${currentTaskId.value}`, { method: 'DELETE' })
-    } catch { /* best-effort */ }
-    currentTaskId.value = null
-  }
-  generating.value = false
-  toast.info('已取消生成')
-}
 
 // ── 撤销/重做 ─────────────────────────────────────────────────────────────────
 const undoStack = ref<string[]>([])
@@ -3059,11 +3045,6 @@ onUnmounted(() => {
                       </button>
                     </div>
                   </template>
-                  <button
-                    v-if="generating"
-                    class="px-3 py-2.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                    @click="cancelGeneration"
-                  >取消生成</button>
                 </div>
               </div>
 
