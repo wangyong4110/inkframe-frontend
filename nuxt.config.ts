@@ -53,6 +53,7 @@ export default defineNuxtConfig({
     plugins: [
       {
         name: 'vite-plugin-app-manifest-shim',
+        enforce: 'pre',
         resolveId(id: string) {
           if (id === '#app-manifest') return '\0app-manifest-shim'
         },

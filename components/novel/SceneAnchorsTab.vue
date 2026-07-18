@@ -15,11 +15,8 @@ const showDeleteConfirm = ref(false)
 const anchorToDelete = ref<any | null>(null)
 const anchorForm = ref({
   name: '',
-  type: 'exterior' as string,
   description: '',
   prompt_lock: '',
-  variant: '',
-  parent_anchor_id: undefined as number | undefined,
 })
 const savingAnchor = ref(false)
 const extractingAnchors = ref(false)
@@ -41,7 +38,7 @@ function openAnchorImage(anchor: any) {
 }
 
 function startAnchorCreate() {
-  anchorForm.value = { name: '', type: 'exterior', description: '', prompt_lock: '', variant: '', parent_anchor_id: undefined }
+  anchorForm.value = { name: '', description: '', prompt_lock: '' }
   showAnchorModal.value = true
 }
 
@@ -59,9 +56,7 @@ async function saveAnchor() {
     // 避免把"创建场景"这个核心操作跟 AI 可用性绑死。
     if (!anchorForm.value.description.trim()) {
       try {
-        const res = await sceneAnchorApi.generateSceneAnchorInfo(
-          props.novelId, name, anchorForm.value.type, anchorForm.value.variant, '',
-        )
+        const res = await sceneAnchorApi.generateSceneAnchorInfo(props.novelId, name, '')
         if (res?.description) anchorForm.value.description = res.description
       } catch {
         /* 静默降级为空描述 */
@@ -169,19 +164,6 @@ async function generateRefImage(anchor: any) {
   }
 }
 
-function getTypeColor(type: string): string {
-  const colors: Record<string, string> = {
-    interior:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    exterior:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    imaginary: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  }
-  return colors[type] || 'bg-gray-100 text-gray-600'
-}
-
-function getTypeLabel(type: string): string {
-  const labels: Record<string, string> = { interior: '室内', exterior: '室外', imaginary: '虚幻' }
-  return labels[type] || type
-}
 </script>
 
 <template>
@@ -308,11 +290,6 @@ function getTypeLabel(type: string): string {
             </svg>
             <span class="text-xs">暂无参考图</span>
           </div>
-          <!-- 类型徽章 -->
-          <span
-            class="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-medium"
-            :class="getTypeColor(anchor.type)"
-          >{{ getTypeLabel(anchor.type) }}</span>
           <!-- 锁定状态 -->
           <span v-if="anchor.ref_image_locked_at" class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
             <svg class="w-3 h-3 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,15 +327,10 @@ function getTypeLabel(type: string): string {
         <div class="p-3">
           <div class="flex items-start justify-between gap-2 mb-1">
             <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1">{{ anchor.name }}</h3>
-            <span v-if="anchor.variant" class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0">
-              {{ anchor.variant }}
-            </span>
           </div>
           <p v-if="anchor.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2">{{ anchor.description }}</p>
-          <div class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
-            <span>引用 {{ anchor.usage_count }}</span>
+          <div v-if="anchor.avg_cons_score > 0" class="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
             <span
-              v-if="anchor.avg_cons_score > 0"
               :class="anchor.avg_cons_score >= 0.85 ? 'text-green-600' : anchor.avg_cons_score >= 0.70 ? 'text-amber-500' : 'text-red-500'"
             >均分 {{ anchor.avg_cons_score.toFixed(2) }}</span>
           </div>
@@ -385,16 +357,8 @@ function getTypeLabel(type: string): string {
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
                 <input v-model="anchorForm.name" class="input" placeholder="如：皇宫正殿" maxlength="100" />
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
-                <select v-model="anchorForm.type" class="input">
-                  <option value="exterior">室外</option>
-                  <option value="interior">室内</option>
-                  <option value="imaginary">虚幻</option>
-                </select>
-              </div>
             </div>
-            <p class="mt-3 text-xs text-gray-400">视觉描述由 AI 自动生成，创建后可在详情页查看/修改，或完善变体、提示词锁定等高级设置。</p>
+            <p class="mt-3 text-xs text-gray-400">视觉描述由 AI 自动生成，创建后可在详情页查看/修改，或完善提示词锁定等高级设置。</p>
             <div class="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button class="btn-secondary" @click="showAnchorModal = false">取消</button>
               <button class="btn-primary" :disabled="savingAnchor" @click="saveAnchor">

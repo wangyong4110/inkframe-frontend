@@ -57,7 +57,7 @@ export const useItemApi = () => {
     request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/items/ai-extract`, { method: 'POST' })
 
   const generateItemInfo = (novelId: number, name: string, hint?: string) =>
-    request<ApiResponse<{ description: string; visual_prompt: string }>>(`/novels/${novelId}/items/ai-generate`, {
+    request<ApiResponse<{ visual_prompt: string }>>(`/novels/${novelId}/items/ai-generate`, {
       method: 'POST',
       body: JSON.stringify({ name, hint: hint ?? '' }),
     })

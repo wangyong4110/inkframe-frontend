@@ -36,13 +36,10 @@ export const useCharacterApi = () => {
       body: JSON.stringify({ style: style ?? '', provider: provider ?? '' }),
     })
 
-  const uploadPortrait = (id: number, file: File) =>
-    requestMultipart<{ url: string; character: Character }>(`/characters/${id}/portrait/upload`, file)
-
-  const uploadCharacterImage = (id: number, file: File, type: 'portrait' | 'three_view') =>
+  const uploadCharacterImage = (id: number, file: File, type: 'three_view') =>
     requestMultipart<{ url: string; character: Character }>(`/characters/${id}/image/upload?type=${type}`, file)
 
-  const uploadLookImage = (characterId: number, lookId: number, file: File, type: 'portrait' | 'three_view') =>
+  const uploadLookImage = (characterId: number, lookId: number, file: File, type: 'three_view') =>
     requestMultipart<{ url: string; look: CharacterLook }>(`/characters/${characterId}/looks/${lookId}/upload?type=${type}`, file)
 
   const previewVoice = (id: number, params?: {
@@ -109,16 +106,15 @@ export const useCharacterApi = () => {
   const generateLookImages = (
     characterId: number,
     lookId: number,
-    type: 'three_view' | 'portrait',
+    type: 'three_view',
     provider?: string,
-    prompt?: { facePrompt?: string; visualPrompt?: string },
+    prompt?: { visualPrompt?: string },
   ) =>
     request<ApiResponse<{ task_id: string }>>(`/characters/${characterId}/looks/${lookId}/images`, {
       method: 'POST',
       body: JSON.stringify({
         type,
         provider: provider ?? '',
-        face_prompt: prompt?.facePrompt ?? '',
         visual_prompt: prompt?.visualPrompt ?? '',
       }),
     })
@@ -135,12 +131,6 @@ export const useCharacterApi = () => {
   const unbindChapterCharacter = (novelId: number, chapterNo: number, characterId: number) =>
     request<ApiResponse<any>>(`/novels/${novelId}/chapters/${chapterNo}/characters/${characterId}`, { method: 'DELETE' })
 
-  const generateChapterCharacterImages = (novelId: number, chapterNo: number, characterIds: number[], provider?: string) =>
-    request<ApiResponse<{ task_id: string }>>(`/novels/${novelId}/chapters/${chapterNo}/characters/generate-images`, {
-      method: 'POST',
-      body: JSON.stringify({ character_ids: characterIds, provider: provider ?? '' }),
-    })
-
   return {
     getCharacters,
     getCharacter,
@@ -149,7 +139,6 @@ export const useCharacterApi = () => {
     deleteCharacter,
     generateCharacterInfo,
     generateThreeView,
-    uploadPortrait,
     uploadCharacterImage,
     uploadLookImage,
     previewVoice,
@@ -167,6 +156,5 @@ export const useCharacterApi = () => {
     getEffectiveCharacters,
     bindChapterCharacter,
     unbindChapterCharacter,
-    generateChapterCharacterImages,
   }
 }

@@ -3,22 +3,6 @@ import type { StoryboardShot, Character, SceneAnchor } from '~/types'
 import { TRANSITION_OPTIONS } from '~/constants/status'
 import { ossThumb } from '~/composables/useImageCache'
 
-const SHOT_SIZE_OPTIONS = [
-  { value: 'extreme_wide', label: '极远景' },
-  { value: 'wide',         label: '远景' },
-  { value: 'full',         label: '全景' },
-  { value: 'medium',       label: '中景' },
-  { value: 'close_up',     label: '近景' },
-  { value: 'extreme_close_up', label: '特写' },
-]
-const CAMERA_ANGLE_OPTIONS = [
-  { value: 'eye_level', label: '平视' },
-  { value: 'high',      label: '俯拍' },
-  { value: 'low',       label: '仰拍' },
-  { value: 'dutch',     label: '倾斜' },
-  { value: 'overhead',  label: '顶拍' },
-  { value: 'POV',       label: '主观' },
-]
 const CAMERA_TYPE_OPTIONS = [
   { value: 'static',     label: '固定' },
   { value: 'push',       label: '推镜' },
@@ -618,8 +602,6 @@ function closeVideoPreview() {
 }
 
 
-const SHOT_SIZE_LABEL: Record<string, string> = Object.fromEntries(SHOT_SIZE_OPTIONS.map(o => [o.value, o.label]))
-const CAMERA_ANGLE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_ANGLE_OPTIONS.map(o => [o.value, o.label]))
 const CAMERA_TYPE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_TYPE_OPTIONS.map(o => [o.value, o.label]))
 const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_OPTIONS.map(o => [o.value, o.label]))
 
@@ -848,7 +830,7 @@ defineExpose({
                   <button class="btn-outline text-[10px] py-0.5 px-1.5" @click="editingMotionPromptId = null">取消</button>
                 </div>
               </div>
-              <!-- 景别 / 角度 / 运动 / 时长 / 过渡 — 只读态点击进入编辑 -->
+              <!-- 运动 / 时长 / 过渡 — 只读态点击进入编辑 -->
               <div class="mt-1.5">
                 <!-- 只读 -->
                 <div
@@ -857,10 +839,6 @@ defineExpose({
                   title="点击编辑参数"
                   @click.stop="editingMetaShotId = shot.id"
                 >
-                  <span class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-primary-500 transition-colors">{{ SHOT_SIZE_LABEL[shot.shot_size] || shot.shot_size }}</span>
-                  <span class="text-xs text-gray-300 dark:text-gray-600">·</span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-primary-500 transition-colors">{{ CAMERA_ANGLE_LABEL[(shot as any).camera_angle] || (shot as any).camera_angle || '—' }}</span>
-                  <span class="text-xs text-gray-300 dark:text-gray-600">·</span>
                   <span class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-primary-500 transition-colors">{{ CAMERA_TYPE_LABEL[shot.camera_type] || shot.camera_type }}</span>
                   <span class="text-xs text-gray-300 dark:text-gray-600">·</span>
                   <span class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-primary-500 transition-colors">{{ shot.duration }}s</span>
@@ -869,23 +847,6 @@ defineExpose({
                 </div>
                 <!-- 编辑态 -->
                 <div v-else class="flex items-center gap-1 flex-wrap" @click.stop>
-                  <select
-                    :value="shot.shot_size"
-                    class="input text-[11px] py-0.5 h-6 w-20 flex-shrink-0"
-                    title="景别"
-                    @change="saveShotMeta(shot, 'shot_size', ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option v-for="o in SHOT_SIZE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-                  </select>
-                  <select
-                    :value="(shot as any).camera_angle"
-                    class="input text-[11px] py-0.5 h-6 w-20 flex-shrink-0"
-                    title="角度"
-                    @change="saveShotMeta(shot, 'camera_angle' as any, ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">角度</option>
-                    <option v-for="o in CAMERA_ANGLE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-                  </select>
                   <select
                     :value="shot.camera_type"
                     class="input text-[11px] py-0.5 h-6 w-20 flex-shrink-0"

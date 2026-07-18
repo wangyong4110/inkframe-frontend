@@ -252,6 +252,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '日系动漫画风，色彩鲜艳，线条流畅，角色表情丰富',
     tags: ['动漫', '日系', '鲜艳'],
     art_style: 'anime',
+    category: 'anime',
     preview_colors: ['#FF6B9D', '#C44FDB', '#4FACFE'],
   },
   {
@@ -260,6 +261,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '真实感强烈，光影细腻，适合现代都市及写实场景',
     tags: ['写实', '真实', '细腻'],
     art_style: 'realistic',
+    category: 'live_action',
     preview_colors: ['#8B7355', '#C4A882', '#E8D5B7'],
   },
   {
@@ -268,6 +270,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '照片级真实人像，皮肤质感细腻、五官立体，接近专业人像摄影棚效果',
     tags: ['真人', '人像摄影', '超写实'],
     art_style: 'real_person',
+    category: 'live_action',
     preview_colors: ['#D4A574', '#C08050', '#8B5E3C'],
   },
   {
@@ -276,6 +279,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '水墨丹青，意境悠远，适合古典仙侠武侠等东方题材',
     tags: ['水墨', '国风', '古典'],
     art_style: 'ink_painting',
+    category: 'anime',
     preview_colors: ['#1A1A2E', '#4A4A6A', '#C9B8A8'],
   },
   {
@@ -284,6 +288,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '霓虹灯光，高科技低生活，蓝紫色调，未来感强烈',
     tags: ['赛博朋克', '科幻', '霓虹'],
     art_style: 'cyberpunk',
+    category: 'anime',
     preview_colors: ['#6C63FF', '#FF2D55', '#00CFFD'],
   },
   {
@@ -292,6 +297,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '仙气飘渺，青绿色调，云雾缭绕，仙侠特有的飘逸感',
     tags: ['仙侠', '飘逸', '古典'],
     art_style: 'xianxia_style',
+    category: 'anime',
     preview_colors: ['#2ECC71', '#A8E6CF', '#F7E7CE'],
   },
   {
@@ -300,6 +306,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '厚重质感，色彩浓郁，艺术性强，适合史诗奇幻题材',
     tags: ['油画', '艺术', '厚重'],
     art_style: 'oil_painting',
+    category: 'anime',
     preview_colors: ['#8B2252', '#C0392B', '#E67E22'],
   },
   {
@@ -308,6 +315,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '轻盈通透，色彩柔和，清新风格，适合言情轻小说',
     tags: ['水彩', '清新', '柔和'],
     art_style: 'watercolor',
+    category: 'anime',
     preview_colors: ['#FFB3BA', '#FFDFBA', '#FFFFBA'],
   },
   {
@@ -316,6 +324,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '复古像素画风，方块感十足，游戏风格，适合轻松题材',
     tags: ['像素', '复古', '游戏风'],
     art_style: 'pixel_art',
+    category: 'anime',
     preview_colors: ['#FF5252', '#FFEB3B', '#4CAF50'],
   },
   {
@@ -324,6 +333,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '国产动漫画风，线条硬朗，色彩鲜明，带有东方神韵',
     tags: ['国漫', '动画', '东方'],
     art_style: 'chinese_animation',
+    category: 'anime',
     preview_colors: ['#E74C3C', '#F39C12', '#2ECC71'],
   },
   {
@@ -332,6 +342,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '游戏概念设计风格，精细写实与设计感兼备，视觉冲击强',
     tags: ['游戏', '原画', '概念设计'],
     art_style: 'game_concept',
+    category: 'live_action',
     preview_colors: ['#1ABC9C', '#2980B9', '#8E44AD'],
   },
   {
@@ -340,6 +351,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '维多利亚机械美学，铜棕色调，齿轮与蒸汽，复古未来感',
     tags: ['蒸汽朋克', '复古', '机械'],
     art_style: 'steampunk',
+    category: 'anime',
     preview_colors: ['#8B6914', '#C5892A', '#6B4226'],
   },
   {
@@ -348,6 +360,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '铅笔素描质感，黑白灰调，艺术感强，简约而不简单',
     tags: ['素描', '黑白', '艺术'],
     art_style: 'sketch',
+    category: 'anime',
     preview_colors: ['#2C3E50', '#7F8C8D', '#ECF0F1'],
   },
   {
@@ -356,6 +369,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '三维立体渲染，光影真实，精细质感，适合奇幻科幻题材',
     tags: ['3D', '渲染', '立体'],
     art_style: 'render_3d',
+    category: 'anime',
     preview_colors: ['#3498DB', '#9B59B6', '#1ABC9C'],
   },
   {
@@ -364,6 +378,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '日本传统浮世绘风格，平面构成，色块明快，极具辨识度',
     tags: ['浮世绘', '日式', '传统'],
     art_style: 'ukiyo_e',
+    category: 'anime',
     preview_colors: ['#C0392B', '#F39C12', '#1A535C'],
   },
   {
@@ -372,6 +387,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '暗色系哥特风格，华丽阴郁，适合恐怖灵异悬疑题材',
     tags: ['哥特', '暗黑', '恐怖'],
     art_style: 'gothic_dark',
+    category: 'anime',
     preview_colors: ['#1A0A2E', '#4A0E6B', '#8B1A1A'],
   },
   {
@@ -380,6 +396,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '竖屏扁平线条，色彩高饱和，人物比例修长，适合甜宠都市恋爱题材',
     tags: ['韩漫', '甜宠', '恋爱'],
     art_style: 'manhwa',
+    category: 'anime',
     preview_colors: ['#FF85A1', '#FFC2D4', '#A8D8EA'],
   },
   {
@@ -388,6 +405,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '城市建筑感，玻璃光泽，现代人像，自然色温，适合职场言情都市剧',
     tags: ['都市', '现代', '职场'],
     art_style: 'modern_urban',
+    category: 'live_action',
     preview_colors: ['#2C3E50', '#3498DB', '#ECF0F1'],
   },
   {
@@ -396,6 +414,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '梦幻粉紫，光粒飘浮，软萌场景，迪士尼式唯美，适合轻奇幻治愈题材',
     tags: ['奇幻', '童话', '治愈'],
     art_style: 'fantasy_fairy',
+    category: 'anime',
     preview_colors: ['#DDA0DD', '#E6B3FF', '#FFF0F5'],
   },
   {
@@ -404,6 +423,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '刀光剑影，厚重烟火气，区别于仙侠的世俗质感，适合武侠历史题材',
     tags: ['武侠', '江湖', '古代'],
     art_style: 'wuxia_jianghu',
+    category: 'anime',
     preview_colors: ['#8B4513', '#CD853F', '#2F4F4F'],
   },
   {
@@ -412,6 +432,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '新海诚式高细腻光影，写实背景配动漫人物，适合剧情感强的青春日常',
     tags: ['新海诚', '光影', '青春'],
     art_style: 'shinkai',
+    category: 'anime',
     preview_colors: ['#87CEEB', '#4169E1', '#FFD700'],
   },
   {
@@ -420,6 +441,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '锈铁废墟，沙尘黄棕，破碎城市景观，对比强烈，适合末世科幻生存题材',
     tags: ['末世', '废土', '科幻'],
     art_style: 'apocalypse',
+    category: 'anime',
     preview_colors: ['#8B7355', '#A0522D', '#2F2F2F'],
   },
   {
@@ -428,6 +450,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '粗线条，橙黄暖色，80-90年代香港漫画质感，适合都市情感黑帮年代剧',
     tags: ['港漫', '复古', '年代'],
     art_style: 'retro_hk_comic',
+    category: 'anime',
     preview_colors: ['#FF8C00', '#FFD700', '#1C1C1C'],
   },
   {
@@ -436,6 +459,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '中国传统工笔画，线条精细，色彩浓烈，金属感细节，适合宫廷宫斗历史剧',
     tags: ['工笔', '宫廷', '历史'],
     art_style: 'gongbi',
+    category: 'anime',
     preview_colors: ['#B8860B', '#DC143C', '#228B22'],
   },
   {
@@ -444,6 +468,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '霓虹叠光，梦境感，粉蓝紫渐变，区别于赛博朋克的柔美感，适合都市奇幻浪漫',
     tags: ['霓虹', '梦幻', '浪漫'],
     art_style: 'neon_dream',
+    category: 'anime',
     preview_colors: ['#FF69B4', '#9B59B6', '#00CED1'],
   },
   {
@@ -452,6 +477,7 @@ export const IMAGE_PRESETS: ImageStylePreset[] = [
     description: '胶片颗粒感，偏黄绿色调，复古晕染，8mm 电影质感，适合年代剧民国青春回忆',
     tags: ['胶片', '怀旧', '年代'],
     art_style: 'vintage_film',
+    category: 'live_action',
     preview_colors: ['#C8A96E', '#8B7355', '#4A3728'],
   },
 ]

@@ -10,6 +10,8 @@ import type {
   StoryboardReview,
   ReviewRecord,
   IgnoredSuggestion,
+  EpisodeSummary,
+  Asset,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -27,6 +29,9 @@ export const useVideoApi = () => {
 
   const getVideo = (id: number) =>
     request<ApiResponse<Video>>(`/videos/${id}`)
+
+  const getEpisodeSummaries = (novelId: number) =>
+    request<ApiResponse<EpisodeSummary[]>>(`/novels/${novelId}/episodes-summary`)
 
   const createVideo = (data: { novel_id: number; chapter_id?: number; title?: string; art_style?: string; aspect_ratio?: string; frame_rate?: number; quality_tier?: string; mode?: string; visual_mode?: string; three_d_style?: string }) =>
     request<ApiResponse<Video>>(`/novels/${data.novel_id}/videos`, {
@@ -308,6 +313,16 @@ export const useVideoApi = () => {
       method: 'POST',
     })
 
+  // 分镜历次生成的图片/视频素材（视频生成历史面板），最新在前
+  const listShotAssetHistory = (videoId: number, shotId: number) =>
+    request<ApiResponse<Asset[]>>(`/videos/${videoId}/shots/${shotId}/asset-history`)
+
+  // 恢复分镜到历史记录里的某个版本（当前版本会先被存入历史，不会丢失）
+  const restoreShotAsset = (videoId: number, shotId: number, assetId: number) =>
+    request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/shots/${shotId}/asset-history/${assetId}/restore`, {
+      method: 'POST',
+    })
+
   const listVoiceSegments = (videoId: number, shotId: number) =>
     request<ApiResponse<ShotVoiceSegment[]>>(`/videos/${videoId}/shots/${shotId}/segments`)
 
@@ -414,6 +429,7 @@ export const useVideoApi = () => {
   return {
     getVideos,
     getVideo,
+    getEpisodeSummaries,
     createVideo,
     updateVideo,
     generateStoryboard,
@@ -450,6 +466,8 @@ export const useVideoApi = () => {
     setShotCharacters,
     setShotItems,
     regenerateShotPrompt,
+    listShotAssetHistory,
+    restoreShotAsset,
     listVoiceSegments,
     appendVoiceSegment,
     insertVoiceSegment,

@@ -219,23 +219,6 @@ const hasApplicableDiffs = computed(() => {
 })
 
 // ── Statistics ──
-const SHOT_SIZE_LABEL: Record<string, string> = {
-  extreme_wide: '极远景', wide: '远景', full: '全景',
-  medium: '中景', close_up: '近景', extreme_close_up: '特写',
-}
-
-const shotSizeStats = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const s of shots.value) {
-    const k = s.shot_size || 'unknown'
-    counts[k] = (counts[k] ?? 0) + 1
-  }
-  const total = shots.value.length || 1
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([key, count]) => ({ key, label: SHOT_SIZE_LABEL[key] || key, count, pct: Math.round(count / total * 100) }))
-})
-
 const durationBuckets = computed(() => {
   const bs = [
     { label: '<3s', count: 0 },
@@ -577,19 +560,6 @@ defineExpose({ startReview, reviewing })
             <div v-if="shots.length > 0" class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">镜头统计分析</h4>
               <div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">景别分布</div>
-                <div class="space-y-1">
-                  <div v-for="item in shotSizeStats" :key="item.key" class="flex items-center gap-2 text-xs">
-                    <span class="text-gray-600 dark:text-gray-400 w-12 shrink-0 text-right">{{ item.label }}</span>
-                    <div class="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
-                      <div class="h-full rounded-full bg-primary-400 transition-all" :style="`width:${item.pct}%`" />
-                    </div>
-                    <span class="text-gray-500 dark:text-gray-400 w-8 text-right">{{ item.pct }}%</span>
-                    <span class="text-gray-400 dark:text-gray-600 w-5 text-right">({{ item.count }})</span>
-                  </div>
-                </div>
-              </div>
-              <div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 mb-1.5">时长分布（秒）</div>
                 <div class="grid grid-cols-4 gap-2">
                   <div v-for="b in durationBuckets" :key="b.label" class="flex flex-col items-center gap-1">
@@ -770,7 +740,6 @@ defineExpose({ startReview, reviewing })
                         <span class="font-medium text-gray-800 dark:text-gray-200">
                           在镜头 #{{ ins.after_shot_no }} 后插入
                         </span>
-                        <span v-if="ins.shot_size" class="ml-2 text-xs text-gray-400">{{ ins.shot_size }}</span>
                         <span class="ml-2 text-xs text-gray-400">{{ ins.duration }}s</span>
                       </div>
                       <button

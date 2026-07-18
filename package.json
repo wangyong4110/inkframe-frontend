@@ -25,6 +25,7 @@
     "marked": "^18.0.5",
     "nuxt": "3.21.2",
     "pinia": "^2.1.7",
+    "playwright-core": "^1.61.1",
     "tailwind-merge": "^2.2.0",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5",
@@ -54,5 +55,18 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vue-tsc": "^1.8.27"
-  }
+  },
+  "description": "> **简影**平台前端 — 基于 Nuxt 3 + Vue 3 的 AI 小说转视频创作平台",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangyong4110/inkframe-frontend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/wangyong4110/inkframe-frontend/issues"
+  },
+  "homepage": "https://github.com/wangyong4110/inkframe-frontend#readme"
 }

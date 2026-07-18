@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { useDebounceFn } from '@vueuse/core'
-import type { SceneAnchor, UpdateSceneAnchorPayload, Novel } from '~/types'
+import type { SceneAnchor, UpdateSceneAnchorPayload } from '~/types'
 import { useSceneAnchorApi } from '~/composables/useSceneAnchorApi'
-import { useNovelApi } from '~/composables/useNovelApi'
 
 const { openLightbox, url: lightboxUrl } = useImageLightbox()
 const { editImage } = useImageEditApi()
@@ -10,7 +9,6 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const api = useSceneAnchorApi()
-const novelApi = useNovelApi()
 const { guardAiProvider } = useAiProviderGuard()
 
 const anchorId = parseInt(route.params.id as string)
@@ -20,7 +18,6 @@ if (isNaN(anchorId)) {
 const novelId = parseInt(route.query.novelId as string)
 const chapterNo = parseInt(route.query.chapterNo as string)
 
-const activeTab = ref('basic')
 const saving = ref(false)
 const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
 const isDirty = ref(false)
@@ -28,13 +25,9 @@ const dataLoaded = ref(false)
 const loading = ref(true)
 
 const anchor = ref<SceneAnchor | null>(null)
-const novel = ref<Novel | null>(null)
-const isEn = computed(() => novel.value?.prompt_language === 'en')
 
 const form = ref({
   name: '',
-  type: 'interior' as string,
-  variant: '',
   description: '',
 })
 
@@ -43,29 +36,7 @@ const uploadingRefImage = ref(false)
 const aiUpdating = ref(false)
 const refImageFileInput = ref<HTMLInputElement | null>(null)
 
-
-const tabs = [
-  { key: 'basic',  label: '场景信息' },
-  { key: 'visual', label: '视觉设计' },
-]
-
 useUnsavedGuard(isDirty, '场景有未保存的修改，确认离开？')
-
-const typeOptions = [
-  { value: 'interior',  label: '室内 (interior)' },
-  { value: 'exterior',  label: '室外 (exterior)' },
-  { value: 'imaginary', label: '虚幻 (imaginary)' },
-]
-
-function typeLabel(t: string) {
-  return typeOptions.find(o => o.value === t)?.label ?? t
-}
-
-function typeBadgeClass(t: string) {
-  if (t === 'interior') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-  if (t === 'exterior') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-  return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-}
 
 function scoreColor(score: number) {
   if (score >= 0.85) return 'text-green-600 dark:text-green-400'
@@ -76,24 +47,13 @@ function scoreColor(score: number) {
 onMounted(async () => {
   loading.value = true
   try {
-    const [a, n] = await Promise.allSettled([
-      api.getSceneAnchor(anchorId),
-      !isNaN(novelId) ? novelApi.getNovel(novelId) : Promise.reject('no novelId'),
-    ])
-    if (a.status === 'fulfilled') {
-      anchor.value = a.value
-      form.value = {
-        name: a.value.name ?? '',
-        type: a.value.type ?? 'interior',
-        variant: a.value.variant ?? '',
-        description: a.value.description ?? '',
-      }
-    } else {
-      toast.error('加载场景失败')
+    anchor.value = await api.getSceneAnchor(anchorId)
+    form.value = {
+      name: anchor.value.name ?? '',
+      description: anchor.value.description ?? '',
     }
-    if (n.status === 'fulfilled') {
-      novel.value = (n.value as any)?.data ?? n.value
-    }
+  } catch {
+    toast.error('加载场景失败')
   } finally {
     loading.value = false
     await nextTick()
@@ -106,11 +66,8 @@ async function handleAIUpdate() {
   aiUpdating.value = true
   try {
     const result = await api.aiAnalyzeAnchor(anchorId)
-    if (result.type) form.value.type = result.type
     if (result.description) form.value.description = result.description
-    if (result.variant !== undefined) form.value.variant = result.variant
     toast.success('AI已更新字段')
-    activeTab.value = 'visual'
   } catch (e: any) {
     toast.error('AI更新失败：' + (e.message || '未知错误'))
   } finally {
@@ -126,8 +83,6 @@ async function handleSave() {
   try {
     const payload: UpdateSceneAnchorPayload = {
       name: form.value.name,
-      type: form.value.type,
-      variant: form.value.variant || undefined,
       description: form.value.description,
     }
     const updated = await api.updateSceneAnchor(anchorId, payload)
@@ -208,19 +163,16 @@ function goBack() {
         </button>
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">
-              {{ anchor?.name || '场景' }}
-            </h1>
-            <span v-if="anchor?.type" class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" :class="typeBadgeClass(anchor.type)">
-              {{ typeLabel(anchor.type) }}
-            </span>
-            <span v-if="anchor?.variant" class="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
-              {{ anchor.variant }}
-            </span>
+            <input
+              v-model="form.name"
+              type="text"
+              maxlength="100"
+              placeholder="场景名称"
+              class="text-xl font-bold text-gray-900 dark:text-white bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none truncate w-64 max-w-full"
+            />
           </div>
-          <div class="flex items-center gap-4 mt-0.5 text-xs text-gray-500">
-            <span>引用 {{ anchor?.usage_count ?? 0 }} 次</span>
-            <span v-if="anchor && anchor.avg_cons_score > 0" :class="scoreColor(anchor.avg_cons_score)">
+          <div v-if="anchor && anchor.avg_cons_score > 0" class="flex items-center gap-4 mt-0.5 text-xs text-gray-500">
+            <span :class="scoreColor(anchor.avg_cons_score)">
               均分 {{ anchor.avg_cons_score.toFixed(2) }}
             </span>
           </div>
@@ -273,82 +225,10 @@ function goBack() {
     </div>
 
     <template v-else>
-      <!-- Tabs -->
-      <div class="border-b border-gray-200 dark:border-gray-700">
-        <nav class="flex space-x-8">
-          <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
-            :class="activeTab === tab.key
-              ? 'border-primary-500 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-            @click="activeTab = tab.key"
-          >
-            {{ tab.label }}
-          </button>
-        </nav>
-      </div>
-
-      <!-- ── Tab: 场景信息 ──────────────────────────────────────────────────── -->
-      <div v-if="activeTab === 'basic'" class="card p-6 space-y-5">
-        <!-- Name -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            名称 <span class="text-red-500">*</span>
-          </label>
-          <input v-model="form.name" type="text" class="input" placeholder="如：皇宫正殿、深山古洞" maxlength="100" />
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <!-- Type -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类型</label>
-            <select v-model="form.type" class="input">
-              <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
-          </div>
-
-          <!-- Variant -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              变体
-              <span class="text-xs font-normal text-gray-400 ml-1">（可选，如 day / night / winter）</span>
-            </label>
-            <input v-model="form.variant" type="text" class="input" placeholder="day / night / ruined / winter…" />
-          </div>
-        </div>
-
-        <!-- Stats (read-only) -->
-        <div v-if="anchor" class="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-          <div class="text-center">
-            <p class="text-lg font-bold text-gray-900 dark:text-white">{{ anchor.usage_count ?? 0 }}</p>
-            <p class="text-xs text-gray-500">引用次数</p>
-          </div>
-          <div v-if="anchor.avg_cons_score > 0" class="text-center">
-            <p class="text-lg font-bold" :class="scoreColor(anchor.avg_cons_score)">{{ anchor.avg_cons_score.toFixed(2) }}</p>
-            <p class="text-xs text-gray-500">平均一致性</p>
-          </div>
-          <div class="text-center">
-            <p class="text-sm font-medium" :class="anchor.ref_image_locked_at ? 'text-green-600 dark:text-green-400' : 'text-gray-400'">
-              {{ anchor.ref_image_locked_at ? '已锁定' : '未锁定' }}
-            </p>
-            <p class="text-xs text-gray-500">参考图</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Tab: 视觉 & 参考图 ──────────────────────────────────────────── -->
-      <div v-if="activeTab === 'visual'" class="space-y-5">
+      <!-- ── 视觉 & 参考图 ──────────────────────────────────────────── -->
+      <div class="space-y-5">
         <!-- Visual prompts card -->
         <div class="card p-6 space-y-5">
-          <div>
-            <h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">视觉提示词</h3>
-            <p class="text-xs text-gray-400">
-              {{ isEn ? '以下字段将直接注入 AI 图像/视频生成提示词，请使用英文。' : '以下字段将直接注入 AI 图像/视频生成提示词，建议英文；也可使用中文。' }}
-            </p>
-          </div>
-
           <!-- Description -->
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">图片生成提示词</label>
@@ -356,9 +236,7 @@ function goBack() {
               v-model="form.description"
               rows="6"
               class="input resize-none font-mono text-sm"
-              :placeholder="isEn
-                ? 'A grand imperial throne hall bathed in warm golden light, towering marble columns lined with red silk banners, intricate dragon carvings on the ceiling, polished jade floor reflecting the candlelight...'
-                : '金色暖光笼罩的宏伟皇宫大殿，高耸的汉白玉石柱悬挂红绸龙旗，穹顶精雕龙纹浮雕，翡翠地砖映照摇曳烛光…'"
+              placeholder="金色暖光笼罩的宏伟皇宫大殿，高耸的汉白玉石柱悬挂红绸龙旗，穹顶精雕龙纹浮雕，翡翠地砖映照摇曳烛光…"
             ></textarea>
             <p class="mt-1 text-xs text-gray-400">场景的完整视觉描述，包含建筑结构、光线氛围、空间感等细节，由 AI 提取自动填写，也可手动编辑</p>
           </div>

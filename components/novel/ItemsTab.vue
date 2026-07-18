@@ -19,7 +19,7 @@ const itemToDelete = ref<Item | null>(null)
 const extractingItems = ref(false)
 const batchGeneratingItemImages = ref(false)
 const showBatchItemMenu = ref(false)
-const newItemForm = ref({ name: '', description: '', visual_prompt: '' })
+const newItemForm = ref({ name: '', visual_prompt: '' })
 const savingItem = ref(false)
 
 async function fetchItems() {
@@ -48,14 +48,6 @@ function openItemImage(item: Item) {
       } catch { /* ignore */ }
     },
   )
-}
-
-function getItemStatusDot(status: string): string {
-  const dots: Record<string, string> = {
-    active: 'bg-green-400', lost: 'bg-yellow-400',
-    destroyed: 'bg-red-400', unknown: 'bg-gray-400',
-  }
-  return dots[status] || 'bg-gray-400'
 }
 
 async function handleAIItems() {
@@ -104,28 +96,25 @@ async function createItem() {
   if (!trimmedName) return
   savingItem.value = true
   try {
-    let description = newItemForm.value.description.trim()
     let visualPrompt = newItemForm.value.visual_prompt.trim()
-    // 描述为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
-    // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空描述继续，
+    // 提示词为空时自动 AI 生成一份再创建，不需要用户手动点"AI 生成"。
+    // 静默降级：没配置 LLM provider 或生成失败都不阻断创建，直接以空提示词继续，
     // 避免把"创建道具"这个核心操作跟 AI 可用性绑死。
-    if (!description) {
+    if (!visualPrompt) {
       try {
         const resp = await itemApi.generateItemInfo(props.novelId, trimmedName, '')
         const data = (resp as any)?.data ?? resp
-        description = data?.description ?? ''
         visualPrompt = data?.visual_prompt ?? ''
       } catch {
-        /* 静默降级为空描述 */
+        /* 静默降级为空提示词 */
       }
     }
     const resp = await itemApi.createItem(props.novelId, {
       name: trimmedName,
-      description,
       visual_prompt: visualPrompt,
     })
     items.value.push((resp as any).data)
-    newItemForm.value = { name: '', description: '', visual_prompt: '' }
+    newItemForm.value = { name: '', visual_prompt: '' }
     showItemModal.value = false
     toast.success('道具已创建')
   } catch (e: any) {
@@ -261,10 +250,6 @@ async function confirmDeleteItem() {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
             </svg>
           </div>
-          <!-- 状态指示（右上） -->
-          <span class="absolute top-2 right-2 flex items-center gap-1 bg-black/30 rounded-full px-1.5 py-0.5">
-            <span class="w-1.5 h-1.5 rounded-full" :class="getItemStatusDot(item.status)" />
-          </span>
           <!-- 删除按钮（右下，hover 显示） -->
           <button
             class="absolute bottom-2 right-2 p-1 bg-white/90 dark:bg-gray-900/90 text-gray-400 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity"
@@ -280,7 +265,6 @@ async function confirmDeleteItem() {
         <!-- 信息区 -->
         <div class="p-3">
           <h3 class="font-medium text-gray-900 dark:text-white truncate mb-1">{{ item.name }}</h3>
-          <p v-if="item.description" class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ item.description }}</p>
         </div>
       </div>
     </div>

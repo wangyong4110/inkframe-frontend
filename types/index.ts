@@ -21,7 +21,6 @@ export interface Novel {
   timeout_seconds?: number  // 默认超时（秒），0=使用系统默认(180s)
   style_prompt?: string
   image_style?: string      // 视觉/图片风格
-  prompt_language?: string  // AI提示词语言：zh（中文，默认）/ en（英文）
   chapter_mode?: string     // sequential=连贯剧情（默认）/ independent=独立成篇
   auto_review_rounds?: number    // 生成后自动审查轮次：0=关闭，1-3=开启
   auto_review_min_score?: number // 提前停止阈值（0-100），默认80
@@ -43,7 +42,6 @@ export interface Novel {
   subtitle_font_size?: number
   subtitle_color?: string
   subtitle_bg_style?: 'none' | 'shadow' | 'box'          // 旁白音色 ID
-  color_grade?: string        // 调色预设：none/cinematic/warm/cool/teal_orange/vintage/noir
   contrast_level?: number     // 对比度调节 -1~1，0 = 不调整
   saturation?: number         // 饱和度倍率 0~2，1 = 原色
   // 镜头特效
@@ -191,20 +189,16 @@ export interface Character {
 
 export type CharacterRole = 'protagonist' | 'antagonist' | 'supporting' | 'minor'
 
-// CharacterLook 角色形象（不同时期的外观版本）
+// CharacterLook 角色形象
 export interface CharacterLook {
   id: number
   character_id: number
   novel_id: number
   label: string         // 形象名称，如"少年时期""成年装束""伪装后"
-  chapter_from: number  // 起始章节（含），0 表示从头
-  chapter_to: number    // 结束章节（含），0 表示无限延伸
   sort_order: number
   description?: string  // 外观描述（中文）
-  visual_prompt?: string // AI 图像生成提示词：完整外观（含服装/鞋履/配饰/姿态），用于三视图
-  face_prompt?: string  // 面部特写专用提示词（仅身份+面部+发型），用于面部参考图；与 visual_prompt 同一次 AI 调用产出
+  visual_prompt?: string // AI 图像生成提示词：完整外观（含服装/鞋履/配饰/姿态），用于角色参考图
   three_view_sheet?: string
-  portrait?: string
   created_at: string
   updated_at: string
   set_as_default?: boolean // 仅用于 PUT 请求体，设为默认形象
@@ -212,15 +206,11 @@ export interface CharacterLook {
 
 export interface CreateCharacterLookForm {
   label: string
-  chapter_from: number
-  chapter_to: number
   set_as_default?: boolean
   sort_order?: number
   description?: string
   visual_prompt?: string
-  face_prompt?: string
   three_view_sheet?: string
-  portrait?: string
 }
 
 // Worldview types
@@ -359,8 +349,6 @@ export interface StoryboardShot {
   dialogue?: string     // 角色台词（格式："角色名：台词"），无对话时为空
   subtitle?: string     // 字幕覆盖文本，非空时优先用于导出，不影响 TTS
   camera_type: CameraType
-  camera_angle: CameraAngle
-  shot_size: ShotSize
   duration: number
   emotional_tone?: string
   character_configs?: ShotCharacterConfig[]
@@ -373,6 +361,7 @@ export interface StoryboardShot {
   audio_url?: string  // 后端转换后的可播放 URL（file:// 已转为 API 端点）
   error_message?: string  // 生成失败原因
   scene_anchor_id?: number
+  screenplay_scene_id?: number
   character_ids?: number[]
   item_ids?: number[]
   sfx_url?: string      // 音效文件URL
@@ -459,8 +448,6 @@ export interface VideoBGMSegment {
 }
 
 export type CameraType = 'static' | 'push' | 'pull' | 'pan' | 'track' | 'crane_up' | 'crane_down' | 'follow' | 'arc' | 'tilt' | 'whip_pan' | 'zoom' | 'tracking' | 'dolly' | 'crane'
-export type CameraAngle = 'eye_level' | 'high' | 'low' | 'dutch' | 'overhead' | 'POV'
-export type ShotSize = 'extreme_wide' | 'wide' | 'full' | 'medium' | 'close_up' | 'extreme_close_up'
 export type ShotTransition = 'cut' | 'j-cut' | 'l-cut' | 'fade' | 'dissolve' | 'dip-black' | 'dip-white' | 'wipe' | 'push' | 'slide' | 'zoom' | 'whip-pan' | 'spin' | 'flash' | 'glitch' | 'blur' | 'morph'
 export type ShotStatus = 'pending' | 'generating' | 'completed' | 'failed'
 
@@ -674,19 +661,16 @@ export type ReviewStatus = 'pending' | 'in_progress' | 'completed' | 'rejected'
 
 // API Response types
 // Item types
-export type ItemCategory = 'weapon' | 'treasure' | 'tool' | 'document' | 'artifact' | 'other'
-export type ItemStatus = 'active' | 'lost' | 'destroyed' | 'unknown'
-
 export interface Item {
   id: number
   novel_id: number
   uuid: string
   name: string
-  description?: string       // 统一描述（含外观、功能等）
+  location?: string
+  owner?: string
   image_url?: string
   visual_prompt?: string
   reference_image_url?: string
-  status: ItemStatus
   created_at: string
   updated_at: string
 }
@@ -711,35 +695,70 @@ export interface EffectiveItem extends Item {
 }
 
 // Scene anchor types (mirrors useSceneAnchorApi.ts)
-export type SceneAnchorType = 'interior' | 'exterior' | 'imaginary'
-
 export interface SceneAnchor {
   id: number
   tenant_id: number
   novel_id: number
   name: string
-  type: SceneAnchorType
   description: string
   ref_image_url: string
   ref_image_locked_at?: string
   prompt_lock?: string
-  usage_count: number
   avg_cons_score: number
-  parent_anchor_id?: number
-  variant?: string
   created_at: string
   updated_at: string
 }
 
 export interface CreateSceneAnchorPayload {
   name: string
-  type?: SceneAnchorType
   description?: string
-  variant?: string
-  parent_anchor_id?: number
 }
 
 export type UpdateSceneAnchorPayload = Partial<CreateSceneAnchorPayload>
+
+// Screenplay scene types (mirrors useScreenplayApi.ts)
+export interface ScreenplayScene {
+  id: number
+  chapter_id: number
+  novel_id: number
+  scene_no: number
+  heading: string
+  scene_anchor_id?: number
+  synopsis: string
+  character_ids: number[]
+  emotional_tone: string
+  beats: string
+  estimated_shot_count: number
+  locked: boolean
+  edited: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface UpdateScreenplayScenePayload {
+  heading?: string
+  synopsis?: string
+  emotional_tone?: string
+  beats?: string
+}
+
+// 剧集列表卡片数据（一章 = 一个视频项目），来自 GET /novels/:id/episodes-summary
+export interface EpisodeSceneBrief {
+  scene_no: number
+  heading: string
+  synopsis: string
+}
+
+export interface EpisodeSummary {
+  chapter_id: number
+  chapter_no: number
+  title: string
+  video_id?: number
+  duration: number
+  scenes: EpisodeSceneBrief[]
+  shots_total: number
+  shots_with_video: number
+}
 
 export interface ConsistencyLog {
   id: number
@@ -816,6 +835,29 @@ export interface ImageStylePreset {
   tags: string[]
   art_style: string
   preview_colors: string[]
+  /** 分类 Tab：真人剧 / 漫剧。留空的预设不会出现在风格库页面的分类网格中。 */
+  category?: 'live_action' | 'anime'
+  /** 示例图 URL，留空时卡片显示占位图（由管理员后续上传或 AI 生成）。 */
+  preview_image_url?: string
+}
+
+// ── 画风预设（后端 ink_image_style_preset 表，/image-style-presets API）──────
+// tags / preview_colors 是后端存的 JSON 字符串（不是数组），前端拿到后自行 JSON.parse。
+export interface ImageStylePresetRecord {
+  id: number
+  style_id: string
+  name: string
+  description: string
+  tags: string
+  category: 'live_action' | 'anime' | ''
+  preview_colors: string
+  preview_image_url: string
+  prompt: string
+  sort_order: number
+  is_builtin: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface VideoStylePreset {
@@ -1157,7 +1199,6 @@ export interface ShotInsertSuggestion {
   dialogue?: string
   description: string
   duration: number
-  shot_size?: string
   camera_type?: string
   reason: string
 }

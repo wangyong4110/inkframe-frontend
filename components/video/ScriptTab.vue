@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier, Character, SceneAnchor } from '~/types'
+import type { StoryboardShot, VideoQualityTier, Character, SceneAnchor, ScreenplayScene } from '~/types'
 import { QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
 import { ossThumb } from '~/composables/useImageCache'
@@ -7,6 +7,8 @@ import StoryboardReviewPanel from '~/components/video/StoryboardReviewPanel.vue'
 
 const props = defineProps<{ videoId: number; llmProvider?: string }>()
 
+const route = useRoute()
+const router = useRouter()
 const { url: lightboxUrl, openLightbox } = useImageLightbox()
 const { editImage } = useImageEditApi()
 const videoStore = useVideoStore()
@@ -16,6 +18,7 @@ const characterStore = useCharacterStore()
 const chapterStore = useChapterStore()
 const characterApi = useCharacterApi()
 const sceneAnchorApi = useSceneAnchorApi()
+const screenplayApi = useScreenplayApi()
 const toast = useToast()
 const { guardAiProvider } = useAiProviderGuard()
 const { confirm } = useConfirm()
@@ -24,6 +27,33 @@ const videoApi = useVideoApi()
 const video = computed(() => videoStore.currentVideo)
 const shots = computed(() => videoStore.storyboard)
 const generatingStoryboard = computed(() => videoStore.generating)
+
+// ── 按场次过滤（从"进入视频生成环节"跳转时携带 ?scene=场次号）──────────────
+const screenplayScenes = ref<ScreenplayScene[]>([])
+async function loadScreenplayScenes() {
+  const chapterId = video.value?.chapter_id
+  if (!chapterId) { screenplayScenes.value = []; return }
+  try {
+    screenplayScenes.value = await screenplayApi.listScreenplayScenes(chapterId)
+  } catch { /* 场次过滤是次要功能，静默失败即可 */ }
+}
+watch(video, loadScreenplayScenes, { immediate: true })
+
+const targetSceneNo = computed(() => {
+  const n = Number(route.query.scene)
+  return Number.isFinite(n) && n > 0 ? n : null
+})
+const targetScene = computed(() =>
+  targetSceneNo.value ? screenplayScenes.value.find(s => s.scene_no === targetSceneNo.value) ?? null : null
+)
+const sceneFilteredShots = computed(() => {
+  if (!targetSceneNo.value) return shots.value
+  if (!targetScene.value) return shots.value
+  return shots.value.filter(s => s.screenplay_scene_id === targetScene.value!.id)
+})
+function clearSceneFilter() {
+  router.replace({ query: { ...route.query, scene: undefined } })
+}
 
 const uploadingShotId = ref<number | null>(null)
 const shotImageInputRef = ref<HTMLInputElement | null>(null)
@@ -218,22 +248,6 @@ const estimatedShotsSummary = computed(() => {
 })
 
 // ── Options ──
-const SHOT_SIZE_OPTIONS = [
-  { value: 'extreme_wide', label: '极远景' },
-  { value: 'wide', label: '远景' },
-  { value: 'full', label: '全景' },
-  { value: 'medium', label: '中景' },
-  { value: 'close_up', label: '近景' },
-  { value: 'extreme_close_up', label: '特写' },
-]
-const CAMERA_ANGLE_OPTIONS = [
-  { value: 'eye_level', label: '平视' },
-  { value: 'high', label: '俯拍' },
-  { value: 'low', label: '仰拍' },
-  { value: 'dutch', label: '倾斜' },
-  { value: 'overhead', label: '顶拍' },
-  { value: 'POV', label: '主观' },
-]
 const CAMERA_TYPE_OPTIONS = [
   { value: 'static',     label: '固定' },
   { value: 'push',       label: '推镜' },
@@ -248,8 +262,6 @@ const CAMERA_TYPE_OPTIONS = [
   { value: 'whip_pan',   label: '甩镜' },
   { value: 'zoom',       label: '变焦' },
 ]
-const SHOT_SIZE_LABEL: Record<string, string> = Object.fromEntries(SHOT_SIZE_OPTIONS.map(o => [o.value, o.label]))
-const CAMERA_ANGLE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_ANGLE_OPTIONS.map(o => [o.value, o.label]))
 const CAMERA_TYPE_LABEL: Record<string, string> = Object.fromEntries(CAMERA_TYPE_OPTIONS.map(o => [o.value, o.label]))
 const TRANSITION_LABEL: Record<string, string> = Object.fromEntries(TRANSITION_OPTIONS.map(o => [o.value, o.label]))
 
@@ -302,7 +314,7 @@ const insertShotForm = reactive({ narration: '', description: '', duration: 4 })
 const insertingShotLoading = ref(false)
 
 // ── Pagination ──
-const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(shots)
+const { currentPage, totalPages, pagedShots, pageNumbers } = useShotsPagination(sceneFilteredShots)
 const PAGE_SIZE = 15 // kept for handleInsertShot page jump calculation
 
 // ── Debounced storyboard refresh ──
@@ -352,8 +364,6 @@ function startEdit(shot: StoryboardShot) {
     prompt: shot.prompt || '',
     narration: shot.narration,
     dialogue: shot.dialogue,
-    shot_size: shot.shot_size,
-    camera_angle: shot.camera_angle,
     camera_type: shot.camera_type,
     duration: shot.duration,
     transition: shot.transition || 'cut',
@@ -655,9 +665,17 @@ defineExpose({ handleReviewStoryboard })
     <!-- Toolbar -->
     <div class="flex items-center gap-2 mb-4">
       <!-- 生成进度 -->
-      <span v-if="shots.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
-        生成进度 {{ shots.filter(s => s.image_url).length }} / {{ shots.length }}
-      </span>
+      <div v-if="shots.length > 0" class="flex items-center gap-2">
+        <span class="text-xs text-gray-400 dark:text-gray-500">
+          生成进度 {{ shots.filter(s => s.image_url).length }} / {{ shots.length }}
+        </span>
+        <div class="progress-bar w-24 dark:bg-gray-700">
+          <div
+            class="progress-bar-fill"
+            :style="{ width: `${Math.round((shots.filter(s => s.image_url).length / shots.length) * 100)}%` }"
+          />
+        </div>
+      </div>
       <div class="flex-1" />
     </div>
 
@@ -670,6 +688,12 @@ defineExpose({ handleReviewStoryboard })
       @change="onShotImageFileSelected"
     />
 
+    <!-- 场次过滤提示条 -->
+    <div v-if="targetScene" class="flex items-center gap-2 text-sm bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 rounded-lg px-3 py-2">
+      <span>正在查看第 {{ targetScene.scene_no }} 场 · {{ targetScene.heading }} 的分镜脚本</span>
+      <button class="text-xs underline hover:no-underline" @click="clearSceneFilter">查看全部分镜</button>
+    </div>
+
     <!-- Empty state -->
     <div v-if="shots.length === 0 && !videoStore.loading && videoStore.storyboardTaskStatus !== 'running'" class="card p-14 text-center">
       <svg class="w-14 h-14 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -680,6 +704,13 @@ defineExpose({ handleReviewStoryboard })
         点击右侧「生成分镜脚本」，AI 将自动从章节内容提取镜头<br>
         生成后可逐条编辑，确认无误再生成素材
       </p>
+    </div>
+
+    <!-- 场次内暂无分镜（视频整体有分镜，但该场次还没生成/绑定） -->
+    <div v-else-if="targetScene && sceneFilteredShots.length === 0 && !videoStore.loading" class="card p-14 text-center">
+      <h3 class="text-base font-semibold text-gray-700 dark:text-gray-300 mb-1.5">该场次暂无分镜脚本</h3>
+      <p class="text-sm text-gray-400 dark:text-gray-500 mb-3">这一场剧本还没有生成对应的分镜</p>
+      <button class="text-sm text-primary-600 dark:text-primary-400 underline hover:no-underline" @click="clearSceneFilter">查看全部分镜</button>
     </div>
 
     <!-- Loading skeleton -->
@@ -697,7 +728,7 @@ defineExpose({ handleReviewStoryboard })
     </div>
 
     <!-- Shot list -->
-    <div v-else-if="shots.length > 0" class="space-y-3">
+    <div v-else-if="sceneFilteredShots.length > 0" class="space-y-3">
 
       <template v-for="(shot, shotIdx) in pagedShots" :key="shot.id">
           <div
@@ -712,7 +743,7 @@ defineExpose({ handleReviewStoryboard })
           <!-- Editing mode -->
           <div v-if="editingId === shot.id" class="p-4 space-y-3">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-xs font-bold text-gray-400 uppercase tracking-wide">Shot {{ shot.shot_no }} — 编辑中</span>
+              <span class="text-xs font-bold text-gray-400 uppercase tracking-wide">镜头 {{ shot.shot_no }} — 编辑中</span>
               <div class="flex gap-2">
                 <button class="btn-outline text-xs py-1 px-2.5" @click="cancelEdit">取消</button>
                 <button class="btn-primary text-xs py-1 px-2.5" :disabled="savingEdit" @click="saveEdit(shot.id)">
@@ -763,19 +794,7 @@ defineExpose({ handleReviewStoryboard })
               <label class="block text-xs font-medium text-gray-500 mb-1">角色台词（格式：角色名：台词内容）</label>
               <textarea v-model="editForm.dialogue" rows="2" class="input text-sm resize-none" placeholder="凌云：你敢再说一遍！（无对话可留空）" />
             </div>
-            <div class="grid grid-cols-5 gap-2">
-              <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">景别</label>
-                <select v-model="editForm.shot_size" class="input text-sm py-1">
-                  <option v-for="o in SHOT_SIZE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">角度</label>
-                <select v-model="editForm.camera_angle" class="input text-sm py-1">
-                  <option v-for="o in CAMERA_ANGLE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-                </select>
-              </div>
+            <div class="grid grid-cols-3 gap-2">
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">运动</label>
                 <select v-model="editForm.camera_type" class="input text-sm py-1">
@@ -898,8 +917,6 @@ defineExpose({ handleReviewStoryboard })
 
                 <!-- Row 2: metadata tags -->
                 <div class="flex flex-wrap gap-1 mt-1.5">
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ SHOT_SIZE_LABEL[shot.shot_size] || shot.shot_size }}</span>
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ CAMERA_ANGLE_LABEL[shot.camera_angle] || shot.camera_angle }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ CAMERA_TYPE_LABEL[shot.camera_type] || shot.camera_type }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ shot.duration }}s</span>
                   <span v-if="(shot as any).emotional_tone" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">{{ (shot as any).emotional_tone }}</span>
@@ -948,8 +965,8 @@ defineExpose({ handleReviewStoryboard })
                           : 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'"
                         :title="characterById.get(charId)?.default_look?.three_view_sheet ? '' : '该角色缺少三视图，生成图片时将不包含角色形象'"
                       >
-                        <img v-if="characterById.get(charId)?.default_look?.portrait" :src="characterById.get(charId)!.default_look!.portrait" loading="lazy" class="w-3 h-3 rounded-full object-cover" />
-                        <svg v-else-if="!characterById.get(charId)?.default_look?.three_view_sheet" class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                        <img v-if="characterById.get(charId)?.default_look?.three_view_sheet" :src="characterById.get(charId)!.default_look!.three_view_sheet" loading="lazy" class="w-3 h-3 rounded-full object-cover" />
+                        <svg v-else class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
                         {{ characterById.get(charId)?.name || charId }}
                         <button class="hover:text-red-400 ml-0.5 leading-none" :class="characterById.get(charId)?.default_look?.three_view_sheet ? 'text-blue-400' : 'text-orange-400'" @click="removeCharFromShot(shot, charId)">×</button>
                       </span>

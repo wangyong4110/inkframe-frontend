@@ -1,12 +1,11 @@
 import type {
   SceneAnchor,
-  SceneAnchorType,
   CreateSceneAnchorPayload,
   UpdateSceneAnchorPayload,
   ConsistencyLog,
 } from '~/types'
 
-export type { SceneAnchor, SceneAnchorType, CreateSceneAnchorPayload, UpdateSceneAnchorPayload, ConsistencyLog }
+export type { SceneAnchor, CreateSceneAnchorPayload, UpdateSceneAnchorPayload, ConsistencyLog }
 
 export function useSceneAnchorApi() {
   const { request, requestMultipart } = useApi()
@@ -68,9 +67,7 @@ export function useSceneAnchorApi() {
   }
 
   interface AIAnalyzeResult {
-    type: string
     description: string
-    variant: string
   }
 
   async function aiAnalyzeAnchor(anchorId: number): Promise<AIAnalyzeResult> {
@@ -84,13 +81,11 @@ export function useSceneAnchorApi() {
   async function generateSceneAnchorInfo(
     novelId: number,
     name: string,
-    type?: string,
-    variant?: string,
     hint?: string,
   ): Promise<{ description: string }> {
     const res: { code: number; data: { description: string } } = await request(
       `/novels/${novelId}/scene-anchors/ai-generate`,
-      { method: 'POST', body: JSON.stringify({ name, type: type ?? '', variant: variant ?? '', hint: hint ?? '' }) },
+      { method: 'POST', body: JSON.stringify({ name, hint: hint ?? '' }) },
     )
     return res.data
   }

@@ -3,7 +3,6 @@ import type { StoryboardShot, ShotSFXItem, SFXTagItem, Asset } from '~/types'
 
 const props = defineProps<{
   videoId: number
-  promptLanguage?: string
 }>()
 
 const videoStore = useVideoStore()

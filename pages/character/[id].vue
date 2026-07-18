@@ -63,22 +63,14 @@ const editingLook = ref<CharacterLook | null>(null)
 const generatingLookPrompt = ref(false)
 const generatingLookImage = ref<number | null>(null) // look id being generated
 const generatingFormThreeView = ref(false)
-const showFacePrompt = ref(false) // 面部提示词编辑区默认收起
-const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; face_prompt?: string; three_view_sheet?: string; portrait?: string }>({
+const lookForm = ref<CreateCharacterLookForm & { visual_prompt?: string; three_view_sheet?: string }>({
   label: '',
-  chapter_from: 1,
-  chapter_to: 0,
   set_as_default: false,
   sort_order: 0,
   description: '',
   visual_prompt: '',
-  face_prompt: '',
   three_view_sheet: '',
-  portrait: '',
 })
-
-const showCropModal = ref(false)
-const cropSourceUrl = computed(() => lookForm.value.three_view_sheet || '')
 
 async function fetchLooks() {
   if (!characterId) return
@@ -98,27 +90,20 @@ function openLookForm(look?: CharacterLook) {
     editingLook.value = look
     lookForm.value = {
       label: look.label,
-      chapter_from: look.chapter_from,
-      chapter_to: look.chapter_to,
       set_as_default: false,
       sort_order: look.sort_order,
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
-      face_prompt: look.face_prompt ?? '',
       three_view_sheet: look.three_view_sheet ?? '',
-      portrait: look.portrait ?? '',
     }
   } else {
     editingLook.value = null
     lookForm.value = {
       label: '',
-      chapter_from: 1,
-      chapter_to: 0,
       set_as_default: false,
       sort_order: 0,
       description: character.value?.description ?? '',
       visual_prompt: '',
-      face_prompt: '',
     }
   }
   showLookForm.value = true
@@ -137,9 +122,6 @@ async function handleGenerateLookPrompt() {
       generatingLookPrompt.value = false
       if (task.status === 'completed') {
         lookForm.value.visual_prompt = (task.data?.visual_prompt as string) ?? ''
-        // face_prompt 是后端同一次 AI 调用一并产出的面部特写专用文案（不在此处展示/编辑），
-        // 随表单一起缓存，保存时一并提交，供面部参考图生成使用。
-        lookForm.value.face_prompt = (task.data?.face_prompt as string) ?? ''
         toast.success('视觉提示词已生成')
       } else if (task.status === 'failed') {
         toast.error('生成失败：' + (task.error || '未知错误'))
@@ -160,15 +142,11 @@ async function handleSaveLook() {
     if (editingLook.value) {
       const updateData: Record<string, unknown> = {
         label: lookForm.value.label,
-        chapter_from: lookForm.value.chapter_from,
-        chapter_to: lookForm.value.chapter_to,
         set_as_default: lookForm.value.set_as_default,
         sort_order: lookForm.value.sort_order,
         description: lookForm.value.description,
         visual_prompt: lookForm.value.visual_prompt,
-        face_prompt: lookForm.value.face_prompt,
         three_view_sheet: lookForm.value.three_view_sheet,
-        portrait: lookForm.value.portrait,
       }
       await characterApi.updateLook(characterId, editingLook.value.id, updateData)
       toast.success('形象已更新')
@@ -190,13 +168,10 @@ async function handleCopyLook(look: CharacterLook) {
   try {
     await characterApi.createLook(characterId, {
       label: look.label + ' 副本',
-      chapter_from: look.chapter_from,
-      chapter_to: look.chapter_to,
       sort_order: look.sort_order,
       description: look.description ?? '',
       visual_prompt: look.visual_prompt ?? '',
       three_view_sheet: look.three_view_sheet ?? '',
-      portrait: look.portrait ?? '',
     })
     toast.success('形象已复制')
     await fetchLooks()
@@ -256,8 +231,6 @@ async function handleDeleteLookFromForm() {
   }
 }
 
-// 三视图与面部参考图不再分两步生成——一次调用同框合图（正面/侧面/背面/面部特写），
-// 后端自动从合图裁出面部特写存为 portrait，前端只需触发一次并等待一个任务完成。
 async function handleFormGenerateThreeView() {
   if (!editingLook.value) return
   if (!await guardAiProvider('IMAGE')) return
@@ -265,7 +238,6 @@ async function handleFormGenerateThreeView() {
   try {
     const res = await characterApi.generateLookImages(characterId, editingLook.value.id, 'three_view', selectedImageProvider.value || undefined, {
       visualPrompt: lookForm.value.visual_prompt,
-      facePrompt: lookForm.value.face_prompt,
     })
     const taskId = (res as any)?.data?.task_id ?? ''
     if (!taskId) { toast.error('生成失败：未获取到任务ID'); generatingFormThreeView.value = false; return }
@@ -275,8 +247,7 @@ async function handleFormGenerateThreeView() {
         await fetchLooks()
         const updated = looks.value.find(l => l.id === editingLook.value!.id)
         if (updated?.three_view_sheet) lookForm.value.three_view_sheet = updated.three_view_sheet
-        if (updated?.portrait) lookForm.value.portrait = updated.portrait
-        toast.success('角色参考图已生成（三视图+面部特写）')
+        toast.success('角色参考图已生成')
       } else if (task.status === 'failed') {
         toast.error('生成失败：' + (task.error || '未知错误'))
       }
@@ -311,9 +282,9 @@ async function handleGenerateLookImage(look: CharacterLook, type: 'three_view') 
 
 const uploadingLookImage = ref<number | null>(null) // look id being uploaded
 const lookImageFileInput = ref<HTMLInputElement | null>(null)
-const pendingLookUpload = ref<{ look: CharacterLook; type: 'portrait' | 'three_view' } | null>(null)
+const pendingLookUpload = ref<{ look: CharacterLook; type: 'three_view' } | null>(null)
 
-function triggerLookUpload(look: CharacterLook, type: 'portrait' | 'three_view') {
+function triggerLookUpload(look: CharacterLook, type: 'three_view') {
   pendingLookUpload.value = { look, type }
   lookImageFileInput.value?.click()
 }
@@ -651,9 +622,6 @@ function getRoleLabel(role: string): string {
           <!-- 底部信息区 -->
           <div class="px-2.5 py-2">
             <p class="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">{{ look.label }}</p>
-            <p class="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-              第 {{ look.chapter_from }} 章{{ look.chapter_to > 0 ? ` — 第 ${look.chapter_to} 章` : ' 起（无限延伸）' }}
-            </p>
             <div class="flex gap-2 mt-1.5 flex-wrap">
               <button class="text-[10px] text-violet-600 dark:text-violet-400 hover:underline" @click.stop="openLookForm(look)">编辑</button>
               <button
@@ -685,43 +653,10 @@ function getRoleLabel(role: string): string {
           <!-- 滚动内容区 -->
           <div class="px-6 pb-2 overflow-y-auto flex-1 space-y-3">
 
-          <!-- 形象名称 + 章节范围（同行） -->
-          <div class="grid grid-cols-3 gap-3">
-            <div class="col-span-1">
-              <label class="label">形象名称 <span class="text-red-500">*</span></label>
-              <input v-model="lookForm.label" class="input" placeholder="如：少年时期、觉醒后" />
-            </div>
-            <div>
-              <label class="label">起始章节</label>
-              <input v-model.number="lookForm.chapter_from" type="number" min="1" class="input" placeholder="1" />
-            </div>
-            <div>
-              <label class="label">结束章节（0=无限）</label>
-              <input v-model.number="lookForm.chapter_to" type="number" min="0" class="input" placeholder="0" />
-            </div>
-          </div>
-
-          <!-- 面部提示词（与图像提示词同一次 AI 调用产出，默认收起；用于核对/修正面部参考图生成效果） -->
+          <!-- 形象名称 -->
           <div>
-            <button
-              type="button"
-              class="flex items-center gap-1 text-left group"
-              @click="showFacePrompt = !showFacePrompt"
-            >
-              <svg
-                class="w-3 h-3 text-gray-400 transition-transform flex-shrink-0"
-                :class="{ 'rotate-90': showFacePrompt }"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              ><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-              <span class="text-xs font-medium text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300">面部提示词</span>
-              <span class="text-xs text-gray-400">· 面部特写专用，通常无需手动修改</span>
-            </button>
-            <textarea
-              v-if="showFacePrompt"
-              v-model="lookForm.face_prompt"
-              class="input h-14 resize-none font-mono text-xs mt-1.5 border-dashed bg-gray-50/50 dark:bg-gray-900/20"
-              placeholder="随图像提示词一起由 AI 生成，也可在此手动修正…"
-            />
+            <label class="label">形象名称 <span class="text-red-500">*</span></label>
+            <input v-model="lookForm.label" class="input" placeholder="如：少年时期、觉醒后" />
           </div>
 
           <!-- 视觉提示词 -->
@@ -743,57 +678,33 @@ function getRoleLabel(role: string): string {
             />
           </div>
 
-          <!-- 图片区：一次生成同框合图（正面/侧面/背面/面部特写），面部参考图由后端自动裁剪 -->
-          <div class="grid grid-cols-3 gap-3 items-start">
-            <!-- 面部参考图（1 col）— 由角色参考图第4格自动裁剪，不单独生成 -->
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">面部参考图</p>
-                <button
-                  v-if="lookForm.three_view_sheet"
-                  class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  @click="showCropModal = true"
-                >✂ 裁剪</button>
+          <!-- 角色参考图：正面/侧面/背面/面部特写一次生成合图 -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">角色参考图</p>
+                <p class="text-xs text-gray-400">正视 / 侧视 / 背视 / 面部特写合为一张图，一次生成</p>
               </div>
-              <p class="text-xs text-gray-400 mb-1">由右侧角色参考图自动裁剪生成，无需单独生成</p>
-              <ImageUploadBox
-                v-model="lookForm.portrait"
-                aspect-ratio="3/4"
-                placeholder="面部参考图（随角色参考图自动生成）"
-                :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
-                :on-save="(url: string) => { lookForm.portrait = url }"
-                @error="toast.error"
-              />
+              <button
+                class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
+                :disabled="generatingFormThreeView || !editingLook"
+                :title="!editingLook ? '保存形象后再生成' : ''"
+                @click="handleFormGenerateThreeView"
+              >
+                <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ generatingFormThreeView ? '生成中…' : '✨ AI 生成' }}
+              </button>
             </div>
-
-            <!-- 角色参考图（2 col）— 正面/侧面/背面/面部特写一次生成 -->
-            <div class="col-span-2">
-              <div class="flex items-center justify-between mb-1">
-                <div>
-                  <p class="text-sm font-medium text-gray-700 dark:text-gray-300">角色参考图</p>
-                  <p class="text-xs text-gray-400">正视 / 侧视 / 背视 / 面部特写合为一张图，一次生成</p>
-                </div>
-                <button
-                  class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2.5 h-7 rounded-md transition-colors disabled:opacity-40"
-                  :disabled="generatingFormThreeView || !editingLook"
-                  :title="!editingLook ? '保存形象后再生成' : ''"
-                  @click="handleFormGenerateThreeView"
-                >
-                  <svg v-if="generatingFormThreeView" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {{ generatingFormThreeView ? '生成中…' : '✨ AI 生成' }}
-                </button>
-              </div>
-              <ImageUploadBox
-                v-model="lookForm.three_view_sheet"
-                aspect-ratio="16/9"
-                placeholder="角色参考图（正面+侧面+背面+面部特写合图）"
-                :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
-                :on-save="(url: string) => { lookForm.three_view_sheet = url }"
-                @error="toast.error"
-              />
-            </div>
+            <ImageUploadBox
+              v-model="lookForm.three_view_sheet"
+              aspect-ratio="16/9"
+              placeholder="角色参考图（正面+侧面+背面+面部特写合图）"
+              :on-refine="(currentUrl: string, instruction: string) => editImage(currentUrl, instruction, novelStore.currentNovel?.id)"
+              :on-save="(url: string) => { lookForm.three_view_sheet = url }"
+              @error="toast.error"
+            />
           </div>
 
           </div><!-- end 滚动内容区 -->
@@ -814,14 +725,6 @@ function getRoleLabel(role: string): string {
           </div>
         </div>
       </div>
-
-      <!-- 面部裁剪弹窗 -->
-      <ImageCropModal
-        v-if="showCropModal && cropSourceUrl"
-        :image-url="cropSourceUrl"
-        @done="(url) => { lookForm.portrait = url; showCropModal = false }"
-        @cancel="showCropModal = false"
-      />
 
       <!-- 隐藏文件输入（形象图片上传） -->
       <input

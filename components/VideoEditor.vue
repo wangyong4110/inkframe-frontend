@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { VideoBGMSegment, ShotVoiceSegment, ShotSFXItem } from '~/types'
+import ScreenplayTab from '~/components/video/ScreenplayTab.vue'
 import ScriptTab from '~/components/video/ScriptTab.vue'
 import VoiceTab from '~/components/video/VoiceTab.vue'
 import VideoGenTab from '~/components/video/VideoGenTab.vue'
@@ -15,12 +16,11 @@ const characterStore = useCharacterStore()
 const route = useRoute()
 const router = useRouter()
 
-const promptLanguage = computed(() => novelStore.currentNovel?.prompt_language ?? 'zh')
 const toast = useToast()
 const { confirm } = useConfirm()
 
 // ──────── Tabs ────────
-const VALID_TABS = ['script', 'voice', 'video_gen', 'sfx', 'bgm', 'timeline', 'export']
+const VALID_TABS = ['screenplay', 'script', 'voice', 'video_gen', 'sfx', 'bgm', 'timeline', 'export']
 const _initTab = VALID_TABS.includes(String(route.query.vtab)) ? String(route.query.vtab) : 'script'
 const activeTab = ref(_initTab)
 const tabLoading = ref(false)
@@ -31,6 +31,7 @@ const shots = computed(() => videoStore.storyboard)
 const productionEnabled = computed(() => shots.value.length > 0)
 
 const TABS = computed(() => [
+  { key: 'screenplay', label: '剧本',   locked: false },
   { key: 'script',   label: '分镜脚本', locked: false },
   { key: 'voice',    label: '配音字幕', locked: false },
   { key: 'video_gen', label: '视频生成', locked: false },
@@ -49,6 +50,7 @@ function stepState(idx: number): 'completed' | 'current' | 'future' {
 }
 
 // ──────── Tab component refs (for cross-tab data access) ────────
+const screenplayTabRef = ref<InstanceType<typeof ScreenplayTab> | null>(null)
 const scriptTabRef = ref<InstanceType<typeof ScriptTab> | null>(null)
 const voiceTabRef  = ref<InstanceType<typeof VoiceTab>  | null>(null)
 const bgmTabRef    = ref<InstanceType<typeof BGMTab>    | null>(null)
@@ -235,6 +237,14 @@ async function generateStoryboard(
   })
 }
 
+// 分场剧本生成成功后自动串联生成分镜脚本——复用 generateStoryboard 的确认弹窗/异步流程，
+// 不重复实现覆盖确认逻辑（已有分镜时 useStoryboardGeneration 内部会弹"重新生成将清空当前
+// 脚本，是否继续？"，用户可在此处取消，不会静默覆盖）。
+function handleScreenplayGenerated() {
+  toast.info('分场剧本已生成，正在自动生成分镜脚本…')
+  generateStoryboard()
+}
+
 function reviewStoryboard() {
   scriptTabRef.value?.handleReviewStoryboard()
 }
@@ -340,6 +350,15 @@ defineExpose({ activeTab, generateStoryboard, reviewStoryboard, generateAllImage
       <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">加载中…</span>
     </div>
 
+    <!-- ══ Screenplay Tab ══════════════════════════════════════════════════ -->
+    <ScreenplayTab
+      v-show="activeTab === 'screenplay' && !tabLoading"
+      ref="screenplayTabRef"
+      :video-id="props.videoId"
+      :llm-provider="props.llmProvider"
+      @generated="handleScreenplayGenerated"
+    />
+
     <!-- ══ Script Tab ══════════════════════════════════════════════════════ -->
     <!-- v-show keeps ScriptTab mounted to avoid re-initialization cost;
          it has no onMounted data fetches (parent controls loading via tabLoading). -->
@@ -404,7 +423,6 @@ defineExpose({ activeTab, generateStoryboard, reviewStoryboard, generateAllImage
           v-if="activeTab === 'sfx'"
           ref="sfxTabRef"
           :video-id="props.videoId"
-          :prompt-language="promptLanguage"
         />
 
         <!-- ── Timeline Tab ── -->

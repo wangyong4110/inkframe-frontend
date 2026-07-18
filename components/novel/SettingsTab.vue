@@ -208,15 +208,10 @@ function iconGradient(value: string | undefined) {
   return iconOptions.find(o => o.value === value)?.gradient ?? 'linear-gradient(135deg,#8B5CF6,#3B82F6)'
 }
 
-// ── 色彩调色预设 ──────────────────────────────────────────────────────────────
-const COLOR_GRADES = [
-  { value: '',           label: '默认',    icon: '⬜' },
-  { value: 'cinematic',  label: '电影感',  icon: '🎬' },
-  { value: 'warm',       label: '暖色',    icon: '🌅' },
-  { value: 'cool',       label: '冷色',    icon: '❄️' },
-  { value: 'teal_orange',label: '青橙',    icon: '🎭' },
-  { value: 'vintage',    label: '复古',    icon: '📽️' },
-  { value: 'noir',       label: '黑色',    icon: '🎩' },
+// ── 视频类型 ─────────────────────────────────────────────────────────────────
+const VIDEO_TYPES = [
+  { value: 'animation', label: '视频动画', icon: '🎬', desc: 'AI 生成真实运镜视频' },
+  { value: 'narration', label: '图片解说', icon: '🖼️', desc: '图片 + Ken Burns 效果' },
 ]
 
 // ── 小说类型 ─────────────────────────────────────────────────────────────────
@@ -420,39 +415,22 @@ const selectedAspectRatio = computed(() =>
         ></textarea>
       </div>
 
-      <!-- 章节模式 + AI 提示词语言（同行两列）-->
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="field-label">章节模式</label>
-          <div class="segmented-control">
-            <button
-              v-for="m in [{ value: 'sequential', label: '连贯剧情', desc: '各章节情节相互衔接' }, { value: 'independent', label: '独立成篇', desc: '每章都是完整故事' }]"
-              :key="m.value" type="button"
-              class="flex-1 py-1.5 text-xs flex flex-col items-center gap-0.5 transition-colors"
-              :class="(novel?.chapter_mode ?? 'sequential') === m.value
-                ? 'bg-primary-500 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
-              @click="novelStore.updateNovel(novelId, { chapter_mode: m.value })"
-            >
-              <span>{{ m.label }}</span>
-              <span class="opacity-70 text-[10px]">{{ m.desc }}</span>
-            </button>
-          </div>
-        </div>
-        <div>
-          <label class="field-label">AI 提示词语言</label>
-          <div class="segmented-control">
-            <button
-              v-for="lang in [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]"
-              :key="lang.value" type="button"
-              class="flex-1 py-2 text-xs transition-colors"
-              :class="(novel?.prompt_language ?? 'zh') === lang.value
-                ? 'bg-primary-500 text-white'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
-              @click="novelStore.updateNovel(novelId, { prompt_language: lang.value })"
-            >{{ lang.label }}</button>
-          </div>
-          <p class="mt-1 text-xs text-gray-400">角色/场景描述的生成语言</p>
+      <!-- 章节模式 -->
+      <div>
+        <label class="field-label">章节模式</label>
+        <div class="segmented-control">
+          <button
+            v-for="m in [{ value: 'sequential', label: '连贯剧情', desc: '各章节情节相互衔接' }, { value: 'independent', label: '独立成篇', desc: '每章都是完整故事' }]"
+            :key="m.value" type="button"
+            class="flex-1 py-1.5 text-xs flex flex-col items-center gap-0.5 transition-colors"
+            :class="(novel?.chapter_mode ?? 'sequential') === m.value
+              ? 'bg-primary-500 text-white'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+            @click="novelStore.updateNovel(novelId, { chapter_mode: m.value })"
+          >
+            <span>{{ m.label }}</span>
+            <span class="opacity-70 text-[10px]">{{ m.desc }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -460,6 +438,29 @@ const selectedAspectRatio = computed(() =>
     <!-- ③ 视频与配音 ──────────────────────────────────────────── -->
     <div class="card p-6 space-y-4">
       <h3 class="section-title">视频与配音</h3>
+
+      <!-- 视频类型 -->
+      <div>
+        <label class="field-label">视频类型</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="t in VIDEO_TYPES"
+            :key="t.value"
+            type="button"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-left"
+            :class="(novel?.video_type ?? 'animation') === t.value
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+              : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:border-gray-300'"
+            @click="novelStore.updateNovel(novelId, { video_type: t.value })"
+          >
+            <span class="text-lg leading-none">{{ t.icon }}</span>
+            <span>
+              <span class="block text-sm font-medium">{{ t.label }}</span>
+              <span class="block text-xs text-gray-400">{{ t.desc }}</span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <!-- 画面 & 规格（三列）-->
       <div class="grid grid-cols-3 gap-3">
@@ -473,6 +474,7 @@ const selectedAspectRatio = computed(() =>
             <option value="">-- 不使用预设 --</option>
             <option v-for="p in IMAGE_PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
+          <NuxtLink :to="`/novel/${novelId}/style`" class="mt-1 inline-block text-xs text-primary-600 dark:text-primary-400 hover:underline">浏览完整风格库 →</NuxtLink>
         </div>
         <div>
           <label class="field-label">分辨率</label>
@@ -522,25 +524,6 @@ const selectedAspectRatio = computed(() =>
               </button>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- 色彩调色 -->
-      <div>
-        <label class="field-label">色彩调色 <span class="text-gray-400 font-normal text-xs">（视频/图片生成风格）</span></label>
-        <div class="grid grid-cols-4 gap-1.5">
-          <button
-            v-for="g in COLOR_GRADES"
-            :key="g.value"
-            class="py-1.5 px-1 text-xs rounded-lg border transition-colors text-center"
-            :class="(novel?.color_grade ?? '') === g.value
-              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 font-medium'
-              : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:border-gray-300'"
-            @click="novelStore.updateNovel(novelId, { color_grade: g.value })"
-          >
-            <span class="block text-base leading-none mb-0.5">{{ g.icon }}</span>
-            {{ g.label }}
-          </button>
         </div>
       </div>
 

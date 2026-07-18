@@ -7,7 +7,7 @@ const videoStore = useVideoStore()
 
 const videoId = parseInt(route.params.id as string)
 if (isNaN(videoId)) {
-  await navigateTo('/video')
+  await navigateTo('/')
 }
 
 const STATUS_COLORS = VIDEO_STATUS_COLORS
@@ -38,11 +38,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <!-- /video/:id 有 produce、produce-v2 两个子路由（分别对应 pages/video/[id]/produce.vue 和
+       produce-v2.vue），Nuxt 会把它们自动嵌套在本页面下。命中子路由时渲染 <NuxtPage />，
+       否则渲染本页自身的视频详情内容。 -->
+  <NuxtPage v-if="route.matched.length > 1" />
+  <div v-else class="space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div class="flex items-center space-x-4">
-        <button class="btn-ghost" @click="router.push('/video')">
+        <button class="btn-ghost" @click="router.push(video?.novel_id ? `/novel/${video.novel_id}` : '/')">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>

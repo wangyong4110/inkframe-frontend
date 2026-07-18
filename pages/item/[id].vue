@@ -18,7 +18,6 @@ if (isNaN(itemId)) {
 }
 const novelId = parseInt(route.query.novelId as string)
 
-const activeTab = ref('profile')
 const loading = ref(true)
 const saving = ref(false)
 const saveStatus = ref<'' | 'saving' | 'saved' | 'error'>('')
@@ -124,39 +123,10 @@ async function handleReferenceUpload(e: Event) {
 // ── Form fields ───────────────────────────────────────────────────────────────
 const form = ref({
   name: '',
-  category: 'other' as Item['category'],
-  status: 'active' as Item['status'],
-  description: '',
   visual_prompt: '',
 })
 
 const imageUrl = ref('')
-
-// ── Options ───────────────────────────────────────────────────────────────────
-const categoryOptions = [
-  { value: 'weapon',     label: '武器',   icon: '⚔️' },
-  { value: 'armor',      label: '防具',   icon: '🛡️' },
-  { value: 'treasure',   label: '宝物',   icon: '💎' },
-  { value: 'artifact',   label: '法器',   icon: '🔮' },
-  { value: 'tool',       label: '工具',   icon: '🔧' },
-  { value: 'document',   label: '文书',   icon: '📜' },
-  { value: 'consumable', label: '消耗品', icon: '🧪' },
-  { value: 'other',      label: '其他',   icon: '📦' },
-]
-
-const statusOptions = [
-  { value: 'active',    label: '持有中', color: 'text-green-600' },
-  { value: 'lost',      label: '已遗失', color: 'text-yellow-600' },
-  { value: 'destroyed', label: '已损毁', color: 'text-red-600' },
-  { value: 'unknown',   label: '未知',   color: 'text-gray-500' },
-]
-
-const currentCategory = computed(() => categoryOptions.find(o => o.value === form.value.category))
-
-const tabs = [
-  { key: 'profile', label: '基本档案' },
-  { key: 'image',   label: '视觉设计' },
-]
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 useUnsavedGuard(isDirty, '道具信息有未保存的修改，确认离开？')
@@ -171,9 +141,6 @@ onMounted(async () => {
     const item: Item = (res as any).data ?? res
     form.value = {
       name: item.name ?? '',
-      category: (item.category as any) ?? 'other',
-      status: item.status ?? 'active',
-      description: item.description ?? '',
       visual_prompt: item.visual_prompt ?? '',
     }
     imageUrl.value = item.image_url ?? ''
@@ -250,9 +217,8 @@ async function handleAIUpdate() {
   if (!await guardAiProvider('LLM')) return
   updatingInfo.value = true
   try {
-    const resp = await itemApi.generateItemInfo(novelId, form.value.name.trim(), form.value.description.trim())
+    const resp = await itemApi.generateItemInfo(novelId, form.value.name.trim(), form.value.visual_prompt.trim())
     const data = (resp as any)?.data ?? resp
-    if (data?.description) form.value.description = data.description
     if (data?.visual_prompt) form.value.visual_prompt = data.visual_prompt
     toast.success('道具信息已更新')
   } catch (e: any) {
@@ -282,9 +248,6 @@ function goBack() {
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <h1 class="text-xl font-bold text-gray-900 dark:text-white truncate">{{ form.name || '道具详情' }}</h1>
-            <span v-if="currentCategory" class="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
-              {{ currentCategory.icon }} {{ currentCategory.label }}
-            </span>
           </div>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">道具编辑器</p>
         </div>
@@ -312,7 +275,7 @@ function goBack() {
           type="button"
           class="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-3 h-8 rounded-md transition-colors disabled:opacity-40"
           :disabled="updatingInfo || !form.name.trim()"
-          title="基于当前名称/描述由 AI 重新分析并更新道具信息"
+          title="基于当前名称/视觉提示词由 AI 重新分析并更新道具信息"
           @click="handleAIUpdate"
         >
           <svg v-if="updatingInfo" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -337,64 +300,17 @@ function goBack() {
     </div>
 
     <template v-else>
-    <!-- Tabs -->
-    <div class="border-b border-gray-200 dark:border-gray-700">
-      <nav class="flex space-x-8">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          class="py-3 px-1 border-b-2 font-medium text-sm transition-colors"
-          :class="activeTab === tab.key
-            ? 'border-primary-500 text-primary-600'
-            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
-          @click="activeTab = tab.key"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-    </div>
-
-    <!-- ── Tab: 基本档案 ───────────────────────────────────────────────────── -->
-    <div v-if="activeTab === 'profile'" class="space-y-4">
-      <div class="card p-6 space-y-5">
-        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">基础信息</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <!-- Name -->
-          <div class="sm:col-span-2">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
-            <input v-model="form.name" type="text" class="input" placeholder="道具名称" maxlength="100" />
-          </div>
-          <!-- Category -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">类别</label>
-            <select v-model="form.category" class="input">
-              <option v-for="opt in categoryOptions" :key="opt.value" :value="opt.value">
-                {{ opt.icon }} {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <!-- Status -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">当前状态</label>
-            <select v-model="form.status" class="input">
-              <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="card p-6 space-y-5">
-        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">道具描述</h3>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">描述</label>
-          <p class="text-xs text-gray-400 dark:text-gray-500 mb-2">包含外观（材质、颜色、形态、纹路等）、功能、特殊能力及故事背景</p>
-          <textarea v-model="form.description" rows="8" class="input resize-none" placeholder="【外观】材质、颜色、形态、纹路、散发气息等视觉细节…&#10;功能、使用方式、特殊能力、象征意义、故事背景…" />
-        </div>
+    <!-- ── 基础信息 ───────────────────────────────────────────────────── -->
+    <div class="card p-6 space-y-5">
+      <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">基础信息</h3>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
+        <input v-model="form.name" type="text" class="input" placeholder="道具名称" maxlength="100" />
       </div>
     </div>
 
-    <!-- ── Tab: 视觉设计 ───────────────────────────────────────────────────── -->
-    <div v-if="activeTab === 'image'" class="card p-6 space-y-6">
+    <!-- ── 视觉设计 ───────────────────────────────────────────────────── -->
+    <div class="card p-6 space-y-6">
       <!-- Visual prompt -->
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">视觉提示词</label>
@@ -464,7 +380,7 @@ function goBack() {
         </div>
       </div>
 
-      <p class="text-xs text-gray-500">需填写「道具描述」或「视觉提示词」，AI 才能生成准确的图像。</p>
+      <p class="text-xs text-gray-500">需填写「视觉提示词」，AI 才能生成准确的图像。</p>
     </div>
     </template>
   </div>

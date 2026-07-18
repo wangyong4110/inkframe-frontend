@@ -281,7 +281,6 @@ async function submitChat() {
       title: chatExtracted.value.title ?? '未命名小说',
       description: chatExtracted.value.description ?? '',
       genre: chatExtracted.value.genre ?? '其他',
-      prompt_language: 'zh',
       chapter_mode: chatExtracted.value.chapter_mode || 'sequential',
     }
     if (chatExtracted.value.target_chapters && chatExtracted.value.target_chapters > 0) {
@@ -353,7 +352,6 @@ const aiForm = reactive({
   target_word_count: 0,
   target_chapters: 0,
   cover_image: 'ai', // 默认使用 AI 生成封面
-  prompt_language: 'zh',
   chapter_mode: 'sequential', // sequential=连贯剧情 / independent=独立成篇
   drama_template_id: 0,
 })
@@ -430,7 +428,6 @@ async function submitAI() {
       title: aiForm.title.trim(),
       description: aiForm.description.trim(),
       genre: aiForm.genre,
-      prompt_language: aiForm.prompt_language,
       chapter_mode: aiForm.chapter_mode,
     }
     // 'ai' 特殊值：先不传 cover_image，创建后调用 AI 生成
@@ -1146,25 +1143,6 @@ async function rwSubmit() {
               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm resize-none bg-white dark:bg-gray-700 dark:text-white"
             />
             <span class="absolute bottom-2.5 right-3 text-xs text-gray-400 pointer-events-none">{{ aiForm.description.length }} 字</span>
-          </div>
-        </div>
-
-        <!-- 提示词语言 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            AI 提示词
-          </label>
-          <div class="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
-            <button
-              v-for="lang in [{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]"
-              :key="lang.value"
-              type="button"
-              class="flex-1 py-2 text-sm transition-colors"
-              :class="aiForm.prompt_language === lang.value
-                ? 'bg-purple-600 text-white'
-                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'"
-              @click="aiForm.prompt_language = lang.value"
-            >{{ lang.label }}</button>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlotPoint, ChapterVersion, CharacterLook, DramaTemplate } from '~/types'
+import type { PlotPoint, ChapterVersion, CharacterLook, DramaTemplate, EpisodeSummary } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
@@ -29,6 +29,7 @@ const { guardAiProvider } = useAiProviderGuard()
 const { getLLMCapableProviders } = useModelApi()
 const characterApi = useCharacterApi()
 const itemApi = useItemApi()
+const videoApi = useVideoApi()
 
 // 内联模型选择
 const llmProviders = ref<{ name: string; display_name: string }[]>([])
@@ -51,7 +52,7 @@ const regenPrompt = ref('')
 const regenerating = ref(false)
 
 // ── 页面模式 ──────────────────────────────────────────────────────────────────
-type PageMode = 'outline' | 'write' | 'character' | 'items' | 'scenes' | 'script'
+type PageMode = 'outline' | 'write' | 'character' | 'items' | 'scenes' | 'episodes' | 'script'
 const pageMode = ref<PageMode>('outline')
 
 function pageModeClass(mode: PageMode) {
@@ -65,156 +66,9 @@ const modeComplete = computed<Record<PageMode, boolean>>(() => ({
   write:     !!(chapter.value?.content),
   character: characters.value.length > 0,
   scenes:    anchors.value.length > 0,
+  episodes:  false,
   script:    chapterShots.value.length > 0 && chapterShots.value.every((s: any) => s.video_url),
 }))
-
-// ── 角色形象 ──────────────────────────────────────────────────────────────────
-const updateCharSnapshots = ref(false)
-const selectedCharacterIds = ref<number[]>([])
-const syncingSnapshots = ref(false)
-const snapshotMsg = ref('')
-
-// ── 批量生成图片 ──────────────────────────────────────────────────────────────
-const generatingCharImages = ref(false)
-const generatingItemImages = ref(false)
-const generatingSceneImages = ref(false)
-
-function toggleAllCharacters(checked: boolean) {
-  selectedCharacterIds.value = checked ? characters.value.map((c: any) => c.id) : []
-}
-
-async function handleGenerateCharacterImages() {
-  if (!chapter.value || selectedCharacterIds.value.length === 0) return
-  syncingSnapshots.value = true
-  snapshotMsg.value = ''
-  try {
-    const data: any = await characterApi.generateChapterCharacterImages(
-      Number(novelId),
-      chapter.value.chapter_no,
-      selectedCharacterIds.value,
-    )
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (!taskId) {
-      toast.error('生成失败：未获取到任务ID')
-      syncingSnapshots.value = false
-      return
-    }
-    toast.info('角色形象生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      syncingSnapshots.value = false
-      if (task.status === 'completed') {
-        const succeeded = (task.data?.succeeded as number) ?? 0
-        snapshotMsg.value = `已为 ${succeeded} 个角色生成形象`
-        toast.success(`角色形象生成完成，${succeeded} 个角色已更新`)
-        await characterStore.fetchCharacters(Number(novelId))
-      } else if (task.status === 'failed') {
-        snapshotMsg.value = ''
-        toast.error('角色形象生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    snapshotMsg.value = ''
-    syncingSnapshots.value = false
-    toast.error('生成失败：' + (e.message || ''))
-  }
-}
-
-async function handleBatchCharacterImages() {
-  if (!chapter.value) return
-  const boundCharacterIds = effectiveCharacters.value.map((c: any) => c.id)
-  if (boundCharacterIds.length === 0) {
-    toast.error('本章暂无绑定角色，无法生成角色图片')
-    return
-  }
-  generatingCharImages.value = true
-  try {
-    const data: any = await characterApi.generateChapterCharacterImages(
-      Number(novelId),
-      chapter.value.chapter_no,
-      boundCharacterIds,
-    )
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingCharImages.value = false; return }
-    toast.info('角色批量生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      generatingCharImages.value = false
-      if (task.status === 'completed') {
-        const succeeded = (task.data?.succeeded as number) ?? 0
-        toast.success(`角色图片批量生成完成，${succeeded} 个已更新`)
-        await characterStore.fetchCharacters(Number(novelId))
-      } else if (task.status === 'failed') {
-        toast.error('批量生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    generatingCharImages.value = false
-    toast.error('批量生成失败：' + (e.message || ''))
-  }
-}
-
-async function handleBatchItemImages() {
-  if (!chapter.value) return
-  const boundItemIds = chapterItems.value.map((i: any) => i.id)
-  if (boundItemIds.length === 0) {
-    toast.error('本章暂无绑定道具，无法生成道具图片')
-    return
-  }
-  generatingItemImages.value = true
-  try {
-    const data: any = await itemApi.generateChapterItemImages(
-      Number(novelId),
-      chapter.value.chapter_no,
-      boundItemIds,
-    )
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingItemImages.value = false; return }
-    toast.info('道具批量生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      generatingItemImages.value = false
-      if (task.status === 'completed') {
-        const succeeded = (task.data?.succeeded as number) ?? 0
-        toast.success(`道具图片批量生成完成，${succeeded} 个已更新`)
-      } else if (task.status === 'failed') {
-        toast.error('批量生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    generatingItemImages.value = false
-    toast.error('批量生成失败：' + (e.message || ''))
-  }
-}
-
-async function handleBatchSceneImages() {
-  if (!chapter.value) return
-  const boundAnchorIds = chapterAnchors.value.map((a: any) => a.id)
-  if (boundAnchorIds.length === 0) {
-    toast.error('本章暂无绑定场景，无法生成场景图片')
-    return
-  }
-  generatingSceneImages.value = true
-  try {
-    const data: any = await sceneAnchorApi.generateChapterRefImages(
-      Number(novelId),
-      chapter.value.chapter_no,
-      boundAnchorIds,
-    )
-    const taskId: string | undefined = data?.task_id
-    if (!taskId) { toast.error('批量生成失败：未获取到任务ID'); generatingSceneImages.value = false; return }
-    toast.info('场景批量生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      generatingSceneImages.value = false
-      if (task.status === 'completed') {
-        const succeeded = (task.data?.succeeded as number) ?? 0
-        toast.success(`场景图片批量生成完成，${succeeded} 个已更新`)
-      } else if (task.status === 'failed') {
-        toast.error('批量生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    generatingSceneImages.value = false
-    toast.error('批量生成失败：' + (e.message || ''))
-  }
-}
 
 // ── 分镜弹窗 ──────────────────────────────────────────────────────────────────
 const showStoryboardModal = ref(false)
@@ -1383,23 +1237,74 @@ async function switchToScenes() {
   fetchShotsForChapter()
 }
 
+// ── 剧集列表（剧本 Tab）──────────────────────────────────────────────────────
+const episodeSummaries = ref<EpisodeSummary[]>([])
+const loadingEpisodes = ref(false)
+
+async function switchToEpisodes() {
+  pageMode.value = 'episodes'
+  loadingEpisodes.value = true
+  try {
+    const res = await videoApi.getEpisodeSummaries(novelId)
+    episodeSummaries.value = res.data ?? []
+  } catch (e: any) {
+    toast.error('加载剧集列表失败：' + (e.message || '未知错误'))
+  } finally {
+    loadingEpisodes.value = false
+  }
+}
+
+function episodeTargetUrl(ep: EpisodeSummary, sceneNo?: number) {
+  // "进入视频生成环节"跳到独立的视频制作工作台（有视频项目时）；
+  // 还没有视频项目时，退回章节页内的分镜脚本 tab（vtab=script）作为兜底。
+  const sceneQuery = sceneNo ? `?scene=${sceneNo}` : ''
+  if (ep.video_id) {
+    return `/video/${ep.video_id}/produce-v2${sceneQuery}`
+  }
+  const legacySceneQuery = sceneNo ? `&scene=${sceneNo}` : ''
+  return `/novel/${novelId}/chapter/${ep.chapter_no}?tab=script&vtab=script${legacySceneQuery}`
+}
+
+async function openEpisode(ep: EpisodeSummary, sceneNo?: number) {
+  const url = episodeTargetUrl(ep, sceneNo)
+  if (ep.chapter_no === chapterNo && !url.startsWith('/video/')) {
+    // 目标就是当前已加载的章节页，只是切换 tab/scene 查询参数：路由不会重新挂载组件
+    // （definePageMeta key 只跟路径走），onMounted 里"从 URL 恢复 tab"的逻辑不会重新执行，
+    // 需要在这里手动切到目标 tab，否则点击会看起来毫无反应。
+    await router.replace(url)
+    await switchToScript()
+  } else {
+    router.push(url)
+  }
+}
+
+// ── 场次剧本预览弹窗（"剧本"列表卡片里"查看完整剧本"按钮）────────────────────
+const showScenePreview = ref(false)
+const previewChapterId = ref<number | null>(null)
+const previewSceneNo = ref<number | null>(null)
+function openScenePreview(chapterId: number, sceneNo: number) {
+  previewChapterId.value = chapterId
+  previewSceneNo.value = sceneNo
+  showScenePreview.value = true
+}
+
 // ── 场景管理（场景管理 Tab）──────────────────────────────────────────────
 const anchors = computed(() => sceneAnchorStore.anchors)
 const showAnchorForm = ref(false)
 const editingAnchorId = ref<number | null>(null)
-const anchorForm = ref({ name: '', type: 'interior', description: '', prompt_lock: '' })
+const anchorForm = ref({ name: '', description: '', prompt_lock: '' })
 const savingAnchor = ref(false)
 
 function startAnchorCreate() {
   editingAnchorId.value = null
-  anchorForm.value = { name: '', type: 'interior', description: '', prompt_lock: '' }
+  anchorForm.value = { name: '', description: '', prompt_lock: '' }
   showAnchorForm.value = true
 }
 
 function startAnchorEdit(anchor: any) {
   editingAnchorId.value = anchor.id
   anchorForm.value = {
-    name: anchor.name, type: anchor.type || 'interior',
+    name: anchor.name,
     description: anchor.description || '', prompt_lock: anchor.prompt_lock || '',
   }
   showAnchorForm.value = true
@@ -1729,84 +1634,7 @@ const loadingShots = ref(false)
 const shotsVideoId = ref<number | null>(null)
 
 // ── 章节级 AI 提取 ─────────────────────────────────────────────────────────────
-const extractingMinorChars = ref(false)
-const extractingChapterItems = ref(false)
 const extractingChapterSkills = ref(false)
-const extractingChapterAnchors = ref(false)
-const sceneAnchorUserPrompt = ref('')
-const characterUserPrompt = ref('')
-const itemUserPrompt = ref('')
-
-async function handleExtractMinorChars() {
-  if (!chapter.value || extractingMinorChars.value) return
-  extractingMinorChars.value = true
-  try {
-    const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/characters/ai-extract`, {
-      method: 'POST',
-      body: characterUserPrompt.value ? JSON.stringify({ user_prompt: characterUserPrompt.value }) : undefined,
-    })
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (!taskId) {
-      toast.error('角色分析失败：未获取到任务ID')
-      extractingMinorChars.value = false
-      return
-    }
-    toast.info('角色分析任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      extractingMinorChars.value = false
-      if (task.status === 'completed') {
-        const newCount = (task.data?.new_count as number) ?? 0
-        toast.success(newCount > 0 ? `角色分析完成，新增 ${newCount} 个角色` : '角色分析完成，已更新章节角色绑定')
-        await fetchEffectiveCharacters()
-      } else if (task.status === 'failed') {
-        toast.error('角色分析失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    toast.error('角色分析失败：' + (e.message || ''))
-    extractingMinorChars.value = false
-  }
-}
-
-async function handleExtractChapterItems() {
-  if (!chapter.value || extractingChapterItems.value) return
-  extractingChapterItems.value = true
-  try {
-    const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/items/ai-extract`, {
-      method: 'POST',
-      body: itemUserPrompt.value ? JSON.stringify({ user_prompt: itemUserPrompt.value }) : undefined,
-    })
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (taskId) {
-      toast.info('道具提取任务已提交，正在处理...')
-      taskStore.trackTask(taskId, async (task) => {
-        extractingChapterItems.value = false
-        if (task.status === 'completed') {
-          const count = (task.data?.new_count as number) ?? (task.data?.count as number) ?? 0
-          toast.success(`道具提取完成，新增 ${count} 个`)
-          fetchChapterItems()
-        } else if (task.status === 'failed') {
-          toast.error('道具提取失败：' + (task.error || '未知错误'))
-        }
-      })
-    } else {
-      const count: number = data?.data?.count ?? data?.count ?? 0
-      if (count > 0) {
-        toast.success(`道具提取完成，新增 ${count} 个`)
-      } else {
-        toast.info('道具提取完成，本章未发现新道具')
-      }
-      fetchChapterItems()
-      extractingChapterItems.value = false
-    }
-  } catch (e: any) {
-    toast.error('提取失败：' + (e.message || ''))
-  } finally {
-    extractingChapterItems.value = false
-  }
-}
 
 async function handleExtractChapterSkills() {
   if (!chapter.value || extractingChapterSkills.value) return
@@ -1820,39 +1648,6 @@ async function handleExtractChapterSkills() {
     toast.error('提取失败：' + (e.message || ''))
   } finally {
     extractingChapterSkills.value = false
-  }
-}
-
-async function handleExtractChapterAnchors() {
-  if (!chapter.value || extractingChapterAnchors.value) return
-  extractingChapterAnchors.value = true
-  try {
-    const { request } = useApi()
-    const data: any = await request(`/novels/${novelId}/chapters/${chapterNo}/scene-anchors/ai-extract`, {
-      method: 'POST',
-      body: sceneAnchorUserPrompt.value ? JSON.stringify({ user_prompt: sceneAnchorUserPrompt.value }) : undefined,
-    })
-    const taskId: string | undefined = data?.data?.task_id ?? data?.task_id
-    if (!taskId) {
-      toast.error('场景分析失败：未获取到任务ID')
-      extractingChapterAnchors.value = false
-      return
-    }
-    toast.info('场景分析任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      extractingChapterAnchors.value = false
-      if (task.status === 'completed') {
-        const newCount = (task.data?.new_count as number) ?? 0
-        toast.success(newCount > 0 ? `场景分析完成，新增 ${newCount} 个场景` : '场景分析完成，已更新章节场景绑定')
-        await fetchChapterAnchors()
-        sceneAnchorStore.fetchAnchors(novelId)
-      } else if (task.status === 'failed') {
-        toast.error('场景分析失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    toast.error('提取失败：' + (e.message || ''))
-    extractingChapterAnchors.value = false
   }
 }
 
@@ -2192,6 +1987,7 @@ onUnmounted(() => {
         <div class="flex items-center bg-gray-100 dark:bg-gray-700/60 rounded-lg p-1 gap-1">
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('outline')" @click="pageMode = 'outline'">大纲</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('write')" @click="pageMode = 'write'">写作</button>
+          <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('episodes')" @click="switchToEpisodes">剧本</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('character')" @click="switchToCharacter">角色</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('items')" @click="switchToItems">道具</button>
           <button class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all" :class="pageModeClass('scenes')" @click="switchToScenes">场景</button>
@@ -2203,7 +1999,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 flex-shrink-0">
         <span v-if="autoSaveLabel" :class="saveFailed ? 'text-xs text-red-500' : 'text-xs text-gray-400 dark:text-gray-500'">{{ autoSaveLabel }}</span>
         <button
-          v-if="!showRightPanel"
+          v-if="!showRightPanel && !['character', 'items', 'scenes', 'episodes'].includes(pageMode)"
           class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           title="显示 AI 助手"
           @click="showRightPanel = true"
@@ -2714,9 +2510,6 @@ onUnmounted(() => {
                         </svg>
                       </div>
                     </template>
-                    <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
-                      <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
-                    </template>
                     <!-- no image: show full name -->
                     <span v-else class="text-xs font-semibold text-gray-400 dark:text-gray-500 select-none px-2 text-center leading-snug">{{ char.name }}</span>
                     <!-- look switch arrows -->
@@ -2824,9 +2617,6 @@ onUnmounted(() => {
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
                         </svg>
                       </div>
-                    </template>
-                    <template v-else-if="getCharDisplayLook(char.id)?.portrait || char.portrait">
-                      <img :src="getCharDisplayLook(char.id)?.portrait || char.portrait" class="w-full h-full object-cover" :alt="char.name" />
                     </template>
                     <!-- no image: show full name -->
                     <span v-else class="text-xs font-semibold text-gray-400 dark:text-gray-500 select-none px-2 text-center leading-snug">{{ char.name }}</span>
@@ -2962,7 +2752,7 @@ onUnmounted(() => {
                     <div class="flex-1 min-w-0">
                       <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate text-center">{{ item.name }}</p>
                       <p class="text-[10px] text-amber-500 dark:text-amber-400 truncate text-center leading-tight">
-                        {{ item.effective_location || item.description || '本章道具' }}
+                        {{ item.effective_location || '本章道具' }}
                       </p>
                     </div>
                     <button
@@ -3038,11 +2828,10 @@ onUnmounted(() => {
                       </svg>
                     </button>
                   </div>
-                  <!-- 名称 + 类型 + 编辑按钮 -->
+                  <!-- 名称 + 编辑按钮 -->
                   <div class="px-2 py-1.5 flex items-center gap-1">
                     <div class="flex-1 min-w-0">
                       <p class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{{ anchor.name }}</p>
-                      <p class="text-[10px] text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
                     </div>
                     <button
                       class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
@@ -3066,19 +2855,9 @@ onUnmounted(() => {
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
-                  <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
-                </div>
-                <div>
-                  <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">类型</label>
-                  <select v-model="anchorForm.type" class="input w-full text-sm">
-                    <option value="interior">室内</option>
-                    <option value="exterior">室外</option>
-                    <option value="imaginary">虚构/幻境</option>
-                  </select>
-                </div>
+              <div>
+                <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景名称 *</label>
+                <input v-model="anchorForm.name" type="text" placeholder="如：书院大厅" class="input w-full text-sm" />
               </div>
               <div>
                 <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 block">场景描述</label>
@@ -3101,6 +2880,84 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- ─ 剧本（剧集列表）模式 ─ -->
+        <div v-else-if="pageMode === 'episodes'" class="h-full overflow-auto p-6 space-y-4">
+          <div v-if="loadingEpisodes" class="text-center py-16 text-gray-400 text-sm">加载中…</div>
+          <div v-else-if="!episodeSummaries.length" class="text-center py-16 text-gray-400 text-sm">暂无剧集</div>
+
+          <div
+            v-for="ep in episodeSummaries"
+            :key="ep.chapter_id"
+            class="card p-5 border-l-4 transition-colors"
+            :class="ep.video_id ? 'border-l-primary-500' : 'border-l-gray-200 dark:border-l-gray-700'"
+          >
+            <!-- 卡片头：章节标题 + 状态徽标 -->
+            <div class="flex items-start justify-between gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
+              <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
+                第{{ ep.chapter_no }}章 {{ ep.title }}
+              </h3>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <span v-if="ep.duration" class="tag bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">{{ Math.round(ep.duration) }}s</span>
+                <span
+                  class="tag"
+                  :class="ep.scenes.length > 0 ? 'tag-success' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'"
+                >{{ ep.scenes.length > 0 ? `剧本完成（${ep.scenes.length}场）` : '剧本未生成' }}</span>
+                <div v-if="ep.shots_total > 0" class="flex items-center gap-1.5">
+                  <span class="tag bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 whitespace-nowrap">视频 {{ ep.shots_with_video }}/{{ ep.shots_total }}</span>
+                  <div class="progress-bar w-12 dark:bg-gray-700">
+                    <div class="progress-bar-fill" :style="{ width: `${Math.round((ep.shots_with_video / ep.shots_total) * 100)}%` }" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="ep.scenes.length" class="space-y-2.5">
+              <div
+                v-for="scene in ep.scenes" :key="scene.scene_no"
+                class="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-4 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                <div class="flex items-start gap-2.5">
+                  <span class="flex-shrink-0 w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-semibold flex items-center justify-center mt-0.5">
+                    {{ scene.scene_no }}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ scene.heading }}</p>
+                      <div class="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          class="p-1.5 rounded-md text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                          title="查看完整剧本"
+                          @click="openScenePreview(ep.chapter_id, scene.scene_no)"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        </button>
+                        <button
+                          class="p-1.5 rounded-md text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                          title="进入视频生成环节"
+                          @click="openEpisode(ep, scene.scene_no)"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">{{ scene.synopsis }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-6 text-center">
+              <p class="text-sm text-gray-400 mb-3">暂无剧本内容</p>
+              <div class="flex items-center gap-2 max-w-sm mx-auto">
+                <button class="btn-primary flex-1 text-sm flex items-center justify-center gap-1.5 px-4" @click="openEpisode(ep)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                  进入视频生成环节
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- ─ 脚本模式 ─ -->
         <div v-else-if="pageMode === 'script'" class="h-full overflow-auto">
           <!-- Video editor -->
@@ -3118,9 +2975,9 @@ onUnmounted(() => {
         </div>
       </main>
 
-      <!-- Right: tools panel (hidden on export tab) -->
+      <!-- Right: tools panel (hidden on export tab; character/items/scenes/episodes have no AI assistant panel) -->
       <aside
-        v-if="showRightPanel && !(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
+        v-if="showRightPanel && !['character', 'items', 'scenes', 'episodes'].includes(pageMode) && !(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
         class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
       >
 
@@ -3141,9 +2998,6 @@ onUnmounted(() => {
               {{
                 pageMode === 'outline' ? '大纲' :
                 pageMode === 'write' ? '写作' :
-                pageMode === 'character' ? '角色' :
-                pageMode === 'items' ? '道具' :
-                pageMode === 'scenes' ? '场景' :
                 videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
                 videoEditorRef?.activeTab === 'bgm' ? '情绪偏好 & 生成' :
@@ -3782,156 +3636,6 @@ onUnmounted(() => {
           </template>
 
           <!-- ── 角色 AI ── -->
-          <template v-else-if="pageMode === 'character'">
-            <div class="p-4 space-y-4">
-              <div v-if="chapter" class="space-y-3">
-                <div class="flex items-center justify-between mb-3">
-                  <div>
-                    <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">角色形象</h4>
-                    <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">根据本章内容生成角色形象</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                    :class="updateCharSnapshots ? 'bg-purple-500' : 'bg-gray-200 dark:bg-gray-600'"
-                    @click="updateCharSnapshots = !updateCharSnapshots"
-                  >
-                    <span
-                      class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-                      :class="updateCharSnapshots ? 'translate-x-4' : 'translate-x-0'"
-                    />
-                  </button>
-                </div>
-                <template v-if="updateCharSnapshots">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs text-gray-500 dark:text-gray-400">选择角色</span>
-                    <button type="button" class="text-xs text-purple-600 dark:text-purple-400 hover:underline"
-                      @click="toggleAllCharacters(selectedCharacterIds.length < characters.length)">
-                      {{ selectedCharacterIds.length < characters.length ? '全选' : '取消全选' }}
-                    </button>
-                  </div>
-                  <div class="space-y-1 mb-3 max-h-40 overflow-y-auto">
-                    <label v-for="char in characters" :key="char.id"
-                      class="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
-                      <input type="checkbox" :value="char.id" v-model="selectedCharacterIds"
-                        class="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
-                      <div class="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-                        <span class="text-xs font-bold text-purple-600 dark:text-purple-400">{{ char.name.charAt(0) }}</span>
-                      </div>
-                      <span class="text-xs text-gray-700 dark:text-gray-300 truncate">{{ char.name }}</span>
-                    </label>
-                    <p v-if="characters.length === 0" class="text-xs text-gray-400 text-center py-2">暂无角色</p>
-                  </div>
-                  <p v-if="snapshotMsg" class="text-xs text-green-600 dark:text-green-400 mb-2">✓ {{ snapshotMsg }}</p>
-                  <button type="button"
-                    :disabled="syncingSnapshots || selectedCharacterIds.length === 0"
-                    class="w-full py-2 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5"
-                    @click="handleGenerateCharacterImages">
-                    <svg v-if="syncingSnapshots" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    {{ syncingSnapshots ? '生成中...' : `生成 ${selectedCharacterIds.length} 个角色形象` }}
-                  </button>
-                </template>
-              </div>
-
-              <!-- AI 本章提取 -->
-              <div class="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
-                <textarea
-                  v-model="characterUserPrompt"
-                  :placeholder="'补充提示（可选）：如「重点关注配角」、「忽略临时路人」…'"
-                  rows="2"
-                  class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500 dark:focus:ring-purple-400"
-                />
-                <button
-                  :disabled="extractingMinorChars || !chapter?.content"
-                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50"
-                  @click="handleExtractMinorChars"
-                >
-                  <svg v-if="extractingMinorChars" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  {{ extractingMinorChars ? '分析中...' : '角色分析' }}
-                </button>
-                <button
-                  :disabled="generatingCharImages"
-                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-                  @click="handleBatchCharacterImages"
-                >
-                  <svg v-if="generatingCharImages" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                  {{ generatingCharImages ? '生成中...' : '生成角色图片' }}
-                </button>
-              </div>
-
-            </div>
-          </template>
-
-          <!-- ── 道具 AI ── -->
-          <template v-else-if="pageMode === 'items'">
-            <div class="p-4 space-y-4">
-              <!-- AI 本章提取 -->
-              <div class="space-y-2">
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">AI 本章提取</h4>
-                <textarea
-                  v-model="itemUserPrompt"
-                  placeholder="补充提示（可选）：如「重点关注武器装备」、「忽略普通道具」…"
-                  rows="2"
-                  class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500 dark:focus:ring-amber-400"
-                />
-                <button
-                  :disabled="extractingChapterItems || !chapter?.content"
-                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors disabled:opacity-50"
-                  @click="handleExtractChapterItems"
-                >
-                  <svg v-if="extractingChapterItems" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                  {{ extractingChapterItems ? '提取中...' : '道具提取' }}
-                </button>
-                <button
-                  :disabled="generatingItemImages"
-                  class="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-                  @click="handleBatchItemImages"
-                >
-                  <svg v-if="generatingItemImages" class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                  {{ generatingItemImages ? '生成中...' : '生成道具图片' }}
-                </button>
-              </div>
-            </div>
-          </template>
-
-          <!-- ── 场景管理 AI ── -->
-          <template v-else-if="pageMode === 'scenes'">
-            <div class="p-4 space-y-3">
-              <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">从本章内容中提取场景，或手动绑定场景以确保跨镜头视觉一致性。</p>
-              <textarea
-                v-model="sceneAnchorUserPrompt"
-                :placeholder="'补充提示（可选）：如「重点关注室内场景」、「忽略过渡性场景」…'"
-                rows="3"
-                class="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-teal-500 dark:focus:ring-teal-400"
-              />
-              <button
-                :disabled="extractingChapterAnchors || !chapter?.content"
-                class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition-colors disabled:opacity-50"
-                @click="handleExtractChapterAnchors"
-              >
-                <svg v-if="extractingChapterAnchors" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                {{ extractingChapterAnchors ? '分析中...' : '场景分析' }}
-              </button>
-              <button
-                :disabled="generatingSceneImages"
-                class="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-                @click="handleBatchSceneImages"
-              >
-                <svg v-if="generatingSceneImages" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                {{ generatingSceneImages ? '生成中...' : '生成场景图片' }}
-              </button>
-            </div>
-          </template>
-
           <!-- ── 脚本 AI ── -->
           <template v-else-if="pageMode === 'script'">
 
@@ -4500,7 +4204,6 @@ onUnmounted(() => {
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ anchor.name }}</p>
-              <p class="text-xs text-gray-400 dark:text-gray-500">{{ { interior: '室内', exterior: '室外', imaginary: '幻境' }[anchor.type] || anchor.type }}</p>
             </div>
             <svg v-if="bindingAnchorId === anchor.id" class="w-4 h-4 animate-spin text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <svg v-else class="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -4535,7 +4238,7 @@ onUnmounted(() => {
             @click="handleBindCharacter(char.id)"
           >
             <div class="w-9 h-9 rounded-full flex-shrink-0 overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-              <img v-if="char.default_look?.three_view_sheet || char.default_look?.portrait" :src="char.default_look?.three_view_sheet || char.default_look?.portrait" class="w-full h-full object-cover" :alt="char.name" />
+              <img v-if="char.default_look?.three_view_sheet" :src="char.default_look?.three_view_sheet" class="w-full h-full object-cover" :alt="char.name" />
               <span v-else class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ char.name.charAt(0) }}</span>
             </div>
             <div class="flex-1 min-w-0">
@@ -4591,7 +4294,6 @@ onUnmounted(() => {
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.name }}</p>
-              <p v-if="item.description" class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ item.description }}</p>
             </div>
             <svg v-if="bindingItemId === item.id" class="w-4 h-4 animate-spin text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -4604,4 +4306,23 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <!-- 场次剧本预览弹窗（"剧本"列表卡片"查看完整剧本"按钮） -->
+  <Teleport to="body">
+    <div v-if="showScenePreview" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" @click="showScenePreview = false"></div>
+      <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+        <button class="absolute top-3 right-3 z-10 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showScenePreview = false">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <VideoScreenplayTab
+          v-if="previewChapterId"
+          :chapter-id="previewChapterId"
+          :focus-scene-no="previewSceneNo ?? undefined"
+          :llm-provider="novel?.ai_model || ''"
+          @saved="showScenePreview = false"
+        />
+      </div>
+    </div>
+  </Teleport>
 </template>
