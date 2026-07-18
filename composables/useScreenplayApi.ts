@@ -1,6 +1,12 @@
-import type { ScreenplayScene, UpdateScreenplayScenePayload } from '~/types'
+import type { ScreenplayScene, ScreenplaySceneVersion, UpdateScreenplayScenePayload } from '~/types'
 
-export type { ScreenplayScene, UpdateScreenplayScenePayload }
+export type { ScreenplayScene, ScreenplaySceneVersion, UpdateScreenplayScenePayload }
+
+export interface GenerateScreenplayFullResult {
+  scenes: ScreenplayScene[]
+  video_id: number
+  storyboard_task_id: string
+}
 
 export function useScreenplayApi() {
   const { request } = useApi()
@@ -11,6 +17,16 @@ export function useScreenplayApi() {
       { method: 'POST', body: JSON.stringify({ provider: provider ?? '' }) },
     )
     return res.data ?? []
+  }
+
+  // "生成剧本"按钮的一键管线：提取并绑定角色/道具/场景 → 重新生成分场剧本 → 提交异步分镜生成任务。
+  // 返回的 storyboard_task_id 交给 useTaskStore().trackTask() 轮询，和其它分镜生成任务用同一套面板。
+  async function generateScreenplayFull(chapterId: number, provider?: string): Promise<GenerateScreenplayFullResult> {
+    const res: { code: number; data: GenerateScreenplayFullResult } = await request(
+      `/chapters/${chapterId}/screenplay/generate-full`,
+      { method: 'POST', body: JSON.stringify({ provider: provider ?? '' }) },
+    )
+    return res.data
   }
 
   async function listScreenplayScenes(chapterId: number): Promise<ScreenplayScene[]> {
@@ -48,12 +64,28 @@ export function useScreenplayApi() {
     return res.data.task_id
   }
 
+  async function getSceneVersions(sceneId: number): Promise<ScreenplaySceneVersion[]> {
+    const res: { code: number; data: ScreenplaySceneVersion[] } = await request(`/screenplay-scenes/${sceneId}/versions`)
+    return res.data ?? []
+  }
+
+  async function restoreSceneVersion(sceneId: number, versionNo: number): Promise<ScreenplayScene> {
+    const res: { code: number; data: ScreenplayScene } = await request(
+      `/screenplay-scenes/${sceneId}/versions/${versionNo}/restore`,
+      { method: 'POST' },
+    )
+    return res.data
+  }
+
   return {
     generateScreenplay,
+    generateScreenplayFull,
     listScreenplayScenes,
     updateScreenplayScene,
     lockScreenplayScene,
     deleteScreenplayScene,
     regenerateSceneStoryboard,
+    getSceneVersions,
+    restoreSceneVersion,
   }
 }

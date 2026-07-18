@@ -9,7 +9,6 @@ const novelStore = useNovelStore()
 const chapterStore = useChapterStore()
 const taskStore = useTaskStore()
 
-const generatingOutline = ref(false)
 const chapterPage = ref(1)
 const chapterPageSize = ref(20)
 const chapterSearchQuery = ref('')
@@ -389,34 +388,6 @@ function goToChapter(chapter: Chapter) {
   router.push(`/novel/${props.novelId}/chapter/${chapter.chapter_no}`)
 }
 
-async function handleGenerateOutline() {
-  if (!await guardAiProvider('LLM')) return
-  if (!novelStore.currentNovel) return
-  generatingOutline.value = true
-  try {
-    const chapterNum = chapters.value.length > 0 ? chapters.value.length : (novelStore.currentNovel?.target_chapters || 10)
-    const taskId = await novelStore.generateOutline(props.novelId, chapterNum)
-    if (!taskId) {
-      toast.error('大纲生成失败：未获取到任务ID')
-      generatingOutline.value = false
-      return
-    }
-    toast.info('大纲生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      generatingOutline.value = false
-      if (task.status === 'completed') {
-        await chapterStore.fetchChapters(props.novelId)
-        toast.success('大纲生成完成')
-      } else if (task.status === 'failed') {
-        toast.error('大纲生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    toast.error('大纲生成失败：' + (e.message || '未知错误'))
-    generatingOutline.value = false
-  }
-}
-
 async function handlePublishChapter(chapter: Chapter, event: Event) {
   event.stopPropagation()
   if (publishingChapterId.value !== null) return
@@ -462,16 +433,6 @@ async function confirmDeleteChapter() {
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">章节列表</h2>
         <div class="flex items-center gap-2">
-          <button class="btn-secondary text-sm" :disabled="generatingOutline" @click="handleGenerateOutline">
-            <svg v-if="generatingOutline" class="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-            <svg v-else class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-            {{ generatingOutline ? 'AI 生成中...' : (chapters.length > 0 ? 'AI 更新大纲' : 'AI 生成大纲') }}
-          </button>
           <button class="btn-secondary text-sm" @click="handleBatchReview">
             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>

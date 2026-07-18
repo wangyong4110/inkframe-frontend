@@ -733,6 +733,29 @@ export interface ScreenplayScene {
   updated_at: string
 }
 
+// 分场剧本历史版本：content 是覆盖前该场次字段的 JSON 快照，需要 JSON.parse 后取用。
+export interface ScreenplaySceneVersion {
+  id: number
+  screenplay_scene_id: number
+  chapter_id: number
+  novel_id: number
+  version_no: number
+  content: string
+  change_type: string
+  created_at: string
+}
+
+// 分镜历史版本：整视频一份快照，content 是重新生成前该视频全部分镜行的 JSON 数组。
+export interface StoryboardShotVersion {
+  id: number
+  video_id: number
+  version_no: number
+  content: string
+  shot_count: number
+  change_type: string
+  created_at: string
+}
+
 export interface UpdateScreenplayScenePayload {
   heading?: string
   synopsis?: string

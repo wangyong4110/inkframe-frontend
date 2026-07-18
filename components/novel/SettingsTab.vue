@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AIModel } from '~/types'
-import { WRITING_PRESETS, IMAGE_PRESETS, useStyleApi } from '~/composables/useStylePresets'
+import { WRITING_PRESETS, useStyleApi } from '~/composables/useStylePresets'
 
 const props = defineProps<{ novelId: number }>()
 
@@ -8,6 +8,7 @@ const toast = useToast()
 const router = useRouter()
 const novelStore = useNovelStore()
 const styleApi = useStyleApi()
+const imageStylePresetApi = useImageStylePresetApi()
 
 const novel = computed(() => novelStore.currentNovel)
 
@@ -254,9 +255,21 @@ async function handleWritingPresetSelect(presetId: string) {
   }
 }
 
+// 画面风格列表：从后端风格库拉取（/image-style-presets，管理员维护的画风都来自这里），
+// 不再读前端硬编码的常量，与 pages/novel/[id]/style.vue 的画风库页面同一份数据源。
+const imagePresets = ref<{ id: string; name: string }[]>([])
+onMounted(async () => {
+  try {
+    const res = await imageStylePresetApi.listPresets()
+    imagePresets.value = (res.data ?? []).map(r => ({ id: r.style_id, name: r.name }))
+  } catch (e: any) {
+    toast.error('加载画风列表失败：' + (e.message || '未知错误'))
+  }
+})
+
 function handleImageStyleSelect(styleId: string) {
   novelStore.updateNovel(props.novelId, { image_style: styleId }).then(() => {
-    const preset = IMAGE_PRESETS.find(p => p.id === styleId)
+    const preset = imagePresets.value.find(p => p.id === styleId)
     if (preset) toast.success(`已应用「${preset.name}」`)
   }).catch((e: any) => {
     toast.error('保存失败：' + (e.message || ''))
@@ -467,12 +480,12 @@ const selectedAspectRatio = computed(() =>
         <div>
           <label class="field-label">画面风格</label>
           <select
-            :value="novel?.image_style || IMAGE_PRESETS[0]?.id || ''"
+            :value="novel?.image_style || imagePresets[0]?.id || ''"
             class="input"
             @change="handleImageStyleSelect(($event.target as HTMLSelectElement).value)"
           >
             <option value="">-- 不使用预设 --</option>
-            <option v-for="p in IMAGE_PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-for="p in imagePresets" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
           <NuxtLink :to="`/novel/${novelId}/style`" class="mt-1 inline-block text-xs text-primary-600 dark:text-primary-400 hover:underline">浏览完整风格库 →</NuxtLink>
         </div>

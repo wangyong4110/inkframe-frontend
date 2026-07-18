@@ -153,26 +153,6 @@ export const useNovelStore = defineStore('novel', {
       }
     },
 
-    async generateOutline(id: number, chapterNum: number, prompt?: string, overrides?: { max_tokens?: number; temperature?: number; timeout_seconds?: number; drama_template_id?: number }): Promise<string> {
-      this.loading = true
-      this.error = null
-
-      try {
-        const api = useNovelApi()
-        const response = await api.generateOutline(id, {
-          chapter_num: chapterNum,
-          prompt,
-          ...overrides,
-        })
-        return response.data?.task_id ?? ''
-      } catch (e) {
-        this.error = e instanceof Error ? e.message : String(e)
-        throw e
-      } finally {
-        this.loading = false
-      }
-    },
-
     setFilters(filters: { status?: NovelStatus; genre?: NovelGenre }) {
       this.filters = { ...this.filters, ...filters }
       this.pagination.page = 1

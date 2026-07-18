@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { ScreenplayScene } from '~/types'
+import type { ScreenplayScene, ScreenplaySceneVersion } from '~/types'
 
 // videoId：在 VideoEditor 内嵌使用时传入，chapterId 取当前视频关联的章节。
 // chapterId：独立分场剧本页（无需先创建视频项目）直接传入章节 id，优先于 videoId 推导的值。
 // focusSceneNo：仅传给弹窗单场预览场景——只渲染这一场，隐藏整章节的生成/标题区域。
 const props = defineProps<{ videoId?: number; chapterId?: number; llmProvider?: string; focusSceneNo?: number }>()
-// generated：分场剧本生成成功后触发，供外层（如 VideoEditor）串联自动生成分镜脚本。
+// generated：分场剧本（连同分镜脚本）生成成功后触发，供外层做一些收尾展示；生成剧本按钮本身已经
+// 在后端一键管线里提取绑定角色/道具/场景并提交了分镜生成任务，外层不需要再重复触发。
 // 仅在非 focusSceneNo（单场预览）模式下会触发——生成按钮本身就只在该模式下渲染，见下方模板。
 // saved：单场保存成功后触发，供外层弹窗（"查看完整剧本"）据此自动关闭；整页编辑模式下没有
 // 弹窗可关，父组件不监听即可。
@@ -86,19 +87,69 @@ async function handleGenerate() {
   if (!chapterId.value) return
   if (!await guardAiProvider('LLM')) return
   if (scenes.value.length > 0) {
-    const ok = await confirm('重新生成剧本？未锁定的场次将被覆盖，已锁定的场次保持不变。')
+    const ok = await confirm('重新生成剧本？将重新分析并绑定角色/道具/场景，重新生成分场剧本与分镜脚本；未锁定的场次将被覆盖（历史版本会保留，可在"历史版本"中恢复）。')
     if (!ok) return
   }
   generating.value = true
   try {
-    scenes.value = await screenplayApi.generateScreenplay(chapterId.value, props.llmProvider)
+    const result = await screenplayApi.generateScreenplayFull(chapterId.value, props.llmProvider)
+    scenes.value = result.scenes
     resetDrafts()
-    toast.success(`已生成 ${scenes.value.length} 个分场剧本`)
+    toast.success(`已生成 ${scenes.value.length} 个分场剧本，正在生成分镜脚本…`)
     emit('generated')
+    useTaskStore().trackTask(result.storyboard_task_id, (task) => {
+      if (task.status === 'completed') {
+        toast.success('分镜脚本已生成')
+      } else if (task.status === 'failed' || task.status === 'dead') {
+        toast.error('分镜脚本生成失败：' + (task.error || '未知错误'))
+      }
+    })
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
   } finally {
     generating.value = false
+  }
+}
+
+// ── 场次历史版本：查看/恢复 ──────────────────────────────────────────────
+const versionsSceneId = ref<number | null>(null)
+const versions = ref<ScreenplaySceneVersion[]>([])
+const loadingVersions = ref(false)
+const restoringVersionNo = ref<number | null>(null)
+
+async function openVersions(scene: ScreenplayScene) {
+  versionsSceneId.value = scene.id
+  loadingVersions.value = true
+  try {
+    versions.value = await screenplayApi.getSceneVersions(scene.id)
+  } catch (e: any) {
+    toast.error('加载历史版本失败：' + (e.message || '未知错误'))
+  } finally {
+    loadingVersions.value = false
+  }
+}
+
+function closeVersions() {
+  versionsSceneId.value = null
+  versions.value = []
+}
+
+async function restoreVersion(version: ScreenplaySceneVersion) {
+  if (versionsSceneId.value == null) return
+  const ok = await confirm(`恢复到第 ${version.version_no} 个历史版本？当前内容会被覆盖（当前内容本身也会在恢复前自动保留一条历史版本）。`)
+  if (!ok) return
+  restoringVersionNo.value = version.version_no
+  try {
+    const updated = await screenplayApi.restoreSceneVersion(versionsSceneId.value, version.version_no)
+    const idx = scenes.value.findIndex(s => s.id === updated.id)
+    if (idx >= 0) scenes.value[idx] = updated
+    drafts.value[updated.id] = makeDraft(updated)
+    toast.success('已恢复')
+    closeVersions()
+  } catch (e: any) {
+    toast.error('恢复失败：' + (e.message || '未知错误'))
+  } finally {
+    restoringVersionNo.value = null
   }
 }
 
@@ -233,6 +284,10 @@ defineExpose({ loadScenes })
           <span v-if="scene.locked" class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">已锁定</span>
           <button
             class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300"
+            @click="openVersions(scene)"
+          >历史版本</button>
+          <button
+            class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300"
             :disabled="lockingSceneId === scene.id"
             @click="toggleLock(scene)"
           >{{ scene.locked ? '解锁' : '锁定' }}</button>
@@ -291,6 +346,35 @@ defineExpose({ loadScenes })
             :disabled="savingSceneId === scene.id"
             @click="saveScene(scene)"
           >{{ savingSceneId === scene.id ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 历史版本弹窗 -->
+    <div v-if="versionsSceneId != null" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/50" @click="closeVersions"></div>
+      <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100">历史版本</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="closeVersions">✕</button>
+        </div>
+        <div v-if="loadingVersions" class="text-center py-8 text-gray-400 text-sm">加载中…</div>
+        <div v-else-if="!versions.length" class="text-center py-8 text-gray-400 text-sm">暂无历史版本</div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="v in versions" :key="v.id"
+            class="flex items-center justify-between gap-2 border border-gray-100 dark:border-gray-700 rounded-lg px-3 py-2"
+          >
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              <div>版本 {{ v.version_no }}（{{ v.change_type === 'restore' ? '恢复前保留' : '重新生成前保留' }}）</div>
+              <div>{{ new Date(v.created_at).toLocaleString() }}</div>
+            </div>
+            <button
+              class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300 shrink-0"
+              :disabled="restoringVersionNo === v.version_no"
+              @click="restoreVersion(v)"
+            >{{ restoringVersionNo === v.version_no ? '恢复中…' : '恢复' }}</button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PlotPoint, ChapterVersion, CharacterLook, DramaTemplate, EpisodeSummary } from '~/types'
+import type { PlotPoint, ChapterVersion, CharacterLook, EpisodeSummary } from '~/types'
 import { computeParaDiff, diffStats } from '~/composables/useTextDiff'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
 import { generateDiffFile } from '@git-diff-view/file'
@@ -562,7 +562,6 @@ const showRefinedPreview = ref(false)
 const showRightPanel = ref(true)
 
 // ── 精修章节 ──────────────────────────────────────────────────────────────────
-const outlinePanelTab = ref<'generate' | 'rewrite'>('generate')
 const writePanelTab = ref<'generate' | 'rewrite'>('generate')
 const rewriteInstruction = ref('')
 const rewriting = ref(false)
@@ -743,17 +742,6 @@ function rejectSelectionRefine() {
   selectionPopup.mode = 'input'
   selectionPopup.refinedText = ''
 }
-
-const OUTLINE_REWRITE_HINTS = [
-  '高潮章节太靠后，整体节奏前松后紧',
-  '中段剧情平淡，缺少冲突和转折',
-  '主角成长弧线不够清晰，补充关键节点',
-  '反派动机薄弱，增加对立线索',
-  '结局章节太仓促，拆分细化收尾',
-  '伏笔太少，在前期章节埋几条线索',
-  '某几章重复感强，合并或差异化',
-  '世界观展示太集中，分散到各章节',
-]
 
 const REWRITE_HISTORY_KEY = `rewrite-history-novel-${novelId}-chapter-${chapterNo}`
 const MAX_HISTORY = 20
@@ -1078,65 +1066,6 @@ async function handleGenerateOutline() {
     toast.error('生成失败：' + (e.message || ''))
   } finally {
     generatingOutline.value = false
-  }
-}
-
-// ── 剧本模板 ───────────────────────────────────────────────────────────────────
-const dramaTemplates = ref<DramaTemplate[]>([])
-// 默认读取小说上保存的模板；用户可在右侧面板临时覆盖
-const selectedDramaTemplateId = ref<number>(0)
-const loadingDramaTemplates = ref(false)
-
-async function loadDramaTemplates() {
-  if (dramaTemplates.value.length > 0) return
-  loadingDramaTemplates.value = true
-  try {
-    const api = useDramaTemplateApi()
-    const res = await api.listTemplates()
-    dramaTemplates.value = res.data ?? []
-    // 回填：用小说上保存的模板 ID 作为默认值
-    if (!selectedDramaTemplateId.value && novel.value?.drama_template_id) {
-      selectedDramaTemplateId.value = novel.value.drama_template_id
-    }
-  } catch {
-    // silent
-  } finally {
-    loadingDramaTemplates.value = false
-  }
-}
-
-// ── 全小说大纲生成 ─────────────────────────────────────────────────────────────
-const generatingNovelOutline = ref(false)
-
-async function handleGenerateNovelOutline() {
-  if (!await guardAiProvider('LLM')) return
-  generatingNovelOutline.value = true
-  try {
-    const overrides = {
-      max_tokens: advMaxTokens.value || undefined,
-      temperature: advTemperature.value || undefined,
-      timeout_seconds: advTimeoutSeconds.value || undefined,
-      drama_template_id: selectedDramaTemplateId.value || undefined,
-    }
-    const taskId = await novelStore.generateOutline(novelId, 10, prompt.value || undefined, overrides)
-    if (!taskId) {
-      toast.error('大纲生成失败：未获取到任务ID')
-      generatingNovelOutline.value = false
-      return
-    }
-    toast.info('大纲生成任务已提交，正在处理...')
-    taskStore.trackTask(taskId, async (task) => {
-      generatingNovelOutline.value = false
-      if (task.status === 'completed') {
-        await chapterStore.fetchChapters(novelId)
-        toast.success('大纲生成完成')
-      } else if (task.status === 'failed') {
-        toast.error('大纲生成失败：' + (task.error || '未知错误'))
-      }
-    })
-  } catch (e: any) {
-    toast.error('大纲生成失败：' + (e.message || '未知错误'))
-    generatingNovelOutline.value = false
   }
 }
 
@@ -1999,7 +1928,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 flex-shrink-0">
         <span v-if="autoSaveLabel" :class="saveFailed ? 'text-xs text-red-500' : 'text-xs text-gray-400 dark:text-gray-500'">{{ autoSaveLabel }}</span>
         <button
-          v-if="!showRightPanel && !['character', 'items', 'scenes', 'episodes'].includes(pageMode)"
+          v-if="!showRightPanel && !['character', 'items', 'scenes', 'episodes', 'outline'].includes(pageMode)"
           class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           title="显示 AI 助手"
           @click="showRightPanel = true"
@@ -2973,7 +2902,7 @@ onUnmounted(() => {
 
       <!-- Right: tools panel (hidden on export tab; character/items/scenes/episodes have no AI assistant panel) -->
       <aside
-        v-if="showRightPanel && !['character', 'items', 'scenes', 'episodes'].includes(pageMode) && !(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
+        v-if="showRightPanel && !['character', 'items', 'scenes', 'episodes', 'outline'].includes(pageMode) && !(pageMode === 'script' && videoEditorRef?.activeTab === 'export')"
         class="w-80 flex-shrink-0 flex flex-col min-h-0 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
       >
 
@@ -2992,7 +2921,6 @@ onUnmounted(() => {
             </p>
             <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
               {{
-                pageMode === 'outline' ? '大纲' :
                 pageMode === 'write' ? '写作' :
                 videoEditorRef?.activeTab === 'timeline' ? '时间线预览' :
                 videoEditorRef?.activeTab === 'sfx' ? '音效场景偏好' :
@@ -3101,181 +3029,8 @@ onUnmounted(() => {
         <!-- Panel content -->
         <div class="flex-1 overflow-auto">
 
-          <!-- ── 大纲 AI ── -->
-          <template v-if="pageMode === 'outline'">
-
-            <!-- Tab header：左右等宽 -->
-            <div class="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700">
-              <button
-                class="flex-1 py-2 text-xs font-medium transition-colors"
-                :class="outlinePanelTab === 'generate' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-                @click="outlinePanelTab = 'generate'"
-              >生成</button>
-              <button
-                class="flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1"
-                :class="outlinePanelTab === 'rewrite' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-                @click="outlinePanelTab = 'rewrite'"
-              >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                </svg>
-                精修
-              </button>
-            </div>
-
-            <!-- 生成 tab -->
-            <div v-if="outlinePanelTab === 'generate'" class="p-4 space-y-4">
-              <div class="space-y-3">
-                <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">生成整部小说的章节大纲，包含所有章节标题和剧情提要。</p>
-
-                <!-- 剧本模板（读取小说设置，可临时切换） -->
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-                    剧本模板
-                    <span class="font-normal text-gray-400">（在小说创建时设置）</span>
-                  </label>
-                  <div class="relative">
-                    <select
-                      v-model="selectedDramaTemplateId"
-                      class="w-full text-xs px-2.5 py-1.5 pr-7 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500 appearance-none"
-                      @focus="loadDramaTemplates"
-                    >
-                      <option :value="0">不使用模板</option>
-                      <option v-for="t in dramaTemplates" :key="t.id" :value="t.id">
-                        {{ t.name }}（{{ t.genre }}）
-                      </option>
-                    </select>
-                    <svg class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                  </div>
-                  <p
-                    v-if="selectedDramaTemplateId && dramaTemplates.find(t => t.id === selectedDramaTemplateId)"
-                    class="mt-1 text-[10px] text-primary-600 dark:text-primary-400 leading-relaxed"
-                  >{{ dramaTemplates.find(t => t.id === selectedDramaTemplateId)?.core_hook }}</p>
-                </div>
-
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">补充提示 <span class="font-normal text-gray-400">（可选）</span></label>
-                  <textarea
-                    v-model="prompt"
-                    rows="3"
-                    class="input text-sm resize-none"
-                    placeholder="对大纲方向的额外要求..."
-                  />
-                </div>
-                <button
-                  class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors"
-                  :disabled="generatingNovelOutline"
-                  @click="handleGenerateNovelOutline"
-                >
-                  <svg v-if="generatingNovelOutline" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                  </svg>
-                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                  </svg>
-                  {{ generatingNovelOutline ? '生成中...' : '生成大纲' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- 精修 tab -->
-            <div v-else-if="outlinePanelTab === 'rewrite'" class="p-4 space-y-4">
-
-              <div class="space-y-1.5">
-                <p class="text-xs font-medium text-gray-600 dark:text-gray-300">用自然语言描述精修需求</p>
-                <p class="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">描述你的修改需求，AI 会在保留原有情节的基础上进行精准改写，完成后生成新版本供预览。</p>
-              </div>
-
-              <!-- Quick hints -->
-              <div class="space-y-1.5">
-                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">快速填入</p>
-                <div class="flex flex-wrap gap-1.5">
-                  <button
-                    v-for="hint in OUTLINE_REWRITE_HINTS" :key="hint"
-                    class="text-[10px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-primary-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                    :disabled="rewriting"
-                    @click="rewriteInstruction = hint"
-                  >{{ hint }}</button>
-                </div>
-              </div>
-
-              <!-- Instruction input -->
-              <div class="space-y-2">
-                <textarea
-                  v-model="rewriteInstruction"
-                  rows="5"
-                  class="input text-sm resize-none"
-                  placeholder="例如：把结尾两段改得更有张力，制造悬念..."
-                  :disabled="rewriting"
-                  @keydown.ctrl.enter.prevent="handleRewriteByInstruction"
-                  @keydown.meta.enter.prevent="handleRewriteByInstruction"
-                />
-                <p class="text-[10px] text-gray-400">Ctrl+Enter 提交 · 精修完成后会弹出预览，可选择应用</p>
-              </div>
-
-              <!-- Error -->
-              <p v-if="rewriteError" class="text-xs text-red-500">{{ rewriteError }}</p>
-
-              <!-- Instruction history -->
-              <div v-if="rewriteHistory.length > 0" class="space-y-1">
-                <p class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-widest">历史指令</p>
-                <div class="space-y-1 max-h-40 overflow-y-auto pr-0.5">
-                  <div
-                    v-for="(h, idx) in rewriteHistory" :key="idx"
-                    class="group flex items-start gap-1.5 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-gray-50 dark:hover:bg-gray-800/60 transition-colors cursor-pointer"
-                    @click="rewriteInstruction = h"
-                  >
-                    <svg class="w-3 h-3 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 mt-0.5 flex-shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span class="flex-1 text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-2">{{ h }}</span>
-                    <button
-                      class="flex-shrink-0 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all"
-                      title="删除"
-                      @click.stop="deleteRewriteHistory(idx)"
-                    >
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Submit button -->
-              <button
-                class="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
-                :class="rewriting ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-primary-600 hover:bg-primary-700 text-white'"
-                :disabled="rewriting || !rewriteInstruction.trim() || !chapter?.content"
-                @click="handleRewriteByInstruction"
-              >
-                <svg v-if="rewriting" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                </svg>
-                {{ rewriting ? 'AI 精修中...' : '开始精修' }}
-              </button>
-
-              <!-- Progress -->
-              <div v-if="rewriting" class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
-                <div class="flex gap-1">
-                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:0ms"/>
-                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:150ms"/>
-                  <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style="animation-delay:300ms"/>
-                </div>
-                <p class="text-xs text-blue-600 dark:text-blue-400">AI 正在精修，通常需要 30-60 秒...</p>
-              </div>
-
-            </div>
-
-          </template>
-
           <!-- ── 写作 AI ── -->
-          <template v-else-if="pageMode === 'write'">
+          <template v-if="pageMode === 'write'">
 
             <!-- Tab header：左右等宽 -->
             <div class="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700">

@@ -12,6 +12,7 @@ import type {
   IgnoredSuggestion,
   EpisodeSummary,
   Asset,
+  StoryboardShotVersion,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -243,6 +244,14 @@ export const useVideoApi = () => {
   const listReviewRecords = (id: number) =>
     request<ApiResponse<ReviewRecord[]>>(`/videos/${id}/storyboard/reviews`)
 
+  const getStoryboardVersions = (id: number) =>
+    request<ApiResponse<StoryboardShotVersion[]>>(`/videos/${id}/storyboard/versions`)
+
+  const restoreStoryboardVersion = (id: number, versionNo: number) =>
+    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard/versions/${versionNo}/restore`, {
+      method: 'POST',
+    })
+
   const rollbackReview = (id: number, recordId: number) =>
     request<ApiResponse<{ restored_shots: number }>>(`/videos/${id}/storyboard/reviews/${recordId}/rollback`, {
       method: 'POST',
@@ -459,6 +468,8 @@ export const useVideoApi = () => {
     applyStoryboardDiffs,
     listReviewRecords,
     rollbackReview,
+    getStoryboardVersions,
+    restoreStoryboardVersion,
     insertShot,
     copyShot,
     deleteShot,

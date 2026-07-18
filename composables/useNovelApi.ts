@@ -31,20 +31,6 @@ export const useNovelApi = () => {
   const deleteNovel = (id: number) =>
     request<void>(`/novels/${id}`, { method: 'DELETE' })
 
-  const generateOutline = (id: number, data: {
-    chapter_num: number
-    prompt?: string
-    keywords?: string[]
-    max_tokens?: number
-    temperature?: number
-    timeout_seconds?: number
-    drama_template_id?: number
-  }) =>
-    request<ApiResponse<{ task_id: string }>>(`/novels/${id}/outline`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-
   const publishNovel = (id: number, visibility?: 'private' | 'unlisted' | 'public') =>
     request<ApiResponse<Novel>>(`/novels/${id}/publish`, {
       method: 'POST',
@@ -65,7 +51,6 @@ export const useNovelApi = () => {
     getNovel,
     updateNovel,
     deleteNovel,
-    generateOutline,
     publishNovel,
     unpublishNovel,
     generateCoverImage,

@@ -237,14 +237,6 @@ async function generateStoryboard(
   })
 }
 
-// 分场剧本生成成功后自动串联生成分镜脚本——复用 generateStoryboard 的确认弹窗/异步流程，
-// 不重复实现覆盖确认逻辑（已有分镜时 useStoryboardGeneration 内部会弹"重新生成将清空当前
-// 脚本，是否继续？"，用户可在此处取消，不会静默覆盖）。
-function handleScreenplayGenerated() {
-  toast.info('分场剧本已生成，正在自动生成分镜脚本…')
-  generateStoryboard()
-}
-
 function reviewStoryboard() {
   scriptTabRef.value?.handleReviewStoryboard()
 }
@@ -356,7 +348,6 @@ defineExpose({ activeTab, generateStoryboard, reviewStoryboard, generateAllImage
       ref="screenplayTabRef"
       :video-id="props.videoId"
       :llm-provider="props.llmProvider"
-      @generated="handleScreenplayGenerated"
     />
 
     <!-- ══ Script Tab ══════════════════════════════════════════════════════ -->

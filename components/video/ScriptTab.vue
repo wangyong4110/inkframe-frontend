@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, VideoQualityTier, Character, SceneAnchor, ScreenplayScene } from '~/types'
+import type { StoryboardShot, StoryboardShotVersion, VideoQualityTier, Character, SceneAnchor, ScreenplayScene } from '~/types'
 import { QUALITY_LABELS, QUALITY_COLORS, TRANSITION_OPTIONS } from '~/constants/status'
 import { parseSfxTags } from '~/utils/video'
 import { ossThumb } from '~/composables/useImageCache'
@@ -275,6 +275,46 @@ const reviewing = computed(() => showReviewPanel.value)
 function openReviewPanel() {
   reviewPanelMounted.value = true
   showReviewPanel.value = true
+}
+
+// ── 分镜历史版本：查看/恢复（整视频一份快照，见后端 StoryboardShotVersion 注释）──
+const showShotVersions = ref(false)
+const shotVersions = ref<StoryboardShotVersion[]>([])
+const loadingShotVersions = ref(false)
+const restoringShotVersionNo = ref<number | null>(null)
+
+async function openShotVersions() {
+  showShotVersions.value = true
+  loadingShotVersions.value = true
+  try {
+    const res = await videoApi.getStoryboardVersions(props.videoId)
+    shotVersions.value = res.data ?? []
+  } catch (e: any) {
+    toast.error('加载历史版本失败：' + (e.message || '未知错误'))
+  } finally {
+    loadingShotVersions.value = false
+  }
+}
+
+function closeShotVersions() {
+  showShotVersions.value = false
+  shotVersions.value = []
+}
+
+async function restoreShotVersion(version: StoryboardShotVersion) {
+  const ok = await confirm(`恢复到第 ${version.version_no} 个历史版本（共 ${version.shot_count} 个分镜）？当前分镜会被覆盖（当前内容本身也会在恢复前自动保留一条历史版本）。`)
+  if (!ok) return
+  restoringShotVersionNo.value = version.version_no
+  try {
+    await videoApi.restoreStoryboardVersion(props.videoId, version.version_no)
+    await videoStore.fetchStoryboard(props.videoId)
+    toast.success('已恢复')
+    closeShotVersions()
+  } catch (e: any) {
+    toast.error('恢复失败：' + (e.message || '未知错误'))
+  } finally {
+    restoringShotVersionNo.value = null
+  }
 }
 
 // ── Voice text inline edit (shared with voice tab context) ──
@@ -677,6 +717,7 @@ defineExpose({ handleReviewStoryboard })
         </div>
       </div>
       <div class="flex-1" />
+      <button class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300" @click="openShotVersions">历史版本</button>
     </div>
 
     <!-- Hidden file input for shot image upload -->
@@ -1078,6 +1119,34 @@ defineExpose({ handleReviewStoryboard })
       @close="showReviewPanel = false"
     />
 
+    <!-- 分镜历史版本弹窗 -->
+    <div v-if="showShotVersions" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/50" @click="closeShotVersions"></div>
+      <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100">分镜历史版本</h3>
+          <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="closeShotVersions">✕</button>
+        </div>
+        <div v-if="loadingShotVersions" class="text-center py-8 text-gray-400 text-sm">加载中…</div>
+        <div v-else-if="!shotVersions.length" class="text-center py-8 text-gray-400 text-sm">暂无历史版本</div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="v in shotVersions" :key="v.id"
+            class="flex items-center justify-between gap-2 border border-gray-100 dark:border-gray-700 rounded-lg px-3 py-2"
+          >
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              <div>版本 {{ v.version_no }} · {{ v.shot_count }} 个分镜（{{ v.change_type === 'restore' ? '恢复前保留' : '重新生成前保留' }}）</div>
+              <div>{{ new Date(v.created_at).toLocaleString() }}</div>
+            </div>
+            <button
+              class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300 shrink-0"
+              :disabled="restoringShotVersionNo === v.version_no"
+              @click="restoreShotVersion(v)"
+            >{{ restoringShotVersionNo === v.version_no ? '恢复中…' : '恢复' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
