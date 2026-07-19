@@ -106,33 +106,11 @@ let _pendingVideoAction: (() => void) | null = null
 const anchors = computed(() => sceneAnchorStore.anchors)
 const characters = computed(() => characterStore.characters)
 
-// Inline motion_prompt editing
-const editingMotionPromptId = ref<number | null>(null)
 const editingMetaShotId = ref<number | null>(null)
 
 onMounted(() => { document.addEventListener('click', closeMetaEdit) })
 onUnmounted(() => { document.removeEventListener('click', closeMetaEdit) })
 function closeMetaEdit() { editingMetaShotId.value = null }
-const motionPromptDraft = ref('')
-const savingMotionPrompt = ref(false)
-
-function startEditMotionPrompt(shot: StoryboardShot) {
-  editingMotionPromptId.value = shot.id
-  motionPromptDraft.value = shot.motion_prompt || ''
-}
-
-async function saveMotionPrompt(shot: StoryboardShot) {
-  if (savingMotionPrompt.value) return
-  savingMotionPrompt.value = true
-  try {
-    await videoStore.updateShot(props.videoId, shot.id, { motion_prompt: motionPromptDraft.value })
-    editingMotionPromptId.value = null
-  } catch (e: any) {
-    toast.error('保存失败：' + (e.message || ''))
-  } finally {
-    savingMotionPrompt.value = false
-  }
-}
 
 // Pre-computed map for O(1) character lookups by id in the template.
 const characterById = computed(() => {
@@ -746,13 +724,6 @@ defineExpose({
                       {{ shot.narration || shot.description || '（无描述）' }}
                     </p>
                   </div>
-                  <!-- 视频提示词（只读，点击进入编辑） -->
-                  <p
-                    v-if="editingMotionPromptId !== shot.id"
-                    class="text-xs text-gray-400 dark:text-gray-500 italic line-clamp-1 cursor-pointer hover:text-primary-500 transition-colors mt-0.5"
-                    :title="shot.motion_prompt || '点击添加视频提示词'"
-                    @click.stop="startEditMotionPrompt(shot)"
-                  >{{ shot.motion_prompt || '+ 视频提示词' }}</p>
                 </div>
                 <div class="flex-shrink-0 flex flex-col items-end gap-1">
                   <div class="flex items-center gap-1">
@@ -813,21 +784,6 @@ defineExpose({
                     class="text-[10px] text-red-400 dark:text-red-500 max-w-[160px] text-right leading-snug"
                     :title="shot.error_message"
                   >{{ shot.error_message.length > 60 ? shot.error_message.slice(0, 60) + '…' : shot.error_message }}</span>
-                </div>
-              </div>
-              <!-- 视频提示词内联编辑（全宽） -->
-              <div v-if="editingMotionPromptId === shot.id" class="flex items-start gap-1 mt-1">
-                <textarea
-                  v-model="motionPromptDraft"
-                  rows="2"
-                  class="input text-xs resize-none flex-1 font-mono"
-                  placeholder="视频提示词（motion prompt）"
-                  @keydown.enter.ctrl="saveMotionPrompt(shot)"
-                  @keydown.esc="editingMotionPromptId = null"
-                />
-                <div class="flex flex-col gap-1 flex-shrink-0">
-                  <button class="btn-primary text-[10px] py-0.5 px-1.5" :disabled="savingMotionPrompt" @click="saveMotionPrompt(shot)">保存</button>
-                  <button class="btn-outline text-[10px] py-0.5 px-1.5" @click="editingMotionPromptId = null">取消</button>
                 </div>
               </div>
               <!-- 运动 / 时长 / 过渡 — 只读态点击进入编辑 -->

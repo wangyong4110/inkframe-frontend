@@ -215,25 +215,17 @@ watch(activeTab, async (tab) => {
 const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
 
 async function generateStoryboard(
-  userPrompt?: string,
-  pacing?: string,
-  targetDuration?: number,
   maxTokens?: number,
   temperature?: number,
   timeoutSeconds?: number,
-  voiceMode?: string,
   providerOverride?: string,
 ) {
   await _generateStoryboard({
     videoId: props.videoId,
     provider: providerOverride || props.llmProvider || undefined,
-    userPrompt,
-    pacing,
-    targetDuration,
     maxTokens,
     temperature,
     timeoutSeconds,
-    voiceMode,
   })
 }
 

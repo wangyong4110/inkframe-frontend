@@ -13,6 +13,7 @@ import type {
   EpisodeSummary,
   Asset,
   StoryboardShotVersion,
+  ShotSummary,
 } from '~/types'
 
 export const useVideoApi = () => {
@@ -202,7 +203,7 @@ export const useVideoApi = () => {
       body: JSON.stringify(data),
     })
 
-  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number; voice_mode?: string }) =>
+  const generateStoryboard = (id: number, data?: { chapter_id?: number; provider?: string; max_tokens?: number; temperature?: number; timeout_seconds?: number }) =>
     request<ApiResponse<{ task_id: string }>>(`/videos/${id}/storyboard/generate`, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
@@ -211,8 +212,11 @@ export const useVideoApi = () => {
   const getVideoProviders = () =>
     request<ApiResponse<{ name: string; display_name: string }[]>>('/videos/providers')
 
-  const getStoryboard = (id: number) =>
-    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard`)
+  const getStoryboard = (id: number, sceneId?: number) =>
+    request<ApiResponse<StoryboardShot[]>>(`/videos/${id}/storyboard${sceneId ? `?scene_id=${sceneId}` : ''}`)
+
+  const getStoryboardSummary = (id: number) =>
+    request<ApiResponse<ShotSummary[]>>(`/videos/${id}/storyboard/summary`)
 
   const updateStoryboardShot = (videoId: number, shotId: number, data: Partial<StoryboardShot>) =>
     request<ApiResponse<StoryboardShot>>(`/videos/${videoId}/storyboard/${shotId}`, {
@@ -443,6 +447,7 @@ export const useVideoApi = () => {
     updateVideo,
     generateStoryboard,
     getStoryboard,
+    getStoryboardSummary,
     updateStoryboardShot,
     generateShot,
     batchGenerateShots,

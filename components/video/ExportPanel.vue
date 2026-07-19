@@ -5,6 +5,9 @@ const props = defineProps<{
   videoId: number
   shots: StoryboardShot[]
 }>()
+// refreshed：补全任务全部完成后触发，供不经过 videoStore.storyboard 响应式绑定的调用方
+// （如 produce-v2.vue 自行维护的本地分镜副本）借机重新拉取，保持进度展示同步。
+const emit = defineEmits<{ refreshed: [] }>()
 
 const videoStore = useVideoStore()
 const toast = useToast()
@@ -43,6 +46,7 @@ async function handleBatchGenerate() {
         doneCount++
         if (task.status === 'completed' && doneCount >= taskIds.length) {
           await videoStore.fetchStoryboard(props.videoId)
+          emit('refreshed')
           toast.success('素材补全完成')
         } else if (task.status === 'failed') {
           toast.error('部分素材生成失败，请检查')

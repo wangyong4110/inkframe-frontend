@@ -4,13 +4,9 @@ import { useTaskStore } from '~/stores/task'
 
 export interface GenerateStoryboardOptions {
   provider?: string
-  userPrompt?: string
-  pacing?: string
-  targetDuration?: number
   maxTokens?: number
   temperature?: number
   timeoutSeconds?: number
-  voiceMode?: string
 }
 
 export interface CreateVideoOptions {
@@ -166,7 +162,7 @@ export const useVideoStore = defineStore('video', {
     },
 
     async generateStoryboard(videoId: number, opts: GenerateStoryboardOptions = {}) {
-      const { provider, userPrompt, pacing, targetDuration, maxTokens, temperature, timeoutSeconds, voiceMode } = opts
+      const { provider, maxTokens, temperature, timeoutSeconds } = opts
       this.generating = true
       this.storyboardTaskIsNew = true
       this.error = null
@@ -175,15 +171,11 @@ export const useVideoStore = defineStore('video', {
 
       try {
         const api = useVideoApi()
-        const body: { provider?: string; user_prompt?: string; pacing?: string; target_duration?: number; max_tokens?: number; temperature?: number; timeout_seconds?: number; voice_mode?: string } = {}
+        const body: { provider?: string; max_tokens?: number; temperature?: number; timeout_seconds?: number } = {}
         if (provider) body.provider = provider
-        if (userPrompt?.trim()) body.user_prompt = userPrompt.trim()
-        if (pacing) body.pacing = pacing
-        if (targetDuration) body.target_duration = targetDuration
         if (maxTokens && maxTokens > 0) body.max_tokens = maxTokens
         if (temperature && temperature > 0) body.temperature = temperature
         if (timeoutSeconds && timeoutSeconds > 0) body.timeout_seconds = timeoutSeconds
-        if (voiceMode && voiceMode !== 'auto' && voiceMode !== 'both') body.voice_mode = voiceMode
         const response = await api.generateStoryboard(videoId, Object.keys(body).length ? body : undefined)
         const taskId = response.data?.task_id
         if (!taskId) throw new Error('未获取到任务ID')

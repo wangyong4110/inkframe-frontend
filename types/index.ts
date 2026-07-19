@@ -246,6 +246,7 @@ export type EntityType = 'location' | 'organization' | 'artifact' | 'race' | 'cr
 export type VideoQualityTier = 'draft' | 'preview' | 'final'
 
 export type VideoMode = 'video' | 'slideshow'
+export type StoryboardMode = 'professional' | 'faithful' | 'concise'
 
 export interface VideoRenderConfig {
   resolution?: string
@@ -270,6 +271,7 @@ export interface Video {
   title: string
   status: VideoStatus
   mode?: VideoMode
+  storyboard_mode?: StoryboardMode
   quality_tier?: VideoQualityTier
   frame_rate: number
   resolution: string
@@ -342,8 +344,7 @@ export interface StoryboardShot {
   video_id: number
   uuid: string
   shot_no: number
-  description?: string  // 画面场景描述（叙事参考，不直接用于生图）
-  prompt?: string       // 图片生成提示词（实际传给图片AI，英文结构化 prompt）
+  description?: string  // 画面描述，AI 出图/出视频与人工叙事参考共用的唯一生成提示词
   narration?: string    // 中文旁白文案，供 TTS 朗读和字幕显示
   dialogue?: string     // 角色台词（格式："角色名：台词"），无对话时为空
   subtitle?: string     // 字幕覆盖文本，非空时优先用于导出，不影响 TTS
@@ -366,9 +367,17 @@ export interface StoryboardShot {
   sfx_url?: string      // 音效文件URL
   sfx_tags?: string     // LLM提取的音效标签（JSON数组字符串）
   transition?: ShotTransition  // 过渡方式：cut/fade/dissolve/wipe
-  negative_prompt?: string
-  motion_prompt?: string
   shot_task_id?: string  // 正在生成中的任务ID，用于取消
+}
+
+// 分镜轻量汇总（GET /videos/:id/storyboard/summary）：不含 description 等大字段，
+// 供场次侧边栏/时间轴等只需时长/缩略图/场次归属的聚合展示场景使用。
+export interface ShotSummary {
+  id: number
+  shot_no: number
+  duration: number
+  image_url?: string
+  screenplay_scene_id?: number
 }
 
 // SFX tag item (sfx_tags JSON field on StoryboardShot)
@@ -468,6 +477,7 @@ export interface ShotSceneConfig {
 export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'dead'
 export type AsyncTaskType =
   | 'storyboard_gen'
+  | 'screenplay_gen'
   | 'chapter_gen'
   | 'voice_gen'
   | 'image_gen'
@@ -723,7 +733,6 @@ export interface ScreenplayScene {
   heading: string
   scene_anchor_id?: number
   synopsis: string
-  character_ids: number[]
   emotional_tone: string
   beats: string
   estimated_shot_count: number

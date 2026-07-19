@@ -1235,12 +1235,8 @@ async function handleSetShotAnchor(shot: any, anchorId: number | null) {
 const currentVideoId = ref<number | null>(null)
 const videoEditorRef = ref<any>(null)
 const generatingScript = ref(false)
-const scriptUserPrompt = ref('')
 // AI 参数从 cookie 恢复（刷新页面后保留用户手动设置的值）
 const {
-  pacing: scriptPacing,
-  targetDuration: scriptTargetDuration,
-  voiceMode: scriptVoiceMode,
   advMaxTokens,
   advTemperature,
   advTimeoutSeconds,
@@ -1260,40 +1256,13 @@ const showScriptAdvancedParams = showAdvancedParams
 const scriptMaxTokens = advMaxTokens
 const scriptTemperature = advTemperature
 const scriptTimeoutSeconds = advTimeoutSeconds
-const pacingOptions = [
-  { value: 'auto'   as const, label: '自动' },
-  { value: 'slow'   as const, label: '慢' },
-  { value: 'normal' as const, label: '标准' },
-  { value: 'fast'   as const, label: '快' },
-]
-const durationOptions = [
-  { value: 0,   label: '自动' },
-  { value: 30,  label: '30秒' },
-  { value: 60,  label: '1分' },
-  { value: 120, label: '2分' },
-  { value: 180, label: '3分' },
-  { value: 300, label: '5分' },
-  { value: 600, label: '10分' },
-  { value: 900, label: '15分' },
-]
-const scriptDurationIsCustom = computed(() => !durationOptions.some(d => d.value === scriptTargetDuration.value))
-const showScriptCustomDuration = ref(false)
-const scriptCustomDurationMins = ref(5)
-watch(scriptCustomDurationMins, (v) => {
-  scriptTargetDuration.value = Math.max(0, Math.round(v * 60))
-})
-const scriptAvgShotDur = computed(() => ({ auto: 5, slow: 8, normal: 5, fast: 3 }[scriptPacing.value] ?? 5))
+// 分镜数量估算：与后端 calcTotalShots 自动模式逻辑对齐
+// 估算视频时长(秒) = 字数 * 2 / 25（约 300字/分阅读速度 × 0.4 精炼比），平均单镜时长固定 4 秒
 const scriptEstimatedShots = computed(() => {
-  const avgSec = scriptAvgShotDur.value
-  if (scriptTargetDuration.value > 0) {
-    return Math.max(3, Math.round(scriptTargetDuration.value / avgSec))
-  }
-  // 自动模式：与后端 calcTotalShots 逻辑对齐
-  // 估算视频时长(秒) = 字数 * 2 / 25（约 300字/分阅读速度 × 0.4 精炼比）
   const totalChars = chapter.value?.content?.length ?? 0
   if (totalChars <= 0) return '自动'
   const estimatedSecs = Math.round(totalChars * 2 / 25)
-  return Math.min(200, Math.max(5, Math.round(estimatedSecs / avgSec)))
+  return Math.min(200, Math.max(5, Math.round(estimatedSecs / 4)))
 })
 
 async function switchToScript() {
@@ -1307,13 +1276,9 @@ async function switchToScript() {
 async function handleGenerateScript() {
   if (!await guardAiProvider('LLM')) return
   if (!chapter.value) return
-  const prompt = scriptUserPrompt.value || undefined
-  const pacing = (scriptPacing.value !== 'normal' && scriptPacing.value !== 'auto') ? scriptPacing.value : undefined
-  const duration = scriptTargetDuration.value || undefined
   const maxTokens = scriptMaxTokens.value || undefined
   const temperature = scriptTemperature.value || undefined
   const timeout = scriptTimeoutSeconds.value || undefined
-  const voiceMode = (scriptVoiceMode.value && scriptVoiceMode.value !== 'auto' && scriptVoiceMode.value !== 'both') ? scriptVoiceMode.value : undefined
   const scriptProvider = scriptProviderOverride.value || undefined
   if (!currentVideoId.value) {
     // Auto-create project with defaults, then generate
@@ -1324,14 +1289,14 @@ async function handleGenerateScript() {
       chapterVideos.value.unshift(video)
       currentVideoId.value = video.id
       await nextTick()
-      videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode, scriptProvider)
+      videoEditorRef.value?.generateStoryboard(maxTokens, temperature, timeout, scriptProvider)
     } catch (e: any) {
       toast.error('创建失败：' + (e.message || '未知错误'))
     } finally {
       generatingScript.value = false
     }
   } else {
-    videoEditorRef.value?.generateStoryboard(prompt, pacing, duration, maxTokens, temperature, timeout, voiceMode, scriptProvider)
+    videoEditorRef.value?.generateStoryboard(maxTokens, temperature, timeout, scriptProvider)
   }
 }
 
@@ -2749,7 +2714,9 @@ onUnmounted(() => {
           <VideoScreenplayTab
             v-if="chapter"
             :chapter-id="chapter.id"
+            :chapter-title="chapter.title || `第${chapterNo}章`"
             :llm-provider="novel?.ai_model || ''"
+            collapsed-list
           />
         </div>
 
@@ -2757,6 +2724,12 @@ onUnmounted(() => {
         <div v-else-if="pageMode === 'script'" class="h-full overflow-auto">
           <!-- Video editor -->
           <div v-if="currentVideoId" class="px-8 py-6">
+            <div class="flex justify-end mb-2">
+              <button
+                class="text-xs px-2.5 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300"
+                @click="router.push(`/video/${currentVideoId}/produce-v2`)"
+              >在新版视频生成页面中打开</button>
+            </div>
             <VideoEditor ref="videoEditorRef" :video-id="(currentVideoId as number)" :llm-provider="novel?.ai_model || ''" />
           </div>
 
@@ -3272,75 +3245,9 @@ onUnmounted(() => {
 
             <!-- ── 脚本 AI 助手（其余 tab）── -->
             <div v-else class="p-4 space-y-4">
-              <!-- 节奏 -->
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">节奏</label>
-                <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                  <button
-                    v-for="p in pacingOptions" :key="p.value"
-                    class="flex-1 py-1.5 text-xs transition-colors"
-                    :class="scriptPacing === p.value ? 'bg-primary-500 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-750'"
-                    @click="scriptPacing = p.value"
-                  >{{ p.label }}</button>
-                </div>
-              </div>
-              <!-- 时长 -->
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">目标时长</label>
-                <div class="flex flex-wrap gap-1">
-                  <button
-                    v-for="d in durationOptions" :key="d.value"
-                    class="px-2.5 py-1 text-xs rounded-md border transition-colors"
-                    :class="scriptTargetDuration === d.value && !scriptDurationIsCustom
-                      ? 'bg-primary-500 border-primary-500 text-white'
-                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-300'"
-                    @click="scriptTargetDuration = d.value; showScriptCustomDuration = false"
-                  >{{ d.label }}</button>
-                  <button
-                    class="px-2.5 py-1 text-xs rounded-md border transition-colors"
-                    :class="scriptDurationIsCustom || showScriptCustomDuration
-                      ? 'bg-primary-500 text-white border-primary-500'
-                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-primary-300'"
-                    @click="showScriptCustomDuration = !showScriptCustomDuration; if (scriptDurationIsCustom) scriptCustomDurationMins = scriptTargetDuration / 60"
-                  >自定义</button>
-                </div>
-                <div v-if="showScriptCustomDuration" class="flex items-center gap-2 mt-1.5">
-                  <input
-                    v-model.number="scriptCustomDurationMins"
-                    type="number" min="0.5" max="120" step="0.5"
-                    class="w-20 px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
-                  />
-                  <span class="text-xs text-gray-400">分钟</span>
-                  <span v-if="scriptTargetDuration > 0" class="text-xs text-primary-500">= {{ scriptTargetDuration }}秒</span>
-                </div>
-                <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
-                  预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头<span v-if="scriptTargetDuration === 0 && typeof scriptEstimatedShots === 'number'" class="ml-1 text-gray-400">（按字数估算）</span>
-                </p>
-              </div>
-              <!-- 配音模式 -->
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">配音模式</label>
-                <select
-                  v-model="scriptVoiceMode"
-                  class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="auto">自动</option>
-                  <option value="narration">仅旁白</option>
-                  <option value="dialogue">仅对白</option>
-                  <option value="narration_primary">旁白为主</option>
-                  <option value="dialogue_primary">对白为主</option>
-                </select>
-              </div>
-              <!-- 用户提示词 -->
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">额外要求（可选）</label>
-                <textarea
-                  v-model="scriptUserPrompt"
-                  rows="3"
-                  placeholder="例如：镜头以第一视角为主，多用近景特写，风格写实…"
-                  class="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-              </div>
+              <p class="text-[10px] text-gray-400 dark:text-gray-500">
+                预计约 <span class="font-medium text-gray-600 dark:text-gray-300">{{ scriptEstimatedShots }}</span> 个镜头（按字数估算）
+              </p>
               <!-- 内联模型选择 -->
               <div v-if="llmProviders.length > 0" class="flex items-center gap-1.5">
                 <span class="text-xs text-gray-400 flex-shrink-0">模型</span>

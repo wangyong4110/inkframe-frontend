@@ -12,7 +12,6 @@ const router = useRouter()
 const { url: lightboxUrl, openLightbox } = useImageLightbox()
 const { editImage } = useImageEditApi()
 const videoStore = useVideoStore()
-const novelStore = useNovelStore()
 const sceneAnchorStore = useSceneAnchorStore()
 const characterStore = useCharacterStore()
 const chapterStore = useChapterStore()
@@ -74,8 +73,7 @@ async function handleRegeneratePrompt(shot: StoryboardShot) {
     // 若正在编辑这个分镜，编辑框里的草稿是独立于 store 的本地拷贝，需要同步更新，
     // 否则界面上看到的还是重新生成前的旧文本。
     if (editingId.value === shot.id && updated) {
-      editForm.value.prompt = updated.prompt || ''
-      editForm.value.motion_prompt = updated.motion_prompt || ''
+      editForm.value.description = updated.description || ''
     }
     toast.success('提示词已根据当前绑定重新生成')
   } catch (e: any) {
@@ -170,82 +168,6 @@ function unassignedCharacters(shot: StoryboardShot) {
     : characters.value
   return pool.filter(c => !assigned.has(c.id))
 }
-
-// ── AI params ──
-const {
-  pacing,
-  targetDuration,
-  advMaxTokens,
-  advTemperature,
-  advTimeoutSeconds,
-  voiceMode,
-  initFromNovel: initAiParamsFromNovel,
-  initFromVideo: initAiParamsFromVideo,
-} = useAiGenerationParams()
-
-const storyboardUserPrompt = ref('')
-const showAdvancedParams = ref(false)
-
-let pacingInitialized = false
-watch(video, (v) => {
-  if (v && !pacingInitialized) {
-    initAiParamsFromVideo(v)
-    pacingInitialized = true
-  }
-}, { immediate: true })
-
-watch(() => novelStore.currentNovel, (n) => {
-  initAiParamsFromNovel(n)
-}, { immediate: true })
-
-const pacingOptions = [
-  { value: 'slow' as const,   label: '慢',   hint: '≈8s/镜' },
-  { value: 'normal' as const, label: '标准', hint: '≈5s/镜' },
-  { value: 'fast' as const,   label: '快',   hint: '≈3s/镜' },
-]
-const durationPresets = [
-  { value: 0,   label: '自动' },
-  { value: 30,  label: '30秒' },
-  { value: 60,  label: '1分' },
-  { value: 120, label: '2分' },
-  { value: 180, label: '3分' },
-  { value: 300, label: '5分' },
-  { value: 600, label: '10分' },
-  { value: 900, label: '15分' },
-]
-const showCustomDuration = ref(false)
-const customDurationMins = ref(5)
-
-function selectDurationPreset(val: number) {
-  targetDuration.value = val
-  showCustomDuration.value = false
-}
-function applyCustomDuration() {
-  const secs = Math.max(0, Math.round(customDurationMins.value * 60))
-  targetDuration.value = secs
-}
-// Track if current value matches any preset
-const durationIsCustom = computed(() =>
-  !durationPresets.some(d => d.value === targetDuration.value)
-)
-// When user types in custom input, apply immediately
-watch(customDurationMins, applyCustomDuration)
-
-const avgShotDur = computed(() => ({ slow: 8, normal: 5, fast: 3 }[pacing.value] ?? 5))
-const estimatedShots = computed(() =>
-  targetDuration.value > 0
-    ? Math.max(3, Math.round(targetDuration.value / avgShotDur.value))
-    : null
-)
-const estimatedShotsSummary = computed(() => {
-  if (!estimatedShots.value) return 'AI 自动决定镜头数'
-  const mins = Math.floor(targetDuration.value / 60)
-  const secs = targetDuration.value % 60
-  const timeStr = mins > 0
-    ? (secs > 0 ? `${mins}分${secs}秒` : `${mins}分钟`)
-    : `${secs}秒`
-  return `预计约 ${estimatedShots.value} 个镜头 · ${timeStr}`
-})
 
 // ── Options ──
 const CAMERA_TYPE_OPTIONS = [
@@ -401,14 +323,12 @@ function startEdit(shot: StoryboardShot) {
   editingId.value = shot.id
   editForm.value = {
     description: shot.description,
-    prompt: shot.prompt || '',
     narration: shot.narration,
     dialogue: shot.dialogue,
     camera_type: shot.camera_type,
     duration: shot.duration,
     transition: shot.transition || 'cut',
     sfx_tags: shot.sfx_tags || '',
-    motion_prompt: shot.motion_prompt || '',
   }
 }
 
@@ -454,27 +374,6 @@ async function saveVoiceText(shot: StoryboardShot) {
 }
 
 
-
-const { generateStoryboard: _generateStoryboard } = useStoryboardGeneration()
-
-async function handleGenerateStoryboard(userPrompt?: string) {
-  if (!await guardAiProvider('LLM')) return
-  const novel = novelStore.currentNovel
-  const effectiveMaxTokens = advMaxTokens.value || novel?.max_tokens || undefined
-  const effectiveTemperature = advTemperature.value || novel?.temperature || undefined
-  const effectiveTimeout = advTimeoutSeconds.value || novel?.timeout_seconds || undefined
-  await _generateStoryboard({
-    videoId: props.videoId,
-    provider: props.llmProvider || undefined,
-    userPrompt,
-    pacing: pacing.value,
-    targetDuration: targetDuration.value,
-    maxTokens: effectiveMaxTokens,
-    temperature: effectiveTemperature,
-    timeoutSeconds: effectiveTimeout,
-    voiceMode: voiceMode.value,
-  })
-}
 
 function handleReviewStoryboard() {
   openReviewPanel()
@@ -793,17 +692,13 @@ defineExpose({ handleReviewStoryboard })
               </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">画面描述<span class="ml-1 text-gray-400 font-normal">（叙事参考）</span></label>
-              <textarea v-model="editForm.description" rows="2" class="input text-sm resize-none font-mono" placeholder="场景画面描述（供参考，不直接用于生图）" />
-            </div>
-            <div>
               <div class="flex items-center justify-between mb-1">
-                <label class="block text-xs font-medium text-gray-500">图片生成提示词<span class="ml-1 text-blue-500 font-normal">（实际用于AI生图）</span></label>
+                <label class="block text-xs font-medium text-gray-500">画面描述<span class="ml-1 text-blue-500 font-normal">（AI 出图/出视频的唯一依据）</span></label>
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-2 h-6 rounded transition-colors disabled:opacity-40"
                   :disabled="regeneratingPromptShotId === shot.id"
-                  title="根据当前绑定的场景/角色/道具重新生成图像和视频提示词"
+                  title="根据当前绑定的场景/角色/道具重新生成画面描述"
                   @click="handleRegeneratePrompt(shot)"
                 >
                   <svg v-if="regeneratingPromptShotId === shot.id" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -816,16 +711,7 @@ defineExpose({ handleReviewStoryboard })
                   {{ regeneratingPromptShotId === shot.id ? '生成中…' : '按当前绑定重新生成' }}
                 </button>
               </div>
-              <textarea v-model="editForm.prompt" rows="3" class="input text-sm resize-none font-mono" placeholder="English structured image prompt — leave empty to use auto-generated prompt from storyboard AI..." />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">视频提示词</label>
-              <textarea
-                v-model="editForm.motion_prompt"
-                rows="2"
-                class="input text-sm resize-none font-mono"
-                placeholder="视频生成提示词（Kling/Seedance），留空则自动生成"
-              />
+              <textarea v-model="editForm.description" rows="4" class="input text-sm resize-none font-mono" placeholder="画面描述——留空则使用分镜脚本 AI 自动生成的描述..." />
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">旁白文案（用于TTS和字幕）</label>

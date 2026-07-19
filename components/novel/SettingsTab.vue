@@ -461,7 +461,7 @@ const selectedAspectRatio = computed(() =>
             :key="t.value"
             type="button"
             class="flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-left"
-            :class="(novel?.video_type ?? 'animation') === t.value
+            :class="(novel?.video_type || 'animation') === t.value
               ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
               : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:border-gray-300'"
             @click="novelStore.updateNovel(novelId, { video_type: t.value })"

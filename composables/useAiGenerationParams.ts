@@ -2,18 +2,15 @@
  * useAiGenerationParams
  *
  * Persists AI generation parameters in a single cookie so they survive page
- * refreshes. Cookie values take priority over novel/video DB defaults.
+ * refreshes. Cookie values take priority over novel DB defaults.
  * undefined in the cookie means "user has not explicitly set this param yet";
- * in that case initFromNovel / initFromVideo may fill in project defaults.
+ * in that case initFromNovel may fill in project defaults.
  */
 
 interface AiGenParamsCookie {
-  pacing?: 'auto' | 'slow' | 'normal' | 'fast'
-  targetDuration?: number
   maxTokens?: number
   temperature?: number
   timeoutSeconds?: number
-  voiceMode?: 'auto' | 'narration' | 'dialogue' | 'narration_primary' | 'dialogue_primary'
 }
 
 export const useAiGenerationParams = () => {
@@ -25,20 +22,14 @@ export const useAiGenerationParams = () => {
   })
 
   // ── Working refs — initialized from cookie, fall back to sensible defaults ──
-  const pacing            = ref<'auto' | 'slow' | 'normal' | 'fast'>(cookie.value?.pacing ?? 'auto')
-  const targetDuration    = ref<number>(cookie.value?.targetDuration ?? 0)
   const advMaxTokens      = ref<number>(cookie.value?.maxTokens ?? 0)
   const advTemperature    = ref<number>(cookie.value?.temperature ?? 0)
   const advTimeoutSeconds = ref<number>(cookie.value?.timeoutSeconds ?? 0)
-  const voiceMode         = ref<'auto' | 'narration' | 'dialogue' | 'narration_primary' | 'dialogue_primary'>(cookie.value?.voiceMode ?? 'auto')
 
   // ── Auto-save to cookie whenever any param changes ─────────────────────────
-  watch(pacing,            (v) => { cookie.value = { ...cookie.value, pacing: v } })
-  watch(targetDuration,    (v) => { cookie.value = { ...cookie.value, targetDuration: v } })
   watch(advMaxTokens,      (v) => { cookie.value = { ...cookie.value, maxTokens: v } })
   watch(advTemperature,    (v) => { cookie.value = { ...cookie.value, temperature: v } })
   watch(advTimeoutSeconds, (v) => { cookie.value = { ...cookie.value, timeoutSeconds: v } })
-  watch(voiceMode,         (v) => { cookie.value = { ...cookie.value, voiceMode: v } })
 
   // ── Initialise from novel project config (skipped if user already set param) ─
   function initFromNovel(novel: {
@@ -55,26 +46,10 @@ export const useAiGenerationParams = () => {
       advTimeoutSeconds.value = novel.timeout_seconds
   }
 
-  // ── Initialise from video DB record (skipped if user already set param) ────
-  function initFromVideo(video: {
-    pacing?: string
-    target_duration?: number
-  } | null | undefined) {
-    if (!video) return
-    if (cookie.value?.pacing === undefined)
-      pacing.value = (video.pacing as 'auto' | 'slow' | 'normal' | 'fast') ?? 'auto'
-    if (cookie.value?.targetDuration === undefined)
-      targetDuration.value = video.target_duration ?? 0
-  }
-
   return {
-    pacing,
-    targetDuration,
     advMaxTokens,
     advTemperature,
     advTimeoutSeconds,
-    voiceMode,
     initFromNovel,
-    initFromVideo,
   }
 }

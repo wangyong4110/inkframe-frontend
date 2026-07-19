@@ -6,13 +6,9 @@
 export interface GenerateStoryboardParams {
   videoId: number
   provider?: string
-  userPrompt?: string
-  pacing?: string
-  targetDuration?: number
   maxTokens?: number
   temperature?: number
   timeoutSeconds?: number
-  voiceMode?: string
 }
 
 export function useStoryboardGeneration() {
@@ -28,13 +24,9 @@ export function useStoryboardGeneration() {
     try {
       await videoStore.generateStoryboard(params.videoId, {
         provider: params.provider,
-        userPrompt: params.userPrompt,
-        pacing: params.pacing !== 'normal' ? params.pacing : undefined,
-        targetDuration: params.targetDuration || undefined,
         maxTokens: params.maxTokens || undefined,
         temperature: params.temperature || undefined,
         timeoutSeconds: params.timeoutSeconds || undefined,
-        voiceMode: (params.voiceMode && params.voiceMode !== 'auto' && params.voiceMode !== 'both') ? params.voiceMode : undefined,
       })
       toast.success('脚本生成任务已提交，请稍候...')
     } catch (e: any) {
