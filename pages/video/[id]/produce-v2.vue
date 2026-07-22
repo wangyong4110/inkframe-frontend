@@ -17,6 +17,7 @@ const sceneAnchorStore = useSceneAnchorStore()
 const screenplayApi = useScreenplayApi()
 const videoApi = useVideoApi()
 const itemApi = useItemApi()
+const novelApi = useNovelApi()
 const toast = useToast()
 const { confirm } = useConfirm()
 const { guardAiProvider } = useAiProviderGuard()
@@ -24,6 +25,7 @@ const { guardAiProvider } = useAiProviderGuard()
 const loading = ref(true)
 const video = computed(() => videoStore.currentVideo)
 const previewAspectRatio = computed(() => (video.value?.aspect_ratio || '16:9').replace(':', '/'))
+const novelVideoType = ref<string | null>(null) // 项目设置里的"视频类型"（animation/narration），用于与 Video.mode 比对是否一致
 // 分镜轻量汇总（全视频，供场次侧边栏/时间轴/头部统计用，不含 description 等大字段）；
 // 当前选中场次的完整分镜详情单独按需拉取（见 selectedSceneShots），避免一次性加载
 // 整个视频的全部分镜——description 现在是完整的 AI 生图提示词，体积明显变大。
@@ -423,6 +425,7 @@ async function loadAll() {
         characterStore.fetchCharacters(v.novel_id),
         sceneAnchorStore.fetchAnchors(v.novel_id),
         itemApi.listItems(v.novel_id).then(res => { items.value = res.data?.items ?? [] }).catch(() => { items.value = [] }),
+        novelApi.getNovel(v.novel_id).then(res => { novelVideoType.value = res.data?.video_type ?? 'animation' }).catch(() => { novelVideoType.value = null }),
       ])
       try {
         const res = await videoApi.getEpisodeSummaries(v.novel_id)
@@ -608,12 +611,30 @@ const batchCountOption = ref(1) // 占位：展示用，不回传后端
 const selectedProviderLabel = computed(() => providers.value.find(p => p.name === selectedProvider.value)?.display_name ?? '默认模型')
 
 // ── 视频类型：Video.mode（video=AI 视频 / slideshow=图片解说）───────────────
-// 创建时写死的快照，页面上仅展示当前类型，不支持切换。
+// 创建时写死的快照，页面上仅展示当前类型，不支持随意切换；但若与项目设置（Novel.video_type）
+// 不一致（例如项目设置是视频创建后才修改的），提供一个仅在不一致时出现的手动修正入口。
 const videoModeLabels: Record<'video' | 'slideshow', string> = {
   video: '视频动画',
   slideshow: '图片解说',
 }
 const currentVideoModeLabel = computed(() => videoModeLabels[video.value?.mode ?? 'video'])
+const expectedVideoMode = computed<'video' | 'slideshow'>(() => (novelVideoType.value === 'narration' ? 'slideshow' : 'video'))
+const videoModeMismatch = computed(() => novelVideoType.value !== null && expectedVideoMode.value !== (video.value?.mode ?? 'video'))
+const fixingVideoMode = ref(false)
+async function fixVideoModeToProjectSetting() {
+  if (!videoModeMismatch.value || fixingVideoMode.value) return
+  const ok = await confirm(`当前视频类型（${currentVideoModeLabel.value}）与项目设置（${videoModeLabels[expectedVideoMode.value]}）不一致，是否修正为项目设置？不会重新生成已有分镜，仅影响后续生成方式（Ken Burns 静态图 vs. AI 视频）和旁白/台词编辑入口。`)
+  if (!ok) return
+  fixingVideoMode.value = true
+  try {
+    await videoStore.updateVideo(videoId, { mode: expectedVideoMode.value })
+    toast.success('已修正为项目设置的视频类型')
+  } catch (e: any) {
+    toast.error('修正失败：' + (e.message || '未知错误'))
+  } finally {
+    fixingVideoMode.value = false
+  }
+}
 
 // ── 视频预览：当前选中的分镜（需在下方"视频生成历史"之前声明，因为该区块的
 // watch(..., { immediate: true }) 会立即读取 previewShot） ─────────────────
@@ -1014,6 +1035,13 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
 
       <div class="flex items-center gap-3">
         <span class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary-600 text-white">{{ currentVideoModeLabel }}</span>
+        <button
+          v-if="videoModeMismatch"
+          class="text-xs px-2 py-1 rounded-lg border border-amber-500 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+          :disabled="fixingVideoMode"
+          :title="`与项目设置（${videoModeLabels[expectedVideoMode]}）不一致，点击修正`"
+          @click="fixVideoModeToProjectSetting"
+        >⚠️ 与项目设置不一致</button>
         <button class="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1.5" @click="openExportModal">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
           导出
@@ -1187,17 +1215,6 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
             />
             <template v-if="isSlideshowMode">
               <div class="mb-2">
-                <label class="block text-xs text-gray-500 mb-1">Ken Burns 效果</label>
-                <select
-                  :value="previewShot.camera_type"
-                  :disabled="savingKenBurns"
-                  class="bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-primary-600 disabled:opacity-50"
-                  @change="setKenBurnsEffect(($event.target as HTMLSelectElement).value)"
-                >
-                  <option v-for="opt in KEN_BURNS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                </select>
-              </div>
-              <div class="mb-2">
                 <label class="block text-xs text-gray-500 mb-1">旁白</label>
                 <textarea
                   ref="narrationTextareaRef"
@@ -1264,6 +1281,17 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
                 </div>
                 <p class="text-[10px] text-gray-600">时长 / 分辨率 / 张数暂为展示，不影响实际生成参数</p>
               </div>
+            </div>
+            <div v-if="isSlideshowMode" class="flex items-center gap-1.5 ml-auto">
+              <span class="text-xs text-gray-500">运镜</span>
+              <select
+                :value="previewShot?.camera_type"
+                :disabled="savingKenBurns || !previewShot"
+                class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 focus:outline-none disabled:opacity-50"
+                @change="setKenBurnsEffect(($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="opt in KEN_BURNS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
             </div>
           </div>
 
