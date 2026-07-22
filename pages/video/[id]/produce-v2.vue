@@ -23,6 +23,7 @@ const { guardAiProvider } = useAiProviderGuard()
 
 const loading = ref(true)
 const video = computed(() => videoStore.currentVideo)
+const previewAspectRatio = computed(() => (video.value?.aspect_ratio || '16:9').replace(':', '/'))
 // 分镜轻量汇总（全视频，供场次侧边栏/时间轴/头部统计用，不含 description 等大字段）；
 // 当前选中场次的完整分镜详情单独按需拉取（见 selectedSceneShots），避免一次性加载
 // 整个视频的全部分镜——description 现在是完整的 AI 生图提示词，体积明显变大。
@@ -40,6 +41,10 @@ const scriptCollapsed = ref(false)
 const episodeSummaries = ref<EpisodeSummary[]>([])
 const showEpisodePicker = ref(false)
 const showScenePicker = ref(false)
+const episodePickerRef = ref<HTMLElement | null>(null)
+const scenePickerRef = ref<HTMLElement | null>(null)
+onClickOutside(episodePickerRef, () => { showEpisodePicker.value = false })
+onClickOutside(scenePickerRef, () => { showScenePicker.value = false })
 
 // ── 左右分栏拖拽调整宽度（默认各占50%，可拖拽调整，记住上次的比例）───────────
 const PANEL_WIDTH_KEY = 'inkframe_produce_v2_left_panel_width'
@@ -257,6 +262,19 @@ function characterName(id: number) {
   return characterById.value.get(id)?.name ?? `#${id}`
 }
 
+// ── 台词说话人识别：镜头绑定角色（character_ids）代表画面在场角色，不等于说话角色，
+// 与后端 resolveVoiceForShot 保持一致——从对话文本「角色名：」前缀解析说话人 ─────────
+function parseDialogueSpeakerId(dialogue: string | undefined | null): number | null {
+  if (!dialogue) return null
+  let speakerName = ''
+  for (const sep of ['：', ':']) {
+    const idx = dialogue.indexOf(sep)
+    if (idx > 0 && idx < 20) { speakerName = dialogue.slice(0, idx).trim(); break }
+  }
+  if (!speakerName) return null
+  return characters.value.find(c => c.name.toLowerCase() === speakerName.toLowerCase())?.id ?? null
+}
+
 // ── 分镜描述内联参考图芯片：对当前镜头已绑定的角色/道具/场景名做纯前端文本匹配，
 // 命中处渲染为小芯片（不改变 description 原文，仅展示态高亮）───────────────────
 type ChipKind = 'scene' | 'character' | 'item'
@@ -409,7 +427,9 @@ async function loadAll() {
       try {
         const res = await videoApi.getEpisodeSummaries(v.novel_id)
         episodeSummaries.value = res.data ?? []
-      } catch { /* 剧集切换是次要功能，静默失败即可 */ }
+      } catch (e) {
+        console.warn('获取剧集列表失败，剧集切换将不可用', e) // 次要功能，不阻断页面，但仍需可排查
+      }
     }
     if (v?.chapter_id) {
       screenplayScenes.value = await screenplayApi.listScreenplayScenes(v.chapter_id)
@@ -455,7 +475,11 @@ function goBack() {
 
 function switchEpisode(ep: EpisodeSummary) {
   showEpisodePicker.value = false
-  if (!ep.video_id || ep.video_id === videoId) return
+  if (ep.video_id === videoId) return
+  if (!ep.video_id) {
+    toast.error(`第${ep.chapter_no}集尚未生成视频，无法切换`)
+    return
+  }
   router.push(`/video/${ep.video_id}/produce-v2`)
 }
 
@@ -583,50 +607,14 @@ const resolutionOption = ref('480p') // 占位：展示用，不回传后端
 const batchCountOption = ref(1) // 占位：展示用，不回传后端
 const selectedProviderLabel = computed(() => providers.value.find(p => p.name === selectedProvider.value)?.display_name ?? '默认模型')
 
-// ── 视频类型切换：Video.mode（video=AI 视频 / slideshow=图片解说）─────────────
-// Video.mode 是创建时写死的快照，不会随小说项目设置里的"视频类型"变化而自动同步，
-// 若某条视频创建时 mode 判断有误（或项目设置是后来才改的），此前完全没有入口能改，
-// 只能删除重建——这里补一个切换开关，直接调用已支持 mode 字段的 UpdateVideo 接口。
-const videoModeTabs: { key: 'video' | 'slideshow'; label: string }[] = [
-  { key: 'video', label: '视频动画' },
-  { key: 'slideshow', label: '图片解说' },
-]
-const switchingVideoMode = ref(false)
-async function setVideoMode(mode: 'video' | 'slideshow') {
-  if ((video.value?.mode ?? 'video') === mode || switchingVideoMode.value) return
-  if (shotSummaries.value.length > 0) {
-    const ok = await confirm('切换视频类型不会重新生成已有分镜，仅影响后续生成方式（Ken Burns 静态图 vs. AI 视频）和旁白/台词编辑入口，确认切换？')
-    if (!ok) return
-  }
-  switchingVideoMode.value = true
-  try {
-    await videoStore.updateVideo(videoId, { mode })
-    toast.success('已切换视频类型')
-  } catch (e: any) {
-    toast.error('切换失败：' + (e.message || '未知错误'))
-  } finally {
-    switchingVideoMode.value = false
-  }
+// ── 视频类型：Video.mode（video=AI 视频 / slideshow=图片解说）───────────────
+// 创建时写死的快照，页面上仅展示当前类型，不支持切换。
+const videoModeLabels: Record<'video' | 'slideshow', string> = {
+  video: '视频动画',
+  slideshow: '图片解说',
 }
+const currentVideoModeLabel = computed(() => videoModeLabels[video.value?.mode ?? 'video'])
 
-// ── 视频版本 tab（真实：映射到 Video.visual_mode） ──────────────────────────
-const visualModeTabs: { key: 'standard' | 'hd'; label: string }[] = [
-  { key: 'standard', label: '标准' },
-  { key: 'hd', label: '高清' },
-]
-const switchingVisualMode = ref(false)
-async function setVisualMode(mode: 'standard' | 'hd') {
-  if ((video.value?.visual_mode ?? 'standard') === mode || switchingVisualMode.value) return
-  switchingVisualMode.value = true
-  try {
-    await videoStore.updateVideo(videoId, { visual_mode: mode })
-    toast.success('已切换视频版本')
-  } catch (e: any) {
-    toast.error('切换失败：' + (e.message || '未知错误'))
-  } finally {
-    switchingVisualMode.value = false
-  }
-}
 // ── 视频预览：当前选中的分镜（需在下方"视频生成历史"之前声明，因为该区块的
 // watch(..., { immediate: true }) 会立即读取 previewShot） ─────────────────
 const previewShotIdx = ref(0)
@@ -773,6 +761,8 @@ async function setKenBurnsEffect(value: string) {
 
 const narrationDraft = ref('')
 const dialogueDraft = ref('')
+const previewShotSpeakerId = computed(() => parseDialogueSpeakerId(previewShot.value?.dialogue))
+const dialogueDraftSpeakerId = computed(() => parseDialogueSpeakerId(dialogueDraft.value))
 const narrationTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const dialogueTextareaRef = ref<HTMLTextAreaElement | null>(null)
 watch(previewShot, (shot) => {
@@ -866,7 +856,7 @@ function formatHistoryTime(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// ── 上传 / 清晰化 / 去字幕 / 下载 ────────────────────────────────────────────
+// ── 上传 / 下载 ──────────────────────────────────────────────────────────
 const uploadingMedia = ref(false)
 async function uploadMediaFile(file: File) {
   if (!previewShot.value) return
@@ -890,36 +880,6 @@ function handleFileInputChange(e: Event) {
   const file = input.files?.[0]
   if (file) uploadMediaFile(file)
   input.value = ''
-}
-
-const refining = ref(false)
-async function handleRefineImage() {
-  if (!previewShot.value || refining.value) return
-  refining.value = true
-  try {
-    await videoApi.refineShotImage(videoId, previewShot.value.id, '提升清晰度，增强画面细节')
-    toast.success('已提交清晰化处理')
-    await refreshShots()
-  } catch (e: any) {
-    toast.error('处理失败：' + (e.message || '未知错误'))
-  } finally {
-    refining.value = false
-  }
-}
-
-const removingSubtitle = ref(false)
-async function handleRemoveSubtitle() {
-  if (!previewShot.value || removingSubtitle.value) return
-  removingSubtitle.value = true
-  try {
-    const res = await videoApi.updateStoryboardShot(videoId, previewShot.value.id, { subtitle: '' })
-    patchSelectedShot(res.data)
-    toast.success('已去除字幕覆盖')
-  } catch (e: any) {
-    toast.error('操作失败：' + (e.message || '未知错误'))
-  } finally {
-    removingSubtitle.value = false
-  }
 }
 
 const downloadUrl = computed(() => previewShot.value?.video_url || previewShot.value?.image_url || '')
@@ -1018,7 +978,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       </button>
 
       <div class="flex items-center gap-3">
-        <div class="relative">
+        <div ref="episodePickerRef" class="relative">
           <button class="flex items-center gap-1.5 text-sm font-medium hover:text-gray-300" @click="showEpisodePicker = !showEpisodePicker">
             第 {{ episodeSummaries.find(e => e.video_id === videoId)?.chapter_no ?? '?' }} 集 {{ video?.title }}
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -1026,14 +986,15 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
           <div v-if="showEpisodePicker" class="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-20 py-1 max-h-80 overflow-auto">
             <button
               v-for="ep in episodeSummaries" :key="ep.chapter_id"
-              class="w-full text-left px-3 py-2 text-sm hover:bg-gray-800"
+              :disabled="!ep.video_id"
+              class="w-full text-left px-3 py-2 text-sm hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               :class="ep.video_id === videoId ? 'text-primary-400' : 'text-gray-300'"
               @click="switchEpisode(ep)"
-            >第 {{ ep.chapter_no }} 集 {{ ep.title }}</button>
+            >第 {{ ep.chapter_no }} 集 {{ ep.title }}{{ !ep.video_id ? '（未生成）' : '' }}</button>
           </div>
         </div>
 
-        <div v-if="selectedTile?.scene" class="relative">
+        <div v-if="selectedTile?.scene" ref="scenePickerRef" class="relative">
           <button class="flex items-center gap-1.5 text-sm font-medium hover:text-gray-300" @click="showScenePicker = !showScenePicker">
             场{{ selectedTile.scene.scene_no }} {{ selectedTile.scene.heading }}
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -1052,15 +1013,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       </div>
 
       <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1 rounded-lg overflow-hidden border border-gray-700">
-          <button
-            v-for="tab in videoModeTabs" :key="tab.key"
-            class="px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-            :class="(video?.mode ?? 'video') === tab.key ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
-            :disabled="switchingVideoMode"
-            @click="setVideoMode(tab.key)"
-          >{{ tab.label }}</button>
-        </div>
+        <span class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary-600 text-white">{{ currentVideoModeLabel }}</span>
         <button class="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1.5" @click="openExportModal">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
           导出
@@ -1259,9 +1212,9 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               <div>
                 <label class="block text-xs text-gray-500 mb-1">台词</label>
                 <span
-                  v-for="cid in (previewShot.character_ids ?? [])" :key="cid"
+                  v-if="dialogueDraftSpeakerId"
                   class="inline-flex items-center px-1.5 py-0.5 mr-1 mb-1 rounded bg-indigo-900/40 text-indigo-300 text-xs"
-                >{{ characterName(cid) }}</span>
+                >{{ characterName(dialogueDraftSpeakerId) }}</span>
                 <textarea
                   ref="dialogueTextareaRef"
                   v-model="dialogueDraft"
@@ -1275,9 +1228,9 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
             </template>
             <p v-else-if="previewShot.dialogue" class="text-gray-300">
               <span
-                v-for="cid in (previewShot.character_ids ?? [])" :key="cid"
+                v-if="previewShotSpeakerId"
                 class="inline-flex items-center px-1.5 py-0.5 mr-1 rounded bg-indigo-900/40 text-indigo-300 text-xs"
-              >{{ characterName(cid) }}</span>
+              >{{ characterName(previewShotSpeakerId) }}</span>
               {{ previewShot.dialogue }}
             </p>
           </div>
@@ -1342,72 +1295,48 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
 
       <!-- 右侧：视频预览 -->
       <aside class="flex-1 min-w-0 flex flex-col">
-        <div class="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-gray-800">
-          <div class="flex items-center gap-1 rounded-lg overflow-hidden border border-gray-700">
-            <button
-              v-for="tab in visualModeTabs" :key="tab.key"
-              class="px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-              :class="(video?.visual_mode ?? 'standard') === tab.key ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
-              :disabled="switchingVisualMode"
-              @click="setVisualMode(tab.key)"
-            >{{ tab.label }}</button>
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="text-xs text-gray-400 hover:text-gray-200 cursor-pointer flex items-center gap-1" :class="uploadingMedia ? 'opacity-50 pointer-events-none' : ''">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3-3m0 0l3 3m-3-3v9"/></svg>
-              上传
-              <input type="file" accept="image/*,video/*" class="hidden" @change="handleFileInputChange" />
-            </label>
-          </div>
+        <div class="flex-shrink-0 px-4 py-3 flex items-center justify-end border-b border-gray-800">
+          <label class="text-xs text-gray-400 hover:text-gray-200 cursor-pointer flex items-center gap-1" :class="uploadingMedia ? 'opacity-50 pointer-events-none' : ''">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3-3m0 0l3 3m-3-3v9"/></svg>
+            上传
+            <input type="file" accept="image/*,video/*" class="hidden" @change="handleFileInputChange" />
+          </label>
         </div>
 
-        <div class="flex-shrink-0 px-4 py-2 flex items-center gap-3 border-b border-gray-800">
-          <button class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 disabled:opacity-50" :disabled="refining || !previewShot" @click="handleRefineImage">
-            <svg class="w-3.5 h-3.5" :class="refining ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
-            {{ refining ? '处理中…' : '清晰化' }}
-          </button>
-          <button class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 disabled:opacity-50" :disabled="removingSubtitle || !previewShot" @click="handleRemoveSubtitle">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M9 9h.01M4 4h16v12a2 2 0 01-2 2H6l-2 2V4z"/></svg>
-            去字幕
-          </button>
-          <button class="text-xs text-gray-600 cursor-not-allowed flex items-center gap-1" disabled title="暂不支持">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          </button>
+        <div v-if="downloadUrl" class="flex-shrink-0 px-4 py-2 flex items-center justify-end border-b border-gray-800">
           <a
-            v-if="downloadUrl"
             :href="downloadUrl" download target="_blank"
-            class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 ml-auto"
+            class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
           </a>
         </div>
 
-        <div class="flex-1 flex items-center justify-center bg-black relative">
-          <span class="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-gray-300 border border-gray-700">
-            {{ visualModeTabs.find(t => t.key === (video?.visual_mode ?? 'standard'))?.label ?? '标准' }}
-          </span>
-          <video
-            v-if="previewShot?.video_url"
-            ref="previewVideoRef"
-            :key="previewShot.id"
-            :src="previewShot.video_url"
-            :muted="isSlideshowMode"
-            class="max-w-full max-h-full"
-            @play="isPlaying = true"
-            @pause="isPlaying = false"
-            @ended="handleEnded"
-            @timeupdate="onTimeUpdate"
-          />
-          <img v-else-if="previewShot?.image_url" :src="previewShot.image_url" class="max-w-full max-h-full" />
-          <p v-else class="text-gray-600 text-sm">该分镜暂无素材</p>
-          <!-- 图片解说模式：Ken Burns 画面本身静音，配音/音效各自独立音轨，跟随播放/暂停同步 -->
-          <audio v-if="isSlideshowMode && previewShot?.audio_url" ref="previewVoiceRef" :key="`voice-${previewShot.id}`" :src="previewShot.audio_url" />
-          <audio
-            v-for="item in (isSlideshowMode ? shotSfxItems : [])"
-            :key="`sfx-${item.id}`"
-            :ref="(el) => setSfxRef(el as Element | null, item.id)"
-            :src="item.audio_url || item.url"
-          />
+        <div class="flex-1 flex items-center justify-center bg-gray-900">
+          <div class="relative flex items-center justify-center" :style="{ aspectRatio: previewAspectRatio, maxWidth: '100%', maxHeight: '100%' }">
+            <video
+              v-if="previewShot?.video_url"
+              ref="previewVideoRef"
+              :key="previewShot.id"
+              :src="previewShot.video_url"
+              :muted="isSlideshowMode"
+              class="max-w-full max-h-full"
+              @play="isPlaying = true"
+              @pause="isPlaying = false"
+              @ended="handleEnded"
+              @timeupdate="onTimeUpdate"
+            />
+            <img v-else-if="previewShot?.image_url" :src="previewShot.image_url" class="max-w-full max-h-full" />
+            <p v-else class="text-gray-600 text-sm">该分镜暂无素材</p>
+            <!-- 图片解说模式：Ken Burns 画面本身静音，配音/音效各自独立音轨，跟随播放/暂停同步 -->
+            <audio v-if="isSlideshowMode && previewShot?.audio_url" ref="previewVoiceRef" :key="`voice-${previewShot.id}`" :src="previewShot.audio_url" />
+            <audio
+              v-for="item in (isSlideshowMode ? shotSfxItems : [])"
+              :key="`sfx-${item.id}`"
+              :ref="(el) => setSfxRef(el as Element | null, item.id)"
+              :src="item.audio_url || item.url"
+            />
+          </div>
         </div>
 
         <div class="flex-shrink-0 px-4 py-3 flex items-center justify-between border-t border-gray-800">
@@ -1421,10 +1350,10 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
             <button class="text-gray-400 hover:text-gray-200" @click="nextShot"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
           </div>
           <button
-            class="text-xs px-2 py-1 rounded-lg border w-16 text-center"
+            class="text-xs px-2 py-1 rounded-lg border w-16 text-center whitespace-nowrap"
             :class="singleSegmentPlay ? 'border-primary-500 text-primary-400' : 'border-gray-700 text-gray-400'"
             @click="singleSegmentPlay = !singleSegmentPlay"
-          >单段播放</button>
+          >{{ singleSegmentPlay ? '单段播放' : '连续播放' }}</button>
         </div>
       </aside>
 
@@ -1457,8 +1386,8 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       <button
         v-for="(shot, idx) in selectedShots"
         :key="shot.id"
-        class="flex-shrink-0 w-64 h-32 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 overflow-hidden bg-cover bg-center"
-        :style="shot.image_url ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.45),rgba(0,0,0,0.45)), url(${shot.image_url})` } : {}"
+        class="flex-shrink-0 h-32 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 overflow-hidden bg-cover bg-center"
+        :style="[{ aspectRatio: previewAspectRatio }, shot.image_url ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.45),rgba(0,0,0,0.45)), url(${shot.image_url})` } : {}]"
         :class="idx === previewShotIdx ? 'border-primary-500 bg-gray-800' : 'border-gray-800 bg-gray-900 hover:border-gray-700'"
         @click="previewShotIdx = idx"
       >

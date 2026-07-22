@@ -124,11 +124,17 @@ onMounted(() => {
   document.addEventListener('click', closeVoiceDropdown)
   window.addEventListener('scroll', handleScrollOrResize, true)
   window.addEventListener('resize', handleScrollOrResize)
+  document.addEventListener('click', closeAspectRatioDropdown)
+  window.addEventListener('scroll', handleAspectRatioScrollOrResize, true)
+  window.addEventListener('resize', handleAspectRatioScrollOrResize)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeVoiceDropdown)
   window.removeEventListener('scroll', handleScrollOrResize, true)
   window.removeEventListener('resize', handleScrollOrResize)
+  document.removeEventListener('click', closeAspectRatioDropdown)
+  window.removeEventListener('scroll', handleAspectRatioScrollOrResize, true)
+  window.removeEventListener('resize', handleAspectRatioScrollOrResize)
 })
 
 const NARRATION_FALLBACK_VOICES = [
@@ -286,11 +292,33 @@ const ASPECT_RATIOS = [
   { value: '9:16', label: '9:16', iconW: 11, iconH: 20 },
 ]
 const aspectRatioDropdownOpen = ref(false)
-const aspectRatioDropdownRef = ref<HTMLElement | null>(null)
-onClickOutside(aspectRatioDropdownRef, () => { aspectRatioDropdownOpen.value = false })
+const aspectRatioTriggerRef = ref<HTMLElement | null>(null)
+const aspectRatioDropdownStyle = ref({ top: '0px', left: '0px', width: '0px' })
 const selectedAspectRatio = computed(() =>
   ASPECT_RATIOS.find(r => r.value === (novel.value?.video_aspect_ratio ?? '16:9')) ?? ASPECT_RATIOS[1]
 )
+// 下拉面板 Teleport 到 body 避免父级 .card 的 overflow-hidden 裁剪掉超出卡片范围的选项（例如 9:16）
+function openAspectRatioDropdown() {
+  const el = aspectRatioTriggerRef.value
+  if (!el) { aspectRatioDropdownOpen.value = !aspectRatioDropdownOpen.value; return }
+  const rect = el.getBoundingClientRect()
+  aspectRatioDropdownStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`,
+  }
+  aspectRatioDropdownOpen.value = !aspectRatioDropdownOpen.value
+}
+function closeAspectRatioDropdown(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.aspect-ratio-dropdown-wrapper') && !target.closest('.aspect-ratio-dropdown-portal'))
+    aspectRatioDropdownOpen.value = false
+}
+function handleAspectRatioScrollOrResize(e?: Event) {
+  if (!aspectRatioDropdownOpen.value) return
+  if (e?.target instanceof HTMLElement && e.target.closest('.aspect-ratio-dropdown-portal')) return
+  aspectRatioDropdownOpen.value = false
+}
 </script>
 
 <template>
@@ -500,11 +528,12 @@ const selectedAspectRatio = computed(() =>
         </div>
         <div>
           <label class="field-label">宽高比</label>
-          <div ref="aspectRatioDropdownRef" class="relative">
+          <div class="relative aspect-ratio-dropdown-wrapper">
             <button
+              ref="aspectRatioTriggerRef"
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-sm"
-              @click="aspectRatioDropdownOpen = !aspectRatioDropdownOpen"
+              @click="openAspectRatioDropdown"
             >
               <svg width="22" height="16" viewBox="0 0 32 24" fill="none" class="flex-shrink-0 text-primary-500">
                 <rect
@@ -518,9 +547,12 @@ const selectedAspectRatio = computed(() =>
                 <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
               </svg>
             </button>
+            <Teleport to="body">
             <div
-              v-show="aspectRatioDropdownOpen"
-              class="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
+              v-if="aspectRatioDropdownOpen"
+              class="aspect-ratio-dropdown-portal fixed z-[9999] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
+              :style="aspectRatioDropdownStyle"
+              @click.stop
             >
               <button
                 v-for="r in ASPECT_RATIOS" :key="r.value" type="button"
@@ -536,6 +568,7 @@ const selectedAspectRatio = computed(() =>
                 <span class="font-medium">{{ r.label }}</span>
               </button>
             </div>
+            </Teleport>
           </div>
         </div>
       </div>
