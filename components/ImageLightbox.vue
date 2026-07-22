@@ -12,6 +12,7 @@ const { upscaleImage } = useImageUpscaleApi()
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
 
 watch(visible, async (v) => {
+  console.log('[ImageLightbox DEBUG] visible changed to', v, 'url=', url.value) // eslint-disable-line no-console
   if (v) {
     suggestion.value = ''
     refineError.value = ''
