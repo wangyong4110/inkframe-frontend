@@ -328,11 +328,11 @@ onMounted(async () => {
             </div>
             <div class="flex justify-between">
               <dt class="text-gray-500">分辨率</dt>
-              <dd class="text-gray-700 dark:text-gray-300">{{ video.resolution || '-' }}</dd>
+              <dd class="text-gray-700 dark:text-gray-300">{{ video.render_config?.resolution || '-' }}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-gray-500">画幅比</dt>
-              <dd class="text-gray-700 dark:text-gray-300">{{ video.aspect_ratio || '-' }}</dd>
+              <dd class="text-gray-700 dark:text-gray-300">{{ video.render_config?.aspect_ratio || '-' }}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-gray-500">分镜数</dt>

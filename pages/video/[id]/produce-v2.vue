@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StoryboardShot, ScreenplayScene, EpisodeSummary, Item, Asset, ShotSummary, ShotSFXItem, StoryboardMode } from '~/types'
+import type { StoryboardShot, ScreenplayScene, EpisodeSummary, Item, Asset, ShotSummary, ShotSFXItem, StoryboardMode, ShotVoiceSegment } from '~/types'
 
 // 全屏编辑器页面：不套用全局导航栏/页脚（与截图设计一致），页面自带返回按钮承担导航职责。
 definePageMeta({ layout: false })
@@ -24,16 +24,20 @@ const { guardAiProvider } = useAiProviderGuard()
 
 const loading = ref(true)
 const video = computed(() => videoStore.currentVideo)
-const previewAspectRatio = computed(() => (video.value?.aspect_ratio || '16:9').replace(':', '/'))
+// 后端 Video 响应里宽高比嵌套在 render_config.aspect_ratio（无顶层 aspect_ratio 字段），
+// 顶层 aspect_ratio 只在创建/更新请求体里存在——读取时必须走 render_config，否则永远拿到
+// undefined，被 || '16:9' 兜底掩盖，导致修正后横幅和预览比例都不会刷新。
+const videoAspectRatio = computed(() => video.value?.render_config?.aspect_ratio || video.value?.aspect_ratio || '16:9')
+const previewAspectRatio = computed(() => videoAspectRatio.value.replace(':', '/'))
 const novelVideoType = ref<string | null>(null) // 项目设置里的"视频类型"（animation/narration），用于与 Video.mode 比对是否一致
 const novelVideoAspectRatio = ref<string | null>(null) // 项目设置里的"宽高比"，用于与 Video.aspect_ratio 比对是否一致
 // Video.aspect_ratio 创建时从项目设置带入，但项目设置后续变更不会回溯更新已创建的视频；
 // 与 Video.mode 同理，这里仅在检测到不一致时给出手动修正入口，不做静默覆盖。
-const aspectRatioMismatch = computed(() => novelVideoAspectRatio.value !== null && novelVideoAspectRatio.value !== (video.value?.aspect_ratio || '16:9'))
+const aspectRatioMismatch = computed(() => novelVideoAspectRatio.value !== null && novelVideoAspectRatio.value !== videoAspectRatio.value)
 const fixingAspectRatio = ref(false)
 async function fixAspectRatioToProjectSetting() {
   if (!aspectRatioMismatch.value || fixingAspectRatio.value || !novelVideoAspectRatio.value) return
-  const ok = await confirm(`当前视频宽高比（${video.value?.aspect_ratio || '16:9'}）与项目设置（${novelVideoAspectRatio.value}）不一致，是否修正为项目设置？不会重新生成已有分镜，仅影响预览画布与后续生成的比例。`)
+  const ok = await confirm(`当前视频宽高比（${videoAspectRatio.value}）与项目设置（${novelVideoAspectRatio.value}）不一致，是否修正为项目设置？不会重新生成已有分镜，仅影响预览画布与后续生成的比例。`)
   if (!ok) return
   fixingAspectRatio.value = true
   try {
@@ -823,15 +827,15 @@ const narrationDraft = ref('')
 const dialogueDraft = ref('')
 const previewShotSpeakerId = computed(() => parseDialogueSpeakerId(previewShot.value?.dialogue))
 const dialogueDraftSpeakerId = computed(() => parseDialogueSpeakerId(dialogueDraft.value))
-const narrationTextareaRef = ref<HTMLTextAreaElement | null>(null)
-const dialogueTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const editingNarration = ref(false)
+const editingDialogue = ref(false)
+const narrationInputRef = ref<HTMLInputElement | null>(null)
+const dialogueInputRef = ref<HTMLInputElement | null>(null)
 watch(previewShot, (shot) => {
   narrationDraft.value = shot?.narration ?? ''
   dialogueDraft.value = shot?.dialogue ?? ''
-  nextTick(() => {
-    autoGrowTextarea(narrationTextareaRef.value)
-    autoGrowTextarea(dialogueTextareaRef.value)
-  })
+  editingNarration.value = false
+  editingDialogue.value = false
 }, { immediate: true })
 
 const savingNarration = ref(false)
@@ -851,9 +855,20 @@ async function saveNarrationDraft() {
   }
 }
 function onNarrationInput() {
-  autoGrowTextarea(narrationTextareaRef.value)
   if (narrationSaveTimer) clearTimeout(narrationSaveTimer)
   narrationSaveTimer = setTimeout(saveNarrationDraft, 1000)
+}
+function startEditingNarration() {
+  editingNarration.value = true
+  nextTick(() => narrationInputRef.value?.focus())
+}
+function finishEditingNarration() {
+  saveNarrationDraft()
+  editingNarration.value = false
+}
+async function clearNarration() {
+  narrationDraft.value = ''
+  await saveNarrationDraft()
 }
 
 const savingDialogue = ref(false)
@@ -873,9 +888,220 @@ async function saveDialogueDraft() {
   }
 }
 function onDialogueInput() {
-  autoGrowTextarea(dialogueTextareaRef.value)
   if (dialogueSaveTimer) clearTimeout(dialogueSaveTimer)
   dialogueSaveTimer = setTimeout(saveDialogueDraft, 1000)
+}
+function startEditingDialogue() {
+  editingDialogue.value = true
+  nextTick(() => dialogueInputRef.value?.focus())
+}
+function finishEditingDialogue() {
+  saveDialogueDraft()
+  editingDialogue.value = false
+}
+async function clearDialogue() {
+  dialogueDraft.value = ''
+  await saveDialogueDraft()
+}
+
+const generatingShotVoice = ref(false)
+async function handleGenerateShotVoice() {
+  const shot = previewShot.value
+  if (!shot || generatingShotVoice.value) return
+  generatingShotVoice.value = true
+  try {
+    const res = await videoApi.generateVoice(videoId, shot.id)
+    if (res.data?.task_id) {
+      const taskStore = useTaskStore()
+      taskStore.trackTask(res.data.task_id, () => {})
+    }
+  } catch (e: any) {
+    toast.error('生成配音失败：' + (e.message || '未知错误'))
+  } finally {
+    generatingShotVoice.value = false
+  }
+}
+
+// ── 分镜语音片段（ShotVoiceSegment）：一个分镜可拆成多段旁白/台词，每段可单独设置
+// 说话人/情绪/语言（复用 VoiceTab.vue 已有的 API 与交互逻辑，这里做当前单镜头的紧凑版）。
+// 迁移策略与 VoiceTab.vue 保持一致：一旦某镜头存在任意 segment，上面旧的单一
+// 旁白/台词编辑框整体隐藏，避免同一份内容出现两套编辑入口。
+const EMOTION_OPTIONS = ['平静', '温馨', '激动', '悲伤', '开心', '愤怒', '神秘']
+const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '普通话' },
+  { value: 'zh-yue', label: '粤语' },
+  { value: 'zh-scu', label: '四川话' },
+  { value: 'zh-nan', label: '闽南语' },
+  { value: 'zh-wu', label: '吴语' },
+  { value: 'en', label: 'English' },
+]
+const EMOTION_COLOR_MAP: Record<string, string> = {
+  平静: 'bg-gray-700 text-gray-300',
+  温馨: 'bg-pink-900/40 text-pink-300',
+  激动: 'bg-amber-900/40 text-amber-300',
+  悲伤: 'bg-blue-900/40 text-blue-300',
+  开心: 'bg-green-900/40 text-green-300',
+  愤怒: 'bg-red-900/40 text-red-300',
+  神秘: 'bg-purple-900/40 text-purple-300',
+}
+function emotionClass(tone: string | undefined): string {
+  return tone ? (EMOTION_COLOR_MAP[tone] ?? 'bg-gray-800 text-gray-400') : 'bg-gray-800 text-gray-500'
+}
+
+const shotSegments = ref<ShotVoiceSegment[]>([])
+const loadingSegments = ref(false)
+const segmentCache = new Map<number, ShotVoiceSegment[]>()
+async function loadShotSegments(shot: StoryboardShot | null) {
+  if (!shot) { shotSegments.value = []; return }
+  if (segmentCache.has(shot.id)) { shotSegments.value = segmentCache.get(shot.id)!; return }
+  loadingSegments.value = true
+  try {
+    const res = await videoApi.listVoiceSegments(videoId, shot.id)
+    const data = res.data ?? []
+    shotSegments.value = data
+    segmentCache.set(shot.id, data)
+  } catch {
+    shotSegments.value = []
+  } finally {
+    loadingSegments.value = false
+  }
+}
+function invalidateSegmentCache(shotId: number) {
+  segmentCache.delete(shotId)
+}
+watch(previewShot, (shot) => { loadShotSegments(shot) }, { immediate: true })
+
+const showAppendSegmentForm = ref(false)
+const newSegmentSpeaker = ref('')
+const newSegmentEmotion = ref('')
+const newSegmentLanguage = ref('')
+const newSegmentText = ref('')
+const newSegmentInputRef = ref<HTMLInputElement | null>(null)
+function openAppendSegmentForm() {
+  showAppendSegmentForm.value = true
+  newSegmentSpeaker.value = ''
+  newSegmentEmotion.value = ''
+  newSegmentLanguage.value = ''
+  newSegmentText.value = ''
+  nextTick(() => newSegmentInputRef.value?.focus())
+}
+async function handleAppendSegment() {
+  const shot = previewShot.value
+  const text = newSegmentText.value.trim()
+  if (!shot || !text) return
+  try {
+    const res = await videoApi.appendVoiceSegment(videoId, shot.id, {
+      text,
+      speaker: newSegmentSpeaker.value || undefined,
+      emotion: newSegmentEmotion.value || undefined,
+      language: newSegmentLanguage.value || undefined,
+    })
+    const updated = [...shotSegments.value, res.data!]
+    shotSegments.value = updated
+    segmentCache.set(shot.id, updated)
+    showAppendSegmentForm.value = false
+  } catch (e: any) {
+    toast.error('添加片段失败：' + (e.message || '未知错误'))
+  }
+}
+
+const editingSegId = ref<number | null>(null)
+const editingSegText = ref('')
+function startEditingSegment(seg: ShotVoiceSegment) {
+  editingSegId.value = seg.id
+  editingSegText.value = seg.text
+}
+async function saveSegmentText(seg: ShotVoiceSegment) {
+  if (editingSegId.value !== seg.id) return
+  const shot = previewShot.value
+  const text = editingSegText.value.trim()
+  editingSegId.value = null
+  if (!shot || !text || text === seg.text) return
+  const updated = shotSegments.value.map(s => s.id === seg.id ? { ...s, text } : s)
+  shotSegments.value = updated
+  segmentCache.set(shot.id, updated)
+  try {
+    await videoApi.updateVoiceSegment(videoId, shot.id, seg.id, { text, speaker: seg.speaker, emotion: seg.emotion, language: seg.language })
+  } catch (e: any) {
+    toast.error('保存失败：' + (e.message || '未知错误'))
+    const reverted = shotSegments.value.map(s => s.id === seg.id ? { ...s, text: seg.text } : s)
+    shotSegments.value = reverted
+    segmentCache.set(shot.id, reverted)
+  }
+}
+async function handleSegmentEmotionChange(seg: ShotVoiceSegment, emotion: string) {
+  const shot = previewShot.value
+  if (!shot) return
+  const prevEmotion = seg.emotion ?? ''
+  const updated = shotSegments.value.map(s => s.id === seg.id ? { ...s, emotion } : s)
+  shotSegments.value = updated
+  segmentCache.set(shot.id, updated)
+  try {
+    await videoApi.updateVoiceSegment(videoId, shot.id, seg.id, { text: seg.text, speaker: seg.speaker, emotion, language: seg.language })
+  } catch (e: any) {
+    toast.error('情绪保存失败：' + (e.message || '未知错误'))
+    const reverted = shotSegments.value.map(s => s.id === seg.id ? { ...s, emotion: prevEmotion } : s)
+    shotSegments.value = reverted
+    segmentCache.set(shot.id, reverted)
+  }
+}
+async function handleSegmentLanguageChange(seg: ShotVoiceSegment, language: string) {
+  const shot = previewShot.value
+  if (!shot) return
+  const prevLanguage = seg.language ?? ''
+  const updated = shotSegments.value.map(s => s.id === seg.id ? { ...s, language } : s)
+  shotSegments.value = updated
+  segmentCache.set(shot.id, updated)
+  try {
+    await videoApi.updateVoiceSegment(videoId, shot.id, seg.id, { text: seg.text, speaker: seg.speaker, emotion: seg.emotion, language })
+  } catch (e: any) {
+    toast.error('方言保存失败：' + (e.message || '未知错误'))
+    const reverted = shotSegments.value.map(s => s.id === seg.id ? { ...s, language: prevLanguage } : s)
+    shotSegments.value = reverted
+    segmentCache.set(shot.id, reverted)
+  }
+}
+async function deleteSegment(seg: ShotVoiceSegment) {
+  const shot = previewShot.value
+  if (!shot) return
+  if (!await confirm(`确认删除第 ${seg.seq_no} 段？`)) return
+  try {
+    await videoApi.deleteVoiceSegment(videoId, shot.id, seg.id)
+    const updated = shotSegments.value.filter(s => s.id !== seg.id)
+    shotSegments.value = updated
+    segmentCache.set(shot.id, updated)
+  } catch (e: any) {
+    toast.error('删除失败：' + (e.message || '未知错误'))
+  }
+}
+const generatingSegmentVoice = ref<Record<number, boolean>>({})
+async function generateSegmentVoiceForSeg(seg: ShotVoiceSegment) {
+  const shot = previewShot.value
+  if (!shot || generatingSegmentVoice.value[seg.id]) return
+  if (!await guardAiProvider('TTS')) return
+  generatingSegmentVoice.value[seg.id] = true
+  try {
+    const res = await videoApi.generateSegmentVoice(videoId, shot.id, seg.id)
+    const taskId = res.data?.task_id
+    if (taskId) {
+      toast.info(`片段 ${seg.seq_no} 配音生成中…`)
+      useTaskStore().trackTask(taskId, async (task) => {
+        generatingSegmentVoice.value[seg.id] = false
+        if (task.status === 'completed') {
+          invalidateSegmentCache(shot.id)
+          await loadShotSegments(shot)
+          toast.success(`片段 ${seg.seq_no} 配音已完成`)
+        } else {
+          toast.error(`片段 ${seg.seq_no} 配音失败`)
+        }
+      })
+    } else {
+      generatingSegmentVoice.value[seg.id] = false
+    }
+  } catch (e: any) {
+    toast.error('配音失败：' + (e.message || '未知错误'))
+    generatingSegmentVoice.value[seg.id] = false
+  }
 }
 
 // ── 视频生成历史：分镜历次生成的图片/视频，点击可恢复为当前版本 ────────────────
@@ -1323,33 +1549,188 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               @blur="finishEditingDescription"
             />
             <template v-if="isSlideshowMode">
-              <div class="mb-2">
-                <label class="block text-xs text-gray-500 mb-1">旁白</label>
-                <textarea
-                  ref="narrationTextareaRef"
-                  v-model="narrationDraft"
-                  rows="2"
-                  placeholder="旁白文案（无旁白留空）"
-                  class="w-full min-h-[3rem] bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none overflow-hidden focus:outline-none focus:border-primary-600"
-                  @input="onNarrationInput"
-                  @blur="saveNarrationDraft"
-                />
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs text-gray-500">旁白 / 台词</span>
+                <button
+                  class="p-1 rounded text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors"
+                  title="添加语音片段"
+                  @click="openAppendSegmentForm"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                </button>
               </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">台词</label>
+              <!-- 旧版单一旁白/台词编辑框：仅在该镜头还没有任何语音片段时展示，一旦有片段则改由下方片段列表编辑 -->
+              <template v-if="!shotSegments.length">
+              <div v-if="narrationDraft || editingNarration" class="mb-1.5 flex items-center gap-1.5">
+                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-medium whitespace-nowrap flex-shrink-0">旁白</span>
                 <span
-                  v-if="dialogueDraftSpeakerId"
-                  class="inline-flex items-center px-1.5 py-0.5 mr-1 mb-1 rounded bg-indigo-900/40 text-indigo-300 text-xs"
-                >{{ characterName(dialogueDraftSpeakerId) }}</span>
-                <textarea
-                  ref="dialogueTextareaRef"
-                  v-model="dialogueDraft"
-                  rows="2"
-                  placeholder="角色名：台词内容（无台词留空）"
-                  class="w-full min-h-[3rem] bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none overflow-hidden focus:outline-none focus:border-primary-600"
-                  @input="onDialogueInput"
-                  @blur="saveDialogueDraft"
+                  v-if="previewShot.emotional_tone"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 bg-gray-800 text-gray-400"
+                >{{ previewShot.emotional_tone }}</span>
+                <p
+                  v-if="!editingNarration"
+                  class="flex-1 min-w-0 text-sm italic text-primary-400 line-clamp-1 cursor-text"
+                  @click="startEditingNarration"
+                >{{ narrationDraft }}</p>
+                <input
+                  v-else
+                  ref="narrationInputRef"
+                  v-model="narrationDraft"
+                  placeholder="旁白文案（无旁白留空）"
+                  class="flex-1 min-w-0 text-sm italic text-primary-400 bg-transparent border-b border-primary-600 focus:outline-none py-0.5"
+                  @input="onNarrationInput"
+                  @keydown.enter="($event.target as HTMLInputElement).blur()"
+                  @blur="finishEditingNarration"
                 />
+                <div class="flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    class="p-1 rounded text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors disabled:opacity-50"
+                    :disabled="generatingShotVoice"
+                    title="生成配音"
+                    @click="handleGenerateShotVoice"
+                  >
+                    <svg v-if="generatingShotVoice" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                  </button>
+                  <button
+                    class="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                    title="清空旁白"
+                    @click="clearNarration"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
+              </div>
+              <button
+                v-else
+                class="mb-1.5 flex items-center gap-1 text-xs text-gray-500 hover:text-primary-400 transition-colors"
+                @click="startEditingNarration"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                添加旁白
+              </button>
+
+              <div v-if="dialogueDraft || editingDialogue" class="flex items-center gap-1.5">
+                <span
+                  class="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap flex-shrink-0"
+                  :class="dialogueDraftSpeakerId ? 'bg-blue-900/20 text-blue-400 border border-blue-700' : 'bg-gray-800 text-gray-400'"
+                >{{ dialogueDraftSpeakerId ? characterName(dialogueDraftSpeakerId) : '台词' }}</span>
+                <span
+                  v-if="previewShot.emotional_tone"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 bg-gray-800 text-gray-400"
+                >{{ previewShot.emotional_tone }}</span>
+                <p
+                  v-if="!editingDialogue"
+                  class="flex-1 min-w-0 text-sm italic text-primary-400 line-clamp-1 cursor-text"
+                  @click="startEditingDialogue"
+                >{{ dialogueDraft }}</p>
+                <input
+                  v-else
+                  ref="dialogueInputRef"
+                  v-model="dialogueDraft"
+                  placeholder="角色名：台词内容（无台词留空）"
+                  class="flex-1 min-w-0 text-sm italic text-primary-400 bg-transparent border-b border-primary-600 focus:outline-none py-0.5"
+                  @input="onDialogueInput"
+                  @keydown.enter="($event.target as HTMLInputElement).blur()"
+                  @blur="finishEditingDialogue"
+                />
+                <div class="flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    class="p-1 rounded text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors disabled:opacity-50"
+                    :disabled="generatingShotVoice"
+                    title="生成配音"
+                    @click="handleGenerateShotVoice"
+                  >
+                    <svg v-if="generatingShotVoice" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                  </button>
+                  <button
+                    class="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                    title="清空台词"
+                    @click="clearDialogue"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
+              </div>
+              </template>
+
+              <!-- 分镜语音片段列表：一旦存在任意片段，取代上面的单一旁白/台词编辑框 -->
+              <div v-if="loadingSegments" class="text-xs text-gray-500 py-1">加载中…</div>
+              <div v-else class="space-y-1.5">
+                <div v-for="seg in shotSegments" :key="seg.id" class="flex items-center gap-1.5">
+                  <span class="text-xs px-1.5 py-0.5 rounded bg-blue-900/20 text-blue-400 border border-blue-700 font-medium whitespace-nowrap flex-shrink-0">{{ seg.speaker || '旁白' }}</span>
+                  <select
+                    :value="seg.emotion || ''"
+                    class="text-[10px] px-1 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    :class="emotionClass(seg.emotion)"
+                    @change="handleSegmentEmotionChange(seg, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">情绪</option>
+                    <option v-for="e in EMOTION_OPTIONS" :key="e" :value="e">{{ e }}</option>
+                  </select>
+                  <select
+                    :value="seg.language || ''"
+                    class="text-[10px] px-1 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    :class="seg.language ? 'bg-indigo-900/30 text-indigo-300' : 'bg-gray-800 text-gray-500'"
+                    @change="handleSegmentLanguageChange(seg, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="opt in LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                  <p
+                    v-if="editingSegId !== seg.id"
+                    class="flex-1 min-w-0 text-sm italic text-primary-400 line-clamp-1 cursor-text"
+                    @click="startEditingSegment(seg)"
+                  >{{ seg.text }}</p>
+                  <input
+                    v-else
+                    v-model="editingSegText"
+                    class="flex-1 min-w-0 text-sm italic text-primary-400 bg-transparent border-b border-primary-600 focus:outline-none py-0.5"
+                    @keydown.enter="($event.target as HTMLInputElement).blur()"
+                    @blur="saveSegmentText(seg)"
+                  />
+                  <div class="flex items-center gap-0.5 flex-shrink-0">
+                    <button
+                      class="p-1 rounded text-gray-500 hover:text-primary-400 hover:bg-gray-800 transition-colors disabled:opacity-50"
+                      :disabled="generatingSegmentVoice[seg.id]"
+                      title="生成配音"
+                      @click="generateSegmentVoiceForSeg(seg)"
+                    >
+                      <svg v-if="generatingSegmentVoice[seg.id]" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                    </button>
+                    <button
+                      class="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                      title="删除此片段"
+                      @click="deleteSegment(seg)"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="showAppendSegmentForm" class="flex items-center gap-1.5">
+                  <select v-model="newSegmentSpeaker" class="text-xs px-1.5 py-0.5 rounded bg-blue-900/20 text-blue-400 border border-blue-700 font-medium flex-shrink-0 focus:outline-none">
+                    <option value="">旁白</option>
+                    <option v-for="c in characters" :key="c.id" :value="c.name">{{ c.name }}</option>
+                  </select>
+                  <select v-model="newSegmentEmotion" class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-medium flex-shrink-0 focus:outline-none">
+                    <option value="">情绪</option>
+                    <option v-for="e in EMOTION_OPTIONS" :key="e" :value="e">{{ e }}</option>
+                  </select>
+                  <select v-model="newSegmentLanguage" class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-medium flex-shrink-0 focus:outline-none">
+                    <option v-for="opt in LANGUAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                  <input
+                    ref="newSegmentInputRef"
+                    v-model="newSegmentText"
+                    class="flex-1 min-w-0 text-sm italic text-primary-400 bg-transparent border-b border-gray-700 focus:border-primary-600 focus:outline-none py-0.5 placeholder-gray-600"
+                    placeholder="输入台词，按 Enter 追加…"
+                    @keydown.enter="handleAppendSegment"
+                  />
+                  <button v-if="newSegmentText.trim()" class="text-xs text-primary-400 hover:text-primary-300 flex-shrink-0 font-medium" @click="handleAppendSegment">追加</button>
+                  <button class="text-xs text-gray-500 hover:text-gray-300 flex-shrink-0" @click="showAppendSegmentForm = false">✕</button>
+                </div>
               </div>
             </template>
             <p v-else-if="previewShot.dialogue" class="text-gray-300">
@@ -1404,20 +1785,14 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
             </div>
           </div>
 
-          <div class="flex items-center gap-1 rounded-lg overflow-hidden border border-gray-700 text-xs w-fit">
-            <button
-              class="px-2.5 py-1 font-medium transition-colors"
-              :class="generateScope === 'current' ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
-              @click="generateScope = 'current'"
-            >当前镜头</button>
-            <button
-              class="px-2.5 py-1 font-medium transition-colors"
-              :class="generateScope === 'scene' ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
-              @click="generateScope = 'scene'"
-            >本场次全部（{{ selectedShots.length }}）</button>
-          </div>
-
           <div class="flex gap-3">
+            <select
+              v-model="generateScope"
+              class="shrink-0 px-2.5 py-2 rounded-lg border border-gray-700 bg-gray-900 text-gray-200 text-xs font-medium focus:outline-none focus:border-primary-600"
+            >
+              <option value="current">当前镜头</option>
+              <option value="scene">本场次全部（{{ selectedShots.length }}）</option>
+            </select>
             <button
               class="flex-1 py-2 rounded-lg border border-gray-700 text-sm font-medium text-gray-200 hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
               :disabled="generatingImages || !canGenerate"
@@ -1470,7 +1845,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               :key="previewShot.id"
               :src="previewShot.video_url"
               :muted="isSlideshowMode"
-              class="max-w-full max-h-full"
+              class="max-w-full max-h-full object-contain"
               @play="isPlaying = true"
               @pause="isPlaying = false"
               @ended="handleEnded"
@@ -1480,7 +1855,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               v-else-if="previewShot?.image_url"
               :key="previewShot.id"
               :src="previewShot.image_url"
-              class="max-w-full max-h-full"
+              class="max-w-full max-h-full object-contain"
               :style="kenBurnsPreviewStyle"
             />
             <p v-else class="text-gray-600 text-sm">该分镜暂无素材</p>

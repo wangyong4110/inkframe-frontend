@@ -550,7 +550,7 @@ function formatSize(bytes?: number) {
             关闭
           </button>
           <template v-if="playingAsset.type === 'video'">
-            <video :src="playingAsset.storage_url" controls autoplay class="w-full rounded-xl shadow-2xl bg-black max-h-[75vh]" @click.stop />
+            <video :src="playingAsset.storage_url" controls autoplay class="max-w-full rounded-xl shadow-2xl bg-black max-h-[75vh] object-contain" @click.stop />
             <p class="text-white/70 text-sm mt-2 text-center truncate">{{ playingAsset.title }}</p>
           </template>
           <template v-else-if="playingAsset.type === 'audio'">

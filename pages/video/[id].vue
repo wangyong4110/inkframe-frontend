@@ -62,7 +62,7 @@ onMounted(async () => {
             </span>
           </div>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {{ video?.resolution }} · {{ video?.aspect_ratio }} · {{ video?.frame_rate }}fps
+            {{ video?.render_config?.resolution }} · {{ video?.render_config?.aspect_ratio }} · {{ video?.render_config?.frame_rate }}fps
             <span v-if="shots.length > 0"> · {{ shots.length }} 个镜头（{{ completedShots.length }} 已完成）</span>
           </p>
         </div>

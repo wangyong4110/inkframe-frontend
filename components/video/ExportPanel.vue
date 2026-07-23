@@ -112,11 +112,11 @@ const moreOpen = ref(false)
 const exporting = ref<Record<string, boolean>>({})
 
 // needsMedia: true 表示导出内容打包了图片/视频素材，必须先生成完成才有意义
-// （素材包/FCPXML/EDL/OTIO 都会写入 image_url/video_url 或依赖实际生成的时长）。
+// （FCPXML/EDL/OTIO 都会写入 image_url/video_url 或依赖实际生成的时长）。
 // false 表示纯文本导出（字幕/分镜表/分镜脚本），只依赖分镜的文案字段，
 // 分镜一旦创建即可导出，不必等图片/视频生成完成。
+// 注：素材包（zip）已提升为上方"导出模式"里的"素材"选项，这里不再重复列出。
 const otherFormats = [
-  { key: 'zip',    label: '素材包',         desc: '.zip · 任意剪辑软件',               ext: '.zip',  needsMedia: true  },
   { key: 'srt',    label: 'SRT 字幕',       desc: '.srt · 通用字幕',                   ext: '.srt',  needsMedia: false },
   { key: 'vtt',    label: 'WebVTT',         desc: '.vtt · 浏览器 / 网络视频',          ext: '.vtt',  needsMedia: false },
   { key: 'fcpxml', label: 'FCPXML',         desc: '.zip · Final Cut / DaVinci',        ext: '.zip',  needsMedia: true  },
@@ -143,6 +143,45 @@ async function handleExport(format: string, ext: string) {
   } finally {
     exporting.value = { ...exporting.value, [format]: false }
   }
+}
+
+// ── 导出模式：合并视频 / 分镜切片 / 素材 ───────────────
+// 三选一的简化入口，对应三种不同粒度的导出结果：
+//   merged（合并视频）→ 服务端渲染成一个 MP4（复用现有 handleSynthesize）
+//   shots（分镜切片）→ 每个分镜的渲染成片独立打包 .zip，不含音频/元数据（新增 'shots' 格式）
+//   assets（素材）→ 全部素材文件（视频/图片/配音/音效/BGM）+ shots.json + 字幕，打包 .zip
+//                    （复用原"素材包"，已在后端补上音效/BGM）
+const EXPORT_MODES = [
+  {
+    key: 'merged',
+    label: '合并视频',
+    desc: '将所有分镜合并为一个视频',
+    icon: 'M15 10l4.553-2.069A1 1 0 0121 8.876V15.5a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z',
+  },
+  {
+    key: 'shots',
+    label: '分镜切片',
+    desc: '将每个分镜独立导出（.zip）',
+    icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
+  },
+  {
+    key: 'assets',
+    label: '素材',
+    desc: '导出全部素材文件（视频/图片/配音/音效/BGM）',
+    icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4',
+  },
+] as const
+type ExportModeKey = typeof EXPORT_MODES[number]['key']
+const exportMode = ref<ExportModeKey>('merged')
+const exportModeBusy = computed(() => {
+  if (exportMode.value === 'merged') return synthesizing.value
+  if (exportMode.value === 'shots') return !!exporting.value.shots
+  return !!exporting.value.zip
+})
+async function handleExportModeConfirm() {
+  if (exportMode.value === 'merged') return handleSynthesize()
+  if (exportMode.value === 'shots') return handleExport('shots', '.zip')
+  return handleExport('zip', '.zip')
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -263,41 +302,57 @@ function triggerDownload(blob: Blob, filename: string) {
         </svg>
       </button>
 
-      <!-- 合成 MP4 -->
-      <button
-        class="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700 transition-all"
-        :class="completedShots.length === 0 || synthesizing
-          ? 'opacity-50 cursor-not-allowed'
-          : 'hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'"
-        :disabled="completedShots.length === 0 || synthesizing"
-        @click="handleSynthesize"
-      >
-        <div class="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-          <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <div class="flex-1 text-left">
-          <span class="font-medium text-gray-900 dark:text-white">{{ synthesizing ? '合成中...' : '合成 MP4' }}</span>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">服务器渲染，完成后可直接下载成品视频</p>
-        </div>
-        <a
-          v-if="finalVideoUrl"
-          :href="finalVideoUrl"
-          target="_blank"
-          download
-          class="flex-shrink-0 flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600"
-          @click.stop
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          下载成品
-        </a>
-      </button>
     </div>
 
-    <!-- ③ 更多格式（折叠） -->
+    <!-- ③ 导出模式：合并视频 / 分镜切片 / 素材 -->
+    <div class="card p-4 space-y-3">
+      <h3 class="font-semibold text-gray-900 dark:text-white">导出模式</h3>
+
+      <button
+        v-for="mode in EXPORT_MODES" :key="mode.key"
+        class="w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left"
+        :class="exportMode === mode.key
+          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'"
+        @click="exportMode = mode.key"
+      >
+        <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="mode.icon" />
+          </svg>
+        </div>
+        <div class="flex-1">
+          <span class="font-medium text-gray-900 dark:text-white">{{ mode.label }}</span>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ mode.desc }}</p>
+        </div>
+        <svg v-if="exportMode === mode.key" class="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+      </button>
+
+      <button
+        class="w-full py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white disabled:opacity-50 transition-colors"
+        :disabled="completedShots.length === 0 || exportModeBusy"
+        @click="handleExportModeConfirm"
+      >
+        {{ exportModeBusy ? '导出中...' : '导出' }}
+      </button>
+
+      <a
+        v-if="exportMode === 'merged' && finalVideoUrl"
+        :href="finalVideoUrl"
+        target="_blank"
+        download
+        class="flex items-center justify-center gap-1 text-xs text-blue-500 hover:text-blue-600"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        下载已合成的成品视频
+      </a>
+    </div>
+
+    <!-- ④ 更多格式（折叠） -->
     <div class="card overflow-hidden">
       <button
         class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"

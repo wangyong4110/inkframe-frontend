@@ -260,8 +260,8 @@ function formatDate(s?: string) {
             <img :src="asset.storage_url" :alt="asset.title" class="max-w-full max-h-[600px] object-contain" />
           </div>
           <!-- Video -->
-          <div v-else-if="asset.type === 'video'" class="bg-black">
-            <video :src="asset.hls_url || asset.storage_url" controls class="w-full max-h-[500px]" />
+          <div v-else-if="asset.type === 'video'" class="bg-black flex items-center justify-center">
+            <video :src="asset.hls_url || asset.storage_url" controls class="max-w-full max-h-[500px] object-contain" />
           </div>
           <!-- Audio -->
           <div v-else-if="asset.type === 'audio'" class="p-6">

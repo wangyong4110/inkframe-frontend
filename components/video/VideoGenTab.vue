@@ -960,7 +960,7 @@ defineExpose({
               controls
               autoplay
               loop
-              class="w-full max-h-[70vh] bg-black"
+              class="max-w-full max-h-[70vh] object-contain bg-black"
             />
           </div>
         </div>
