@@ -83,6 +83,10 @@ watch(() => novelStore.currentNovel?.image_style, (style) => {
   if (style) storyboardForm.value.art_style = style
 }, { immediate: true })
 
+watch(() => novelStore.currentNovel?.video_aspect_ratio, (ratio) => {
+  if (ratio) storyboardForm.value.aspect_ratio = ratio
+}, { immediate: true })
+
 const VIDEO_MODES = [
   { id: 'slideshow' as const, name: '图片解说', desc: '每镜一图+动效，低成本' },
   { id: 'video' as const, name: 'AI 视频', desc: '逐帧视频，需视频API' },
@@ -3356,7 +3360,7 @@ onUnmounted(() => {
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">宽高比</label>
             <div class="grid grid-cols-3 gap-2">
               <button
-                v-for="ratio in ['16:9', '9:16', '1:1']"
+                v-for="ratio in ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']"
                 :key="ratio"
                 type="button"
                 class="py-2.5 text-sm font-medium rounded-xl border-2 transition-all"

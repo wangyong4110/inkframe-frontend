@@ -26,6 +26,25 @@ const loading = ref(true)
 const video = computed(() => videoStore.currentVideo)
 const previewAspectRatio = computed(() => (video.value?.aspect_ratio || '16:9').replace(':', '/'))
 const novelVideoType = ref<string | null>(null) // 项目设置里的"视频类型"（animation/narration），用于与 Video.mode 比对是否一致
+const novelVideoAspectRatio = ref<string | null>(null) // 项目设置里的"宽高比"，用于与 Video.aspect_ratio 比对是否一致
+// Video.aspect_ratio 创建时从项目设置带入，但项目设置后续变更不会回溯更新已创建的视频；
+// 与 Video.mode 同理，这里仅在检测到不一致时给出手动修正入口，不做静默覆盖。
+const aspectRatioMismatch = computed(() => novelVideoAspectRatio.value !== null && novelVideoAspectRatio.value !== (video.value?.aspect_ratio || '16:9'))
+const fixingAspectRatio = ref(false)
+async function fixAspectRatioToProjectSetting() {
+  if (!aspectRatioMismatch.value || fixingAspectRatio.value || !novelVideoAspectRatio.value) return
+  const ok = await confirm(`当前视频宽高比（${video.value?.aspect_ratio || '16:9'}）与项目设置（${novelVideoAspectRatio.value}）不一致，是否修正为项目设置？不会重新生成已有分镜，仅影响预览画布与后续生成的比例。`)
+  if (!ok) return
+  fixingAspectRatio.value = true
+  try {
+    await videoStore.updateVideo(videoId, { aspect_ratio: novelVideoAspectRatio.value })
+    toast.success('已修正为项目设置的宽高比')
+  } catch (e: any) {
+    toast.error('修正失败：' + (e.message || '未知错误'))
+  } finally {
+    fixingAspectRatio.value = false
+  }
+}
 // 分镜轻量汇总（全视频，供场次侧边栏/时间轴/头部统计用，不含 description 等大字段）；
 // 当前选中场次的完整分镜详情单独按需拉取（见 selectedSceneShots），避免一次性加载
 // 整个视频的全部分镜——description 现在是完整的 AI 生图提示词，体积明显变大。
@@ -425,7 +444,10 @@ async function loadAll() {
         characterStore.fetchCharacters(v.novel_id),
         sceneAnchorStore.fetchAnchors(v.novel_id),
         itemApi.listItems(v.novel_id).then(res => { items.value = res.data?.items ?? [] }).catch(() => { items.value = [] }),
-        novelApi.getNovel(v.novel_id).then(res => { novelVideoType.value = res.data?.video_type ?? 'animation' }).catch(() => { novelVideoType.value = null }),
+        novelApi.getNovel(v.novel_id).then(res => {
+          novelVideoType.value = res.data?.video_type ?? 'animation'
+          novelVideoAspectRatio.value = res.data?.video_aspect_ratio ?? '16:9'
+        }).catch(() => { novelVideoType.value = null; novelVideoAspectRatio.value = null }),
       ])
       try {
         const res = await videoApi.getEpisodeSummaries(v.novel_id)
@@ -489,17 +511,31 @@ function switchEpisode(ep: EpisodeSummary) {
 // ── 生成 ────────────────────────────────────────────────────────────────────
 const generatingImages = ref(false)
 const generatingVideo = ref(false)
+// 生成范围：默认只针对页面上正在展示/编辑的这一个镜头（previewShot）——用户在编辑框里
+// 看到的是这一个镜头的提示词/参考图，按钮紧跟在它下方，点击应作用于当前这一个镜头。
+// 也支持切换为"本场次全部"，批量生成时会覆盖该场次所有分镜已有的素材，故加确认弹窗。
+const generateScope = ref<'current' | 'scene'>('current')
+const canGenerate = computed(() => generateScope.value === 'scene' ? selectedShots.value.length > 0 : !!previewShot.value)
+function shotsForGenerate(): StoryboardShot[] {
+  if (generateScope.value === 'scene') return selectedShots.value
+  return previewShot.value ? [previewShot.value] : []
+}
+async function confirmSceneBatch(action: string): Promise<boolean> {
+  if (generateScope.value !== 'scene') return true
+  const count = selectedShots.value.length
+  if (!count) return false
+  return confirm(`将为本场次全部 ${count} 个分镜批量${action}，已生成的素材会被覆盖，且可能耗时较长，确认继续？`)
+}
 
-// 只针对页面上正在展示/编辑的这一个镜头（previewShot）生成，而非整个场次批量生成——
-// 用户在编辑框里看到的是这一个镜头的提示词/参考图，按钮紧跟在它下方，点击应作用于
-// 当前这一个镜头。复用批量接口但只传当前镜头一个 ID，不需要另开单镜接口。
 async function generateShotImages() {
   if (!await guardAiProvider('IMAGE')) return
-  if (!previewShot.value) return
+  const shots = shotsForGenerate()
+  if (!shots.length) return
+  if (!await confirmSceneBatch('生成预览图')) return
   generatingImages.value = true
   try {
-    await videoApi.batchGenerateShotImages(videoId, [previewShot.value.id])
-    toast.info('分镜预览图生成任务已提交')
+    await videoApi.batchGenerateShotImages(videoId, shots.map(s => s.id))
+    toast.info(shots.length > 1 ? `已提交 ${shots.length} 个分镜的预览图生成任务` : '分镜预览图生成任务已提交')
     await refreshShots()
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
@@ -511,9 +547,7 @@ async function generateShotImages() {
 // 图片解说模式：Ken Burns 画面 + 配音 + 音效需要分别调用对应的单镜生成接口，
 // 全部完成后统一刷新，右侧播放器再按多轨（video 静音承载画面 + audio 配音 + audio 音效）
 // 同步播放，模拟一次"合成"的观感，而不需要后端真正 ffmpeg 合并出一个文件。
-async function generateSlideshowShotMedia() {
-  const shot = previewShot.value
-  if (!shot) return
+async function generateSlideshowShotMedia(shot: StoryboardShot) {
   const taskStore = useTaskStore()
   const taskIds: string[] = []
 
@@ -527,26 +561,29 @@ async function generateSlideshowShotMedia() {
     const sfxRes = await videoApi.generateShotSFX(videoId, shot.id)
     if (sfxRes.data?.task_id) taskIds.push(sfxRes.data.task_id)
   }
-  toast.info('图片解说素材生成任务已提交（Ken Burns / 配音 / 音效）')
-
   await Promise.all(taskIds.map(id => new Promise<void>((resolve) => {
     taskStore.trackTask(id, () => resolve())
   })))
-  await refreshShots()
-  await loadShotSfxItems()
-  toast.success('素材已生成')
 }
 
 async function generateShotVideos() {
   if (!await guardAiProvider('VIDEO')) return
-  if (!previewShot.value) return
+  const shots = shotsForGenerate()
+  if (!shots.length) return
+  if (!await confirmSceneBatch(isSlideshowMode.value ? '生成素材' : '生成视频')) return
   generatingVideo.value = true
   try {
     if (isSlideshowMode.value) {
-      await generateSlideshowShotMedia()
+      toast.info(shots.length > 1 ? `已提交 ${shots.length} 个分镜的素材生成任务（Ken Burns / 配音 / 音效）` : '图片解说素材生成任务已提交（Ken Burns / 配音 / 音效）')
+      for (const shot of shots) {
+        await generateSlideshowShotMedia(shot)
+      }
+      await refreshShots()
+      await loadShotSfxItems()
+      toast.success('素材已生成')
     } else {
-      await videoApi.batchGenerateShots(videoId, [previewShot.value.id])
-      toast.info('视频生成任务已提交')
+      await videoApi.batchGenerateShots(videoId, shots.map(s => s.id))
+      toast.info(shots.length > 1 ? `已提交 ${shots.length} 个分镜的视频生成任务` : '视频生成任务已提交')
       await refreshShots()
     }
   } catch (e: any) {
@@ -756,14 +793,16 @@ watch(previewShot, () => { loadShotSfxItems() }, { immediate: true })
 
 // ── 图片解说模式：Ken Burns 效果选择 ─────────────────────────────────────────
 // 图片解说的静态图转视频（generateKenBurnsPureGo）直接复用 camera_type 字段驱动缩放/平移
-// 动画，而非独立的效果参数：zoom=放大1.0→1.5，pan=横向平移，tilt=纵向平移，其余取值
-// （含 static）统一走默认的"经典缓推"1.0→1.2。video 模式下的 camera_type 下拉框有 12 个
-// 值，但对图片解说而言其中大部分效果完全相同，所以这里只暴露这 4 个真正有区别的选项。
+// 动画。与后端 kbCrop（kenburns_go.go）保持一致——只暴露后端真正实现的运镜效果，
+// 避免出现预览与生成的 Ken Burns 视频不一致（未识别的 camera_type 会静默退化为默认缓推）。
 const KEN_BURNS_OPTIONS: { value: string; label: string }[] = [
   { value: 'static', label: '经典缓推（轻微放大）' },
-  { value: 'zoom', label: '放大' },
-  { value: 'pan', label: '横向平移' },
-  { value: 'tilt', label: '纵向平移' },
+  { value: 'zoom', label: '放大（推近）' },
+  { value: 'zoom_out', label: '缩小（拉远）' },
+  { value: 'pan', label: '横向平移（左→右）' },
+  { value: 'pan_reverse', label: '横向平移（右→左）' },
+  { value: 'tilt', label: '纵向平移（上→下）' },
+  { value: 'tilt_reverse', label: '纵向平移（下→上）' },
 ]
 const savingKenBurns = ref(false)
 async function setKenBurnsEffect(value: string) {
@@ -947,21 +986,59 @@ function syncPreviewAudio(action: 'play' | 'pause', seek?: number) {
   }
 }
 
-watch(selectedShots, () => { previewShotIdx.value = 0 })
-watch(previewShot, () => { currentTime.value = 0; syncPreviewAudio('pause', 0) })
+// 图片解说模式下，若该镜头还没有生成 Ken Burns 视频（无 video_url，只有静态 image_url），
+// 没有 <video> 元素可控制，靠本地计时器模拟播放进度/结束事件，驱动 CSS 运镜动画
+// （kenBurnsPreviewStyle）作为生成视频前的即时预览。
+let imagePlaybackTimer: ReturnType<typeof setInterval> | null = null
+function stopImagePlaybackTimer() {
+  if (imagePlaybackTimer) { clearInterval(imagePlaybackTimer); imagePlaybackTimer = null }
+}
+onUnmounted(() => stopImagePlaybackTimer())
 
-function playPause() {
+// 切换场次时才回到该场次第一个分镜；场次不变、仅数据刷新（如生成图片/视频后 refreshShots）
+// 不应打断用户正在查看/编辑的分镜——之前误绑定在 selectedShots 上，导致每次刷新都跳回镜头1。
+watch(selectedSceneId, () => { previewShotIdx.value = 0 })
+watch(selectedShots, (shots) => {
+  if (previewShotIdx.value >= shots.length) previewShotIdx.value = Math.max(0, shots.length - 1)
+})
+watch(previewShot, () => {
+  currentTime.value = 0
+  isPlaying.value = false
+  stopImagePlaybackTimer()
+  syncPreviewAudio('pause', 0)
+})
+
+function startPreviewPlayback() {
   const el = previewVideoRef.value
-  if (!el) return
-  if (el.paused) {
+  if (el) {
     syncPreviewAudio('play', el.currentTime)
     el.play().catch(() => {})
     isPlaying.value = true
-  } else {
-    syncPreviewAudio('pause')
-    el.pause()
-    isPlaying.value = false
+    return
   }
+  if (!previewShot.value?.image_url) return
+  syncPreviewAudio('play', currentTime.value)
+  isPlaying.value = true
+  const duration = previewShot.value.duration || 5
+  stopImagePlaybackTimer()
+  imagePlaybackTimer = setInterval(() => {
+    currentTime.value += 0.1
+    if (currentTime.value >= duration) {
+      currentTime.value = duration
+      stopImagePlaybackTimer()
+      handleEnded()
+    }
+  }, 100)
+}
+function stopPreviewPlayback() {
+  previewVideoRef.value?.pause()
+  stopImagePlaybackTimer()
+  syncPreviewAudio('pause')
+  isPlaying.value = false
+}
+function playPause() {
+  if (isPlaying.value) stopPreviewPlayback()
+  else startPreviewPlayback()
 }
 function prevShot() {
   if (previewShotIdx.value > 0) previewShotIdx.value--
@@ -974,12 +1051,37 @@ function onTimeUpdate() {
 }
 function handleEnded() {
   isPlaying.value = false
+  stopImagePlaybackTimer()
   syncPreviewAudio('pause')
   if (!singleSegmentPlay.value && previewShotIdx.value < selectedShots.value.length - 1) {
     nextShot()
-    nextTick(() => { previewVideoRef.value?.play().catch(() => {}) })
+    nextTick(() => { startPreviewPlayback() })
   }
 }
+
+// 运镜（Ken Burns）客户端预览动画：镜头尚未生成服务端视频时，直接在静态图上用 CSS
+// 动画模拟对应 camera_type 的推拉/平移效果，与 generateKenBurnsPureGo（kbCrop）保持
+// 同一套效果名称，但只是近似预览，不追求像素级一致。
+const KEN_BURNS_ANIMATION_NAMES: Record<string, string> = {
+  static: 'kb-static',
+  zoom: 'kb-zoom',
+  zoom_out: 'kb-zoom-out',
+  pan: 'kb-pan',
+  pan_reverse: 'kb-pan-reverse',
+  tilt: 'kb-tilt',
+  tilt_reverse: 'kb-tilt-reverse',
+}
+const kenBurnsPreviewStyle = computed(() => {
+  if (!previewShot.value) return {}
+  const duration = previewShot.value.duration || 5
+  return {
+    animationName: KEN_BURNS_ANIMATION_NAMES[previewShot.value.camera_type || 'static'] || 'kb-static',
+    animationDuration: `${duration}s`,
+    animationTimingFunction: 'ease-in-out',
+    animationFillMode: 'forwards',
+    animationPlayState: isPlaying.value ? 'running' : 'paused',
+  }
+})
 function formatTime(t: number) {
   const m = Math.floor(t / 60)
   const s = Math.floor(t % 60)
@@ -1042,6 +1144,13 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
           :title="`与项目设置（${videoModeLabels[expectedVideoMode]}）不一致，点击修正`"
           @click="fixVideoModeToProjectSetting"
         >⚠️ 与项目设置不一致</button>
+        <button
+          v-if="aspectRatioMismatch"
+          class="text-xs px-2 py-1 rounded-lg border border-amber-500 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+          :disabled="fixingAspectRatio"
+          :title="`宽高比与项目设置（${novelVideoAspectRatio}）不一致，点击修正`"
+          @click="fixAspectRatioToProjectSetting"
+        >⚠️ 宽高比与项目设置不一致</button>
         <button class="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1.5" @click="openExportModal">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
           导出
@@ -1295,17 +1404,30 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
             </div>
           </div>
 
+          <div class="flex items-center gap-1 rounded-lg overflow-hidden border border-gray-700 text-xs w-fit">
+            <button
+              class="px-2.5 py-1 font-medium transition-colors"
+              :class="generateScope === 'current' ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
+              @click="generateScope = 'current'"
+            >当前镜头</button>
+            <button
+              class="px-2.5 py-1 font-medium transition-colors"
+              :class="generateScope === 'scene' ? 'bg-primary-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'"
+              @click="generateScope = 'scene'"
+            >本场次全部（{{ selectedShots.length }}）</button>
+          </div>
+
           <div class="flex gap-3">
             <button
               class="flex-1 py-2 rounded-lg border border-gray-700 text-sm font-medium text-gray-200 hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
-              :disabled="generatingImages || !previewShot"
+              :disabled="generatingImages || !canGenerate"
               @click="generateShotImages"
             >
               {{ generatingImages ? '生成中…' : '生成分镜预览图' }}
             </button>
             <button
               class="flex-1 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white disabled:opacity-50 flex items-center justify-center gap-1.5"
-              :disabled="generatingVideo || !previewShot"
+              :disabled="generatingVideo || !canGenerate"
               @click="generateShotVideos"
             >
               {{ generatingVideo ? '生成中…' : '生成视频' }}
@@ -1341,7 +1463,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
         </div>
 
         <div class="flex-1 flex items-center justify-center bg-gray-900">
-          <div class="relative flex items-center justify-center" :style="{ aspectRatio: previewAspectRatio, maxWidth: '100%', maxHeight: '100%' }">
+          <div class="relative flex items-center justify-center overflow-hidden" :style="{ aspectRatio: previewAspectRatio, maxWidth: '100%', maxHeight: '100%' }">
             <video
               v-if="previewShot?.video_url"
               ref="previewVideoRef"
@@ -1354,7 +1476,13 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               @ended="handleEnded"
               @timeupdate="onTimeUpdate"
             />
-            <img v-else-if="previewShot?.image_url" :src="previewShot.image_url" class="max-w-full max-h-full" />
+            <img
+              v-else-if="previewShot?.image_url"
+              :key="previewShot.id"
+              :src="previewShot.image_url"
+              class="max-w-full max-h-full"
+              :style="kenBurnsPreviewStyle"
+            />
             <p v-else class="text-gray-600 text-sm">该分镜暂无素材</p>
             <!-- 图片解说模式：Ken Burns 画面本身静音，配音/音效各自独立音轨，跟随播放/暂停同步 -->
             <audio v-if="isSlideshowMode && previewShot?.audio_url" ref="previewVoiceRef" :key="`voice-${previewShot.id}`" :src="previewShot.audio_url" />
@@ -1507,3 +1635,15 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
     <AiProviderGuardModal />
   </div>
 </template>
+
+<style scoped>
+/* 图片解说模式下静态图的运镜客户端预览，效果名称/方向与后端 kbCrop（kenburns_go.go）对应，
+   仅做近似预览——真正的运镜视频仍由服务端 generateKenBurnsPureGo 生成。 */
+@keyframes kb-static     { from { transform: scale(1.0); } to { transform: scale(1.2); } }
+@keyframes kb-zoom       { from { transform: scale(1.0); } to { transform: scale(1.5); } }
+@keyframes kb-zoom-out   { from { transform: scale(1.5); } to { transform: scale(1.0); } }
+@keyframes kb-pan        { from { transform: scale(1.3) translateX(-8%); } to { transform: scale(1.3) translateX(8%); } }
+@keyframes kb-pan-reverse  { from { transform: scale(1.3) translateX(8%); } to { transform: scale(1.3) translateX(-8%); } }
+@keyframes kb-tilt         { from { transform: scale(1.3) translateY(-8%); } to { transform: scale(1.3) translateY(8%); } }
+@keyframes kb-tilt-reverse { from { transform: scale(1.3) translateY(8%); } to { transform: scale(1.3) translateY(-8%); } }
+</style>
