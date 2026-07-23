@@ -1170,22 +1170,67 @@ function handleFileInputChange(e: Event) {
 
 const downloadUrl = computed(() => previewShot.value?.video_url || previewShot.value?.image_url || '')
 
-// ── 导出（真实：复用已有的 ExportPanel 组件） ───────────────────────────────
-// ExportPanel 需要全视频每个分镜的 status/image_url/video_url 判断完成度，与场次无关，
-// 因此只在打开导出弹层时按需拉取一次完整列表，不在页面初始加载时就拉取。
-const showExportModal = ref(false)
-const exportShots = ref<StoryboardShot[]>([])
-const loadingExportShots = ref(false)
-async function openExportModal() {
-  showExportModal.value = true
-  loadingExportShots.value = true
+// ── 导出：紧凑下拉（只保留"导出模式"三选一 + 确认按钮，不弹整块 ExportPanel 面板）───
+// 三种模式各自直接调用对应导出接口，不需要像 ExportPanel 那样预先拉取全视频分镜判断
+// 就绪度——merged/shots/assets 三个接口本身都是按 videoId 服务端处理，不依赖前端传分镜。
+const showExportDropdown = ref(false)
+const exportDropdownRef = ref<HTMLElement | null>(null)
+onClickOutside(exportDropdownRef, () => { showExportDropdown.value = false })
+
+const EXPORT_MODES = [
+  {
+    key: 'merged' as const,
+    label: '合并视频',
+    desc: '将所有分镜合并为一个视频',
+    icon: 'M15 10l4.553-2.069A1 1 0 0121 8.876V15.5a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z',
+  },
+  {
+    key: 'shots' as const,
+    label: '分镜切片',
+    desc: '将每个分镜独立导出（.zip）',
+    icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z',
+  },
+  {
+    key: 'assets' as const,
+    label: '素材',
+    desc: '导出全部素材文件（视频/图片/配音/音效/BGM）',
+    icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4',
+  },
+]
+type ExportModeKey = typeof EXPORT_MODES[number]['key']
+const exportMode = ref<ExportModeKey>('merged')
+const exportingMode = ref(false)
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+async function confirmExport() {
+  if (exportingMode.value) return
+  exportingMode.value = true
   try {
-    const res = await videoApi.getStoryboard(videoId)
-    exportShots.value = res.data ?? []
+    if (exportMode.value === 'merged') {
+      const { request } = useApi()
+      await request(`/videos/${videoId}/synthesize`, { method: 'POST' })
+      toast.success('合成任务已提交，请稍后在生成历史/时间线中查看进度')
+    } else {
+      const format = exportMode.value === 'shots' ? 'shots' : 'zip'
+      const blob = await videoApi.exportVideo(videoId, format)
+      triggerDownload(blob, `${video.value?.title || 'video'}_${format}.zip`)
+      toast.success('导出成功')
+    }
+    showExportDropdown.value = false
   } catch (e: any) {
-    toast.error('加载分镜失败：' + (e.message || '未知错误'))
+    toast.error('导出失败：' + (e.message || '未知错误'))
   } finally {
-    loadingExportShots.value = false
+    exportingMode.value = false
   }
 }
 
@@ -1377,10 +1422,46 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
           :title="`宽高比与项目设置（${novelVideoAspectRatio}）不一致，点击修正`"
           @click="fixAspectRatioToProjectSetting"
         >⚠️ 宽高比与项目设置不一致</button>
-        <button class="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1.5" @click="openExportModal">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-          导出
-        </button>
+        <div ref="exportDropdownRef" class="relative">
+          <button class="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1.5" @click="showExportDropdown = !showExportDropdown">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            导出
+          </button>
+          <div
+            v-if="showExportDropdown"
+            class="absolute top-full mt-2 right-0 w-72 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-20 p-3 space-y-2"
+          >
+            <p class="text-xs text-gray-500 px-1">导出模式</p>
+            <button
+              v-for="mode in EXPORT_MODES" :key="mode.key"
+              class="w-full flex items-center gap-2.5 p-2 rounded-lg border transition-colors text-left"
+              :class="exportMode === mode.key
+                ? 'border-primary-500 bg-primary-900/20'
+                : 'border-gray-800 hover:border-gray-700 hover:bg-gray-800'"
+              @click="exportMode = mode.key"
+            >
+              <div class="w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="mode.icon" />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <span class="text-sm font-medium text-gray-100">{{ mode.label }}</span>
+                <p class="text-[11px] text-gray-500 truncate">{{ mode.desc }}</p>
+              </div>
+              <svg v-if="exportMode === mode.key" class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+            <button
+              class="w-full py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white disabled:opacity-50 transition-colors"
+              :disabled="exportingMode"
+              @click="confirmExport"
+            >
+              {{ exportingMode ? '导出中...' : '导出' }}
+            </button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -1972,27 +2053,8 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       </div>
     </Teleport>
 
-    <!-- 导出弹层：复用已有 ExportPanel -->
-    <Teleport to="body">
-      <div v-if="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/50" @click="showExportModal = false" />
-        <div class="relative w-full max-w-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-[85vh] overflow-auto">
-          <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">导出</h3>
-            <button class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="showExportModal = false">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <div class="p-4">
-            <div v-if="loadingExportShots" class="text-xs text-gray-500 text-center py-6">加载中…</div>
-            <ExportPanel v-else :video-id="videoId" :shots="exportShots" @refreshed="openExportModal" />
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
     <!-- 历史记录：复用已有 StoryboardReviewPanel（内含审查历史 + 回滚） -->
-    <StoryboardReviewPanel v-if="showHistoryPanel" :video-id="videoId" :visible="true" @close="showHistoryPanel = false" />
+    <VideoStoryboardReviewPanel v-if="showHistoryPanel" :video-id="videoId" :visible="true" @close="showHistoryPanel = false" />
 
     <!-- 切换分镜生成模式（专业分镜/忠于原文/简洁模式）后询问是否立即重新生成提示词 -->
     <StoryboardModeSwitchDialog
