@@ -629,10 +629,12 @@ async function generateShotVideos() {
 // ── 重新生成提示词 ────────────────────────────────────────────────────────
 const regeneratingPrompts = ref(false)
 async function regeneratePrompts() {
-  if (!selectedShots.value.length || regeneratingPrompts.value) return
+  const shots = shotsForGenerate()
+  if (!shots.length || regeneratingPrompts.value) return
+  if (!await confirmSceneBatch('重新生成提示词')) return
   regeneratingPrompts.value = true
   try {
-    for (const shot of selectedShots.value) {
+    for (const shot of shots) {
       await videoApi.regenerateShotPrompt(videoId, shot.id)
     }
     toast.success('提示词已重新生成')
@@ -1500,7 +1502,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       <!-- 左侧：剧本 + 分镜 -->
       <div class="min-w-0 flex flex-col border-r border-gray-800" :style="{ width: leftPanelWidthPercent + '%' }">
         <div class="flex-1 min-h-0 overflow-auto px-6 py-4">
-          <!-- 原始剧本折叠标题 + 格式 / 重新生成提示词 -->
+          <!-- 原始剧本折叠标题 + 格式 -->
           <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <button v-if="selectedTile?.scene" class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200" @click="scriptCollapsed = !scriptCollapsed">
               <svg class="w-3.5 h-3.5 transition-transform" :class="scriptCollapsed ? '' : 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
@@ -1513,14 +1515,6 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
                 <option value="faithful">格式：忠于原文</option>
                 <option value="concise">格式：简洁模式</option>
               </select>
-              <button
-                class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-50"
-                :disabled="regeneratingPrompts || !selectedShots.length"
-                @click="regeneratePrompts"
-              >
-                <svg class="w-3.5 h-3.5" :class="regeneratingPrompts ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                {{ regeneratingPrompts ? '生成中…' : '重新生成提示词' }}
-              </button>
             </div>
           </div>
           <p v-if="selectedTile?.scene && !scriptCollapsed" class="text-sm text-gray-500 mb-4 leading-relaxed">{{ selectedTile.scene.synopsis }}</p>
@@ -1894,6 +1888,14 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
               <option value="current">当前镜头</option>
               <option value="scene">本场次全部（{{ selectedShots.length }}）</option>
             </select>
+            <button
+              class="flex-1 py-2 rounded-lg border border-gray-700 text-sm font-medium text-gray-200 hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              :disabled="regeneratingPrompts || !canGenerate"
+              @click="regeneratePrompts"
+            >
+              <svg class="w-3.5 h-3.5" :class="regeneratingPrompts ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              {{ regeneratingPrompts ? '生成中…' : '重新生成提示词' }}
+            </button>
             <button
               class="flex-1 py-2 rounded-lg border border-gray-700 text-sm font-medium text-gray-200 hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
               :disabled="generatingImages || !canGenerate"
