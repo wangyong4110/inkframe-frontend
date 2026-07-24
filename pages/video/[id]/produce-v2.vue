@@ -538,12 +538,26 @@ async function generateShotImages() {
   if (!await confirmSceneBatch('生成预览图')) return
   generatingImages.value = true
   try {
-    await videoApi.batchGenerateShotImages(videoId, shots.map(s => s.id))
+    const res = await videoApi.batchGenerateShotImages(videoId, shots.map(s => s.id))
     toast.info(shots.length > 1 ? `已提交 ${shots.length} 个分镜的预览图生成任务` : '分镜预览图生成任务已提交')
-    await refreshShots()
+    const taskId = res.data?.task_id
+    if (!taskId) {
+      await refreshShots()
+      generatingImages.value = false
+      return
+    }
+    const taskStore = useTaskStore()
+    taskStore.trackTask(taskId, async (task) => {
+      generatingImages.value = false
+      await refreshShots()
+      if (task.status === 'completed') {
+        toast.success('分镜预览图已生成')
+      } else {
+        toast.error('分镜预览图生成失败')
+      }
+    }, () => refreshShots())
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
-  } finally {
     generatingImages.value = false
   }
 }
@@ -585,14 +599,29 @@ async function generateShotVideos() {
       await refreshShots()
       await loadShotSfxItems()
       toast.success('素材已生成')
+      generatingVideo.value = false
     } else {
-      await videoApi.batchGenerateShots(videoId, shots.map(s => s.id))
+      const res = await videoApi.batchGenerateShots(videoId, shots.map(s => s.id))
       toast.info(shots.length > 1 ? `已提交 ${shots.length} 个分镜的视频生成任务` : '视频生成任务已提交')
-      await refreshShots()
+      const taskId = res.data?.task_id
+      if (!taskId) {
+        await refreshShots()
+        generatingVideo.value = false
+        return
+      }
+      const taskStore = useTaskStore()
+      taskStore.trackTask(taskId, async (task) => {
+        generatingVideo.value = false
+        await refreshShots()
+        if (task.status === 'completed') {
+          toast.success('视频已生成')
+        } else {
+          toast.error('视频生成失败')
+        }
+      }, () => refreshShots())
     }
   } catch (e: any) {
     toast.error('生成失败：' + (e.message || '未知错误'))
-  } finally {
     generatingVideo.value = false
   }
 }
@@ -1374,7 +1403,7 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
       <div class="flex items-center gap-3">
         <div ref="episodePickerRef" class="relative">
           <button class="flex items-center gap-1.5 text-sm font-medium hover:text-gray-300" @click="showEpisodePicker = !showEpisodePicker">
-            第 {{ episodeSummaries.find(e => e.video_id === videoId)?.chapter_no ?? '?' }} 集 {{ video?.title }}
+            第 {{ episodeSummaries.find(e => e.video_id === videoId)?.chapter_no ?? '?' }} 集 {{ episodeSummaries.find(e => e.video_id === videoId)?.title }}
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div v-if="showEpisodePicker" class="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-20 py-1 max-h-80 overflow-auto">
@@ -1682,15 +1711,6 @@ const formattedShotDuration = computed(() => formatTime(previewShot.value?.durat
                   </button>
                 </div>
               </div>
-              <button
-                v-else
-                class="mb-1.5 flex items-center gap-1 text-xs text-gray-500 hover:text-primary-400 transition-colors"
-                @click="startEditingNarration"
-              >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                添加旁白
-              </button>
-
               <div v-if="dialogueDraft || editingDialogue" class="flex items-center gap-1.5">
                 <span
                   class="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap flex-shrink-0"

@@ -418,6 +418,7 @@ export interface ShotVoiceSegment {
   language?: string
   voice_id?: string
   audio_path?: string
+  audio_url?: string
   duration_secs?: number
 }
 

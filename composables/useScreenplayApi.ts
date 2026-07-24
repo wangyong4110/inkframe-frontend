@@ -78,6 +78,12 @@ export function useScreenplayApi() {
     return requestBlob(`/chapters/${chapterId}/screenplay/export?format=${format}`)
   }
 
+  // 分镜脚本导出：按剧本场次分组，每场下列出对应分镜（画面/旁白/台词/时长），与 exportScreenplay
+  // 是同一份文档式导出方案的两个入口，分镜脚本是否已生成由后端校验（未生成时返回 400）。
+  async function exportStoryboard(chapterId: number, format: 'txt' | 'markdown' | 'docx'): Promise<Blob> {
+    return requestBlob(`/chapters/${chapterId}/screenplay/storyboard-export?format=${format}`)
+  }
+
   return {
     generateScreenplay,
     generateScreenplayFull,
@@ -89,5 +95,6 @@ export function useScreenplayApi() {
     getSceneVersions,
     restoreSceneVersion,
     exportScreenplay,
+    exportStoryboard,
   }
 }

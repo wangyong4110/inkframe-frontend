@@ -155,16 +155,31 @@ async function handleGenerate() {
   }
 }
 
-// ── 导出剧本（txt / markdown / docx）──────────────────────────────────────
+// ── 导出剧本 / 导出分镜脚本（txt / markdown / docx）──────────────────────────
 const showExportMenu = ref(false)
 const exportMenuRef = ref<HTMLElement | null>(null)
 onClickOutside(exportMenuRef, () => { showExportMenu.value = false })
+const showStoryboardExportMenu = ref(false)
+const storyboardExportMenuRef = ref<HTMLElement | null>(null)
+onClickOutside(storyboardExportMenuRef, () => { showStoryboardExportMenu.value = false })
 const exportingFormat = ref<'txt' | 'markdown' | 'docx' | null>(null)
+const exportingStoryboardFormat = ref<'txt' | 'markdown' | 'docx' | null>(null)
 const EXPORT_FORMATS: { key: 'txt' | 'markdown' | 'docx'; label: string; ext: string }[] = [
   { key: 'txt', label: '纯文本 (.txt)', ext: 'txt' },
   { key: 'markdown', label: 'Markdown (.md)', ext: 'md' },
   { key: 'docx', label: 'Word 文档 (.docx)', ext: 'docx' },
 ]
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
 async function handleExport(format: 'txt' | 'markdown' | 'docx', ext: string) {
   if (!chapterId.value) return
@@ -172,18 +187,25 @@ async function handleExport(format: 'txt' | 'markdown' | 'docx', ext: string) {
   exportingFormat.value = format
   try {
     const blob = await screenplayApi.exportScreenplay(chapterId.value, format)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${props.chapterTitle || '章节'}_剧本.${ext}`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, `${props.chapterTitle || '章节'}_剧本.${ext}`)
   } catch (e: any) {
     toast.error('导出失败：' + (e.message || '未知错误'))
   } finally {
     exportingFormat.value = null
+  }
+}
+
+async function handleExportStoryboard(format: 'txt' | 'markdown' | 'docx', ext: string) {
+  if (!chapterId.value) return
+  showStoryboardExportMenu.value = false
+  exportingStoryboardFormat.value = format
+  try {
+    const blob = await screenplayApi.exportStoryboard(chapterId.value, format)
+    downloadBlob(blob, `${props.chapterTitle || '章节'}_分镜脚本.${ext}`)
+  } catch (e: any) {
+    toast.error('导出失败：' + (e.message || '未知错误'))
+  } finally {
+    exportingStoryboardFormat.value = null
   }
 }
 
@@ -340,6 +362,23 @@ defineExpose({ loadScenes })
             >{{ f.label }}</button>
           </div>
         </div>
+        <div ref="storyboardExportMenuRef" class="relative">
+          <button
+            class="text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300"
+            :disabled="!chapterId || !scenes.length || exportingStoryboardFormat != null"
+            @click="showStoryboardExportMenu = !showStoryboardExportMenu"
+          >{{ exportingStoryboardFormat ? '导出中…' : '导出分镜脚本' }}</button>
+          <div
+            v-if="showStoryboardExportMenu"
+            class="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 overflow-hidden"
+          >
+            <button
+              v-for="f in EXPORT_FORMATS" :key="f.key"
+              class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              @click="handleExportStoryboard(f.key, f.ext)"
+            >{{ f.label }}</button>
+          </div>
+        </div>
         <button
           class="btn-primary text-sm"
           :disabled="generating || !chapterId"
@@ -393,7 +432,7 @@ defineExpose({ loadScenes })
             class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300"
             title="跳转到新版视频生成页面并定位到本场"
             @click="goToVideoProduction(scene)"
-          >进入视频生成环节</button>
+          >视频制作</button>
           <button
             class="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-300"
             @click="openVersions(scene)"

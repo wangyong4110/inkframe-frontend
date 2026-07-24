@@ -782,6 +782,15 @@ defineExpose({ shotAudioUrls, shotSegments, loadSegments, expandedSegmentShotId 
                   @keydown.esc="editingSegId = null"
                   @blur="saveSegmentText(shot, seg)"
                 />
+                <!-- Audio preview -->
+                <audio
+                  v-if="seg.audio_url"
+                  :key="seg.audio_url"
+                  :src="seg.audio_url"
+                  controls
+                  class="h-6 flex-shrink-0"
+                  style="max-width: 160px"
+                />
                 <!-- Actions -->
                 <div class="flex items-center gap-0.5 flex-shrink-0">
                   <button

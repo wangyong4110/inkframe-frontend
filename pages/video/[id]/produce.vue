@@ -217,7 +217,7 @@ function nextShot() {
 
       <div class="relative flex items-center gap-3">
         <button class="flex items-center gap-1.5 text-sm font-medium hover:text-gray-300" @click="showEpisodePicker = !showEpisodePicker">
-          第 {{ episodeSummaries.find(e => e.video_id === videoId)?.chapter_no ?? '?' }} 集 {{ video?.title }}
+          第 {{ episodeSummaries.find(e => e.video_id === videoId)?.chapter_no ?? '?' }} 集 {{ episodeSummaries.find(e => e.video_id === videoId)?.title }}
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <span class="text-xs text-gray-500">{{ shots.length }} 个分镜 · {{ Math.round(totalDuration) }}s</span>
